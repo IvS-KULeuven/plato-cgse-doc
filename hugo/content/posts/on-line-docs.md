@@ -8,4 +8,6 @@ The CGSE documentation has moved and is being updated to include the latest rele
 
 You can find the following documents already in a draft version:
 
+* <a href="../../asciidocs/installation-guide.html" target="_blank">The CGSE Intallation Manual</a>
+* [The CGSE User Manual](../../asciidocs/user-manual.html)
 * [The CGSE Developer Manual](../../asciidocs/developer-manual.html)
