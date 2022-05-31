@@ -1,0 +1,710 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1" />
+<meta name="generator" content="pdoc 0.10.0" />
+<title>egse.statemachine API documentation</title>
+<meta name="description" content="A quick and dirty state machine inspired by a `Django Snippet`__\ , which was in
+turn inspired by the rails plugin ``acts_as_state_machine`` …" />
+<link rel="preload stylesheet" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/11.0.1/sanitize.min.css" integrity="sha256-PK9q560IAAa6WVRRh76LtCaI8pjTJ2z11v0miyNNjrs=" crossorigin>
+<link rel="preload stylesheet" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/11.0.1/typography.min.css" integrity="sha256-7l/o7C8jubJiy74VsKTidCy1yBkRtiUGbVkYBylBqUg=" crossorigin>
+<link rel="stylesheet preload" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/10.1.1/styles/github.min.css" crossorigin>
+<style>:root{--highlight-color:#fe9}.flex{display:flex !important}body{line-height:1.5em}#content{padding:20px}#sidebar{padding:30px;overflow:hidden}#sidebar > *:last-child{margin-bottom:2cm}.http-server-breadcrumbs{font-size:130%;margin:0 0 15px 0}#footer{font-size:.75em;padding:5px 30px;border-top:1px solid #ddd;text-align:right}#footer p{margin:0 0 0 1em;display:inline-block}#footer p:last-child{margin-right:30px}h1,h2,h3,h4,h5{font-weight:300}h1{font-size:2.5em;line-height:1.1em}h2{font-size:1.75em;margin:1em 0 .50em 0}h3{font-size:1.4em;margin:25px 0 10px 0}h4{margin:0;font-size:105%}h1:target,h2:target,h3:target,h4:target,h5:target,h6:target{background:var(--highlight-color);padding:.2em 0}a{color:#058;text-decoration:none;transition:color .3s ease-in-out}a:hover{color:#e82}.title code{font-weight:bold}h2[id^="header-"]{margin-top:2em}.ident{color:#900}pre code{background:#f8f8f8;font-size:.8em;line-height:1.4em}code{background:#f2f2f1;padding:1px 4px;overflow-wrap:break-word}h1 code{background:transparent}pre{background:#f8f8f8;border:0;border-top:1px solid #ccc;border-bottom:1px solid #ccc;margin:1em 0;padding:1ex}#http-server-module-list{display:flex;flex-flow:column}#http-server-module-list div{display:flex}#http-server-module-list dt{min-width:10%}#http-server-module-list p{margin-top:0}.toc ul,#index{list-style-type:none;margin:0;padding:0}#index code{background:transparent}#index h3{border-bottom:1px solid #ddd}#index ul{padding:0}#index h4{margin-top:.6em;font-weight:bold}@media (min-width:200ex){#index .two-column{column-count:2}}@media (min-width:300ex){#index .two-column{column-count:3}}dl{margin-bottom:2em}dl dl:last-child{margin-bottom:4em}dd{margin:0 0 1em 3em}#header-classes + dl > dd{margin-bottom:3em}dd dd{margin-left:2em}dd p{margin:10px 0}.name{background:#eee;font-weight:bold;font-size:.85em;padding:5px 10px;display:inline-block;min-width:40%}.name:hover{background:#e0e0e0}dt:target .name{background:var(--highlight-color)}.name > span:first-child{white-space:nowrap}.name.class > span:nth-child(2){margin-left:.4em}.inherited{color:#999;border-left:5px solid #eee;padding-left:1em}.inheritance em{font-style:normal;font-weight:bold}.desc h2{font-weight:400;font-size:1.25em}.desc h3{font-size:1em}.desc dt code{background:inherit}.source summary,.git-link-div{color:#666;text-align:right;font-weight:400;font-size:.8em;text-transform:uppercase}.source summary > *{white-space:nowrap;cursor:pointer}.git-link{color:inherit;margin-left:1em}.source pre{max-height:500px;overflow:auto;margin:0}.source pre code{font-size:12px;overflow:visible}.hlist{list-style:none}.hlist li{display:inline}.hlist li:after{content:',\2002'}.hlist li:last-child:after{content:none}.hlist .hlist{display:inline;padding-left:1em}img{max-width:100%}td{padding:0 .5em}.admonition{padding:.1em .5em;margin-bottom:1em}.admonition-title{font-weight:bold}.admonition.note,.admonition.info,.admonition.important{background:#aef}.admonition.todo,.admonition.versionadded,.admonition.tip,.admonition.hint{background:#dfd}.admonition.warning,.admonition.versionchanged,.admonition.deprecated{background:#fd4}.admonition.error,.admonition.danger,.admonition.caution{background:lightpink}</style>
+<style media="screen and (min-width: 700px)">@media screen and (min-width:700px){#sidebar{width:30%;height:100vh;overflow:auto;position:sticky;top:0}#content{width:70%;max-width:100ch;padding:3em 4em;border-left:1px solid #ddd}pre code{font-size:1em}.item .name{font-size:1em}main{display:flex;flex-direction:row-reverse;justify-content:flex-end}.toc ul ul,#index ul{padding-left:1.5em}.toc > ul > li{margin-top:.5em}}</style>
+<style media="print">@media print{#sidebar h1{page-break-before:always}.source{display:none}}@media print{*{background:transparent !important;color:#000 !important;box-shadow:none !important;text-shadow:none !important}a[href]:after{content:" (" attr(href) ")";font-size:90%}a[href][title]:after{content:none}abbr[title]:after{content:" (" attr(title) ")"}.ir a:after,a[href^="javascript:"]:after,a[href^="#"]:after{content:""}pre,blockquote{border:1px solid #999;page-break-inside:avoid}thead{display:table-header-group}tr,img{page-break-inside:avoid}img{max-width:100% !important}@page{margin:0.5cm}p,h2,h3{orphans:3;widows:3}h1,h2,h3,h4,h5,h6{page-break-after:avoid}}</style>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/10.1.1/highlight.min.js" integrity="sha256-Uv3H6lx7dJmRfRvH8TH6kJD1TSK1aFcwgx+mdg3epi8=" crossorigin></script>
+<script>window.addEventListener('DOMContentLoaded', () => hljs.initHighlighting())</script>
+</head>
+<body>
+<main>
+<article id="content">
+<header>
+<h1 class="title">Module <code>egse.statemachine</code></h1>
+</header>
+<section id="section-intro">
+<p>A quick and dirty state machine inspired by a <code>Django Snippet</code>__\ , which was in
+turn inspired by the rails plugin <code>acts_as_state_machine</code>.</p>
+<p>__ <a href="https://djangosnippets.org/snippets/737/">https://djangosnippets.org/snippets/737/</a></p>
+<p>Changes that are made for this project were again inspired by the <code>transitions</code>__
+module and the project's specific needs.</p>
+<p>__ <a href="https://github.com/pytransitions/transitions">https://github.com/pytransitions/transitions</a></p>
+<p>This FSM (Finite State Machine) can be applied to any <em>model</em> that has a finite
+number of clearly defined states and transitions between those states.</p>
+<p>First define the states that the model can be in and initialize a Machine object
+with those states and an initial states.</p>
+<p>Then you need to define the way that the model moves from one state to the next,
+i.e. a <em>transition</em>. Add those transitions to the Machine object with the
+<code>add_transition</code> method.</p>
+<p>The model will be adapted with methods that represent the transitions and methods
+to query the state. The example below shows a simple model with two states\ [*]_\ , i.e.
+'on' and 'off'::</p>
+<pre><code>Class MyButton(QPushButton):
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        states = ('on', 'off')
+
+        self.machine = Machine(self, states, initial='on')
+
+        self.machine.add_transition(trigger='set_on',  source='off', dest='on')
+        self.machine.add_transition(trigger='set_off', source='on',  dest='off')
+</code></pre>
+<p>This will dynamically create two new methods in the class <code>MyButton</code>, i.e. the
+method <code>set_on()</code> and the method <code>set_off()</code>. Additionally, there will be
+two state checking method: <code>is_on()</code> and <code>is_off()</code>. You can also check the
+state of the model MyButton by inspecting the state attribute.</p>
+<p>.. [<em>] When working in </em><em>Qt 5</em>*, a similar state machine can better be implemented
+with the <code>QStateMachine</code> provided by the Qt framework. Check out this
+<code>example for a Two-way Button</code>__.</p>
+<p>__ <a href="https://doc.qt.io/qt-5/qtwidgets-statemachine-twowaybutton-example.html">https://doc.qt.io/qt-5/qtwidgets-statemachine-twowaybutton-example.html</a></p>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">&#34;&#34;&#34;
+A quick and dirty state machine inspired by a `Django Snippet`__\ , which was in
+turn inspired by the rails plugin ``acts_as_state_machine``.
+
+__ https://djangosnippets.org/snippets/737/
+
+Changes that are made for this project were again inspired by the `transitions`__
+module and the project&#39;s specific needs.
+
+__ https://github.com/pytransitions/transitions
+
+This FSM (Finite State Machine) can be applied to any *model* that has a finite
+number of clearly defined states and transitions between those states.
+
+First define the states that the model can be in and initialize a Machine object
+with those states and an initial states.
+
+Then you need to define the way that the model moves from one state to the next,
+i.e. a *transition*. Add those transitions to the Machine object with the
+``add_transition`` method.
+
+The model will be adapted with methods that represent the transitions and methods
+to query the state. The example below shows a simple model with two states\ [*]_\ , i.e.
+&#39;on&#39; and &#39;off&#39;::
+
+    Class MyButton(QPushButton):
+
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+
+            states = (&#39;on&#39;, &#39;off&#39;)
+
+            self.machine = Machine(self, states, initial=&#39;on&#39;)
+
+            self.machine.add_transition(trigger=&#39;set_on&#39;,  source=&#39;off&#39;, dest=&#39;on&#39;)
+            self.machine.add_transition(trigger=&#39;set_off&#39;, source=&#39;on&#39;,  dest=&#39;off&#39;)
+
+This will dynamically create two new methods in the class ``MyButton``, i.e. the
+method ``set_on()`` and the method ``set_off()``. Additionally, there will be
+two state checking method: ``is_on()`` and ``is_off()``. You can also check the
+state of the model MyButton by inspecting the state attribute.
+
+.. [*] When working in **Qt 5**, a similar state machine can better be implemented
+       with the ``QStateMachine`` provided by the Qt framework. Check out this
+       `example for a Two-way Button`__.
+
+__ https://doc.qt.io/qt-5/qtwidgets-statemachine-twowaybutton-example.html
+
+&#34;&#34;&#34;
+import inspect
+import logging
+
+module_logger = logging.getLogger(__name__)
+
+
+# You can&#39;t trivially replace this with `functools.partial` because this binds
+# to classes and returns bound instances, whereas functools.partial (on
+# CPython) is a type and its instances don&#39;t bind.
+# source: from django.utils.functional import curry
+def curry(_curried_func, *args, **kwargs):
+    def _curried(*moreargs, **morekwargs):
+        return _curried_func(*args, *moreargs, **{**kwargs, **morekwargs})
+
+    return _curried
+
+
+class MachineError(Exception):
+    def __init__(self, value):
+        self.value = value
+
+    def __str__(self):
+        return repr(self.value)
+
+
+class Machine():
+    &#34;&#34;&#34;
+    Create a Finite State Machine (FSM).
+    &#34;&#34;&#34;
+
+    def __init__(self, model, states, **kwargs):
+        &#34;&#34;&#34;
+        Initialise the finite state machine.
+
+        :param str model: the model object that needs to be converted into a FSM
+        :param list states: a list with the names of the states
+        :param str initial: the initial state
+        &#34;&#34;&#34;
+        self.model = model
+        self.state = None
+        self.last_state = None
+
+        try:
+            initial_state = kwargs.pop(&#39;initial&#39;)
+        except KeyError:
+            raise MachineError(&#34;A Finite State Machine needs an initial state, &#34;
+                               &#34;please provide the &#39;initial&#39; keyword argument&#34;)
+
+        module_logger.debug(f&#34;Initial State = {initial_state}&#34;)
+
+        self._set_initial(initial_state)
+
+        self.states = []
+        self.state_triggers = {}
+        for state in states:
+            if isinstance(state, str):
+                self.states.append(state)
+            elif isinstance(state, dict):
+                state_name = list(state.keys())[0]
+                self.states.append(state_name)
+                self.state_triggers[state_name] = state[state_name]
+        self.states = tuple(self.states)
+
+    def _extract_from_state(self, kwargs):
+        try:
+            coming_from = kwargs.pop(&#39;from&#39;)
+        except KeyError:
+            raise MachineError(&#34;Missing &#39;from&#39;; must transtion from a state&#34;)
+
+        if isinstance(coming_from, str):
+            if coming_from not in self.states and coming_from != &#39;*&#39;:
+                raise MachineError(f&#34;from: &#39;{coming_from}&#39; is not a registered state&#34;)
+        elif isinstance(coming_from, list):
+            for state in coming_from:
+                if state not in self.states:
+                    raise MachineError(f&#34;from: &#39;{coming_from}&#39; is not a registered state&#34;)
+
+        return coming_from
+
+    def _extract_to_state(self, kwargs):
+        try:
+            going_to = kwargs.pop(&#39;to&#39;)
+        except KeyError:
+            raise MachineError(&#34;Missing &#39;to&#39;; must transition to a state&#34;)
+
+        if going_to not in self.states and going_to != &#39;&lt;&#39;:
+            raise MachineError(f&#34;to: &#39;{going_to}&#39; is not a registered state&#34;)
+
+        return going_to
+
+    def _extract_run_method(self, kwargs):
+        run = kwargs.pop(&#39;run&#39;, None)
+        return run
+
+    def _set_initial(self, initial):
+        self._update_model(initial)
+
+    def _update_state_from_model(self):
+        self._update_state(self.model.state)
+
+    def _update_model(self, state):
+        self.model.state = state
+        self._update_state(self.model.state)
+
+    def _update_state(self, new_state):
+        self.last_state = self.state if self.state is not None else new_state
+        self.state = new_state
+
+    def action(self, *args, **kwargs):
+        name = kwargs.pop(&#39;this&#39;)
+        module_logger.debug(f&#34;Performing action: {name}, current state = {self.state}, last state = {self.last_state}&#34;)
+
+        state = kwargs.pop(&#39;to_state&#39;)
+        if state == &#39;&lt;&#39;:
+            state = self.last_state
+
+        run_method = kwargs.pop(&#39;run&#39;)
+
+        self._update_state_from_model()
+
+        from_states = kwargs.pop(&#39;from_states&#39;)
+        from_states = from_states if from_states != &#34;*&#34; else [self.state]
+
+        response = None
+
+        if self.state in from_states:
+            if state in self.state_triggers and &#39;enter&#39; in self.state_triggers[state]:
+                self.state_triggers[state][&#39;enter&#39;]()
+            if run_method is not None:
+                response = run_method(*args, **kwargs)
+            self._update_model(state)
+            if state in self.state_triggers and &#39;leave&#39; in self.state_triggers[state]:
+                self.state_triggers[state][&#39;leave&#39;]()
+            return response
+        else:
+            module_logger.warning(f&#34;Cannot transition from &#39;{self.state}&#39; to &#39;{state}&#39;, nothing changed.&#34;)
+
+        return response
+
+    def is_state(self, state, *args):
+        self._update_state_from_model()
+        return self.state == state
+
+    def get_state(self):
+        self._update_state_from_model()
+        return self.state
+
+    def add_transition(self, trigger, source, dest, run=None):
+        &#34;&#34;&#34;
+        Add a transition to the finite state machine.
+
+        :param str trigger: the name of the trigger method (an action)
+        :param str source: the name of the source state, from where the transition starts
+        :param str dest: the name of the destination state, where the transition moves to
+        :param function run: a function or method reference that will be called during the transition
+        &#34;&#34;&#34;
+        if hasattr(self.model, trigger):
+            module_logger.warning(
+                f&#34;Cannot overwrite attribute &#39;{trigger}&#39; in &#39;{self.model.__class__.__name__}&#39;, no changes made.&#34;)
+        else:
+            setattr(self.model, trigger, curry(self.action, to_state=dest, from_states=source, this=trigger, run=run))
+            module_logger.debug(f&#34;Added method {trigger}() to {self.model.__class__.__name__}&#34;)
+
+        if dest != &#39;&lt;&#39;:
+            is_state = f&#34;is_{dest}&#34;
+
+            if hasattr(self.model, is_state):
+                module_logger.warning(
+                    f&#34;Attribute &#39;{is_state}&#39; already exists in &#39;{self.model.__class__.__name__}&#39;, no changes made.&#34;)
+            else:
+                setattr(self.model, is_state, curry(self.is_state, dest))
+                module_logger.debug(f&#34;Added method {is_state}() to {self.model.__class__.__name__}&#34;)
+
+
+if __name__ == &#34;__main__&#34;:
+
+    logging.basicConfig(level=logging.DEBUG)
+
+
+    class Button(object):
+        pass
+
+
+    class MyButton(Button):
+
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+
+            states = (
+                &#39;on&#39;,
+                &#39;off&#39;,
+                {&#39;disabled&#39;: {&#39;enter&#39;: self.upon_entry, &#39;leave&#39;: self.upon_leave}},
+                &#39;hidden&#39;
+            )
+
+            self.machine = Machine(self, states, initial=&#39;on&#39;)
+
+            self.machine.add_transition(trigger=&#39;set_on&#39;, source=&#39;off&#39;, dest=&#39;on&#39;)
+            self.machine.add_transition(trigger=&#39;set_off&#39;, source=&#39;on&#39;, dest=&#39;off&#39;)
+            self.machine.add_transition(trigger=&#39;disable&#39;, source=[&#39;on&#39;, &#39;off&#39;], dest=&#39;disabled&#39;)
+            self.machine.add_transition(trigger=&#39;enable&#39;, source=&#39;disabled&#39;, dest=&#39;&lt;&#39;)
+            self.machine.add_transition(trigger=&#39;hide&#39;, source=&#39;*&#39;, dest=&#39;hidden&#39;, run=self.hide_)
+            self.machine.add_transition(trigger=&#39;unhide&#39;, source=&#39;hidden&#39;, dest=&#39;&lt;&#39;)
+
+        def upon_entry(self):
+            module_logger.debug(f&#34;Entring: state = {self.state}&#34;)
+
+        def upon_leave(self):
+            module_logger.debug(f&#34;Leaving: state = {self.state}&#34;)
+
+        def hide_(self, *args, **kwargs):
+            module_logger.debug(f&#34;Running the {inspect.currentframe().f_code.co_name}() method...&#34;)
+            module_logger.debug(f&#34;args = {args}&#34;)
+            module_logger.debug(f&#34;kwargs = {kwargs}&#34;)
+
+
+    b = MyButton()
+    module_logger.debug(f&#34;b.state={b.state}&#34;)
+
+    actions = [b.set_off, b.hide, b.unhide, b.disable, b.enable, b.set_on, b.set_off]
+    for action in actions:
+        action()
+        module_logger.debug(f&#34;b.state={b.state}&#34;)
+
+    b.hide(&#34;Hello, World!&#34;, type=&#34;string&#34;)</code></pre>
+</details>
+</section>
+<section>
+</section>
+<section>
+</section>
+<section>
+<h2 class="section-title" id="header-functions">Functions</h2>
+<dl>
+<dt id="egse.statemachine.curry"><code class="name flex">
+<span>def <span class="ident">curry</span></span>(<span>_curried_func, *args, **kwargs)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def curry(_curried_func, *args, **kwargs):
+    def _curried(*moreargs, **morekwargs):
+        return _curried_func(*args, *moreargs, **{**kwargs, **morekwargs})
+
+    return _curried</code></pre>
+</details>
+</dd>
+</dl>
+</section>
+<section>
+<h2 class="section-title" id="header-classes">Classes</h2>
+<dl>
+<dt id="egse.statemachine.Machine"><code class="flex name class">
+<span>class <span class="ident">Machine</span></span>
+<span>(</span><span>model, states, **kwargs)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Create a Finite State Machine (FSM).</p>
+<p>Initialise the finite state machine.</p>
+<p>:param str model: the model object that needs to be converted into a FSM
+:param list states: a list with the names of the states
+:param str initial: the initial state</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Machine():
+    &#34;&#34;&#34;
+    Create a Finite State Machine (FSM).
+    &#34;&#34;&#34;
+
+    def __init__(self, model, states, **kwargs):
+        &#34;&#34;&#34;
+        Initialise the finite state machine.
+
+        :param str model: the model object that needs to be converted into a FSM
+        :param list states: a list with the names of the states
+        :param str initial: the initial state
+        &#34;&#34;&#34;
+        self.model = model
+        self.state = None
+        self.last_state = None
+
+        try:
+            initial_state = kwargs.pop(&#39;initial&#39;)
+        except KeyError:
+            raise MachineError(&#34;A Finite State Machine needs an initial state, &#34;
+                               &#34;please provide the &#39;initial&#39; keyword argument&#34;)
+
+        module_logger.debug(f&#34;Initial State = {initial_state}&#34;)
+
+        self._set_initial(initial_state)
+
+        self.states = []
+        self.state_triggers = {}
+        for state in states:
+            if isinstance(state, str):
+                self.states.append(state)
+            elif isinstance(state, dict):
+                state_name = list(state.keys())[0]
+                self.states.append(state_name)
+                self.state_triggers[state_name] = state[state_name]
+        self.states = tuple(self.states)
+
+    def _extract_from_state(self, kwargs):
+        try:
+            coming_from = kwargs.pop(&#39;from&#39;)
+        except KeyError:
+            raise MachineError(&#34;Missing &#39;from&#39;; must transtion from a state&#34;)
+
+        if isinstance(coming_from, str):
+            if coming_from not in self.states and coming_from != &#39;*&#39;:
+                raise MachineError(f&#34;from: &#39;{coming_from}&#39; is not a registered state&#34;)
+        elif isinstance(coming_from, list):
+            for state in coming_from:
+                if state not in self.states:
+                    raise MachineError(f&#34;from: &#39;{coming_from}&#39; is not a registered state&#34;)
+
+        return coming_from
+
+    def _extract_to_state(self, kwargs):
+        try:
+            going_to = kwargs.pop(&#39;to&#39;)
+        except KeyError:
+            raise MachineError(&#34;Missing &#39;to&#39;; must transition to a state&#34;)
+
+        if going_to not in self.states and going_to != &#39;&lt;&#39;:
+            raise MachineError(f&#34;to: &#39;{going_to}&#39; is not a registered state&#34;)
+
+        return going_to
+
+    def _extract_run_method(self, kwargs):
+        run = kwargs.pop(&#39;run&#39;, None)
+        return run
+
+    def _set_initial(self, initial):
+        self._update_model(initial)
+
+    def _update_state_from_model(self):
+        self._update_state(self.model.state)
+
+    def _update_model(self, state):
+        self.model.state = state
+        self._update_state(self.model.state)
+
+    def _update_state(self, new_state):
+        self.last_state = self.state if self.state is not None else new_state
+        self.state = new_state
+
+    def action(self, *args, **kwargs):
+        name = kwargs.pop(&#39;this&#39;)
+        module_logger.debug(f&#34;Performing action: {name}, current state = {self.state}, last state = {self.last_state}&#34;)
+
+        state = kwargs.pop(&#39;to_state&#39;)
+        if state == &#39;&lt;&#39;:
+            state = self.last_state
+
+        run_method = kwargs.pop(&#39;run&#39;)
+
+        self._update_state_from_model()
+
+        from_states = kwargs.pop(&#39;from_states&#39;)
+        from_states = from_states if from_states != &#34;*&#34; else [self.state]
+
+        response = None
+
+        if self.state in from_states:
+            if state in self.state_triggers and &#39;enter&#39; in self.state_triggers[state]:
+                self.state_triggers[state][&#39;enter&#39;]()
+            if run_method is not None:
+                response = run_method(*args, **kwargs)
+            self._update_model(state)
+            if state in self.state_triggers and &#39;leave&#39; in self.state_triggers[state]:
+                self.state_triggers[state][&#39;leave&#39;]()
+            return response
+        else:
+            module_logger.warning(f&#34;Cannot transition from &#39;{self.state}&#39; to &#39;{state}&#39;, nothing changed.&#34;)
+
+        return response
+
+    def is_state(self, state, *args):
+        self._update_state_from_model()
+        return self.state == state
+
+    def get_state(self):
+        self._update_state_from_model()
+        return self.state
+
+    def add_transition(self, trigger, source, dest, run=None):
+        &#34;&#34;&#34;
+        Add a transition to the finite state machine.
+
+        :param str trigger: the name of the trigger method (an action)
+        :param str source: the name of the source state, from where the transition starts
+        :param str dest: the name of the destination state, where the transition moves to
+        :param function run: a function or method reference that will be called during the transition
+        &#34;&#34;&#34;
+        if hasattr(self.model, trigger):
+            module_logger.warning(
+                f&#34;Cannot overwrite attribute &#39;{trigger}&#39; in &#39;{self.model.__class__.__name__}&#39;, no changes made.&#34;)
+        else:
+            setattr(self.model, trigger, curry(self.action, to_state=dest, from_states=source, this=trigger, run=run))
+            module_logger.debug(f&#34;Added method {trigger}() to {self.model.__class__.__name__}&#34;)
+
+        if dest != &#39;&lt;&#39;:
+            is_state = f&#34;is_{dest}&#34;
+
+            if hasattr(self.model, is_state):
+                module_logger.warning(
+                    f&#34;Attribute &#39;{is_state}&#39; already exists in &#39;{self.model.__class__.__name__}&#39;, no changes made.&#34;)
+            else:
+                setattr(self.model, is_state, curry(self.is_state, dest))
+                module_logger.debug(f&#34;Added method {is_state}() to {self.model.__class__.__name__}&#34;)</code></pre>
+</details>
+<h3>Methods</h3>
+<dl>
+<dt id="egse.statemachine.Machine.action"><code class="name flex">
+<span>def <span class="ident">action</span></span>(<span>self, *args, **kwargs)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def action(self, *args, **kwargs):
+    name = kwargs.pop(&#39;this&#39;)
+    module_logger.debug(f&#34;Performing action: {name}, current state = {self.state}, last state = {self.last_state}&#34;)
+
+    state = kwargs.pop(&#39;to_state&#39;)
+    if state == &#39;&lt;&#39;:
+        state = self.last_state
+
+    run_method = kwargs.pop(&#39;run&#39;)
+
+    self._update_state_from_model()
+
+    from_states = kwargs.pop(&#39;from_states&#39;)
+    from_states = from_states if from_states != &#34;*&#34; else [self.state]
+
+    response = None
+
+    if self.state in from_states:
+        if state in self.state_triggers and &#39;enter&#39; in self.state_triggers[state]:
+            self.state_triggers[state][&#39;enter&#39;]()
+        if run_method is not None:
+            response = run_method(*args, **kwargs)
+        self._update_model(state)
+        if state in self.state_triggers and &#39;leave&#39; in self.state_triggers[state]:
+            self.state_triggers[state][&#39;leave&#39;]()
+        return response
+    else:
+        module_logger.warning(f&#34;Cannot transition from &#39;{self.state}&#39; to &#39;{state}&#39;, nothing changed.&#34;)
+
+    return response</code></pre>
+</details>
+</dd>
+<dt id="egse.statemachine.Machine.add_transition"><code class="name flex">
+<span>def <span class="ident">add_transition</span></span>(<span>self, trigger, source, dest, run=None)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Add a transition to the finite state machine.</p>
+<p>:param str trigger: the name of the trigger method (an action)
+:param str source: the name of the source state, from where the transition starts
+:param str dest: the name of the destination state, where the transition moves to
+:param function run: a function or method reference that will be called during the transition</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def add_transition(self, trigger, source, dest, run=None):
+    &#34;&#34;&#34;
+    Add a transition to the finite state machine.
+
+    :param str trigger: the name of the trigger method (an action)
+    :param str source: the name of the source state, from where the transition starts
+    :param str dest: the name of the destination state, where the transition moves to
+    :param function run: a function or method reference that will be called during the transition
+    &#34;&#34;&#34;
+    if hasattr(self.model, trigger):
+        module_logger.warning(
+            f&#34;Cannot overwrite attribute &#39;{trigger}&#39; in &#39;{self.model.__class__.__name__}&#39;, no changes made.&#34;)
+    else:
+        setattr(self.model, trigger, curry(self.action, to_state=dest, from_states=source, this=trigger, run=run))
+        module_logger.debug(f&#34;Added method {trigger}() to {self.model.__class__.__name__}&#34;)
+
+    if dest != &#39;&lt;&#39;:
+        is_state = f&#34;is_{dest}&#34;
+
+        if hasattr(self.model, is_state):
+            module_logger.warning(
+                f&#34;Attribute &#39;{is_state}&#39; already exists in &#39;{self.model.__class__.__name__}&#39;, no changes made.&#34;)
+        else:
+            setattr(self.model, is_state, curry(self.is_state, dest))
+            module_logger.debug(f&#34;Added method {is_state}() to {self.model.__class__.__name__}&#34;)</code></pre>
+</details>
+</dd>
+<dt id="egse.statemachine.Machine.get_state"><code class="name flex">
+<span>def <span class="ident">get_state</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_state(self):
+    self._update_state_from_model()
+    return self.state</code></pre>
+</details>
+</dd>
+<dt id="egse.statemachine.Machine.is_state"><code class="name flex">
+<span>def <span class="ident">is_state</span></span>(<span>self, state, *args)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def is_state(self, state, *args):
+    self._update_state_from_model()
+    return self.state == state</code></pre>
+</details>
+</dd>
+</dl>
+</dd>
+<dt id="egse.statemachine.MachineError"><code class="flex name class">
+<span>class <span class="ident">MachineError</span></span>
+<span>(</span><span>value)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Common base class for all non-exit exceptions.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class MachineError(Exception):
+    def __init__(self, value):
+        self.value = value
+
+    def __str__(self):
+        return repr(self.value)</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>builtins.Exception</li>
+<li>builtins.BaseException</li>
+</ul>
+</dd>
+</dl>
+</section>
+</article>
+<nav id="sidebar">
+<h1>Index</h1>
+<div class="toc">
+<ul></ul>
+</div>
+<ul id="index">
+<li><h3>Super-module</h3>
+<ul>
+<li><code><a title="egse" href="index.html">egse</a></code></li>
+</ul>
+</li>
+<li><h3><a href="#header-functions">Functions</a></h3>
+<ul class="">
+<li><code><a title="egse.statemachine.curry" href="#egse.statemachine.curry">curry</a></code></li>
+</ul>
+</li>
+<li><h3><a href="#header-classes">Classes</a></h3>
+<ul>
+<li>
+<h4><code><a title="egse.statemachine.Machine" href="#egse.statemachine.Machine">Machine</a></code></h4>
+<ul class="">
+<li><code><a title="egse.statemachine.Machine.action" href="#egse.statemachine.Machine.action">action</a></code></li>
+<li><code><a title="egse.statemachine.Machine.add_transition" href="#egse.statemachine.Machine.add_transition">add_transition</a></code></li>
+<li><code><a title="egse.statemachine.Machine.get_state" href="#egse.statemachine.Machine.get_state">get_state</a></code></li>
+<li><code><a title="egse.statemachine.Machine.is_state" href="#egse.statemachine.Machine.is_state">is_state</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="egse.statemachine.MachineError" href="#egse.statemachine.MachineError">MachineError</a></code></h4>
+</li>
+</ul>
+</li>
+</ul>
+</nav>
+</main>
+<footer id="footer">
+<p>Generated by <a href="https://pdoc3.github.io/pdoc" title="pdoc: Python API documentation generator"><cite>pdoc</cite> 0.10.0</a>.</p>
+</footer>
+</body>
+</html>

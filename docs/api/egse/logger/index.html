@@ -1,0 +1,522 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1" />
+<meta name="generator" content="pdoc 0.10.0" />
+<title>egse.logger API documentation</title>
+<meta name="description" content="This module defines the level, format and handlers for the root logger and for the special
+&#39;egse&#39; logger. The egse_logger will be configured with a …" />
+<link rel="preload stylesheet" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/11.0.1/sanitize.min.css" integrity="sha256-PK9q560IAAa6WVRRh76LtCaI8pjTJ2z11v0miyNNjrs=" crossorigin>
+<link rel="preload stylesheet" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/11.0.1/typography.min.css" integrity="sha256-7l/o7C8jubJiy74VsKTidCy1yBkRtiUGbVkYBylBqUg=" crossorigin>
+<link rel="stylesheet preload" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/10.1.1/styles/github.min.css" crossorigin>
+<style>:root{--highlight-color:#fe9}.flex{display:flex !important}body{line-height:1.5em}#content{padding:20px}#sidebar{padding:30px;overflow:hidden}#sidebar > *:last-child{margin-bottom:2cm}.http-server-breadcrumbs{font-size:130%;margin:0 0 15px 0}#footer{font-size:.75em;padding:5px 30px;border-top:1px solid #ddd;text-align:right}#footer p{margin:0 0 0 1em;display:inline-block}#footer p:last-child{margin-right:30px}h1,h2,h3,h4,h5{font-weight:300}h1{font-size:2.5em;line-height:1.1em}h2{font-size:1.75em;margin:1em 0 .50em 0}h3{font-size:1.4em;margin:25px 0 10px 0}h4{margin:0;font-size:105%}h1:target,h2:target,h3:target,h4:target,h5:target,h6:target{background:var(--highlight-color);padding:.2em 0}a{color:#058;text-decoration:none;transition:color .3s ease-in-out}a:hover{color:#e82}.title code{font-weight:bold}h2[id^="header-"]{margin-top:2em}.ident{color:#900}pre code{background:#f8f8f8;font-size:.8em;line-height:1.4em}code{background:#f2f2f1;padding:1px 4px;overflow-wrap:break-word}h1 code{background:transparent}pre{background:#f8f8f8;border:0;border-top:1px solid #ccc;border-bottom:1px solid #ccc;margin:1em 0;padding:1ex}#http-server-module-list{display:flex;flex-flow:column}#http-server-module-list div{display:flex}#http-server-module-list dt{min-width:10%}#http-server-module-list p{margin-top:0}.toc ul,#index{list-style-type:none;margin:0;padding:0}#index code{background:transparent}#index h3{border-bottom:1px solid #ddd}#index ul{padding:0}#index h4{margin-top:.6em;font-weight:bold}@media (min-width:200ex){#index .two-column{column-count:2}}@media (min-width:300ex){#index .two-column{column-count:3}}dl{margin-bottom:2em}dl dl:last-child{margin-bottom:4em}dd{margin:0 0 1em 3em}#header-classes + dl > dd{margin-bottom:3em}dd dd{margin-left:2em}dd p{margin:10px 0}.name{background:#eee;font-weight:bold;font-size:.85em;padding:5px 10px;display:inline-block;min-width:40%}.name:hover{background:#e0e0e0}dt:target .name{background:var(--highlight-color)}.name > span:first-child{white-space:nowrap}.name.class > span:nth-child(2){margin-left:.4em}.inherited{color:#999;border-left:5px solid #eee;padding-left:1em}.inheritance em{font-style:normal;font-weight:bold}.desc h2{font-weight:400;font-size:1.25em}.desc h3{font-size:1em}.desc dt code{background:inherit}.source summary,.git-link-div{color:#666;text-align:right;font-weight:400;font-size:.8em;text-transform:uppercase}.source summary > *{white-space:nowrap;cursor:pointer}.git-link{color:inherit;margin-left:1em}.source pre{max-height:500px;overflow:auto;margin:0}.source pre code{font-size:12px;overflow:visible}.hlist{list-style:none}.hlist li{display:inline}.hlist li:after{content:',\2002'}.hlist li:last-child:after{content:none}.hlist .hlist{display:inline;padding-left:1em}img{max-width:100%}td{padding:0 .5em}.admonition{padding:.1em .5em;margin-bottom:1em}.admonition-title{font-weight:bold}.admonition.note,.admonition.info,.admonition.important{background:#aef}.admonition.todo,.admonition.versionadded,.admonition.tip,.admonition.hint{background:#dfd}.admonition.warning,.admonition.versionchanged,.admonition.deprecated{background:#fd4}.admonition.error,.admonition.danger,.admonition.caution{background:lightpink}</style>
+<style media="screen and (min-width: 700px)">@media screen and (min-width:700px){#sidebar{width:30%;height:100vh;overflow:auto;position:sticky;top:0}#content{width:70%;max-width:100ch;padding:3em 4em;border-left:1px solid #ddd}pre code{font-size:1em}.item .name{font-size:1em}main{display:flex;flex-direction:row-reverse;justify-content:flex-end}.toc ul ul,#index ul{padding-left:1.5em}.toc > ul > li{margin-top:.5em}}</style>
+<style media="print">@media print{#sidebar h1{page-break-before:always}.source{display:none}}@media print{*{background:transparent !important;color:#000 !important;box-shadow:none !important;text-shadow:none !important}a[href]:after{content:" (" attr(href) ")";font-size:90%}a[href][title]:after{content:none}abbr[title]:after{content:" (" attr(title) ")"}.ir a:after,a[href^="javascript:"]:after,a[href^="#"]:after{content:""}pre,blockquote{border:1px solid #999;page-break-inside:avoid}thead{display:table-header-group}tr,img{page-break-inside:avoid}img{max-width:100% !important}@page{margin:0.5cm}p,h2,h3{orphans:3;widows:3}h1,h2,h3,h4,h5,h6{page-break-after:avoid}}</style>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/10.1.1/highlight.min.js" integrity="sha256-Uv3H6lx7dJmRfRvH8TH6kJD1TSK1aFcwgx+mdg3epi8=" crossorigin></script>
+<script>window.addEventListener('DOMContentLoaded', () => hljs.initHighlighting())</script>
+</head>
+<body>
+<main>
+<article id="content">
+<header>
+<h1 class="title">Module <code>egse.logger</code></h1>
+</header>
+<section id="section-intro">
+<p>This module defines the level, format and handlers for the root logger and for the special
+'egse' logger. The egse_logger will be configured with a special handler which sends all
+logging messages to a log control server.</p>
+<p>This module is loaded whenever an egse module is loaded, to ensure all log messages are properly
+forwarded to the log control server.</p>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">&#34;&#34;&#34;
+This module defines the level, format and handlers for the root logger and for the special
+&#39;egse&#39; logger. The egse_logger will be configured with a special handler which sends all
+logging messages to a log control server.
+
+This module is loaded whenever an egse module is loaded, to ensure all log messages are properly
+forwarded to the log control server.
+&#34;&#34;&#34;
+
+import logging
+import pickle
+import sys
+import traceback
+
+import zmq
+
+LOG_FORMAT_FULL = (
+    &#34;%(asctime)23s:%(processName)20s:%(levelname)8s:%(lineno)5d:%(name)-20s:%(message)s&#34;
+)
+
+# Configure the root logger
+
+logging.basicConfig(level=logging.DEBUG, format=LOG_FORMAT_FULL)
+
+__all__ = [
+    &#34;egse_logger&#34;,
+    &#34;set_all_logger_levels&#34;,
+    &#34;ZeroMQHandler&#34;,
+    &#34;close_all_zmq_handlers&#34;,
+]
+
+
+class ZeroMQHandler(logging.Handler):
+    def __init__(self, uri=None, socket_type=zmq.PUSH, ctx=None):
+
+        from egse.settings import Settings
+        from egse.zmq_ser import connect_address
+
+        ctrl_settings = Settings.load(&#34;Logging Control Server&#34;)
+        uri = uri or connect_address(ctrl_settings.PROTOCOL, ctrl_settings.HOSTNAME,
+                                     ctrl_settings.LOGGING_PORT)
+
+        logging.Handler.__init__(self)
+
+        # print(f&#34;ZeroMQHandler.__init__({uri=}, {socket_type=}, {ctx=})&#34;)
+
+        self.setLevel(logging.NOTSET)
+
+        self.ctx = ctx or zmq.Context().instance()
+        self.socket = zmq.Socket(self.ctx, socket_type)
+        self.socket.setsockopt(zmq.SNDHWM, 0)  # never block on sending msg
+        self.socket.connect(uri)
+
+    def __del__(self):
+        self.close()
+
+    def close(self):
+        self.socket.close(linger=0)
+
+    def emit(self, record):
+        &#34;&#34;&#34;
+        Emit a record.
+
+        Writes the LogRecord to the queue, preparing it for pickling first.
+        &#34;&#34;&#34;
+
+        # print(f&#34;ZeroMQHandler.emit({record})&#34;)
+
+        from egse.system import is_in_ipython
+
+        try:
+            if record.exc_info:
+                record.exc_text = traceback.format_exc()
+                record.exc_info = None  # traceback objects can not be pickled
+            if record.processName == &#34;MainProcess&#34; and is_in_ipython():
+                record.processName = &#34;IPython&#34;
+            data = pickle.dumps(record.__dict__)
+            self.socket.send(data, flags=zmq.NOBLOCK)
+        except (KeyboardInterrupt, SystemExit):
+            raise
+        except Exception as exc:
+            print(f&#34;ZeroMQHandler: Exception - {exc}&#34;, file=sys.stderr)
+            self.handleError(record)
+
+
+def close_all_zmq_handlers():
+    &#34;&#34;&#34;
+    Close all the ZeroMQHandlers that are connected to a logger.
+
+    This function is automatically called upon termination of the control servers. For your own
+    applications, call this function before exiting the App.
+    &#34;&#34;&#34;
+
+    loggers = logging.Logger.manager.loggerDict
+
+    for name, logger in loggers.items():
+        if isinstance(logger, logging.PlaceHolder):
+            continue
+        for handler in logger.handlers:
+            if isinstance(handler, ZeroMQHandler):
+                logger.debug(f&#34;Closing handler for logger {name}&#34;)
+                handler.close()
+
+
+# Initialize logging as we want it for the Common-EGSE
+#
+# * The ZeroMQHandler to send all logging messages, i.e. level=DEBUG to the Logging Server
+# * The (local) StreamingHandlers to print only INFO messages and higher
+
+logging.disable(logging.NOTSET)
+root_logger = logging.getLogger()
+
+for handler in root_logger.handlers:
+    handler.setLevel(logging.INFO)
+
+
+# Define the `egse` logger and add the ZeroMQHandler to this logger
+
+egse_logger = logging.getLogger(&#34;egse&#34;)
+egse_logger.setLevel(logging.DEBUG)
+
+zmq_handler = ZeroMQHandler()
+zmq_handler.setLevel(logging.NOTSET)
+
+egse_logger.addHandler(zmq_handler)
+egse_logger.setLevel(logging.DEBUG)
+
+
+def replace_zmq_handler():
+    &#34;&#34;&#34;
+    This function will replace the current ZeroMQ Handler with a new instance. Use this function
+    in the run() method of a multiprocessing.Process:
+
+        import egse.logger
+        egse.logger.replace_zmq_handler()
+
+    Don&#39;t use this function in the __init__() method as only the run() method will execute in
+    the new Process and replace the handler in the proper environment. The reason for this is
+    that the ZeroMQ socket is not thread/Process safe, so a new ZeroMQ socket needs to be created
+    in the correct process environment.
+    &#34;&#34;&#34;
+    global egse_logger
+
+    this_handler = None
+    for handler in egse_logger.handlers:
+        if isinstance(handler, ZeroMQHandler):
+            this_handler = handler
+    if this_handler is not None:
+        egse_logger.removeHandler(this_handler)
+    egse_logger.addHandler(ZeroMQHandler())
+
+
+def create_new_zmq_logger(name: str):
+    &#34;&#34;&#34;
+    Create a new logger with the given name and add a ZeroMQ Handler to this logger.
+
+    If the logger already has a ZeroMQ handler attached, don&#39;t add a second ZeroMQ handler,
+    just return the Logger object.
+
+    Args:
+        name: the requested name for the logger
+
+    Returns:
+        A Logger for the given name with a ZeroMQ handler attached.
+    &#34;&#34;&#34;
+    logger = logging.getLogger(name)
+    logger.setLevel(logging.DEBUG)
+
+    # If the ZeroMQ handler already exists for this logger, don&#39;t add a second handler
+
+    for handler in logger.handlers:
+        if isinstance(handler, ZeroMQHandler):
+            return logger
+
+    zmq_handler = ZeroMQHandler()
+    zmq_handler.setLevel(logging.NOTSET)
+
+    logger.addHandler(zmq_handler)
+    logger.setLevel(logging.DEBUG)
+
+    return logger
+
+
+# We define a new level that is lower the DEBUG for extreme verbose messages
+
+logging.FLASH_FLOOD = 5
+logging.addLevelName(logging.FLASH_FLOOD, &#34;FLASH_FLOOD&#34;)
+
+
+def flash_flood(self, msg, *args, **kwargs):
+    if self.isEnabledFor(logging.FLASH_FLOOD):
+        self._log(logging.FLASH_FLOOD, msg, args, **kwargs)
+
+
+logging.flash_flood = flash_flood
+logging.Logger.flash_flood = flash_flood
+
+
+def set_all_logger_levels(level: int):
+    global root_logger, egse_logger
+
+    root_logger.level = level
+    egse_logger.level = level
+
+    for handler in root_logger.handlers:
+        handler.setLevel(level)
+
+    # We don&#39;t want to restrict egse_logger levels
+
+    # for handler in egse_logger.handlers:
+    #     handler.setLevel(level)
+
+
+if &#34;__main__&#34; == __name__:
+
+    import egse.logger
+
+    LOGGER = logging.getLogger(&#34;egse.0mq-log-test&#34;)
+    LOGGER.setLevel(logging.FLASH_FLOOD)
+
+    LOGGER.flash_flood(&#34;Hello, ZeroMQ logging: This is a FLASH_FLOOD message.&#34;)
+    LOGGER.debug(&#34;Hello, ZeroMQ logging: This is a DEBUG message.&#34;)
+    LOGGER.info(&#34;Hello, ZeroMQ logging: This is an INFO message.&#34;)
+    LOGGER.warning(&#34;Hello, ZeroMQ logging: This is a WARNING message.&#34;)
+    LOGGER.error(&#34;Hello, ZeroMQ logging: This is an ERROR message.&#34;)
+    LOGGER.critical(&#34;Hello, ZeroMQ logging: This is a CRITICAL message.&#34;)
+    try:
+        raise ValueError(&#34;A fake ValueError, raised for testing.&#34;)
+    except ValueError:
+        LOGGER.exception(&#34;Hello, ZeroMQ logging: This is an EXCEPTION message.&#34;)
+
+    LOGGER = logging.getLogger(&#34;plain-log-test&#34;)
+
+    LOGGER.flash_flood(&#34;Vanilla logging: This is a FLASH_FLOOD message.&#34;)
+    LOGGER.debug(&#34;Vanilla logging: This is a DEBUG message.&#34;)
+    LOGGER.info(&#34;Vanilla logging: This is an INFO message.&#34;)
+    LOGGER.warning(&#34;Vanilla logging: This is a WARNING message.&#34;)
+    LOGGER.error(&#34;Vanilla logging: This is an ERROR message.&#34;)
+    LOGGER.critical(&#34;Vanilla logging: This is a CRITICAL message.&#34;)
+    try:
+        raise ValueError(&#34;A fake ValueError, raised for testing.&#34;)
+    except ValueError:
+        LOGGER.exception(&#34;Vanilla logging: This is an EXCEPTION message.&#34;)</code></pre>
+</details>
+</section>
+<section>
+<h2 class="section-title" id="header-submodules">Sub-modules</h2>
+<dl>
+<dt><code class="name"><a title="egse.logger.log_cs" href="log_cs.html">egse.logger.log_cs</a></code></dt>
+<dd>
+<div class="desc"><p>The Log Server receives all log messages and events from control servers and client applications
+and saves those messages in a log file at a given …</p></div>
+</dd>
+</dl>
+</section>
+<section>
+</section>
+<section>
+<h2 class="section-title" id="header-functions">Functions</h2>
+<dl>
+<dt id="egse.logger.close_all_zmq_handlers"><code class="name flex">
+<span>def <span class="ident">close_all_zmq_handlers</span></span>(<span>)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Close all the ZeroMQHandlers that are connected to a logger.</p>
+<p>This function is automatically called upon termination of the control servers. For your own
+applications, call this function before exiting the App.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def close_all_zmq_handlers():
+    &#34;&#34;&#34;
+    Close all the ZeroMQHandlers that are connected to a logger.
+
+    This function is automatically called upon termination of the control servers. For your own
+    applications, call this function before exiting the App.
+    &#34;&#34;&#34;
+
+    loggers = logging.Logger.manager.loggerDict
+
+    for name, logger in loggers.items():
+        if isinstance(logger, logging.PlaceHolder):
+            continue
+        for handler in logger.handlers:
+            if isinstance(handler, ZeroMQHandler):
+                logger.debug(f&#34;Closing handler for logger {name}&#34;)
+                handler.close()</code></pre>
+</details>
+</dd>
+<dt id="egse.logger.set_all_logger_levels"><code class="name flex">
+<span>def <span class="ident">set_all_logger_levels</span></span>(<span>level: int)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def set_all_logger_levels(level: int):
+    global root_logger, egse_logger
+
+    root_logger.level = level
+    egse_logger.level = level
+
+    for handler in root_logger.handlers:
+        handler.setLevel(level)</code></pre>
+</details>
+</dd>
+</dl>
+</section>
+<section>
+<h2 class="section-title" id="header-classes">Classes</h2>
+<dl>
+<dt id="egse.logger.ZeroMQHandler"><code class="flex name class">
+<span>class <span class="ident">ZeroMQHandler</span></span>
+<span>(</span><span>uri=None, socket_type=8, ctx=None)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Handler instances dispatch logging events to specific destinations.</p>
+<p>The base handler class. Acts as a placeholder which defines the Handler
+interface. Handlers can optionally use Formatter instances to format
+records as desired. By default, no formatter is specified; in this case,
+the 'raw' message as determined by record.message is logged.</p>
+<p>Initializes the instance - basically setting the formatter to None
+and the filter list to empty.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class ZeroMQHandler(logging.Handler):
+    def __init__(self, uri=None, socket_type=zmq.PUSH, ctx=None):
+
+        from egse.settings import Settings
+        from egse.zmq_ser import connect_address
+
+        ctrl_settings = Settings.load(&#34;Logging Control Server&#34;)
+        uri = uri or connect_address(ctrl_settings.PROTOCOL, ctrl_settings.HOSTNAME,
+                                     ctrl_settings.LOGGING_PORT)
+
+        logging.Handler.__init__(self)
+
+        # print(f&#34;ZeroMQHandler.__init__({uri=}, {socket_type=}, {ctx=})&#34;)
+
+        self.setLevel(logging.NOTSET)
+
+        self.ctx = ctx or zmq.Context().instance()
+        self.socket = zmq.Socket(self.ctx, socket_type)
+        self.socket.setsockopt(zmq.SNDHWM, 0)  # never block on sending msg
+        self.socket.connect(uri)
+
+    def __del__(self):
+        self.close()
+
+    def close(self):
+        self.socket.close(linger=0)
+
+    def emit(self, record):
+        &#34;&#34;&#34;
+        Emit a record.
+
+        Writes the LogRecord to the queue, preparing it for pickling first.
+        &#34;&#34;&#34;
+
+        # print(f&#34;ZeroMQHandler.emit({record})&#34;)
+
+        from egse.system import is_in_ipython
+
+        try:
+            if record.exc_info:
+                record.exc_text = traceback.format_exc()
+                record.exc_info = None  # traceback objects can not be pickled
+            if record.processName == &#34;MainProcess&#34; and is_in_ipython():
+                record.processName = &#34;IPython&#34;
+            data = pickle.dumps(record.__dict__)
+            self.socket.send(data, flags=zmq.NOBLOCK)
+        except (KeyboardInterrupt, SystemExit):
+            raise
+        except Exception as exc:
+            print(f&#34;ZeroMQHandler: Exception - {exc}&#34;, file=sys.stderr)
+            self.handleError(record)</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>logging.Handler</li>
+<li>logging.Filterer</li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="egse.logger.ZeroMQHandler.close"><code class="name flex">
+<span>def <span class="ident">close</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Tidy up any resources used by the handler.</p>
+<p>This version removes the handler from an internal map of handlers,
+_handlers, which is used for handler lookup by name. Subclasses
+should ensure that this gets called from overridden close()
+methods.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def close(self):
+    self.socket.close(linger=0)</code></pre>
+</details>
+</dd>
+<dt id="egse.logger.ZeroMQHandler.emit"><code class="name flex">
+<span>def <span class="ident">emit</span></span>(<span>self, record)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Emit a record.</p>
+<p>Writes the LogRecord to the queue, preparing it for pickling first.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def emit(self, record):
+    &#34;&#34;&#34;
+    Emit a record.
+
+    Writes the LogRecord to the queue, preparing it for pickling first.
+    &#34;&#34;&#34;
+
+    # print(f&#34;ZeroMQHandler.emit({record})&#34;)
+
+    from egse.system import is_in_ipython
+
+    try:
+        if record.exc_info:
+            record.exc_text = traceback.format_exc()
+            record.exc_info = None  # traceback objects can not be pickled
+        if record.processName == &#34;MainProcess&#34; and is_in_ipython():
+            record.processName = &#34;IPython&#34;
+        data = pickle.dumps(record.__dict__)
+        self.socket.send(data, flags=zmq.NOBLOCK)
+    except (KeyboardInterrupt, SystemExit):
+        raise
+    except Exception as exc:
+        print(f&#34;ZeroMQHandler: Exception - {exc}&#34;, file=sys.stderr)
+        self.handleError(record)</code></pre>
+</details>
+</dd>
+</dl>
+</dd>
+</dl>
+</section>
+</article>
+<nav id="sidebar">
+<h1>Index</h1>
+<div class="toc">
+<ul></ul>
+</div>
+<ul id="index">
+<li><h3>Super-module</h3>
+<ul>
+<li><code><a title="egse" href="../index.html">egse</a></code></li>
+</ul>
+</li>
+<li><h3><a href="#header-submodules">Sub-modules</a></h3>
+<ul>
+<li><code><a title="egse.logger.log_cs" href="log_cs.html">egse.logger.log_cs</a></code></li>
+</ul>
+</li>
+<li><h3><a href="#header-functions">Functions</a></h3>
+<ul class="">
+<li><code><a title="egse.logger.close_all_zmq_handlers" href="#egse.logger.close_all_zmq_handlers">close_all_zmq_handlers</a></code></li>
+<li><code><a title="egse.logger.set_all_logger_levels" href="#egse.logger.set_all_logger_levels">set_all_logger_levels</a></code></li>
+</ul>
+</li>
+<li><h3><a href="#header-classes">Classes</a></h3>
+<ul>
+<li>
+<h4><code><a title="egse.logger.ZeroMQHandler" href="#egse.logger.ZeroMQHandler">ZeroMQHandler</a></code></h4>
+<ul class="">
+<li><code><a title="egse.logger.ZeroMQHandler.close" href="#egse.logger.ZeroMQHandler.close">close</a></code></li>
+<li><code><a title="egse.logger.ZeroMQHandler.emit" href="#egse.logger.ZeroMQHandler.emit">emit</a></code></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</nav>
+</main>
+<footer id="footer">
+<p>Generated by <a href="https://pdoc3.github.io/pdoc" title="pdoc: Python API documentation generator"><cite>pdoc</cite> 0.10.0</a>.</p>
+</footer>
+</body>
+</html>

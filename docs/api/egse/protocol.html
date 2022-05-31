@@ -1,0 +1,2259 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1" />
+<meta name="generator" content="pdoc 0.10.0" />
+<title>egse.protocol API documentation</title>
+<meta name="description" content="CommandProtocol is a base class for communicating commands with the hardware or
+the control server. This class implements methods to send command …" />
+<link rel="preload stylesheet" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/11.0.1/sanitize.min.css" integrity="sha256-PK9q560IAAa6WVRRh76LtCaI8pjTJ2z11v0miyNNjrs=" crossorigin>
+<link rel="preload stylesheet" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/11.0.1/typography.min.css" integrity="sha256-7l/o7C8jubJiy74VsKTidCy1yBkRtiUGbVkYBylBqUg=" crossorigin>
+<link rel="stylesheet preload" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/10.1.1/styles/github.min.css" crossorigin>
+<style>:root{--highlight-color:#fe9}.flex{display:flex !important}body{line-height:1.5em}#content{padding:20px}#sidebar{padding:30px;overflow:hidden}#sidebar > *:last-child{margin-bottom:2cm}.http-server-breadcrumbs{font-size:130%;margin:0 0 15px 0}#footer{font-size:.75em;padding:5px 30px;border-top:1px solid #ddd;text-align:right}#footer p{margin:0 0 0 1em;display:inline-block}#footer p:last-child{margin-right:30px}h1,h2,h3,h4,h5{font-weight:300}h1{font-size:2.5em;line-height:1.1em}h2{font-size:1.75em;margin:1em 0 .50em 0}h3{font-size:1.4em;margin:25px 0 10px 0}h4{margin:0;font-size:105%}h1:target,h2:target,h3:target,h4:target,h5:target,h6:target{background:var(--highlight-color);padding:.2em 0}a{color:#058;text-decoration:none;transition:color .3s ease-in-out}a:hover{color:#e82}.title code{font-weight:bold}h2[id^="header-"]{margin-top:2em}.ident{color:#900}pre code{background:#f8f8f8;font-size:.8em;line-height:1.4em}code{background:#f2f2f1;padding:1px 4px;overflow-wrap:break-word}h1 code{background:transparent}pre{background:#f8f8f8;border:0;border-top:1px solid #ccc;border-bottom:1px solid #ccc;margin:1em 0;padding:1ex}#http-server-module-list{display:flex;flex-flow:column}#http-server-module-list div{display:flex}#http-server-module-list dt{min-width:10%}#http-server-module-list p{margin-top:0}.toc ul,#index{list-style-type:none;margin:0;padding:0}#index code{background:transparent}#index h3{border-bottom:1px solid #ddd}#index ul{padding:0}#index h4{margin-top:.6em;font-weight:bold}@media (min-width:200ex){#index .two-column{column-count:2}}@media (min-width:300ex){#index .two-column{column-count:3}}dl{margin-bottom:2em}dl dl:last-child{margin-bottom:4em}dd{margin:0 0 1em 3em}#header-classes + dl > dd{margin-bottom:3em}dd dd{margin-left:2em}dd p{margin:10px 0}.name{background:#eee;font-weight:bold;font-size:.85em;padding:5px 10px;display:inline-block;min-width:40%}.name:hover{background:#e0e0e0}dt:target .name{background:var(--highlight-color)}.name > span:first-child{white-space:nowrap}.name.class > span:nth-child(2){margin-left:.4em}.inherited{color:#999;border-left:5px solid #eee;padding-left:1em}.inheritance em{font-style:normal;font-weight:bold}.desc h2{font-weight:400;font-size:1.25em}.desc h3{font-size:1em}.desc dt code{background:inherit}.source summary,.git-link-div{color:#666;text-align:right;font-weight:400;font-size:.8em;text-transform:uppercase}.source summary > *{white-space:nowrap;cursor:pointer}.git-link{color:inherit;margin-left:1em}.source pre{max-height:500px;overflow:auto;margin:0}.source pre code{font-size:12px;overflow:visible}.hlist{list-style:none}.hlist li{display:inline}.hlist li:after{content:',\2002'}.hlist li:last-child:after{content:none}.hlist .hlist{display:inline;padding-left:1em}img{max-width:100%}td{padding:0 .5em}.admonition{padding:.1em .5em;margin-bottom:1em}.admonition-title{font-weight:bold}.admonition.note,.admonition.info,.admonition.important{background:#aef}.admonition.todo,.admonition.versionadded,.admonition.tip,.admonition.hint{background:#dfd}.admonition.warning,.admonition.versionchanged,.admonition.deprecated{background:#fd4}.admonition.error,.admonition.danger,.admonition.caution{background:lightpink}</style>
+<style media="screen and (min-width: 700px)">@media screen and (min-width:700px){#sidebar{width:30%;height:100vh;overflow:auto;position:sticky;top:0}#content{width:70%;max-width:100ch;padding:3em 4em;border-left:1px solid #ddd}pre code{font-size:1em}.item .name{font-size:1em}main{display:flex;flex-direction:row-reverse;justify-content:flex-end}.toc ul ul,#index ul{padding-left:1.5em}.toc > ul > li{margin-top:.5em}}</style>
+<style media="print">@media print{#sidebar h1{page-break-before:always}.source{display:none}}@media print{*{background:transparent !important;color:#000 !important;box-shadow:none !important;text-shadow:none !important}a[href]:after{content:" (" attr(href) ")";font-size:90%}a[href][title]:after{content:none}abbr[title]:after{content:" (" attr(title) ")"}.ir a:after,a[href^="javascript:"]:after,a[href^="#"]:after{content:""}pre,blockquote{border:1px solid #999;page-break-inside:avoid}thead{display:table-header-group}tr,img{page-break-inside:avoid}img{max-width:100% !important}@page{margin:0.5cm}p,h2,h3{orphans:3;widows:3}h1,h2,h3,h4,h5,h6{page-break-after:avoid}}</style>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/10.1.1/highlight.min.js" integrity="sha256-Uv3H6lx7dJmRfRvH8TH6kJD1TSK1aFcwgx+mdg3epi8=" crossorigin></script>
+<script>window.addEventListener('DOMContentLoaded', () => hljs.initHighlighting())</script>
+</head>
+<body>
+<main>
+<article id="content">
+<header>
+<h1 class="title">Module <code>egse.protocol</code></h1>
+</header>
+<section id="section-intro">
+<p>CommandProtocol is a base class for communicating commands with the hardware or
+the control server. This class implements methods to send command messages and
+receive responses.</p>
+<p>The protocol also knows how to load the commands from the YAML file that contains
+command definitions.</p>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">&#34;&#34;&#34;
+CommandProtocol is a base class for communicating commands with the hardware or
+the control server. This class implements methods to send command messages and
+receive responses.
+
+The protocol also knows how to load the commands from the YAML file that contains
+command definitions.
+
+&#34;&#34;&#34;
+import abc
+import inspect
+import logging
+import pickle
+
+from prometheus_client import Counter
+from prometheus_client import Summary
+
+from egse.command import Command
+from egse.command import CommandExecution
+from egse.control import ControlServer
+from egse.control import Failure
+from egse.device import DeviceConnectionObserver
+from egse.system import format_datetime
+from egse.zmq_ser import bind_address
+
+logger = logging.getLogger(__name__)
+
+COMMAND_REQUESTS = Counter(&#34;cs_command_requests_count&#34;, &#34;Count the number of commands&#34;, [&#34;target&#34;])
+EXECUTION_TIME = Summary(&#34;cs_command_execution_time_seconds&#34;, &#34;Time spent executing a command&#34;)
+
+
+def get_method(parent_obj, method_name: str):
+    &#34;&#34;&#34;
+    Returns a bound method from a given class instance.
+
+    Args:
+        parent_obj: the class instance that provides the method
+        method_name: name of the method that is requested
+
+    Returns:
+        the method [type: method].
+
+    .. note::
+        The method returned is an bound class instance method and therefore
+        this method *does not* expects as its first argument the class
+        instance, i.e. self, when you call this as a function.
+
+    &#34;&#34;&#34;
+    if method_name is None or method_name == &#34;None&#34;:
+        return None
+
+    if hasattr(parent_obj, method_name):
+        method = getattr(parent_obj, method_name)
+        if inspect.ismethod(method) or hasattr(method, &#34;__method_wrapper&#34;):
+            return method
+        logger.warning(f&#34;{method_name} is not a method, type={type(method)}&#34;)
+    else:
+        logger.warning(f&#34;{parent_obj!r} has no method called {method_name}&#34;)
+
+    return None
+
+
+def get_function(parent_class, method_name: str):
+    &#34;&#34;&#34;
+    Returns a function (unbound method) from a given class.
+
+    Args:
+        parent_class: the class that provides the method
+        method_name: name of the method that is requested
+
+    Returns:
+        the method [type: function].
+
+    .. note::
+        The function returned is an unbound class instance method and
+        therefore this function expects as its first argument the class
+        instance, i.e. self, when you call it as a function.
+
+    &#34;&#34;&#34;
+    if method_name is None or method_name == &#34;None&#34;:
+        return None
+
+    if hasattr(parent_class, method_name):
+        func = getattr(parent_class, method_name)
+        if inspect.isfunction(func):
+            return func
+        logger.warning(f&#34;{method_name} is not a function, type={type(func)}&#34;)
+    else:
+        logger.warning(
+            f&#34;{parent_class.__module__}.{parent_class.__name__} has no method called {method_name}&#34;
+        )
+
+    return None
+
+
+class BaseCommandProtocol(DeviceConnectionObserver):
+
+    def __init__(self, control_server: ControlServer):
+        super().__init__()
+        self.__socket = None
+        self.__control_server = control_server
+
+    def bind(self, socket):
+        &#34;&#34;&#34;Bind to a socket to listen for commands.&#34;&#34;&#34;
+        self.__socket = socket
+        self.__socket.bind(self.get_bind_address())
+
+    def get_bind_address(self):
+        &#34;&#34;&#34;
+        Returns a string with the bind address, the endpoint, for accepting connections
+        and bind a socket to.
+
+        This method should be implemented by the sub-class since it contains the protocol
+        and port number that are specific for the sub-class.
+
+        Returns:
+            a string with the protocol and port to bind a socket to.
+        &#34;&#34;&#34;
+        return bind_address(
+            self.__control_server.get_communication_protocol(),
+            self.__control_server.get_commanding_port(),
+        )
+
+    def is_alive(self) -&gt; bool:
+        &#34;&#34;&#34;
+        This method can be overridden by a sub-class to check whether any Thread or sub-process
+        that was started is still alive.
+        &#34;&#34;&#34;
+        return True
+
+    def get_control_server(self):
+        return self.__control_server
+
+    def get_status(self):
+        &#34;&#34;&#34;
+        Returns a dictionary with status information for the control server, enhanced by the
+        sub-class with device specific status information.
+
+        This method should be implemented/overridden by the sub-class. The sub-class specific
+        method should update the dictionary returned by this super-class method with device
+        specific status values.
+
+        The dict returned by this method includes the following keywords:
+
+        * timestamp (str): a string representation of the current datetime
+        * PID (int): the Process ID for the control server
+        * Up (float): the uptime of the control server [s]
+        * UUID (uuid1): a UUID for the control server
+        * RSS (int): the &#39;Resident Set Size&#39;, this is the non-swapped physical memory a process
+            has used [byte]
+        * USS (int): the &#39;Unique Set Size&#39;, this is the memory which is unique to a process [byte]
+        * CPU User (float): time spent in user mode [s]
+        * CPU System (float): time spent in kernel mode [s]
+        * CPU% (float): the process CPU utilization as a percentage [%]
+
+        Check the documentation for `psutil.Process` for more in-depth information about the
+        dict keys.
+
+        Returns:
+            a dictionary with status information.
+        &#34;&#34;&#34;
+        status = {
+            &#34;timestamp&#34;: format_datetime(),
+            &#34;delay&#34;: self.__control_server.delay,
+        }
+        status.update(self.__control_server.get_process_status())
+        return status
+
+    def get_housekeeping(self) -&gt; dict:
+        &#34;&#34;&#34;Returns a dictionary with housekeeping information about the device.&#34;&#34;&#34;
+        raise NotImplementedError(
+            f&#34;The get_housekeeping() method shall be implemented for {self.__class__.__name__}.&#34;
+        )
+
+    def get_device(self):
+        raise NotImplementedError
+
+    def send(self, data):
+        &#34;&#34;&#34;
+        Send a message to the ControlServer. The message shall be fully populated
+        and is only serialized before sending over the ZeroMQ socket.
+
+        FIXME: We need to add error handling here, e.g. what if the send() fails? Do we need
+               to implement retries as with Proxy?
+        &#34;&#34;&#34;
+        pickle_string = pickle.dumps(data)
+        self.__socket.send(pickle_string)
+
+    def receive(self):
+        &#34;&#34;&#34;
+        Receive a serialized message from the ControlServer. The message will not
+        be decoded/de-serialized, but is returned as it was sent. Decoding shall
+        be handled by the calling method.
+        &#34;&#34;&#34;
+        pickle_string = self.__socket.recv()
+        return pickle.loads(pickle_string)
+
+    # FIXME:
+    #   We might want to reconsider how commands are send over the ZeroMQ sockets.
+    #   it can be very useful to use multipart messages here with the type and
+    #   origin etc. to ease the if..else.. constructs.
+
+    @EXECUTION_TIME.time()
+    def execute(self):
+        cs = self.get_control_server()
+        data = self.receive()
+        cmd = None
+        if isinstance(data, CommandExecution):
+            cmd = data.get_cmd()
+            cmd_name = cmd.get_name()
+            args = data.get_args()
+            kwargs = data.get_kwargs()
+        elif isinstance(data, dict):
+            cmd_name = data.get(&#34;cmd&#34;)
+            args = data.get(&#34;args&#34;)
+            kwargs = data.get(&#34;kwargs&#34;)
+        elif isinstance(data, str):
+            cmd_name = data
+        else:
+            cmd_name = None
+
+        logger.log(0, f&#34;cmd_name = {cmd_name}&#34;)
+
+        # Server availability request - Ping-Pong
+
+        if cmd_name == &#34;Ping&#34;:
+            COMMAND_REQUESTS.labels(target=&#34;ping&#34;).inc()
+            self.send(&#34;Pong&#34;)
+        elif cmd_name == &#34;send_commands&#34;:
+            logger.warning(&#34;send_commands was commanded for a DynamicCommandProtocol!&#34;)
+        elif cmd_name == &#34;get_service_port&#34;:
+            self.send(self.__control_server.get_service_port())
+        elif cmd_name == &#34;get_monitoring_port&#34;:
+            self.send(self.__control_server.get_monitoring_port())
+        elif cmd_name == &#34;get_commanding_port&#34;:
+            self.send(self.__control_server.get_commanding_port())
+        elif cmd_name == &#34;get_ip_address&#34;:
+            self.send(self.__control_server.get_ip_address())
+        elif cmd:
+            COMMAND_REQUESTS.labels(target=&#34;device&#34;).inc()
+            cmd.server_call(self, *args, **kwargs)
+        else:
+            COMMAND_REQUESTS.labels(target=&#34;invalid&#34;).inc()
+            logger.warning(f&#34;Invalid command received: {cmd_name}&#34;)
+            self.send(Failure(f&#34;Invalid command: {cmd_name}&#34;))
+
+
+class DynamicCommandProtocol(BaseCommandProtocol, metaclass=abc.ABCMeta):
+    def __init__(self, control_server: ControlServer):
+        super().__init__(control_server)
+
+    def handle_device_method(self, cmd: Command, *args, **kwargs):
+        &#34;&#34;&#34;
+        Call the device method with the given arguments.
+
+        Args:
+            cmd: the devices command class that knows which device command shall be called
+            args: the arguments that will be passed on to the device command
+            kwargs: the keyword arguments that will be passed on to the device command
+        &#34;&#34;&#34;
+        # The lookup table contains object (bound) methods, so we do not have to
+        # provide the &#39;self&#39; argument anymore.
+
+        method_name = cmd.get_device_method_name()
+        method = get_method(self.get_device(), method_name)
+
+        # We treat the get_response function special as it needs to send the ``cmd`` string
+        # to the device we need to pass the processed cmd string into the method.
+
+        try:
+            if method_name == &#34;get_response&#34;:
+                device_cmd_string = cmd.get_cmd_string(*args, *kwargs)
+                logger.log(5, f&#34;Executing method {method.__name__}({device_cmd_string})&#34;)
+                response = method(device_cmd_string)
+            else:
+                logger.log(5, f&#34;Executing method {method.__name__}({args}, {kwargs})&#34;)
+                response = method(*args, **kwargs)
+        except Exception as exc:
+            logger.exception(f&#34;Executing {method_name} failed.&#34;)
+            # Pass the exception on to the client as a Failure message
+            response = Failure(f&#34;Executing {method_name} failed: &#34;, exc)
+
+        # Enable the following message only when debugging, because this log message can become
+        # very long for data storage commands.
+        # logger.debug(f&#34;handle_device_method: {device_name}({args}, {kwargs}) -&gt; {response!s}&#34;)
+
+        self.send(response)
+
+
+# TODO (rik): The CommandProtocol shall also inherit from the BaseCommandProtocol
+
+class CommandProtocol(DeviceConnectionObserver, metaclass=abc.ABCMeta):
+    &#34;&#34;&#34;
+    This class is the glue between the control servers and the hardware
+    controllers on one side, and between the control server and the connected
+    proxy classes on the other side.
+
+    The connection with the hardware controllers is when the ``execute()`` method
+    calls the ``server_call()`` method of the command class.
+
+    The connection with the proxy classes is when the ``client_call()`` method is added to the
+    interface of the Proxy subclass (by the ``_add_commands()`` method).
+
+    FIXME: Protocol is not used at the client side, i.e. the Proxy class.
+    &#34;&#34;&#34;
+
+    def __init__(self):
+        super().__init__()
+        self.__socket = None
+        self._commands = dict()  # variable is used by sub classes
+        self._method_lookup = dict()  # lookup table for device methods
+
+    def bind(self, socket):
+        &#34;&#34;&#34;Bind to a socket to listen for commands.&#34;&#34;&#34;
+        self.__socket = socket
+
+        bind_address = self.get_bind_address()
+        logger.info(f&#34;Binding to {bind_address}&#34;)
+
+        self.__socket.bind(bind_address)
+
+    # FIXME:
+    #   We might want to reconsider how commands are send over the ZeroMQ sockets.
+    #   it can be very useful to use multipart messages here with the type and
+    #   origin etc. to ease the if..else.. constructs.
+
+    @EXECUTION_TIME.time()
+    def execute(self):
+        data = self.receive()
+        cmd = None
+        if isinstance(data, CommandExecution):
+            cmd = data.get_cmd()
+            cmd_name = cmd.get_name()
+            args = data.get_args()
+            kwargs = data.get_kwargs()
+        elif isinstance(data, dict):
+            cmd_name = data.get(&#34;cmd&#34;)
+            args = data.get(&#34;args&#34;)
+            kwargs = data.get(&#34;kwargs&#34;)
+        elif isinstance(data, str):
+            cmd_name = data
+        else:
+            cmd_name = None
+
+        logger.log(0, f&#34;cmd_name = {cmd_name}&#34;)
+
+        # Server availability request - Ping-Pong
+
+        if cmd_name == &#34;Ping&#34;:
+            COMMAND_REQUESTS.labels(target=&#34;ping&#34;).inc()
+            self.send(&#34;Pong&#34;)
+        elif cmd_name == &#34;send_commands&#34;:
+            self.send_commands()
+        elif cmd_name == &#34;get_service_port&#34;:
+            self.send(self.control_server.get_service_port())
+        elif cmd_name == &#34;get_monitoring_port&#34;:
+            self.send(self.control_server.get_monitoring_port())
+        elif cmd_name == &#34;get_commanding_port&#34;:
+            self.send(self.control_server.get_commanding_port())
+        elif cmd_name == &#34;get_ip_address&#34;:
+            self.send(self.control_server.get_ip_address())
+        elif cmd:
+            COMMAND_REQUESTS.labels(target=&#34;device&#34;).inc()
+            cmd.server_call(self, *args, **kwargs)
+        else:
+            COMMAND_REQUESTS.labels(target=&#34;invalid&#34;).inc()
+            logger.warning(f&#34;Invalid command received: {cmd_name}&#34;)
+            self.send(Failure(f&#34;Invalid command: {cmd_name}&#34;))
+
+    def quit(self):
+        &#34;&#34;&#34;
+        This method can be overridden by a sub-class to cleanup and stop threads that it
+        started.
+        &#34;&#34;&#34;
+
+        logger.info(&#34;quit() method called on Protocol base class.&#34;)
+
+    def is_alive(self) -&gt; bool:
+        &#34;&#34;&#34;
+        This method can be overridden by a sub-class to check whether any Thread or sub-process
+        that was started is still alive.
+        &#34;&#34;&#34;
+        return True
+
+    @abc.abstractmethod
+    def get_bind_address(self):
+        &#34;&#34;&#34;
+        Returns a string with the bind address, the endpoint, for accepting connections
+        and bind a socket to.
+
+        This method should be implemented by the sub-class since it contains the protocol
+        and port number that are specific for the sub-class.
+
+        Returns:
+            a string with the protocol and port to bind a socket to.
+        &#34;&#34;&#34;
+        pass
+
+    @abc.abstractmethod
+    def get_status(self):
+        &#34;&#34;&#34;
+        Returns a dictionary with status information for the control server, enhanced by the
+        sub-class with device specific status information.
+
+        This method should be implemented/overridden by the sub-class. The sub-class specific
+        method should update the dictionary returned by this super-class method with device
+        specific status values.
+
+        The dict returned by this method includes the following keywords:
+
+        * timestamp (str): a string representation of the current datetime
+        * PID (int): the Process ID for the control server
+        * Up (float): the uptime of the control server [s]
+        * UUID (uuid1): a UUID for the control server
+        * RSS (int): the &#39;Resident Set Size&#39;, this is the non-swapped physical memory a process
+            has used [byte]
+        * USS (int): the &#39;Unique Set Size&#39;, this is the memory which is unique to a process [byte]
+        * CPU User (float): time spent in user mode [s]
+        * CPU System (float): time spent in kernel mode [s]
+        * CPU% (float): the process CPU utilization as a percentage [%]
+
+        Check the documentation for `psutil.Process` for more in-depth information about the
+        dict keys.
+
+        Returns:
+            a dictionary with status information.
+        &#34;&#34;&#34;
+        status = {
+            &#34;timestamp&#34;: format_datetime(),
+            &#34;delay&#34;: self.control_server.delay,
+        }
+        status.update(self.control_server.get_process_status())
+        return status
+
+    def get_housekeeping(self) -&gt; dict:
+        &#34;&#34;&#34;Returns a dictionary with housekeeping information about the device.&#34;&#34;&#34;
+        raise NotImplementedError(
+            f&#34;The get_housekeeping() method shall be implemented for {self.__class__.__name__}.&#34;
+        )
+
+    def send(self, data):
+        &#34;&#34;&#34;
+        Send a message to the ControlServer. The message shall be fully populated
+        and is only serialized before sending over the ZeroMQ socket.
+
+        FIXME: We need to add error handling here, e.g. what if the send() fails? Do we need
+               to implement retries as with Proxy?
+        &#34;&#34;&#34;
+        pickle_string = pickle.dumps(data)
+        self.__socket.send(pickle_string)
+
+    def receive(self):
+        &#34;&#34;&#34;
+        Receive a serialized message from the ControlServer. The message will not
+        be decoded/de-serialized, but is returned as it was sent. Decoding shall
+        be handled by the calling method.
+        &#34;&#34;&#34;
+        pickle_string = self.__socket.recv()
+        data = pickle.loads(pickle_string)
+        return data
+
+    def send_commands(self):
+        &#34;&#34;&#34;
+        Send the command definitions that were loaded for the specific device.
+        &#34;&#34;&#34;
+        self.send(self._commands)
+
+    def load_commands(self, command_settings, command_class, device_class):
+        &#34;&#34;&#34;
+        Loads the command definitions from the given ``command_settings`` and builds an internal
+        dictionary containing the command names as keys and the corresponding ``Command`` class
+        objects as values.
+
+        The ``command_settings`` is usually loaded from a YAML configuration file containing the
+        command definitions for the device.
+
+        Args:
+            command_settings: a dictionary containing the command definitions for this device
+            command_class: the type of command to create, a subclass of Command
+            device_class: the type of the base device class from which the methods are loaded
+        &#34;&#34;&#34;
+        for name in command_settings:
+            command_settings_name = command_settings[name]
+            if &#34;cmd&#34; in command_settings_name:
+                cmd = command_settings_name[&#34;cmd&#34;]
+            else:
+                cmd = &#34;&#34;
+
+            if &#34;description&#34; in command_settings_name:
+                description = command_settings_name[&#34;description&#34;]
+            else:
+                description = None
+
+            # The response field is the name of a function from the CommandProtocol class or a
+            # sub-class. This function shall send a response back to the client (Proxy). That&#39;s
+            # why this field is called response.
+            # By convention we like that this method name would start with `handle_` so the we
+            # can make a distinction between response commands and normal methods in Protocol.
+            # Remember that response methods should send a reply back to the client (which will
+            # be waiting for it..).
+            # If no response field is given, then the `handle_device_method` will be called.
+
+            if &#34;response&#34; in command_settings_name:
+                response_method = get_function(self.__class__, command_settings_name[&#34;response&#34;])
+            else:
+                response_method = get_function(self.__class__, &#34;handle_device_method&#34;)
+
+            # The device_method field is used in the `handle_device_method` to call the method on
+            # the device class. That is the class that implements the DeviceInterface and is
+            # usually called a Controller or a Simulator.
+            #
+            # If no device_name field is given, the name from the command_settings is used.
+
+            if &#34;device_method&#34; in command_settings_name:
+                device_method_name = command_settings_name[&#34;device_method&#34;]
+            else:
+                device_method_name = name
+
+            # check if the device_method exists in the device base class
+
+            if device_method_name == &#34;None&#34;:
+                device_method = None
+            else:
+                device_method = get_function(device_class, device_method_name)
+
+            logger.log(
+                0,
+                f&#34;Creating {command_class.__module__}.{command_class.__name__}(name=&#39;{name}&#39;, &#34;
+                f&#34;cmd=&#39;{cmd}&#39;, &#34;
+                f&#34;response={response_method}, device_method={device_method})&#34;,
+            )
+            logger.debug(f&#34;Creating {command_class.__name__} command with {name=}, {cmd=}, {device_method=}&#34;)
+
+            self._commands[name] = command_class(
+                name=name,
+                cmd=cmd,
+                response=response_method,
+                description=description,
+                device_method=device_method,
+            )
+
+    def build_device_method_lookup_table(self, device_obj):
+        &#34;&#34;&#34;
+        Fill the lookup table with device command methods that are bound to the device object.
+
+        Args:
+            device_obj: instance of a device command class
+        &#34;&#34;&#34;
+        for cmd in self._commands.values():
+            method_name = cmd.get_device_method_name()
+            method = get_method(device_obj, method_name)
+            if method is not None:
+                self._method_lookup[method_name] = method
+
+    def handle_device_method(self, cmd: Command, *args, **kwargs):
+        &#34;&#34;&#34;
+        Call the device method with the given arguments.
+
+        Args:
+            cmd: the devices command class that knows which device command shall be called
+            args: the arguments that will be passed on to the device command
+            kwargs: the keyword arguments that will be passed on to the device command
+        &#34;&#34;&#34;
+        # The lookup table contains object (bound) methods, so we do not have to
+        # provide the &#39;self&#39; argument anymore.
+
+        device_name = cmd.get_device_method_name()
+        method = self._method_lookup[device_name]
+
+        # We treat the get_response function special as it needs to send the ``cmd`` string
+        # to the device we need to pass the processed cmd string into the method.
+
+        try:
+            if device_name == &#34;get_response&#34;:
+                device_cmd_string = cmd.get_cmd_string(*args, *kwargs)
+                logger.log(5, f&#34;Executing method {method.__name__}({device_cmd_string})&#34;)
+                response = method(device_cmd_string)
+            else:
+                logger.log(5, f&#34;Executing method {method.__name__}({args}, {kwargs})&#34;)
+                response = method(*args, **kwargs)
+        except Exception as exc:
+            logger.exception(f&#34;Executing {device_name} failed.&#34;)
+            # Pass the exception on to the client as a Failure message
+            response = Failure(f&#34;Executing {device_name} failed: &#34;, exc)
+
+        # Enable the following message only when debugging, because this log message can become
+        # very long for data storage commands.
+        # logger.debug(f&#34;handle_device_method: {device_name}({args}, {kwargs}) -&gt; {response!s}&#34;)
+
+        self.send(response)</code></pre>
+</details>
+</section>
+<section>
+</section>
+<section>
+</section>
+<section>
+<h2 class="section-title" id="header-functions">Functions</h2>
+<dl>
+<dt id="egse.protocol.get_function"><code class="name flex">
+<span>def <span class="ident">get_function</span></span>(<span>parent_class, method_name: str)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Returns a function (unbound method) from a given class.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>parent_class</code></strong></dt>
+<dd>the class that provides the method</dd>
+<dt><strong><code>method_name</code></strong></dt>
+<dd>name of the method that is requested</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<dl>
+<dt><code>the method [type</code></dt>
+<dd>function].</dd>
+</dl>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>The function returned is an unbound class instance method and
+therefore this function expects as its first argument the class
+instance, i.e. self, when you call it as a function.</p>
+</div></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_function(parent_class, method_name: str):
+    &#34;&#34;&#34;
+    Returns a function (unbound method) from a given class.
+
+    Args:
+        parent_class: the class that provides the method
+        method_name: name of the method that is requested
+
+    Returns:
+        the method [type: function].
+
+    .. note::
+        The function returned is an unbound class instance method and
+        therefore this function expects as its first argument the class
+        instance, i.e. self, when you call it as a function.
+
+    &#34;&#34;&#34;
+    if method_name is None or method_name == &#34;None&#34;:
+        return None
+
+    if hasattr(parent_class, method_name):
+        func = getattr(parent_class, method_name)
+        if inspect.isfunction(func):
+            return func
+        logger.warning(f&#34;{method_name} is not a function, type={type(func)}&#34;)
+    else:
+        logger.warning(
+            f&#34;{parent_class.__module__}.{parent_class.__name__} has no method called {method_name}&#34;
+        )
+
+    return None</code></pre>
+</details>
+</dd>
+<dt id="egse.protocol.get_method"><code class="name flex">
+<span>def <span class="ident">get_method</span></span>(<span>parent_obj, method_name: str)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Returns a bound method from a given class instance.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>parent_obj</code></strong></dt>
+<dd>the class instance that provides the method</dd>
+<dt><strong><code>method_name</code></strong></dt>
+<dd>name of the method that is requested</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<dl>
+<dt><code>the method [type</code></dt>
+<dd>method].</dd>
+</dl>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>The method returned is an bound class instance method and therefore
+this method <em>does not</em> expects as its first argument the class
+instance, i.e. self, when you call this as a function.</p>
+</div></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_method(parent_obj, method_name: str):
+    &#34;&#34;&#34;
+    Returns a bound method from a given class instance.
+
+    Args:
+        parent_obj: the class instance that provides the method
+        method_name: name of the method that is requested
+
+    Returns:
+        the method [type: method].
+
+    .. note::
+        The method returned is an bound class instance method and therefore
+        this method *does not* expects as its first argument the class
+        instance, i.e. self, when you call this as a function.
+
+    &#34;&#34;&#34;
+    if method_name is None or method_name == &#34;None&#34;:
+        return None
+
+    if hasattr(parent_obj, method_name):
+        method = getattr(parent_obj, method_name)
+        if inspect.ismethod(method) or hasattr(method, &#34;__method_wrapper&#34;):
+            return method
+        logger.warning(f&#34;{method_name} is not a method, type={type(method)}&#34;)
+    else:
+        logger.warning(f&#34;{parent_obj!r} has no method called {method_name}&#34;)
+
+    return None</code></pre>
+</details>
+</dd>
+</dl>
+</section>
+<section>
+<h2 class="section-title" id="header-classes">Classes</h2>
+<dl>
+<dt id="egse.protocol.BaseCommandProtocol"><code class="flex name class">
+<span>class <span class="ident">BaseCommandProtocol</span></span>
+<span>(</span><span>control_server: <a title="egse.control.ControlServer" href="control.html#egse.control.ControlServer">ControlServer</a>)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>An observer for the connection state of a device. Add the sub-class of this class to
+the class that inherits from DeviceConnectionObservable. The observable will notify an
+update of its state by calling the <code>update_connection_state()</code> method.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class BaseCommandProtocol(DeviceConnectionObserver):
+
+    def __init__(self, control_server: ControlServer):
+        super().__init__()
+        self.__socket = None
+        self.__control_server = control_server
+
+    def bind(self, socket):
+        &#34;&#34;&#34;Bind to a socket to listen for commands.&#34;&#34;&#34;
+        self.__socket = socket
+        self.__socket.bind(self.get_bind_address())
+
+    def get_bind_address(self):
+        &#34;&#34;&#34;
+        Returns a string with the bind address, the endpoint, for accepting connections
+        and bind a socket to.
+
+        This method should be implemented by the sub-class since it contains the protocol
+        and port number that are specific for the sub-class.
+
+        Returns:
+            a string with the protocol and port to bind a socket to.
+        &#34;&#34;&#34;
+        return bind_address(
+            self.__control_server.get_communication_protocol(),
+            self.__control_server.get_commanding_port(),
+        )
+
+    def is_alive(self) -&gt; bool:
+        &#34;&#34;&#34;
+        This method can be overridden by a sub-class to check whether any Thread or sub-process
+        that was started is still alive.
+        &#34;&#34;&#34;
+        return True
+
+    def get_control_server(self):
+        return self.__control_server
+
+    def get_status(self):
+        &#34;&#34;&#34;
+        Returns a dictionary with status information for the control server, enhanced by the
+        sub-class with device specific status information.
+
+        This method should be implemented/overridden by the sub-class. The sub-class specific
+        method should update the dictionary returned by this super-class method with device
+        specific status values.
+
+        The dict returned by this method includes the following keywords:
+
+        * timestamp (str): a string representation of the current datetime
+        * PID (int): the Process ID for the control server
+        * Up (float): the uptime of the control server [s]
+        * UUID (uuid1): a UUID for the control server
+        * RSS (int): the &#39;Resident Set Size&#39;, this is the non-swapped physical memory a process
+            has used [byte]
+        * USS (int): the &#39;Unique Set Size&#39;, this is the memory which is unique to a process [byte]
+        * CPU User (float): time spent in user mode [s]
+        * CPU System (float): time spent in kernel mode [s]
+        * CPU% (float): the process CPU utilization as a percentage [%]
+
+        Check the documentation for `psutil.Process` for more in-depth information about the
+        dict keys.
+
+        Returns:
+            a dictionary with status information.
+        &#34;&#34;&#34;
+        status = {
+            &#34;timestamp&#34;: format_datetime(),
+            &#34;delay&#34;: self.__control_server.delay,
+        }
+        status.update(self.__control_server.get_process_status())
+        return status
+
+    def get_housekeeping(self) -&gt; dict:
+        &#34;&#34;&#34;Returns a dictionary with housekeeping information about the device.&#34;&#34;&#34;
+        raise NotImplementedError(
+            f&#34;The get_housekeeping() method shall be implemented for {self.__class__.__name__}.&#34;
+        )
+
+    def get_device(self):
+        raise NotImplementedError
+
+    def send(self, data):
+        &#34;&#34;&#34;
+        Send a message to the ControlServer. The message shall be fully populated
+        and is only serialized before sending over the ZeroMQ socket.
+
+        FIXME: We need to add error handling here, e.g. what if the send() fails? Do we need
+               to implement retries as with Proxy?
+        &#34;&#34;&#34;
+        pickle_string = pickle.dumps(data)
+        self.__socket.send(pickle_string)
+
+    def receive(self):
+        &#34;&#34;&#34;
+        Receive a serialized message from the ControlServer. The message will not
+        be decoded/de-serialized, but is returned as it was sent. Decoding shall
+        be handled by the calling method.
+        &#34;&#34;&#34;
+        pickle_string = self.__socket.recv()
+        return pickle.loads(pickle_string)
+
+    # FIXME:
+    #   We might want to reconsider how commands are send over the ZeroMQ sockets.
+    #   it can be very useful to use multipart messages here with the type and
+    #   origin etc. to ease the if..else.. constructs.
+
+    @EXECUTION_TIME.time()
+    def execute(self):
+        cs = self.get_control_server()
+        data = self.receive()
+        cmd = None
+        if isinstance(data, CommandExecution):
+            cmd = data.get_cmd()
+            cmd_name = cmd.get_name()
+            args = data.get_args()
+            kwargs = data.get_kwargs()
+        elif isinstance(data, dict):
+            cmd_name = data.get(&#34;cmd&#34;)
+            args = data.get(&#34;args&#34;)
+            kwargs = data.get(&#34;kwargs&#34;)
+        elif isinstance(data, str):
+            cmd_name = data
+        else:
+            cmd_name = None
+
+        logger.log(0, f&#34;cmd_name = {cmd_name}&#34;)
+
+        # Server availability request - Ping-Pong
+
+        if cmd_name == &#34;Ping&#34;:
+            COMMAND_REQUESTS.labels(target=&#34;ping&#34;).inc()
+            self.send(&#34;Pong&#34;)
+        elif cmd_name == &#34;send_commands&#34;:
+            logger.warning(&#34;send_commands was commanded for a DynamicCommandProtocol!&#34;)
+        elif cmd_name == &#34;get_service_port&#34;:
+            self.send(self.__control_server.get_service_port())
+        elif cmd_name == &#34;get_monitoring_port&#34;:
+            self.send(self.__control_server.get_monitoring_port())
+        elif cmd_name == &#34;get_commanding_port&#34;:
+            self.send(self.__control_server.get_commanding_port())
+        elif cmd_name == &#34;get_ip_address&#34;:
+            self.send(self.__control_server.get_ip_address())
+        elif cmd:
+            COMMAND_REQUESTS.labels(target=&#34;device&#34;).inc()
+            cmd.server_call(self, *args, **kwargs)
+        else:
+            COMMAND_REQUESTS.labels(target=&#34;invalid&#34;).inc()
+            logger.warning(f&#34;Invalid command received: {cmd_name}&#34;)
+            self.send(Failure(f&#34;Invalid command: {cmd_name}&#34;))</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="egse.device.DeviceConnectionObserver" href="device.html#egse.device.DeviceConnectionObserver">DeviceConnectionObserver</a></li>
+</ul>
+<h3>Subclasses</h3>
+<ul class="hlist">
+<li><a title="egse.protocol.DynamicCommandProtocol" href="#egse.protocol.DynamicCommandProtocol">DynamicCommandProtocol</a></li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="egse.protocol.BaseCommandProtocol.bind"><code class="name flex">
+<span>def <span class="ident">bind</span></span>(<span>self, socket)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Bind to a socket to listen for commands.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def bind(self, socket):
+    &#34;&#34;&#34;Bind to a socket to listen for commands.&#34;&#34;&#34;
+    self.__socket = socket
+    self.__socket.bind(self.get_bind_address())</code></pre>
+</details>
+</dd>
+<dt id="egse.protocol.BaseCommandProtocol.execute"><code class="name flex">
+<span>def <span class="ident">execute</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@EXECUTION_TIME.time()
+def execute(self):
+    cs = self.get_control_server()
+    data = self.receive()
+    cmd = None
+    if isinstance(data, CommandExecution):
+        cmd = data.get_cmd()
+        cmd_name = cmd.get_name()
+        args = data.get_args()
+        kwargs = data.get_kwargs()
+    elif isinstance(data, dict):
+        cmd_name = data.get(&#34;cmd&#34;)
+        args = data.get(&#34;args&#34;)
+        kwargs = data.get(&#34;kwargs&#34;)
+    elif isinstance(data, str):
+        cmd_name = data
+    else:
+        cmd_name = None
+
+    logger.log(0, f&#34;cmd_name = {cmd_name}&#34;)
+
+    # Server availability request - Ping-Pong
+
+    if cmd_name == &#34;Ping&#34;:
+        COMMAND_REQUESTS.labels(target=&#34;ping&#34;).inc()
+        self.send(&#34;Pong&#34;)
+    elif cmd_name == &#34;send_commands&#34;:
+        logger.warning(&#34;send_commands was commanded for a DynamicCommandProtocol!&#34;)
+    elif cmd_name == &#34;get_service_port&#34;:
+        self.send(self.__control_server.get_service_port())
+    elif cmd_name == &#34;get_monitoring_port&#34;:
+        self.send(self.__control_server.get_monitoring_port())
+    elif cmd_name == &#34;get_commanding_port&#34;:
+        self.send(self.__control_server.get_commanding_port())
+    elif cmd_name == &#34;get_ip_address&#34;:
+        self.send(self.__control_server.get_ip_address())
+    elif cmd:
+        COMMAND_REQUESTS.labels(target=&#34;device&#34;).inc()
+        cmd.server_call(self, *args, **kwargs)
+    else:
+        COMMAND_REQUESTS.labels(target=&#34;invalid&#34;).inc()
+        logger.warning(f&#34;Invalid command received: {cmd_name}&#34;)
+        self.send(Failure(f&#34;Invalid command: {cmd_name}&#34;))</code></pre>
+</details>
+</dd>
+<dt id="egse.protocol.BaseCommandProtocol.get_bind_address"><code class="name flex">
+<span>def <span class="ident">get_bind_address</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Returns a string with the bind address, the endpoint, for accepting connections
+and bind a socket to.</p>
+<p>This method should be implemented by the sub-class since it contains the protocol
+and port number that are specific for the sub-class.</p>
+<h2 id="returns">Returns</h2>
+<p>a string with the protocol and port to bind a socket to.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_bind_address(self):
+    &#34;&#34;&#34;
+    Returns a string with the bind address, the endpoint, for accepting connections
+    and bind a socket to.
+
+    This method should be implemented by the sub-class since it contains the protocol
+    and port number that are specific for the sub-class.
+
+    Returns:
+        a string with the protocol and port to bind a socket to.
+    &#34;&#34;&#34;
+    return bind_address(
+        self.__control_server.get_communication_protocol(),
+        self.__control_server.get_commanding_port(),
+    )</code></pre>
+</details>
+</dd>
+<dt id="egse.protocol.BaseCommandProtocol.get_control_server"><code class="name flex">
+<span>def <span class="ident">get_control_server</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_control_server(self):
+    return self.__control_server</code></pre>
+</details>
+</dd>
+<dt id="egse.protocol.BaseCommandProtocol.get_device"><code class="name flex">
+<span>def <span class="ident">get_device</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_device(self):
+    raise NotImplementedError</code></pre>
+</details>
+</dd>
+<dt id="egse.protocol.BaseCommandProtocol.get_housekeeping"><code class="name flex">
+<span>def <span class="ident">get_housekeeping</span></span>(<span>self) ‑> dict</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Returns a dictionary with housekeeping information about the device.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_housekeeping(self) -&gt; dict:
+    &#34;&#34;&#34;Returns a dictionary with housekeeping information about the device.&#34;&#34;&#34;
+    raise NotImplementedError(
+        f&#34;The get_housekeeping() method shall be implemented for {self.__class__.__name__}.&#34;
+    )</code></pre>
+</details>
+</dd>
+<dt id="egse.protocol.BaseCommandProtocol.get_status"><code class="name flex">
+<span>def <span class="ident">get_status</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Returns a dictionary with status information for the control server, enhanced by the
+sub-class with device specific status information.</p>
+<p>This method should be implemented/overridden by the sub-class. The sub-class specific
+method should update the dictionary returned by this super-class method with device
+specific status values.</p>
+<p>The dict returned by this method includes the following keywords:</p>
+<ul>
+<li>timestamp (str): a string representation of the current datetime</li>
+<li>PID (int): the Process ID for the control server</li>
+<li>Up (float): the uptime of the control server [s]</li>
+<li>UUID (uuid1): a UUID for the control server</li>
+<li>RSS (int): the 'Resident Set Size', this is the non-swapped physical memory a process
+has used [byte]</li>
+<li>USS (int): the 'Unique Set Size', this is the memory which is unique to a process [byte]</li>
+<li>CPU User (float): time spent in user mode [s]</li>
+<li>CPU System (float): time spent in kernel mode [s]</li>
+<li>CPU% (float): the process CPU utilization as a percentage [%]</li>
+</ul>
+<p>Check the documentation for <code>psutil.Process</code> for more in-depth information about the
+dict keys.</p>
+<h2 id="returns">Returns</h2>
+<p>a dictionary with status information.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_status(self):
+    &#34;&#34;&#34;
+    Returns a dictionary with status information for the control server, enhanced by the
+    sub-class with device specific status information.
+
+    This method should be implemented/overridden by the sub-class. The sub-class specific
+    method should update the dictionary returned by this super-class method with device
+    specific status values.
+
+    The dict returned by this method includes the following keywords:
+
+    * timestamp (str): a string representation of the current datetime
+    * PID (int): the Process ID for the control server
+    * Up (float): the uptime of the control server [s]
+    * UUID (uuid1): a UUID for the control server
+    * RSS (int): the &#39;Resident Set Size&#39;, this is the non-swapped physical memory a process
+        has used [byte]
+    * USS (int): the &#39;Unique Set Size&#39;, this is the memory which is unique to a process [byte]
+    * CPU User (float): time spent in user mode [s]
+    * CPU System (float): time spent in kernel mode [s]
+    * CPU% (float): the process CPU utilization as a percentage [%]
+
+    Check the documentation for `psutil.Process` for more in-depth information about the
+    dict keys.
+
+    Returns:
+        a dictionary with status information.
+    &#34;&#34;&#34;
+    status = {
+        &#34;timestamp&#34;: format_datetime(),
+        &#34;delay&#34;: self.__control_server.delay,
+    }
+    status.update(self.__control_server.get_process_status())
+    return status</code></pre>
+</details>
+</dd>
+<dt id="egse.protocol.BaseCommandProtocol.is_alive"><code class="name flex">
+<span>def <span class="ident">is_alive</span></span>(<span>self) ‑> bool</span>
+</code></dt>
+<dd>
+<div class="desc"><p>This method can be overridden by a sub-class to check whether any Thread or sub-process
+that was started is still alive.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def is_alive(self) -&gt; bool:
+    &#34;&#34;&#34;
+    This method can be overridden by a sub-class to check whether any Thread or sub-process
+    that was started is still alive.
+    &#34;&#34;&#34;
+    return True</code></pre>
+</details>
+</dd>
+<dt id="egse.protocol.BaseCommandProtocol.receive"><code class="name flex">
+<span>def <span class="ident">receive</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Receive a serialized message from the ControlServer. The message will not
+be decoded/de-serialized, but is returned as it was sent. Decoding shall
+be handled by the calling method.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def receive(self):
+    &#34;&#34;&#34;
+    Receive a serialized message from the ControlServer. The message will not
+    be decoded/de-serialized, but is returned as it was sent. Decoding shall
+    be handled by the calling method.
+    &#34;&#34;&#34;
+    pickle_string = self.__socket.recv()
+    return pickle.loads(pickle_string)</code></pre>
+</details>
+</dd>
+<dt id="egse.protocol.BaseCommandProtocol.send"><code class="name flex">
+<span>def <span class="ident">send</span></span>(<span>self, data)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Send a message to the ControlServer. The message shall be fully populated
+and is only serialized before sending over the ZeroMQ socket.</p>
+<p>FIXME: We need to add error handling here, e.g. what if the send() fails? Do we need
+to implement retries as with Proxy?</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def send(self, data):
+    &#34;&#34;&#34;
+    Send a message to the ControlServer. The message shall be fully populated
+    and is only serialized before sending over the ZeroMQ socket.
+
+    FIXME: We need to add error handling here, e.g. what if the send() fails? Do we need
+           to implement retries as with Proxy?
+    &#34;&#34;&#34;
+    pickle_string = pickle.dumps(data)
+    self.__socket.send(pickle_string)</code></pre>
+</details>
+</dd>
+</dl>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="egse.device.DeviceConnectionObserver" href="device.html#egse.device.DeviceConnectionObserver">DeviceConnectionObserver</a></b></code>:
+<ul class="hlist">
+<li><code><a title="egse.device.DeviceConnectionObserver.state" href="device.html#egse.device.DeviceConnectionObserver.state">state</a></code></li>
+<li><code><a title="egse.device.DeviceConnectionObserver.update_connection_state" href="device.html#egse.device.DeviceConnectionObserver.update_connection_state">update_connection_state</a></code></li>
+</ul>
+</li>
+</ul>
+</dd>
+<dt id="egse.protocol.CommandProtocol"><code class="flex name class">
+<span>class <span class="ident">CommandProtocol</span></span>
+</code></dt>
+<dd>
+<div class="desc"><p>This class is the glue between the control servers and the hardware
+controllers on one side, and between the control server and the connected
+proxy classes on the other side.</p>
+<p>The connection with the hardware controllers is when the <code>execute()</code> method
+calls the <code>server_call()</code> method of the command class.</p>
+<p>The connection with the proxy classes is when the <code>client_call()</code> method is added to the
+interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p>
+<p>FIXME: Protocol is not used at the client side, i.e. the Proxy class.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class CommandProtocol(DeviceConnectionObserver, metaclass=abc.ABCMeta):
+    &#34;&#34;&#34;
+    This class is the glue between the control servers and the hardware
+    controllers on one side, and between the control server and the connected
+    proxy classes on the other side.
+
+    The connection with the hardware controllers is when the ``execute()`` method
+    calls the ``server_call()`` method of the command class.
+
+    The connection with the proxy classes is when the ``client_call()`` method is added to the
+    interface of the Proxy subclass (by the ``_add_commands()`` method).
+
+    FIXME: Protocol is not used at the client side, i.e. the Proxy class.
+    &#34;&#34;&#34;
+
+    def __init__(self):
+        super().__init__()
+        self.__socket = None
+        self._commands = dict()  # variable is used by sub classes
+        self._method_lookup = dict()  # lookup table for device methods
+
+    def bind(self, socket):
+        &#34;&#34;&#34;Bind to a socket to listen for commands.&#34;&#34;&#34;
+        self.__socket = socket
+
+        bind_address = self.get_bind_address()
+        logger.info(f&#34;Binding to {bind_address}&#34;)
+
+        self.__socket.bind(bind_address)
+
+    # FIXME:
+    #   We might want to reconsider how commands are send over the ZeroMQ sockets.
+    #   it can be very useful to use multipart messages here with the type and
+    #   origin etc. to ease the if..else.. constructs.
+
+    @EXECUTION_TIME.time()
+    def execute(self):
+        data = self.receive()
+        cmd = None
+        if isinstance(data, CommandExecution):
+            cmd = data.get_cmd()
+            cmd_name = cmd.get_name()
+            args = data.get_args()
+            kwargs = data.get_kwargs()
+        elif isinstance(data, dict):
+            cmd_name = data.get(&#34;cmd&#34;)
+            args = data.get(&#34;args&#34;)
+            kwargs = data.get(&#34;kwargs&#34;)
+        elif isinstance(data, str):
+            cmd_name = data
+        else:
+            cmd_name = None
+
+        logger.log(0, f&#34;cmd_name = {cmd_name}&#34;)
+
+        # Server availability request - Ping-Pong
+
+        if cmd_name == &#34;Ping&#34;:
+            COMMAND_REQUESTS.labels(target=&#34;ping&#34;).inc()
+            self.send(&#34;Pong&#34;)
+        elif cmd_name == &#34;send_commands&#34;:
+            self.send_commands()
+        elif cmd_name == &#34;get_service_port&#34;:
+            self.send(self.control_server.get_service_port())
+        elif cmd_name == &#34;get_monitoring_port&#34;:
+            self.send(self.control_server.get_monitoring_port())
+        elif cmd_name == &#34;get_commanding_port&#34;:
+            self.send(self.control_server.get_commanding_port())
+        elif cmd_name == &#34;get_ip_address&#34;:
+            self.send(self.control_server.get_ip_address())
+        elif cmd:
+            COMMAND_REQUESTS.labels(target=&#34;device&#34;).inc()
+            cmd.server_call(self, *args, **kwargs)
+        else:
+            COMMAND_REQUESTS.labels(target=&#34;invalid&#34;).inc()
+            logger.warning(f&#34;Invalid command received: {cmd_name}&#34;)
+            self.send(Failure(f&#34;Invalid command: {cmd_name}&#34;))
+
+    def quit(self):
+        &#34;&#34;&#34;
+        This method can be overridden by a sub-class to cleanup and stop threads that it
+        started.
+        &#34;&#34;&#34;
+
+        logger.info(&#34;quit() method called on Protocol base class.&#34;)
+
+    def is_alive(self) -&gt; bool:
+        &#34;&#34;&#34;
+        This method can be overridden by a sub-class to check whether any Thread or sub-process
+        that was started is still alive.
+        &#34;&#34;&#34;
+        return True
+
+    @abc.abstractmethod
+    def get_bind_address(self):
+        &#34;&#34;&#34;
+        Returns a string with the bind address, the endpoint, for accepting connections
+        and bind a socket to.
+
+        This method should be implemented by the sub-class since it contains the protocol
+        and port number that are specific for the sub-class.
+
+        Returns:
+            a string with the protocol and port to bind a socket to.
+        &#34;&#34;&#34;
+        pass
+
+    @abc.abstractmethod
+    def get_status(self):
+        &#34;&#34;&#34;
+        Returns a dictionary with status information for the control server, enhanced by the
+        sub-class with device specific status information.
+
+        This method should be implemented/overridden by the sub-class. The sub-class specific
+        method should update the dictionary returned by this super-class method with device
+        specific status values.
+
+        The dict returned by this method includes the following keywords:
+
+        * timestamp (str): a string representation of the current datetime
+        * PID (int): the Process ID for the control server
+        * Up (float): the uptime of the control server [s]
+        * UUID (uuid1): a UUID for the control server
+        * RSS (int): the &#39;Resident Set Size&#39;, this is the non-swapped physical memory a process
+            has used [byte]
+        * USS (int): the &#39;Unique Set Size&#39;, this is the memory which is unique to a process [byte]
+        * CPU User (float): time spent in user mode [s]
+        * CPU System (float): time spent in kernel mode [s]
+        * CPU% (float): the process CPU utilization as a percentage [%]
+
+        Check the documentation for `psutil.Process` for more in-depth information about the
+        dict keys.
+
+        Returns:
+            a dictionary with status information.
+        &#34;&#34;&#34;
+        status = {
+            &#34;timestamp&#34;: format_datetime(),
+            &#34;delay&#34;: self.control_server.delay,
+        }
+        status.update(self.control_server.get_process_status())
+        return status
+
+    def get_housekeeping(self) -&gt; dict:
+        &#34;&#34;&#34;Returns a dictionary with housekeeping information about the device.&#34;&#34;&#34;
+        raise NotImplementedError(
+            f&#34;The get_housekeeping() method shall be implemented for {self.__class__.__name__}.&#34;
+        )
+
+    def send(self, data):
+        &#34;&#34;&#34;
+        Send a message to the ControlServer. The message shall be fully populated
+        and is only serialized before sending over the ZeroMQ socket.
+
+        FIXME: We need to add error handling here, e.g. what if the send() fails? Do we need
+               to implement retries as with Proxy?
+        &#34;&#34;&#34;
+        pickle_string = pickle.dumps(data)
+        self.__socket.send(pickle_string)
+
+    def receive(self):
+        &#34;&#34;&#34;
+        Receive a serialized message from the ControlServer. The message will not
+        be decoded/de-serialized, but is returned as it was sent. Decoding shall
+        be handled by the calling method.
+        &#34;&#34;&#34;
+        pickle_string = self.__socket.recv()
+        data = pickle.loads(pickle_string)
+        return data
+
+    def send_commands(self):
+        &#34;&#34;&#34;
+        Send the command definitions that were loaded for the specific device.
+        &#34;&#34;&#34;
+        self.send(self._commands)
+
+    def load_commands(self, command_settings, command_class, device_class):
+        &#34;&#34;&#34;
+        Loads the command definitions from the given ``command_settings`` and builds an internal
+        dictionary containing the command names as keys and the corresponding ``Command`` class
+        objects as values.
+
+        The ``command_settings`` is usually loaded from a YAML configuration file containing the
+        command definitions for the device.
+
+        Args:
+            command_settings: a dictionary containing the command definitions for this device
+            command_class: the type of command to create, a subclass of Command
+            device_class: the type of the base device class from which the methods are loaded
+        &#34;&#34;&#34;
+        for name in command_settings:
+            command_settings_name = command_settings[name]
+            if &#34;cmd&#34; in command_settings_name:
+                cmd = command_settings_name[&#34;cmd&#34;]
+            else:
+                cmd = &#34;&#34;
+
+            if &#34;description&#34; in command_settings_name:
+                description = command_settings_name[&#34;description&#34;]
+            else:
+                description = None
+
+            # The response field is the name of a function from the CommandProtocol class or a
+            # sub-class. This function shall send a response back to the client (Proxy). That&#39;s
+            # why this field is called response.
+            # By convention we like that this method name would start with `handle_` so the we
+            # can make a distinction between response commands and normal methods in Protocol.
+            # Remember that response methods should send a reply back to the client (which will
+            # be waiting for it..).
+            # If no response field is given, then the `handle_device_method` will be called.
+
+            if &#34;response&#34; in command_settings_name:
+                response_method = get_function(self.__class__, command_settings_name[&#34;response&#34;])
+            else:
+                response_method = get_function(self.__class__, &#34;handle_device_method&#34;)
+
+            # The device_method field is used in the `handle_device_method` to call the method on
+            # the device class. That is the class that implements the DeviceInterface and is
+            # usually called a Controller or a Simulator.
+            #
+            # If no device_name field is given, the name from the command_settings is used.
+
+            if &#34;device_method&#34; in command_settings_name:
+                device_method_name = command_settings_name[&#34;device_method&#34;]
+            else:
+                device_method_name = name
+
+            # check if the device_method exists in the device base class
+
+            if device_method_name == &#34;None&#34;:
+                device_method = None
+            else:
+                device_method = get_function(device_class, device_method_name)
+
+            logger.log(
+                0,
+                f&#34;Creating {command_class.__module__}.{command_class.__name__}(name=&#39;{name}&#39;, &#34;
+                f&#34;cmd=&#39;{cmd}&#39;, &#34;
+                f&#34;response={response_method}, device_method={device_method})&#34;,
+            )
+            logger.debug(f&#34;Creating {command_class.__name__} command with {name=}, {cmd=}, {device_method=}&#34;)
+
+            self._commands[name] = command_class(
+                name=name,
+                cmd=cmd,
+                response=response_method,
+                description=description,
+                device_method=device_method,
+            )
+
+    def build_device_method_lookup_table(self, device_obj):
+        &#34;&#34;&#34;
+        Fill the lookup table with device command methods that are bound to the device object.
+
+        Args:
+            device_obj: instance of a device command class
+        &#34;&#34;&#34;
+        for cmd in self._commands.values():
+            method_name = cmd.get_device_method_name()
+            method = get_method(device_obj, method_name)
+            if method is not None:
+                self._method_lookup[method_name] = method
+
+    def handle_device_method(self, cmd: Command, *args, **kwargs):
+        &#34;&#34;&#34;
+        Call the device method with the given arguments.
+
+        Args:
+            cmd: the devices command class that knows which device command shall be called
+            args: the arguments that will be passed on to the device command
+            kwargs: the keyword arguments that will be passed on to the device command
+        &#34;&#34;&#34;
+        # The lookup table contains object (bound) methods, so we do not have to
+        # provide the &#39;self&#39; argument anymore.
+
+        device_name = cmd.get_device_method_name()
+        method = self._method_lookup[device_name]
+
+        # We treat the get_response function special as it needs to send the ``cmd`` string
+        # to the device we need to pass the processed cmd string into the method.
+
+        try:
+            if device_name == &#34;get_response&#34;:
+                device_cmd_string = cmd.get_cmd_string(*args, *kwargs)
+                logger.log(5, f&#34;Executing method {method.__name__}({device_cmd_string})&#34;)
+                response = method(device_cmd_string)
+            else:
+                logger.log(5, f&#34;Executing method {method.__name__}({args}, {kwargs})&#34;)
+                response = method(*args, **kwargs)
+        except Exception as exc:
+            logger.exception(f&#34;Executing {device_name} failed.&#34;)
+            # Pass the exception on to the client as a Failure message
+            response = Failure(f&#34;Executing {device_name} failed: &#34;, exc)
+
+        # Enable the following message only when debugging, because this log message can become
+        # very long for data storage commands.
+        # logger.debug(f&#34;handle_device_method: {device_name}({args}, {kwargs}) -&gt; {response!s}&#34;)
+
+        self.send(response)</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="egse.device.DeviceConnectionObserver" href="device.html#egse.device.DeviceConnectionObserver">DeviceConnectionObserver</a></li>
+</ul>
+<h3>Subclasses</h3>
+<ul class="hlist">
+<li><a title="egse.aeu.aeu_protocol.AEUProtocol" href="aeu/aeu_protocol.html#egse.aeu.aeu_protocol.AEUProtocol">AEUProtocol</a></li>
+<li><a title="egse.confman.ConfigurationManagerProtocol" href="confman/index.html#egse.confman.ConfigurationManagerProtocol">ConfigurationManagerProtocol</a></li>
+<li><a title="egse.dpu.DPUProtocol" href="dpu/index.html#egse.dpu.DPUProtocol">DPUProtocol</a></li>
+<li><a title="egse.dummy.DummyProtocol" href="dummy.html#egse.dummy.DummyProtocol">DummyProtocol</a></li>
+<li><a title="egse.fdir.fdir_manager.FdirManagerProtocol" href="fdir/fdir_manager.html#egse.fdir.fdir_manager.FdirManagerProtocol">FdirManagerProtocol</a></li>
+<li><a title="egse.fdir.fdir_remote.FdirRemoteProtocol" href="fdir/fdir_remote.html#egse.fdir.fdir_remote.FdirRemoteProtocol">FdirRemoteProtocol</a></li>
+<li><a title="egse.fdir.gsm.beaglebone_protocol.BeagleboneProtocol" href="fdir/gsm/beaglebone_protocol.html#egse.fdir.gsm.beaglebone_protocol.BeagleboneProtocol">BeagleboneProtocol</a></li>
+<li><a title="egse.filterwheel.eksma.fw8smc4_protocol.FilterWheel8SMC4Protocol" href="filterwheel/eksma/fw8smc4_protocol.html#egse.filterwheel.eksma.fw8smc4_protocol.FilterWheel8SMC4Protocol">FilterWheel8SMC4Protocol</a></li>
+<li><a title="egse.filterwheel.eksma.fw8smc5.Fw8Smc5Protocol" href="filterwheel/eksma/fw8smc5.html#egse.filterwheel.eksma.fw8smc5.Fw8Smc5Protocol">Fw8Smc5Protocol</a></li>
+<li><a title="egse.hexapod.symetrie.puna_protocol.PunaProtocol" href="hexapod/symetrie/puna_protocol.html#egse.hexapod.symetrie.puna_protocol.PunaProtocol">PunaProtocol</a></li>
+<li><a title="egse.hexapod.symetrie.zonda_protocol.ZondaProtocol" href="hexapod/symetrie/zonda_protocol.html#egse.hexapod.symetrie.zonda_protocol.ZondaProtocol">ZondaProtocol</a></li>
+<li><a title="egse.lampcontrol.beaglebone.beaglebone_protocol.BeagleboneProtocol" href="lampcontrol/beaglebone/beaglebone_protocol.html#egse.lampcontrol.beaglebone.beaglebone_protocol.BeagleboneProtocol">BeagleboneProtocol</a></li>
+<li><a title="egse.lampcontrol.energetiq.lampEQ99_protocol.LampEQ99Protocol" href="lampcontrol/energetiq/lampEQ99_protocol.html#egse.lampcontrol.energetiq.lampEQ99_protocol.LampEQ99Protocol">LampEQ99Protocol</a></li>
+<li><a title="egse.monitoring.MonitoringProtocol" href="monitoring.html#egse.monitoring.MonitoringProtocol">MonitoringProtocol</a></li>
+<li><a title="egse.powermeter.ni.cdaq9184_protocol.cdaq9184Protocol" href="powermeter/ni/cdaq9184_protocol.html#egse.powermeter.ni.cdaq9184_protocol.cdaq9184Protocol">cdaq9184Protocol</a></li>
+<li><a title="egse.powermeter.thorlabs.pm100a_protocol.ThorlabsPM100Protocol" href="powermeter/thorlabs/pm100a_protocol.html#egse.powermeter.thorlabs.pm100a_protocol.ThorlabsPM100Protocol">ThorlabsPM100Protocol</a></li>
+<li><a title="egse.procman.ProcessManagerProtocol" href="procman/index.html#egse.procman.ProcessManagerProtocol">ProcessManagerProtocol</a></li>
+<li><a title="egse.services.ServiceProtocol" href="services.html#egse.services.ServiceProtocol">ServiceProtocol</a></li>
+<li><a title="egse.shutter.thorlabs.ksc101_protocol.ShutterKSC101Protocol" href="shutter/thorlabs/ksc101_protocol.html#egse.shutter.thorlabs.ksc101_protocol.ShutterKSC101Protocol">ShutterKSC101Protocol</a></li>
+<li><a title="egse.shutter.thorlabs.sc10.Sc10Protocol" href="shutter/thorlabs/sc10.html#egse.shutter.thorlabs.sc10.Sc10Protocol">Sc10Protocol</a></li>
+<li><a title="egse.stages.aerotech.ensemble.EnsembleProtocol" href="stages/aerotech/ensemble.html#egse.stages.aerotech.ensemble.EnsembleProtocol">EnsembleProtocol</a></li>
+<li><a title="egse.stages.arun.smd3.Smd3Protocol" href="stages/arun/smd3.html#egse.stages.arun.smd3.Smd3Protocol">Smd3Protocol</a></li>
+<li><a title="egse.stages.huber.smc9300_protocol.HuberSMC9300Protocol" href="stages/huber/smc9300_protocol.html#egse.stages.huber.smc9300_protocol.HuberSMC9300Protocol">HuberSMC9300Protocol</a></li>
+<li><a title="egse.storage.StorageProtocol" href="storage/index.html#egse.storage.StorageProtocol">StorageProtocol</a></li>
+<li><a title="egse.synoptics.SynopticsManagerProtocol" href="synoptics/index.html#egse.synoptics.SynopticsManagerProtocol">SynopticsManagerProtocol</a></li>
+<li><a title="egse.tempcontrol.agilent.agilent34970_protocol.Agilent34970Protocol" href="tempcontrol/agilent/agilent34970_protocol.html#egse.tempcontrol.agilent.agilent34970_protocol.Agilent34970Protocol">Agilent34970Protocol</a></li>
+<li><a title="egse.tempcontrol.agilent.agilent34972_protocol.Agilent34972Protocol" href="tempcontrol/agilent/agilent34972_protocol.html#egse.tempcontrol.agilent.agilent34972_protocol.Agilent34972Protocol">Agilent34972Protocol</a></li>
+<li><a title="egse.tempcontrol.beaglebone.beaglebone_protocol.BeagleboneProtocol" href="tempcontrol/beaglebone/beaglebone_protocol.html#egse.tempcontrol.beaglebone.beaglebone_protocol.BeagleboneProtocol">BeagleboneProtocol</a></li>
+<li><a title="egse.tempcontrol.keithley.daq6510_protocol.DAQ6510Protocol" href="tempcontrol/keithley/daq6510_protocol.html#egse.tempcontrol.keithley.daq6510_protocol.DAQ6510Protocol">DAQ6510Protocol</a></li>
+<li><a title="egse.tempcontrol.lakeshore.lsci336_protocol.LakeShore336Protocol" href="tempcontrol/lakeshore/lsci336_protocol.html#egse.tempcontrol.lakeshore.lsci336_protocol.LakeShore336Protocol">LakeShore336Protocol</a></li>
+<li><a title="egse.tempcontrol.spid.spid_protocol.PidProtocol" href="tempcontrol/spid/spid_protocol.html#egse.tempcontrol.spid.spid_protocol.PidProtocol">PidProtocol</a></li>
+<li><a title="egse.tempcontrol.srs.ptc10_protocol.ptc10Protocol" href="tempcontrol/srs/ptc10_protocol.html#egse.tempcontrol.srs.ptc10_protocol.ptc10Protocol">ptc10Protocol</a></li>
+<li><a title="egse.ups.apc.apc_protocol.APCProtocol" href="ups/apc/apc_protocol.html#egse.ups.apc.apc_protocol.APCProtocol">APCProtocol</a></li>
+<li><a title="egse.vacuum.beaglebone.beaglebone_protocol.BeagleboneProtocol" href="vacuum/beaglebone/beaglebone_protocol.html#egse.vacuum.beaglebone.beaglebone_protocol.BeagleboneProtocol">BeagleboneProtocol</a></li>
+<li><a title="egse.vacuum.instrutech.igm402.Igm402Protocol" href="vacuum/instrutech/igm402.html#egse.vacuum.instrutech.igm402.Igm402Protocol">Igm402Protocol</a></li>
+<li><a title="egse.vacuum.mks.vacscan.VacscanProtocol" href="vacuum/mks/vacscan.html#egse.vacuum.mks.vacscan.VacscanProtocol">VacscanProtocol</a></li>
+<li><a title="egse.vacuum.pfeiffer.acp40.Acp40Protocol" href="vacuum/pfeiffer/acp40.html#egse.vacuum.pfeiffer.acp40.Acp40Protocol">Acp40Protocol</a></li>
+<li><a title="egse.vacuum.pfeiffer.tc400.Tc400Protocol" href="vacuum/pfeiffer/tc400.html#egse.vacuum.pfeiffer.tc400.Tc400Protocol">Tc400Protocol</a></li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="egse.protocol.CommandProtocol.bind"><code class="name flex">
+<span>def <span class="ident">bind</span></span>(<span>self, socket)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Bind to a socket to listen for commands.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def bind(self, socket):
+    &#34;&#34;&#34;Bind to a socket to listen for commands.&#34;&#34;&#34;
+    self.__socket = socket
+
+    bind_address = self.get_bind_address()
+    logger.info(f&#34;Binding to {bind_address}&#34;)
+
+    self.__socket.bind(bind_address)</code></pre>
+</details>
+</dd>
+<dt id="egse.protocol.CommandProtocol.build_device_method_lookup_table"><code class="name flex">
+<span>def <span class="ident">build_device_method_lookup_table</span></span>(<span>self, device_obj)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Fill the lookup table with device command methods that are bound to the device object.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>device_obj</code></strong></dt>
+<dd>instance of a device command class</dd>
+</dl></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def build_device_method_lookup_table(self, device_obj):
+    &#34;&#34;&#34;
+    Fill the lookup table with device command methods that are bound to the device object.
+
+    Args:
+        device_obj: instance of a device command class
+    &#34;&#34;&#34;
+    for cmd in self._commands.values():
+        method_name = cmd.get_device_method_name()
+        method = get_method(device_obj, method_name)
+        if method is not None:
+            self._method_lookup[method_name] = method</code></pre>
+</details>
+</dd>
+<dt id="egse.protocol.CommandProtocol.execute"><code class="name flex">
+<span>def <span class="ident">execute</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@EXECUTION_TIME.time()
+def execute(self):
+    data = self.receive()
+    cmd = None
+    if isinstance(data, CommandExecution):
+        cmd = data.get_cmd()
+        cmd_name = cmd.get_name()
+        args = data.get_args()
+        kwargs = data.get_kwargs()
+    elif isinstance(data, dict):
+        cmd_name = data.get(&#34;cmd&#34;)
+        args = data.get(&#34;args&#34;)
+        kwargs = data.get(&#34;kwargs&#34;)
+    elif isinstance(data, str):
+        cmd_name = data
+    else:
+        cmd_name = None
+
+    logger.log(0, f&#34;cmd_name = {cmd_name}&#34;)
+
+    # Server availability request - Ping-Pong
+
+    if cmd_name == &#34;Ping&#34;:
+        COMMAND_REQUESTS.labels(target=&#34;ping&#34;).inc()
+        self.send(&#34;Pong&#34;)
+    elif cmd_name == &#34;send_commands&#34;:
+        self.send_commands()
+    elif cmd_name == &#34;get_service_port&#34;:
+        self.send(self.control_server.get_service_port())
+    elif cmd_name == &#34;get_monitoring_port&#34;:
+        self.send(self.control_server.get_monitoring_port())
+    elif cmd_name == &#34;get_commanding_port&#34;:
+        self.send(self.control_server.get_commanding_port())
+    elif cmd_name == &#34;get_ip_address&#34;:
+        self.send(self.control_server.get_ip_address())
+    elif cmd:
+        COMMAND_REQUESTS.labels(target=&#34;device&#34;).inc()
+        cmd.server_call(self, *args, **kwargs)
+    else:
+        COMMAND_REQUESTS.labels(target=&#34;invalid&#34;).inc()
+        logger.warning(f&#34;Invalid command received: {cmd_name}&#34;)
+        self.send(Failure(f&#34;Invalid command: {cmd_name}&#34;))</code></pre>
+</details>
+</dd>
+<dt id="egse.protocol.CommandProtocol.get_bind_address"><code class="name flex">
+<span>def <span class="ident">get_bind_address</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Returns a string with the bind address, the endpoint, for accepting connections
+and bind a socket to.</p>
+<p>This method should be implemented by the sub-class since it contains the protocol
+and port number that are specific for the sub-class.</p>
+<h2 id="returns">Returns</h2>
+<p>a string with the protocol and port to bind a socket to.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@abc.abstractmethod
+def get_bind_address(self):
+    &#34;&#34;&#34;
+    Returns a string with the bind address, the endpoint, for accepting connections
+    and bind a socket to.
+
+    This method should be implemented by the sub-class since it contains the protocol
+    and port number that are specific for the sub-class.
+
+    Returns:
+        a string with the protocol and port to bind a socket to.
+    &#34;&#34;&#34;
+    pass</code></pre>
+</details>
+</dd>
+<dt id="egse.protocol.CommandProtocol.get_housekeeping"><code class="name flex">
+<span>def <span class="ident">get_housekeeping</span></span>(<span>self) ‑> dict</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Returns a dictionary with housekeeping information about the device.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_housekeeping(self) -&gt; dict:
+    &#34;&#34;&#34;Returns a dictionary with housekeeping information about the device.&#34;&#34;&#34;
+    raise NotImplementedError(
+        f&#34;The get_housekeeping() method shall be implemented for {self.__class__.__name__}.&#34;
+    )</code></pre>
+</details>
+</dd>
+<dt id="egse.protocol.CommandProtocol.get_status"><code class="name flex">
+<span>def <span class="ident">get_status</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Returns a dictionary with status information for the control server, enhanced by the
+sub-class with device specific status information.</p>
+<p>This method should be implemented/overridden by the sub-class. The sub-class specific
+method should update the dictionary returned by this super-class method with device
+specific status values.</p>
+<p>The dict returned by this method includes the following keywords:</p>
+<ul>
+<li>timestamp (str): a string representation of the current datetime</li>
+<li>PID (int): the Process ID for the control server</li>
+<li>Up (float): the uptime of the control server [s]</li>
+<li>UUID (uuid1): a UUID for the control server</li>
+<li>RSS (int): the 'Resident Set Size', this is the non-swapped physical memory a process
+has used [byte]</li>
+<li>USS (int): the 'Unique Set Size', this is the memory which is unique to a process [byte]</li>
+<li>CPU User (float): time spent in user mode [s]</li>
+<li>CPU System (float): time spent in kernel mode [s]</li>
+<li>CPU% (float): the process CPU utilization as a percentage [%]</li>
+</ul>
+<p>Check the documentation for <code>psutil.Process</code> for more in-depth information about the
+dict keys.</p>
+<h2 id="returns">Returns</h2>
+<p>a dictionary with status information.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@abc.abstractmethod
+def get_status(self):
+    &#34;&#34;&#34;
+    Returns a dictionary with status information for the control server, enhanced by the
+    sub-class with device specific status information.
+
+    This method should be implemented/overridden by the sub-class. The sub-class specific
+    method should update the dictionary returned by this super-class method with device
+    specific status values.
+
+    The dict returned by this method includes the following keywords:
+
+    * timestamp (str): a string representation of the current datetime
+    * PID (int): the Process ID for the control server
+    * Up (float): the uptime of the control server [s]
+    * UUID (uuid1): a UUID for the control server
+    * RSS (int): the &#39;Resident Set Size&#39;, this is the non-swapped physical memory a process
+        has used [byte]
+    * USS (int): the &#39;Unique Set Size&#39;, this is the memory which is unique to a process [byte]
+    * CPU User (float): time spent in user mode [s]
+    * CPU System (float): time spent in kernel mode [s]
+    * CPU% (float): the process CPU utilization as a percentage [%]
+
+    Check the documentation for `psutil.Process` for more in-depth information about the
+    dict keys.
+
+    Returns:
+        a dictionary with status information.
+    &#34;&#34;&#34;
+    status = {
+        &#34;timestamp&#34;: format_datetime(),
+        &#34;delay&#34;: self.control_server.delay,
+    }
+    status.update(self.control_server.get_process_status())
+    return status</code></pre>
+</details>
+</dd>
+<dt id="egse.protocol.CommandProtocol.handle_device_method"><code class="name flex">
+<span>def <span class="ident">handle_device_method</span></span>(<span>self, cmd: <a title="egse.command.Command" href="command.html#egse.command.Command">Command</a>, *args, **kwargs)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Call the device method with the given arguments.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>cmd</code></strong></dt>
+<dd>the devices command class that knows which device command shall be called</dd>
+<dt><strong><code>args</code></strong></dt>
+<dd>the arguments that will be passed on to the device command</dd>
+<dt><strong><code>kwargs</code></strong></dt>
+<dd>the keyword arguments that will be passed on to the device command</dd>
+</dl></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def handle_device_method(self, cmd: Command, *args, **kwargs):
+    &#34;&#34;&#34;
+    Call the device method with the given arguments.
+
+    Args:
+        cmd: the devices command class that knows which device command shall be called
+        args: the arguments that will be passed on to the device command
+        kwargs: the keyword arguments that will be passed on to the device command
+    &#34;&#34;&#34;
+    # The lookup table contains object (bound) methods, so we do not have to
+    # provide the &#39;self&#39; argument anymore.
+
+    device_name = cmd.get_device_method_name()
+    method = self._method_lookup[device_name]
+
+    # We treat the get_response function special as it needs to send the ``cmd`` string
+    # to the device we need to pass the processed cmd string into the method.
+
+    try:
+        if device_name == &#34;get_response&#34;:
+            device_cmd_string = cmd.get_cmd_string(*args, *kwargs)
+            logger.log(5, f&#34;Executing method {method.__name__}({device_cmd_string})&#34;)
+            response = method(device_cmd_string)
+        else:
+            logger.log(5, f&#34;Executing method {method.__name__}({args}, {kwargs})&#34;)
+            response = method(*args, **kwargs)
+    except Exception as exc:
+        logger.exception(f&#34;Executing {device_name} failed.&#34;)
+        # Pass the exception on to the client as a Failure message
+        response = Failure(f&#34;Executing {device_name} failed: &#34;, exc)
+
+    # Enable the following message only when debugging, because this log message can become
+    # very long for data storage commands.
+    # logger.debug(f&#34;handle_device_method: {device_name}({args}, {kwargs}) -&gt; {response!s}&#34;)
+
+    self.send(response)</code></pre>
+</details>
+</dd>
+<dt id="egse.protocol.CommandProtocol.is_alive"><code class="name flex">
+<span>def <span class="ident">is_alive</span></span>(<span>self) ‑> bool</span>
+</code></dt>
+<dd>
+<div class="desc"><p>This method can be overridden by a sub-class to check whether any Thread or sub-process
+that was started is still alive.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def is_alive(self) -&gt; bool:
+    &#34;&#34;&#34;
+    This method can be overridden by a sub-class to check whether any Thread or sub-process
+    that was started is still alive.
+    &#34;&#34;&#34;
+    return True</code></pre>
+</details>
+</dd>
+<dt id="egse.protocol.CommandProtocol.load_commands"><code class="name flex">
+<span>def <span class="ident">load_commands</span></span>(<span>self, command_settings, command_class, device_class)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Loads the command definitions from the given <code>command_settings</code> and builds an internal
+dictionary containing the command names as keys and the corresponding <code>Command</code> class
+objects as values.</p>
+<p>The <code>command_settings</code> is usually loaded from a YAML configuration file containing the
+command definitions for the device.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>command_settings</code></strong></dt>
+<dd>a dictionary containing the command definitions for this device</dd>
+<dt><strong><code>command_class</code></strong></dt>
+<dd>the type of command to create, a subclass of Command</dd>
+<dt><strong><code>device_class</code></strong></dt>
+<dd>the type of the base device class from which the methods are loaded</dd>
+</dl></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def load_commands(self, command_settings, command_class, device_class):
+    &#34;&#34;&#34;
+    Loads the command definitions from the given ``command_settings`` and builds an internal
+    dictionary containing the command names as keys and the corresponding ``Command`` class
+    objects as values.
+
+    The ``command_settings`` is usually loaded from a YAML configuration file containing the
+    command definitions for the device.
+
+    Args:
+        command_settings: a dictionary containing the command definitions for this device
+        command_class: the type of command to create, a subclass of Command
+        device_class: the type of the base device class from which the methods are loaded
+    &#34;&#34;&#34;
+    for name in command_settings:
+        command_settings_name = command_settings[name]
+        if &#34;cmd&#34; in command_settings_name:
+            cmd = command_settings_name[&#34;cmd&#34;]
+        else:
+            cmd = &#34;&#34;
+
+        if &#34;description&#34; in command_settings_name:
+            description = command_settings_name[&#34;description&#34;]
+        else:
+            description = None
+
+        # The response field is the name of a function from the CommandProtocol class or a
+        # sub-class. This function shall send a response back to the client (Proxy). That&#39;s
+        # why this field is called response.
+        # By convention we like that this method name would start with `handle_` so the we
+        # can make a distinction between response commands and normal methods in Protocol.
+        # Remember that response methods should send a reply back to the client (which will
+        # be waiting for it..).
+        # If no response field is given, then the `handle_device_method` will be called.
+
+        if &#34;response&#34; in command_settings_name:
+            response_method = get_function(self.__class__, command_settings_name[&#34;response&#34;])
+        else:
+            response_method = get_function(self.__class__, &#34;handle_device_method&#34;)
+
+        # The device_method field is used in the `handle_device_method` to call the method on
+        # the device class. That is the class that implements the DeviceInterface and is
+        # usually called a Controller or a Simulator.
+        #
+        # If no device_name field is given, the name from the command_settings is used.
+
+        if &#34;device_method&#34; in command_settings_name:
+            device_method_name = command_settings_name[&#34;device_method&#34;]
+        else:
+            device_method_name = name
+
+        # check if the device_method exists in the device base class
+
+        if device_method_name == &#34;None&#34;:
+            device_method = None
+        else:
+            device_method = get_function(device_class, device_method_name)
+
+        logger.log(
+            0,
+            f&#34;Creating {command_class.__module__}.{command_class.__name__}(name=&#39;{name}&#39;, &#34;
+            f&#34;cmd=&#39;{cmd}&#39;, &#34;
+            f&#34;response={response_method}, device_method={device_method})&#34;,
+        )
+        logger.debug(f&#34;Creating {command_class.__name__} command with {name=}, {cmd=}, {device_method=}&#34;)
+
+        self._commands[name] = command_class(
+            name=name,
+            cmd=cmd,
+            response=response_method,
+            description=description,
+            device_method=device_method,
+        )</code></pre>
+</details>
+</dd>
+<dt id="egse.protocol.CommandProtocol.quit"><code class="name flex">
+<span>def <span class="ident">quit</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>This method can be overridden by a sub-class to cleanup and stop threads that it
+started.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def quit(self):
+    &#34;&#34;&#34;
+    This method can be overridden by a sub-class to cleanup and stop threads that it
+    started.
+    &#34;&#34;&#34;
+
+    logger.info(&#34;quit() method called on Protocol base class.&#34;)</code></pre>
+</details>
+</dd>
+<dt id="egse.protocol.CommandProtocol.receive"><code class="name flex">
+<span>def <span class="ident">receive</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Receive a serialized message from the ControlServer. The message will not
+be decoded/de-serialized, but is returned as it was sent. Decoding shall
+be handled by the calling method.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def receive(self):
+    &#34;&#34;&#34;
+    Receive a serialized message from the ControlServer. The message will not
+    be decoded/de-serialized, but is returned as it was sent. Decoding shall
+    be handled by the calling method.
+    &#34;&#34;&#34;
+    pickle_string = self.__socket.recv()
+    data = pickle.loads(pickle_string)
+    return data</code></pre>
+</details>
+</dd>
+<dt id="egse.protocol.CommandProtocol.send"><code class="name flex">
+<span>def <span class="ident">send</span></span>(<span>self, data)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Send a message to the ControlServer. The message shall be fully populated
+and is only serialized before sending over the ZeroMQ socket.</p>
+<p>FIXME: We need to add error handling here, e.g. what if the send() fails? Do we need
+to implement retries as with Proxy?</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def send(self, data):
+    &#34;&#34;&#34;
+    Send a message to the ControlServer. The message shall be fully populated
+    and is only serialized before sending over the ZeroMQ socket.
+
+    FIXME: We need to add error handling here, e.g. what if the send() fails? Do we need
+           to implement retries as with Proxy?
+    &#34;&#34;&#34;
+    pickle_string = pickle.dumps(data)
+    self.__socket.send(pickle_string)</code></pre>
+</details>
+</dd>
+<dt id="egse.protocol.CommandProtocol.send_commands"><code class="name flex">
+<span>def <span class="ident">send_commands</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Send the command definitions that were loaded for the specific device.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def send_commands(self):
+    &#34;&#34;&#34;
+    Send the command definitions that were loaded for the specific device.
+    &#34;&#34;&#34;
+    self.send(self._commands)</code></pre>
+</details>
+</dd>
+</dl>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="egse.device.DeviceConnectionObserver" href="device.html#egse.device.DeviceConnectionObserver">DeviceConnectionObserver</a></b></code>:
+<ul class="hlist">
+<li><code><a title="egse.device.DeviceConnectionObserver.state" href="device.html#egse.device.DeviceConnectionObserver.state">state</a></code></li>
+<li><code><a title="egse.device.DeviceConnectionObserver.update_connection_state" href="device.html#egse.device.DeviceConnectionObserver.update_connection_state">update_connection_state</a></code></li>
+</ul>
+</li>
+</ul>
+</dd>
+<dt id="egse.protocol.DynamicCommandProtocol"><code class="flex name class">
+<span>class <span class="ident">DynamicCommandProtocol</span></span>
+<span>(</span><span>control_server: <a title="egse.control.ControlServer" href="control.html#egse.control.ControlServer">ControlServer</a>)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>An observer for the connection state of a device. Add the sub-class of this class to
+the class that inherits from DeviceConnectionObservable. The observable will notify an
+update of its state by calling the <code>update_connection_state()</code> method.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class DynamicCommandProtocol(BaseCommandProtocol, metaclass=abc.ABCMeta):
+    def __init__(self, control_server: ControlServer):
+        super().__init__(control_server)
+
+    def handle_device_method(self, cmd: Command, *args, **kwargs):
+        &#34;&#34;&#34;
+        Call the device method with the given arguments.
+
+        Args:
+            cmd: the devices command class that knows which device command shall be called
+            args: the arguments that will be passed on to the device command
+            kwargs: the keyword arguments that will be passed on to the device command
+        &#34;&#34;&#34;
+        # The lookup table contains object (bound) methods, so we do not have to
+        # provide the &#39;self&#39; argument anymore.
+
+        method_name = cmd.get_device_method_name()
+        method = get_method(self.get_device(), method_name)
+
+        # We treat the get_response function special as it needs to send the ``cmd`` string
+        # to the device we need to pass the processed cmd string into the method.
+
+        try:
+            if method_name == &#34;get_response&#34;:
+                device_cmd_string = cmd.get_cmd_string(*args, *kwargs)
+                logger.log(5, f&#34;Executing method {method.__name__}({device_cmd_string})&#34;)
+                response = method(device_cmd_string)
+            else:
+                logger.log(5, f&#34;Executing method {method.__name__}({args}, {kwargs})&#34;)
+                response = method(*args, **kwargs)
+        except Exception as exc:
+            logger.exception(f&#34;Executing {method_name} failed.&#34;)
+            # Pass the exception on to the client as a Failure message
+            response = Failure(f&#34;Executing {method_name} failed: &#34;, exc)
+
+        # Enable the following message only when debugging, because this log message can become
+        # very long for data storage commands.
+        # logger.debug(f&#34;handle_device_method: {device_name}({args}, {kwargs}) -&gt; {response!s}&#34;)
+
+        self.send(response)</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="egse.protocol.BaseCommandProtocol" href="#egse.protocol.BaseCommandProtocol">BaseCommandProtocol</a></li>
+<li><a title="egse.device.DeviceConnectionObserver" href="device.html#egse.device.DeviceConnectionObserver">DeviceConnectionObserver</a></li>
+</ul>
+<h3>Subclasses</h3>
+<ul class="hlist">
+<li><a title="egse.collimator.fcul.ogse_protocol.OGSEProtocol" href="collimator/fcul/ogse_protocol.html#egse.collimator.fcul.ogse_protocol.OGSEProtocol">OGSEProtocol</a></li>
+<li><a title="egse.tcs.tcs_protocol.TCSProtocol" href="tcs/tcs_protocol.html#egse.tcs.tcs_protocol.TCSProtocol">TCSProtocol</a></li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="egse.protocol.DynamicCommandProtocol.handle_device_method"><code class="name flex">
+<span>def <span class="ident">handle_device_method</span></span>(<span>self, cmd: <a title="egse.command.Command" href="command.html#egse.command.Command">Command</a>, *args, **kwargs)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Call the device method with the given arguments.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>cmd</code></strong></dt>
+<dd>the devices command class that knows which device command shall be called</dd>
+<dt><strong><code>args</code></strong></dt>
+<dd>the arguments that will be passed on to the device command</dd>
+<dt><strong><code>kwargs</code></strong></dt>
+<dd>the keyword arguments that will be passed on to the device command</dd>
+</dl></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def handle_device_method(self, cmd: Command, *args, **kwargs):
+    &#34;&#34;&#34;
+    Call the device method with the given arguments.
+
+    Args:
+        cmd: the devices command class that knows which device command shall be called
+        args: the arguments that will be passed on to the device command
+        kwargs: the keyword arguments that will be passed on to the device command
+    &#34;&#34;&#34;
+    # The lookup table contains object (bound) methods, so we do not have to
+    # provide the &#39;self&#39; argument anymore.
+
+    method_name = cmd.get_device_method_name()
+    method = get_method(self.get_device(), method_name)
+
+    # We treat the get_response function special as it needs to send the ``cmd`` string
+    # to the device we need to pass the processed cmd string into the method.
+
+    try:
+        if method_name == &#34;get_response&#34;:
+            device_cmd_string = cmd.get_cmd_string(*args, *kwargs)
+            logger.log(5, f&#34;Executing method {method.__name__}({device_cmd_string})&#34;)
+            response = method(device_cmd_string)
+        else:
+            logger.log(5, f&#34;Executing method {method.__name__}({args}, {kwargs})&#34;)
+            response = method(*args, **kwargs)
+    except Exception as exc:
+        logger.exception(f&#34;Executing {method_name} failed.&#34;)
+        # Pass the exception on to the client as a Failure message
+        response = Failure(f&#34;Executing {method_name} failed: &#34;, exc)
+
+    # Enable the following message only when debugging, because this log message can become
+    # very long for data storage commands.
+    # logger.debug(f&#34;handle_device_method: {device_name}({args}, {kwargs}) -&gt; {response!s}&#34;)
+
+    self.send(response)</code></pre>
+</details>
+</dd>
+</dl>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="egse.protocol.BaseCommandProtocol" href="#egse.protocol.BaseCommandProtocol">BaseCommandProtocol</a></b></code>:
+<ul class="hlist">
+<li><code><a title="egse.protocol.BaseCommandProtocol.bind" href="#egse.protocol.BaseCommandProtocol.bind">bind</a></code></li>
+<li><code><a title="egse.protocol.BaseCommandProtocol.get_bind_address" href="#egse.protocol.BaseCommandProtocol.get_bind_address">get_bind_address</a></code></li>
+<li><code><a title="egse.protocol.BaseCommandProtocol.get_housekeeping" href="#egse.protocol.BaseCommandProtocol.get_housekeeping">get_housekeeping</a></code></li>
+<li><code><a title="egse.protocol.BaseCommandProtocol.get_status" href="#egse.protocol.BaseCommandProtocol.get_status">get_status</a></code></li>
+<li><code><a title="egse.protocol.BaseCommandProtocol.is_alive" href="#egse.protocol.BaseCommandProtocol.is_alive">is_alive</a></code></li>
+<li><code><a title="egse.protocol.BaseCommandProtocol.receive" href="#egse.protocol.BaseCommandProtocol.receive">receive</a></code></li>
+<li><code><a title="egse.protocol.BaseCommandProtocol.send" href="#egse.protocol.BaseCommandProtocol.send">send</a></code></li>
+<li><code><a title="egse.protocol.BaseCommandProtocol.state" href="device.html#egse.device.DeviceConnectionObserver.state">state</a></code></li>
+<li><code><a title="egse.protocol.BaseCommandProtocol.update_connection_state" href="device.html#egse.device.DeviceConnectionObserver.update_connection_state">update_connection_state</a></code></li>
+</ul>
+</li>
+</ul>
+</dd>
+</dl>
+</section>
+</article>
+<nav id="sidebar">
+<h1>Index</h1>
+<div class="toc">
+<ul></ul>
+</div>
+<ul id="index">
+<li><h3>Super-module</h3>
+<ul>
+<li><code><a title="egse" href="index.html">egse</a></code></li>
+</ul>
+</li>
+<li><h3><a href="#header-functions">Functions</a></h3>
+<ul class="">
+<li><code><a title="egse.protocol.get_function" href="#egse.protocol.get_function">get_function</a></code></li>
+<li><code><a title="egse.protocol.get_method" href="#egse.protocol.get_method">get_method</a></code></li>
+</ul>
+</li>
+<li><h3><a href="#header-classes">Classes</a></h3>
+<ul>
+<li>
+<h4><code><a title="egse.protocol.BaseCommandProtocol" href="#egse.protocol.BaseCommandProtocol">BaseCommandProtocol</a></code></h4>
+<ul class="two-column">
+<li><code><a title="egse.protocol.BaseCommandProtocol.bind" href="#egse.protocol.BaseCommandProtocol.bind">bind</a></code></li>
+<li><code><a title="egse.protocol.BaseCommandProtocol.execute" href="#egse.protocol.BaseCommandProtocol.execute">execute</a></code></li>
+<li><code><a title="egse.protocol.BaseCommandProtocol.get_bind_address" href="#egse.protocol.BaseCommandProtocol.get_bind_address">get_bind_address</a></code></li>
+<li><code><a title="egse.protocol.BaseCommandProtocol.get_control_server" href="#egse.protocol.BaseCommandProtocol.get_control_server">get_control_server</a></code></li>
+<li><code><a title="egse.protocol.BaseCommandProtocol.get_device" href="#egse.protocol.BaseCommandProtocol.get_device">get_device</a></code></li>
+<li><code><a title="egse.protocol.BaseCommandProtocol.get_housekeeping" href="#egse.protocol.BaseCommandProtocol.get_housekeeping">get_housekeeping</a></code></li>
+<li><code><a title="egse.protocol.BaseCommandProtocol.get_status" href="#egse.protocol.BaseCommandProtocol.get_status">get_status</a></code></li>
+<li><code><a title="egse.protocol.BaseCommandProtocol.is_alive" href="#egse.protocol.BaseCommandProtocol.is_alive">is_alive</a></code></li>
+<li><code><a title="egse.protocol.BaseCommandProtocol.receive" href="#egse.protocol.BaseCommandProtocol.receive">receive</a></code></li>
+<li><code><a title="egse.protocol.BaseCommandProtocol.send" href="#egse.protocol.BaseCommandProtocol.send">send</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="egse.protocol.CommandProtocol" href="#egse.protocol.CommandProtocol">CommandProtocol</a></code></h4>
+<ul class="">
+<li><code><a title="egse.protocol.CommandProtocol.bind" href="#egse.protocol.CommandProtocol.bind">bind</a></code></li>
+<li><code><a title="egse.protocol.CommandProtocol.build_device_method_lookup_table" href="#egse.protocol.CommandProtocol.build_device_method_lookup_table">build_device_method_lookup_table</a></code></li>
+<li><code><a title="egse.protocol.CommandProtocol.execute" href="#egse.protocol.CommandProtocol.execute">execute</a></code></li>
+<li><code><a title="egse.protocol.CommandProtocol.get_bind_address" href="#egse.protocol.CommandProtocol.get_bind_address">get_bind_address</a></code></li>
+<li><code><a title="egse.protocol.CommandProtocol.get_housekeeping" href="#egse.protocol.CommandProtocol.get_housekeeping">get_housekeeping</a></code></li>
+<li><code><a title="egse.protocol.CommandProtocol.get_status" href="#egse.protocol.CommandProtocol.get_status">get_status</a></code></li>
+<li><code><a title="egse.protocol.CommandProtocol.handle_device_method" href="#egse.protocol.CommandProtocol.handle_device_method">handle_device_method</a></code></li>
+<li><code><a title="egse.protocol.CommandProtocol.is_alive" href="#egse.protocol.CommandProtocol.is_alive">is_alive</a></code></li>
+<li><code><a title="egse.protocol.CommandProtocol.load_commands" href="#egse.protocol.CommandProtocol.load_commands">load_commands</a></code></li>
+<li><code><a title="egse.protocol.CommandProtocol.quit" href="#egse.protocol.CommandProtocol.quit">quit</a></code></li>
+<li><code><a title="egse.protocol.CommandProtocol.receive" href="#egse.protocol.CommandProtocol.receive">receive</a></code></li>
+<li><code><a title="egse.protocol.CommandProtocol.send" href="#egse.protocol.CommandProtocol.send">send</a></code></li>
+<li><code><a title="egse.protocol.CommandProtocol.send_commands" href="#egse.protocol.CommandProtocol.send_commands">send_commands</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="egse.protocol.DynamicCommandProtocol" href="#egse.protocol.DynamicCommandProtocol">DynamicCommandProtocol</a></code></h4>
+<ul class="">
+<li><code><a title="egse.protocol.DynamicCommandProtocol.handle_device_method" href="#egse.protocol.DynamicCommandProtocol.handle_device_method">handle_device_method</a></code></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</nav>
+</main>
+<footer id="footer">
+<p>Generated by <a href="https://pdoc3.github.io/pdoc" title="pdoc: Python API documentation generator"><cite>pdoc</cite> 0.10.0</a>.</p>
+</footer>
+</body>
+</html>

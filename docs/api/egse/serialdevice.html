@@ -1,0 +1,759 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1" />
+<meta name="generator" content="pdoc 0.10.0" />
+<title>egse.serialdevice API documentation</title>
+<meta name="description" content="This module defines a generic base class for serial based device interface classes." />
+<link rel="preload stylesheet" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/11.0.1/sanitize.min.css" integrity="sha256-PK9q560IAAa6WVRRh76LtCaI8pjTJ2z11v0miyNNjrs=" crossorigin>
+<link rel="preload stylesheet" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/11.0.1/typography.min.css" integrity="sha256-7l/o7C8jubJiy74VsKTidCy1yBkRtiUGbVkYBylBqUg=" crossorigin>
+<link rel="stylesheet preload" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/10.1.1/styles/github.min.css" crossorigin>
+<style>:root{--highlight-color:#fe9}.flex{display:flex !important}body{line-height:1.5em}#content{padding:20px}#sidebar{padding:30px;overflow:hidden}#sidebar > *:last-child{margin-bottom:2cm}.http-server-breadcrumbs{font-size:130%;margin:0 0 15px 0}#footer{font-size:.75em;padding:5px 30px;border-top:1px solid #ddd;text-align:right}#footer p{margin:0 0 0 1em;display:inline-block}#footer p:last-child{margin-right:30px}h1,h2,h3,h4,h5{font-weight:300}h1{font-size:2.5em;line-height:1.1em}h2{font-size:1.75em;margin:1em 0 .50em 0}h3{font-size:1.4em;margin:25px 0 10px 0}h4{margin:0;font-size:105%}h1:target,h2:target,h3:target,h4:target,h5:target,h6:target{background:var(--highlight-color);padding:.2em 0}a{color:#058;text-decoration:none;transition:color .3s ease-in-out}a:hover{color:#e82}.title code{font-weight:bold}h2[id^="header-"]{margin-top:2em}.ident{color:#900}pre code{background:#f8f8f8;font-size:.8em;line-height:1.4em}code{background:#f2f2f1;padding:1px 4px;overflow-wrap:break-word}h1 code{background:transparent}pre{background:#f8f8f8;border:0;border-top:1px solid #ccc;border-bottom:1px solid #ccc;margin:1em 0;padding:1ex}#http-server-module-list{display:flex;flex-flow:column}#http-server-module-list div{display:flex}#http-server-module-list dt{min-width:10%}#http-server-module-list p{margin-top:0}.toc ul,#index{list-style-type:none;margin:0;padding:0}#index code{background:transparent}#index h3{border-bottom:1px solid #ddd}#index ul{padding:0}#index h4{margin-top:.6em;font-weight:bold}@media (min-width:200ex){#index .two-column{column-count:2}}@media (min-width:300ex){#index .two-column{column-count:3}}dl{margin-bottom:2em}dl dl:last-child{margin-bottom:4em}dd{margin:0 0 1em 3em}#header-classes + dl > dd{margin-bottom:3em}dd dd{margin-left:2em}dd p{margin:10px 0}.name{background:#eee;font-weight:bold;font-size:.85em;padding:5px 10px;display:inline-block;min-width:40%}.name:hover{background:#e0e0e0}dt:target .name{background:var(--highlight-color)}.name > span:first-child{white-space:nowrap}.name.class > span:nth-child(2){margin-left:.4em}.inherited{color:#999;border-left:5px solid #eee;padding-left:1em}.inheritance em{font-style:normal;font-weight:bold}.desc h2{font-weight:400;font-size:1.25em}.desc h3{font-size:1em}.desc dt code{background:inherit}.source summary,.git-link-div{color:#666;text-align:right;font-weight:400;font-size:.8em;text-transform:uppercase}.source summary > *{white-space:nowrap;cursor:pointer}.git-link{color:inherit;margin-left:1em}.source pre{max-height:500px;overflow:auto;margin:0}.source pre code{font-size:12px;overflow:visible}.hlist{list-style:none}.hlist li{display:inline}.hlist li:after{content:',\2002'}.hlist li:last-child:after{content:none}.hlist .hlist{display:inline;padding-left:1em}img{max-width:100%}td{padding:0 .5em}.admonition{padding:.1em .5em;margin-bottom:1em}.admonition-title{font-weight:bold}.admonition.note,.admonition.info,.admonition.important{background:#aef}.admonition.todo,.admonition.versionadded,.admonition.tip,.admonition.hint{background:#dfd}.admonition.warning,.admonition.versionchanged,.admonition.deprecated{background:#fd4}.admonition.error,.admonition.danger,.admonition.caution{background:lightpink}</style>
+<style media="screen and (min-width: 700px)">@media screen and (min-width:700px){#sidebar{width:30%;height:100vh;overflow:auto;position:sticky;top:0}#content{width:70%;max-width:100ch;padding:3em 4em;border-left:1px solid #ddd}pre code{font-size:1em}.item .name{font-size:1em}main{display:flex;flex-direction:row-reverse;justify-content:flex-end}.toc ul ul,#index ul{padding-left:1.5em}.toc > ul > li{margin-top:.5em}}</style>
+<style media="print">@media print{#sidebar h1{page-break-before:always}.source{display:none}}@media print{*{background:transparent !important;color:#000 !important;box-shadow:none !important;text-shadow:none !important}a[href]:after{content:" (" attr(href) ")";font-size:90%}a[href][title]:after{content:none}abbr[title]:after{content:" (" attr(title) ")"}.ir a:after,a[href^="javascript:"]:after,a[href^="#"]:after{content:""}pre,blockquote{border:1px solid #999;page-break-inside:avoid}thead{display:table-header-group}tr,img{page-break-inside:avoid}img{max-width:100% !important}@page{margin:0.5cm}p,h2,h3{orphans:3;widows:3}h1,h2,h3,h4,h5,h6{page-break-after:avoid}}</style>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/10.1.1/highlight.min.js" integrity="sha256-Uv3H6lx7dJmRfRvH8TH6kJD1TSK1aFcwgx+mdg3epi8=" crossorigin></script>
+<script>window.addEventListener('DOMContentLoaded', () => hljs.initHighlighting())</script>
+</head>
+<body>
+<main>
+<article id="content">
+<header>
+<h1 class="title">Module <code>egse.serialdevice</code></h1>
+</header>
+<section id="section-intro">
+<p>This module defines a generic base class for serial based device interface classes.</p>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">&#34;&#34;&#34;
+This module defines a generic base class for serial based device interface classes.
+&#34;&#34;&#34;
+
+import logging
+from serial import Serial, SerialTimeoutException, SerialException
+from threading import Lock
+
+from egse.decorators import dynamic_interface
+from egse.device import DeviceConnectionInterface
+
+
+logger = logging.getLogger(__name__)
+
+
+class SerialDevice(DeviceConnectionInterface):
+    &#34;&#34;&#34; Generic base class for serial based device interface classes.
+
+        This base class handles the serial connection.
+    &#34;&#34;&#34;
+
+
+    def __init__(self, port=None, baudrate=9600, terminator=&#39;\r&#39;, timeout=5):
+        self._port       = port
+        self._baudrate   = baudrate
+        self._terminator = terminator
+        self._timeout    = timeout
+        self._serial     = None
+        self._connected  = False
+        self._lock       = Lock()
+
+
+    @dynamic_interface
+    def get_idn(self):
+        &#34;&#34;&#34; Get the device ID string
+
+            Child classes must implement this function because it is required for `is_connected()`
+
+            Raises:
+                ConnectionError: when the connection failed.
+        &#34;&#34;&#34;
+        raise NotImplementedError
+
+
+    def is_simulator(self):
+
+        return False
+
+
+    def connect(self):
+        &#34;&#34;&#34; Create the serial conection.
+
+            Raises a ConnectionError on failure.
+        &#34;&#34;&#34;
+
+        # Sanity checks
+        if self._connected:
+            raise ConnectionError(&#34;Serial connection is already open&#34;)
+        if self._port in (None, &#34;&#34;):
+            raise ValueError(&#34;Serial port not initialized&#34;)
+        if self._baudrate in (None, 0):
+            raise ValueError(&#34;Baudrate not initialized&#34;)
+
+        # Create a new serial connection
+        try:
+            self._serial = Serial(port=self._port, baudrate=self._baudrate,
+                                  timeout=self._timeout, write_timeout=self._timeout)
+        except ValueError as e_value:
+            raise ConnectionError(&#34;Invalid parameters for serial connection&#34;) from e_value
+        except SerialException as e_serial:
+            raise ConnectionError(&#34;Failed to open serial device.&#34;) from e_serial
+
+        self._connected = True
+
+
+    def disconnect(self):
+        &#34;&#34;&#34; Disconnect from the serial connection.
+
+            Raises a ConnectionError on failure.
+        &#34;&#34;&#34;
+
+        try:
+            if self._connected:
+                logger.debug(f&#34;Disconnecting from {self._port}&#34;)
+                with self._lock:
+                    self._serial.close()
+                self._connected = False
+        except Exception as e_exc:
+            raise ConnectionError(f&#34;Could not close serial connection to {self._port}&#34;) from e_exc
+
+
+    def reconnect(self):
+        &#34;&#34;&#34; Disconnect the serial connection if it is already connected and try to connect.
+        &#34;&#34;&#34;
+
+        if self._connected:
+            self.disconnect()
+
+        self.connect()
+
+
+    def is_connected(self):
+        &#34;&#34;&#34; Check if the socket connection to the device is active.
+            This function assumes the child class implements the get_idn method.
+        &#34;&#34;&#34;
+
+        if not self._connected:
+            return False
+
+        try:
+            response = self.get_idn()
+        except ConnectionError as err:
+            logger.error(f&#39;While trying to talk to the device the following exception occured,&#39;,
+                         &#39;exception={err}&#39;)
+            self.disconnect()
+            return False
+
+        return True
+
+
+    def send_command(self, command: str):
+        &#34;&#34;&#34;
+        Send a single command to the device controller without waiting for a response.
+
+        Args:
+            command: an order command for the controller.
+
+        Raises:
+            ConnectionError when the command could not be sent due to a timeout or a communication
+            problem.
+        &#34;&#34;&#34;
+
+        # print(&#34;send: &#34;, repr(command))
+
+        try:
+            with self._lock:
+                self._serial.write(command.encode())
+
+        except SerialTimeoutException as e_timeout:
+            raise ConnectionError(&#34;Serial timeout error&#34;) from e_timeout
+
+
+    def read(self):
+        &#34;&#34;&#34;
+        Read a response from the device until a termination character is encountered.
+
+        Returns:
+            Either a string returned by the controller (on success), or an error message (on
+            failure).
+
+        Raises:
+            ConnectionError when there was an I/O problem during communication with the
+            controller.
+        &#34;&#34;&#34;
+
+        try:
+            with self._lock:
+                # Read the response
+                # NOTE: the serial module reads until it encounters the \n termination character
+                return_string = self._serial.read_until(self._terminator.encode(), size=1024)
+                # print(f&#34;recv: &#34;, repr(return_string))
+
+            return return_string.decode()
+
+        except SerialTimeoutException as e_timeout:
+            raise ConnectionError(&#34;Serial timeout during query&#34;) from e_timeout
+
+
+    def query(self, command: str):
+        &#34;&#34;&#34;
+        Send a single command to the device controller and block until a response from the
+        controller. This function can be overridden by the child class to implement device specific
+        sanity checks on the reponse.
+
+        Args:
+            command: is the command to be sent
+
+        Returns:
+            Either a string returned by the controller (on success), or an error message (on
+            failure).
+
+        Raises:
+            ConnectionError when there was an I/O problem during communication with the
+            controller.
+        &#34;&#34;&#34;
+
+        # Attempt to send the command
+        self.send_command(command)
+        return self.read()</code></pre>
+</details>
+</section>
+<section>
+</section>
+<section>
+</section>
+<section>
+</section>
+<section>
+<h2 class="section-title" id="header-classes">Classes</h2>
+<dl>
+<dt id="egse.serialdevice.SerialDevice"><code class="flex name class">
+<span>class <span class="ident">SerialDevice</span></span>
+<span>(</span><span>port=None, baudrate=9600, terminator='\r', timeout=5)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Generic base class for serial based device interface classes.</p>
+<p>This base class handles the serial connection.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class SerialDevice(DeviceConnectionInterface):
+    &#34;&#34;&#34; Generic base class for serial based device interface classes.
+
+        This base class handles the serial connection.
+    &#34;&#34;&#34;
+
+
+    def __init__(self, port=None, baudrate=9600, terminator=&#39;\r&#39;, timeout=5):
+        self._port       = port
+        self._baudrate   = baudrate
+        self._terminator = terminator
+        self._timeout    = timeout
+        self._serial     = None
+        self._connected  = False
+        self._lock       = Lock()
+
+
+    @dynamic_interface
+    def get_idn(self):
+        &#34;&#34;&#34; Get the device ID string
+
+            Child classes must implement this function because it is required for `is_connected()`
+
+            Raises:
+                ConnectionError: when the connection failed.
+        &#34;&#34;&#34;
+        raise NotImplementedError
+
+
+    def is_simulator(self):
+
+        return False
+
+
+    def connect(self):
+        &#34;&#34;&#34; Create the serial conection.
+
+            Raises a ConnectionError on failure.
+        &#34;&#34;&#34;
+
+        # Sanity checks
+        if self._connected:
+            raise ConnectionError(&#34;Serial connection is already open&#34;)
+        if self._port in (None, &#34;&#34;):
+            raise ValueError(&#34;Serial port not initialized&#34;)
+        if self._baudrate in (None, 0):
+            raise ValueError(&#34;Baudrate not initialized&#34;)
+
+        # Create a new serial connection
+        try:
+            self._serial = Serial(port=self._port, baudrate=self._baudrate,
+                                  timeout=self._timeout, write_timeout=self._timeout)
+        except ValueError as e_value:
+            raise ConnectionError(&#34;Invalid parameters for serial connection&#34;) from e_value
+        except SerialException as e_serial:
+            raise ConnectionError(&#34;Failed to open serial device.&#34;) from e_serial
+
+        self._connected = True
+
+
+    def disconnect(self):
+        &#34;&#34;&#34; Disconnect from the serial connection.
+
+            Raises a ConnectionError on failure.
+        &#34;&#34;&#34;
+
+        try:
+            if self._connected:
+                logger.debug(f&#34;Disconnecting from {self._port}&#34;)
+                with self._lock:
+                    self._serial.close()
+                self._connected = False
+        except Exception as e_exc:
+            raise ConnectionError(f&#34;Could not close serial connection to {self._port}&#34;) from e_exc
+
+
+    def reconnect(self):
+        &#34;&#34;&#34; Disconnect the serial connection if it is already connected and try to connect.
+        &#34;&#34;&#34;
+
+        if self._connected:
+            self.disconnect()
+
+        self.connect()
+
+
+    def is_connected(self):
+        &#34;&#34;&#34; Check if the socket connection to the device is active.
+            This function assumes the child class implements the get_idn method.
+        &#34;&#34;&#34;
+
+        if not self._connected:
+            return False
+
+        try:
+            response = self.get_idn()
+        except ConnectionError as err:
+            logger.error(f&#39;While trying to talk to the device the following exception occured,&#39;,
+                         &#39;exception={err}&#39;)
+            self.disconnect()
+            return False
+
+        return True
+
+
+    def send_command(self, command: str):
+        &#34;&#34;&#34;
+        Send a single command to the device controller without waiting for a response.
+
+        Args:
+            command: an order command for the controller.
+
+        Raises:
+            ConnectionError when the command could not be sent due to a timeout or a communication
+            problem.
+        &#34;&#34;&#34;
+
+        # print(&#34;send: &#34;, repr(command))
+
+        try:
+            with self._lock:
+                self._serial.write(command.encode())
+
+        except SerialTimeoutException as e_timeout:
+            raise ConnectionError(&#34;Serial timeout error&#34;) from e_timeout
+
+
+    def read(self):
+        &#34;&#34;&#34;
+        Read a response from the device until a termination character is encountered.
+
+        Returns:
+            Either a string returned by the controller (on success), or an error message (on
+            failure).
+
+        Raises:
+            ConnectionError when there was an I/O problem during communication with the
+            controller.
+        &#34;&#34;&#34;
+
+        try:
+            with self._lock:
+                # Read the response
+                # NOTE: the serial module reads until it encounters the \n termination character
+                return_string = self._serial.read_until(self._terminator.encode(), size=1024)
+                # print(f&#34;recv: &#34;, repr(return_string))
+
+            return return_string.decode()
+
+        except SerialTimeoutException as e_timeout:
+            raise ConnectionError(&#34;Serial timeout during query&#34;) from e_timeout
+
+
+    def query(self, command: str):
+        &#34;&#34;&#34;
+        Send a single command to the device controller and block until a response from the
+        controller. This function can be overridden by the child class to implement device specific
+        sanity checks on the reponse.
+
+        Args:
+            command: is the command to be sent
+
+        Returns:
+            Either a string returned by the controller (on success), or an error message (on
+            failure).
+
+        Raises:
+            ConnectionError when there was an I/O problem during communication with the
+            controller.
+        &#34;&#34;&#34;
+
+        # Attempt to send the command
+        self.send_command(command)
+        return self.read()</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="egse.device.DeviceConnectionInterface" href="device.html#egse.device.DeviceConnectionInterface">DeviceConnectionInterface</a></li>
+<li><a title="egse.device.DeviceConnectionObservable" href="device.html#egse.device.DeviceConnectionObservable">DeviceConnectionObservable</a></li>
+</ul>
+<h3>Subclasses</h3>
+<ul class="hlist">
+<li><a title="egse.shutter.thorlabs.sc10_controller.Sc10Controller" href="shutter/thorlabs/sc10_controller.html#egse.shutter.thorlabs.sc10_controller.Sc10Controller">Sc10Controller</a></li>
+<li><a title="egse.stages.arun.smd3_controller.Smd3Controller" href="stages/arun/smd3_controller.html#egse.stages.arun.smd3_controller.Smd3Controller">Smd3Controller</a></li>
+<li><a title="egse.tempcontrol.agilent.agilent34970_devif.Agilent34970DeviceInterface" href="tempcontrol/agilent/agilent34970_devif.html#egse.tempcontrol.agilent.agilent34970_devif.Agilent34970DeviceInterface">Agilent34970DeviceInterface</a></li>
+<li><a title="egse.vacuum.instrutech.igm402_controller.Igm402Controller" href="vacuum/instrutech/igm402_controller.html#egse.vacuum.instrutech.igm402_controller.Igm402Controller">Igm402Controller</a></li>
+<li><a title="egse.vacuum.mks.vacscan_controller.VacscanController" href="vacuum/mks/vacscan_controller.html#egse.vacuum.mks.vacscan_controller.VacscanController">VacscanController</a></li>
+<li><a title="egse.vacuum.pfeiffer.acp40_controller.Acp40Controller" href="vacuum/pfeiffer/acp40_controller.html#egse.vacuum.pfeiffer.acp40_controller.Acp40Controller">Acp40Controller</a></li>
+<li><a title="egse.vacuum.pfeiffer.tc400_controller.Tc400Controller" href="vacuum/pfeiffer/tc400_controller.html#egse.vacuum.pfeiffer.tc400_controller.Tc400Controller">Tc400Controller</a></li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="egse.serialdevice.SerialDevice.connect"><code class="name flex">
+<span>def <span class="ident">connect</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Create the serial conection.</p>
+<p>Raises a ConnectionError on failure.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def connect(self):
+    &#34;&#34;&#34; Create the serial conection.
+
+        Raises a ConnectionError on failure.
+    &#34;&#34;&#34;
+
+    # Sanity checks
+    if self._connected:
+        raise ConnectionError(&#34;Serial connection is already open&#34;)
+    if self._port in (None, &#34;&#34;):
+        raise ValueError(&#34;Serial port not initialized&#34;)
+    if self._baudrate in (None, 0):
+        raise ValueError(&#34;Baudrate not initialized&#34;)
+
+    # Create a new serial connection
+    try:
+        self._serial = Serial(port=self._port, baudrate=self._baudrate,
+                              timeout=self._timeout, write_timeout=self._timeout)
+    except ValueError as e_value:
+        raise ConnectionError(&#34;Invalid parameters for serial connection&#34;) from e_value
+    except SerialException as e_serial:
+        raise ConnectionError(&#34;Failed to open serial device.&#34;) from e_serial
+
+    self._connected = True</code></pre>
+</details>
+</dd>
+<dt id="egse.serialdevice.SerialDevice.disconnect"><code class="name flex">
+<span>def <span class="ident">disconnect</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Disconnect from the serial connection.</p>
+<p>Raises a ConnectionError on failure.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def disconnect(self):
+    &#34;&#34;&#34; Disconnect from the serial connection.
+
+        Raises a ConnectionError on failure.
+    &#34;&#34;&#34;
+
+    try:
+        if self._connected:
+            logger.debug(f&#34;Disconnecting from {self._port}&#34;)
+            with self._lock:
+                self._serial.close()
+            self._connected = False
+    except Exception as e_exc:
+        raise ConnectionError(f&#34;Could not close serial connection to {self._port}&#34;) from e_exc</code></pre>
+</details>
+</dd>
+<dt id="egse.serialdevice.SerialDevice.get_idn"><code class="name flex">
+<span>def <span class="ident">get_idn</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Get the device ID string</p>
+<p>Child classes must implement this function because it is required for <code>is_connected()</code></p>
+<h2 id="raises">Raises</h2>
+<dl>
+<dt><code>ConnectionError</code></dt>
+<dd>when the connection failed.</dd>
+</dl></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@dynamic_interface
+def get_idn(self):
+    &#34;&#34;&#34; Get the device ID string
+
+        Child classes must implement this function because it is required for `is_connected()`
+
+        Raises:
+            ConnectionError: when the connection failed.
+    &#34;&#34;&#34;
+    raise NotImplementedError</code></pre>
+</details>
+</dd>
+<dt id="egse.serialdevice.SerialDevice.is_connected"><code class="name flex">
+<span>def <span class="ident">is_connected</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Check if the socket connection to the device is active.
+This function assumes the child class implements the get_idn method.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def is_connected(self):
+    &#34;&#34;&#34; Check if the socket connection to the device is active.
+        This function assumes the child class implements the get_idn method.
+    &#34;&#34;&#34;
+
+    if not self._connected:
+        return False
+
+    try:
+        response = self.get_idn()
+    except ConnectionError as err:
+        logger.error(f&#39;While trying to talk to the device the following exception occured,&#39;,
+                     &#39;exception={err}&#39;)
+        self.disconnect()
+        return False
+
+    return True</code></pre>
+</details>
+</dd>
+<dt id="egse.serialdevice.SerialDevice.is_simulator"><code class="name flex">
+<span>def <span class="ident">is_simulator</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def is_simulator(self):
+
+    return False</code></pre>
+</details>
+</dd>
+<dt id="egse.serialdevice.SerialDevice.query"><code class="name flex">
+<span>def <span class="ident">query</span></span>(<span>self, command: str)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Send a single command to the device controller and block until a response from the
+controller. This function can be overridden by the child class to implement device specific
+sanity checks on the reponse.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>command</code></strong></dt>
+<dd>is the command to be sent</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<p>Either a string returned by the controller (on success), or an error message (on
+failure).</p>
+<h2 id="raises">Raises</h2>
+<p>ConnectionError when there was an I/O problem during communication with the
+controller.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def query(self, command: str):
+    &#34;&#34;&#34;
+    Send a single command to the device controller and block until a response from the
+    controller. This function can be overridden by the child class to implement device specific
+    sanity checks on the reponse.
+
+    Args:
+        command: is the command to be sent
+
+    Returns:
+        Either a string returned by the controller (on success), or an error message (on
+        failure).
+
+    Raises:
+        ConnectionError when there was an I/O problem during communication with the
+        controller.
+    &#34;&#34;&#34;
+
+    # Attempt to send the command
+    self.send_command(command)
+    return self.read()</code></pre>
+</details>
+</dd>
+<dt id="egse.serialdevice.SerialDevice.read"><code class="name flex">
+<span>def <span class="ident">read</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Read a response from the device until a termination character is encountered.</p>
+<h2 id="returns">Returns</h2>
+<p>Either a string returned by the controller (on success), or an error message (on
+failure).</p>
+<h2 id="raises">Raises</h2>
+<p>ConnectionError when there was an I/O problem during communication with the
+controller.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def read(self):
+    &#34;&#34;&#34;
+    Read a response from the device until a termination character is encountered.
+
+    Returns:
+        Either a string returned by the controller (on success), or an error message (on
+        failure).
+
+    Raises:
+        ConnectionError when there was an I/O problem during communication with the
+        controller.
+    &#34;&#34;&#34;
+
+    try:
+        with self._lock:
+            # Read the response
+            # NOTE: the serial module reads until it encounters the \n termination character
+            return_string = self._serial.read_until(self._terminator.encode(), size=1024)
+            # print(f&#34;recv: &#34;, repr(return_string))
+
+        return return_string.decode()
+
+    except SerialTimeoutException as e_timeout:
+        raise ConnectionError(&#34;Serial timeout during query&#34;) from e_timeout</code></pre>
+</details>
+</dd>
+<dt id="egse.serialdevice.SerialDevice.reconnect"><code class="name flex">
+<span>def <span class="ident">reconnect</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Disconnect the serial connection if it is already connected and try to connect.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def reconnect(self):
+    &#34;&#34;&#34; Disconnect the serial connection if it is already connected and try to connect.
+    &#34;&#34;&#34;
+
+    if self._connected:
+        self.disconnect()
+
+    self.connect()</code></pre>
+</details>
+</dd>
+<dt id="egse.serialdevice.SerialDevice.send_command"><code class="name flex">
+<span>def <span class="ident">send_command</span></span>(<span>self, command: str)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Send a single command to the device controller without waiting for a response.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>command</code></strong></dt>
+<dd>an order command for the controller.</dd>
+</dl>
+<h2 id="raises">Raises</h2>
+<p>ConnectionError when the command could not be sent due to a timeout or a communication
+problem.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def send_command(self, command: str):
+    &#34;&#34;&#34;
+    Send a single command to the device controller without waiting for a response.
+
+    Args:
+        command: an order command for the controller.
+
+    Raises:
+        ConnectionError when the command could not be sent due to a timeout or a communication
+        problem.
+    &#34;&#34;&#34;
+
+    # print(&#34;send: &#34;, repr(command))
+
+    try:
+        with self._lock:
+            self._serial.write(command.encode())
+
+    except SerialTimeoutException as e_timeout:
+        raise ConnectionError(&#34;Serial timeout error&#34;) from e_timeout</code></pre>
+</details>
+</dd>
+</dl>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="egse.device.DeviceConnectionInterface" href="device.html#egse.device.DeviceConnectionInterface">DeviceConnectionInterface</a></b></code>:
+<ul class="hlist">
+<li><code><a title="egse.device.DeviceConnectionInterface.add_observer" href="device.html#egse.device.DeviceConnectionObservable.add_observer">add_observer</a></code></li>
+<li><code><a title="egse.device.DeviceConnectionInterface.notify_observers" href="device.html#egse.device.DeviceConnectionObservable.notify_observers">notify_observers</a></code></li>
+</ul>
+</li>
+</ul>
+</dd>
+</dl>
+</section>
+</article>
+<nav id="sidebar">
+<h1>Index</h1>
+<div class="toc">
+<ul></ul>
+</div>
+<ul id="index">
+<li><h3>Super-module</h3>
+<ul>
+<li><code><a title="egse" href="index.html">egse</a></code></li>
+</ul>
+</li>
+<li><h3><a href="#header-classes">Classes</a></h3>
+<ul>
+<li>
+<h4><code><a title="egse.serialdevice.SerialDevice" href="#egse.serialdevice.SerialDevice">SerialDevice</a></code></h4>
+<ul class="two-column">
+<li><code><a title="egse.serialdevice.SerialDevice.connect" href="#egse.serialdevice.SerialDevice.connect">connect</a></code></li>
+<li><code><a title="egse.serialdevice.SerialDevice.disconnect" href="#egse.serialdevice.SerialDevice.disconnect">disconnect</a></code></li>
+<li><code><a title="egse.serialdevice.SerialDevice.get_idn" href="#egse.serialdevice.SerialDevice.get_idn">get_idn</a></code></li>
+<li><code><a title="egse.serialdevice.SerialDevice.is_connected" href="#egse.serialdevice.SerialDevice.is_connected">is_connected</a></code></li>
+<li><code><a title="egse.serialdevice.SerialDevice.is_simulator" href="#egse.serialdevice.SerialDevice.is_simulator">is_simulator</a></code></li>
+<li><code><a title="egse.serialdevice.SerialDevice.query" href="#egse.serialdevice.SerialDevice.query">query</a></code></li>
+<li><code><a title="egse.serialdevice.SerialDevice.read" href="#egse.serialdevice.SerialDevice.read">read</a></code></li>
+<li><code><a title="egse.serialdevice.SerialDevice.reconnect" href="#egse.serialdevice.SerialDevice.reconnect">reconnect</a></code></li>
+<li><code><a title="egse.serialdevice.SerialDevice.send_command" href="#egse.serialdevice.SerialDevice.send_command">send_command</a></code></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</nav>
+</main>
+<footer id="footer">
+<p>Generated by <a href="https://pdoc3.github.io/pdoc" title="pdoc: Python API documentation generator"><cite>pdoc</cite> 0.10.0</a>.</p>
+</footer>
+</body>
+</html>
