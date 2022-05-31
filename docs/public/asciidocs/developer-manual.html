@@ -1,0 +1,3441 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="generator" content="Asciidoctor 2.0.17">
+<meta name="author" content="Rik Huygen, Sara Regibo">
+<title>Common–EGSE : Developer Manual</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Open+Sans:300,300italic,400,400italic,600,600italic%7CNoto+Serif:400,400italic,700,700italic%7CDroid+Sans+Mono:400,700">
+<style>
+/*! Asciidoctor default stylesheet | MIT License | https://asciidoctor.org */
+/* Uncomment the following line when using as a custom stylesheet */
+/* @import "https://fonts.googleapis.com/css?family=Open+Sans:300,300italic,400,400italic,600,600italic%7CNoto+Serif:400,400italic,700,700italic%7CDroid+Sans+Mono:400,700"; */
+html{font-family:sans-serif;-webkit-text-size-adjust:100%}
+a{background:none}
+a:focus{outline:thin dotted}
+a:active,a:hover{outline:0}
+h1{font-size:2em;margin:.67em 0}
+b,strong{font-weight:bold}
+abbr{font-size:.9em}
+abbr[title]{cursor:help;border-bottom:1px dotted #dddddf;text-decoration:none}
+dfn{font-style:italic}
+hr{height:0}
+mark{background:#ff0;color:#000}
+code,kbd,pre,samp{font-family:monospace;font-size:1em}
+pre{white-space:pre-wrap}
+q{quotes:"\201C" "\201D" "\2018" "\2019"}
+small{font-size:80%}
+sub,sup{font-size:75%;line-height:0;position:relative;vertical-align:baseline}
+sup{top:-.5em}
+sub{bottom:-.25em}
+img{border:0}
+svg:not(:root){overflow:hidden}
+figure{margin:0}
+audio,video{display:inline-block}
+audio:not([controls]){display:none;height:0}
+fieldset{border:1px solid silver;margin:0 2px;padding:.35em .625em .75em}
+legend{border:0;padding:0}
+button,input,select,textarea{font-family:inherit;font-size:100%;margin:0}
+button,input{line-height:normal}
+button,select{text-transform:none}
+button,html input[type=button],input[type=reset],input[type=submit]{-webkit-appearance:button;cursor:pointer}
+button[disabled],html input[disabled]{cursor:default}
+input[type=checkbox],input[type=radio]{padding:0}
+button::-moz-focus-inner,input::-moz-focus-inner{border:0;padding:0}
+textarea{overflow:auto;vertical-align:top}
+table{border-collapse:collapse;border-spacing:0}
+*,::before,::after{box-sizing:border-box}
+html,body{font-size:100%}
+body{background:#fff;color:rgba(0,0,0,.8);padding:0;margin:0;font-family:"Noto Serif","DejaVu Serif",serif;line-height:1;position:relative;cursor:auto;-moz-tab-size:4;-o-tab-size:4;tab-size:4;word-wrap:anywhere;-moz-osx-font-smoothing:grayscale;-webkit-font-smoothing:antialiased}
+a:hover{cursor:pointer}
+img,object,embed{max-width:100%;height:auto}
+object,embed{height:100%}
+img{-ms-interpolation-mode:bicubic}
+.left{float:left!important}
+.right{float:right!important}
+.text-left{text-align:left!important}
+.text-right{text-align:right!important}
+.text-center{text-align:center!important}
+.text-justify{text-align:justify!important}
+.hide{display:none}
+img,object,svg{display:inline-block;vertical-align:middle}
+textarea{height:auto;min-height:50px}
+select{width:100%}
+.subheader,.admonitionblock td.content>.title,.audioblock>.title,.exampleblock>.title,.imageblock>.title,.listingblock>.title,.literalblock>.title,.stemblock>.title,.openblock>.title,.paragraph>.title,.quoteblock>.title,table.tableblock>.title,.verseblock>.title,.videoblock>.title,.dlist>.title,.olist>.title,.ulist>.title,.qlist>.title,.hdlist>.title{line-height:1.45;color:#7a2518;font-weight:400;margin-top:0;margin-bottom:.25em}
+div,dl,dt,dd,ul,ol,li,h1,h2,h3,#toctitle,.sidebarblock>.content>.title,h4,h5,h6,pre,form,p,blockquote,th,td{margin:0;padding:0}
+a{color:#2156a5;text-decoration:underline;line-height:inherit}
+a:hover,a:focus{color:#1d4b8f}
+a img{border:0}
+p{line-height:1.6;margin-bottom:1.25em;text-rendering:optimizeLegibility}
+p aside{font-size:.875em;line-height:1.35;font-style:italic}
+h1,h2,h3,#toctitle,.sidebarblock>.content>.title,h4,h5,h6{font-family:"Open Sans","DejaVu Sans",sans-serif;font-weight:300;font-style:normal;color:#ba3925;text-rendering:optimizeLegibility;margin-top:1em;margin-bottom:.5em;line-height:1.0125em}
+h1 small,h2 small,h3 small,#toctitle small,.sidebarblock>.content>.title small,h4 small,h5 small,h6 small{font-size:60%;color:#e99b8f;line-height:0}
+h1{font-size:2.125em}
+h2{font-size:1.6875em}
+h3,#toctitle,.sidebarblock>.content>.title{font-size:1.375em}
+h4,h5{font-size:1.125em}
+h6{font-size:1em}
+hr{border:solid #dddddf;border-width:1px 0 0;clear:both;margin:1.25em 0 1.1875em}
+em,i{font-style:italic;line-height:inherit}
+strong,b{font-weight:bold;line-height:inherit}
+small{font-size:60%;line-height:inherit}
+code{font-family:"Droid Sans Mono","DejaVu Sans Mono",monospace;font-weight:400;color:rgba(0,0,0,.9)}
+ul,ol,dl{line-height:1.6;margin-bottom:1.25em;list-style-position:outside;font-family:inherit}
+ul,ol{margin-left:1.5em}
+ul li ul,ul li ol{margin-left:1.25em;margin-bottom:0}
+ul.square li ul,ul.circle li ul,ul.disc li ul{list-style:inherit}
+ul.square{list-style-type:square}
+ul.circle{list-style-type:circle}
+ul.disc{list-style-type:disc}
+ol li ul,ol li ol{margin-left:1.25em;margin-bottom:0}
+dl dt{margin-bottom:.3125em;font-weight:bold}
+dl dd{margin-bottom:1.25em}
+blockquote{margin:0 0 1.25em;padding:.5625em 1.25em 0 1.1875em;border-left:1px solid #ddd}
+blockquote,blockquote p{line-height:1.6;color:rgba(0,0,0,.85)}
+@media screen and (min-width:768px){h1,h2,h3,#toctitle,.sidebarblock>.content>.title,h4,h5,h6{line-height:1.2}
+h1{font-size:2.75em}
+h2{font-size:2.3125em}
+h3,#toctitle,.sidebarblock>.content>.title{font-size:1.6875em}
+h4{font-size:1.4375em}}
+table{background:#fff;margin-bottom:1.25em;border:1px solid #dedede;word-wrap:normal}
+table thead,table tfoot{background:#f7f8f7}
+table thead tr th,table thead tr td,table tfoot tr th,table tfoot tr td{padding:.5em .625em .625em;font-size:inherit;color:rgba(0,0,0,.8);text-align:left}
+table tr th,table tr td{padding:.5625em .625em;font-size:inherit;color:rgba(0,0,0,.8)}
+table tr.even,table tr.alt{background:#f8f8f7}
+table thead tr th,table tfoot tr th,table tbody tr td,table tr td,table tfoot tr td{line-height:1.6}
+h1,h2,h3,#toctitle,.sidebarblock>.content>.title,h4,h5,h6{line-height:1.2;word-spacing:-.05em}
+h1 strong,h2 strong,h3 strong,#toctitle strong,.sidebarblock>.content>.title strong,h4 strong,h5 strong,h6 strong{font-weight:400}
+.center{margin-left:auto;margin-right:auto}
+.stretch{width:100%}
+.clearfix::before,.clearfix::after,.float-group::before,.float-group::after{content:" ";display:table}
+.clearfix::after,.float-group::after{clear:both}
+:not(pre).nobreak{word-wrap:normal}
+:not(pre).nowrap{white-space:nowrap}
+:not(pre).pre-wrap{white-space:pre-wrap}
+:not(pre):not([class^=L])>code{font-size:.9375em;font-style:normal!important;letter-spacing:0;padding:.1em .5ex;word-spacing:-.15em;background:#f7f7f8;border-radius:4px;line-height:1.45;text-rendering:optimizeSpeed}
+pre{color:rgba(0,0,0,.9);font-family:"Droid Sans Mono","DejaVu Sans Mono",monospace;line-height:1.45;text-rendering:optimizeSpeed}
+pre code,pre pre{color:inherit;font-size:inherit;line-height:inherit}
+pre>code{display:block}
+pre.nowrap,pre.nowrap pre{white-space:pre;word-wrap:normal}
+em em{font-style:normal}
+strong strong{font-weight:400}
+.keyseq{color:rgba(51,51,51,.8)}
+kbd{font-family:"Droid Sans Mono","DejaVu Sans Mono",monospace;display:inline-block;color:rgba(0,0,0,.8);font-size:.65em;line-height:1.45;background:#f7f7f7;border:1px solid #ccc;border-radius:3px;box-shadow:0 1px 0 rgba(0,0,0,.2),inset 0 0 0 .1em #fff;margin:0 .15em;padding:.2em .5em;vertical-align:middle;position:relative;top:-.1em;white-space:nowrap}
+.keyseq kbd:first-child{margin-left:0}
+.keyseq kbd:last-child{margin-right:0}
+.menuseq,.menuref{color:#000}
+.menuseq b:not(.caret),.menuref{font-weight:inherit}
+.menuseq{word-spacing:-.02em}
+.menuseq b.caret{font-size:1.25em;line-height:.8}
+.menuseq i.caret{font-weight:bold;text-align:center;width:.45em}
+b.button::before,b.button::after{position:relative;top:-1px;font-weight:400}
+b.button::before{content:"[";padding:0 3px 0 2px}
+b.button::after{content:"]";padding:0 2px 0 3px}
+p a>code:hover{color:rgba(0,0,0,.9)}
+#header,#content,#footnotes,#footer{width:100%;margin:0 auto;max-width:62.5em;*zoom:1;position:relative;padding-left:.9375em;padding-right:.9375em}
+#header::before,#header::after,#content::before,#content::after,#footnotes::before,#footnotes::after,#footer::before,#footer::after{content:" ";display:table}
+#header::after,#content::after,#footnotes::after,#footer::after{clear:both}
+#content{margin-top:1.25em}
+#content::before{content:none}
+#header>h1:first-child{color:rgba(0,0,0,.85);margin-top:2.25rem;margin-bottom:0}
+#header>h1:first-child+#toc{margin-top:8px;border-top:1px solid #dddddf}
+#header>h1:only-child,body.toc2 #header>h1:nth-last-child(2){border-bottom:1px solid #dddddf;padding-bottom:8px}
+#header .details{border-bottom:1px solid #dddddf;line-height:1.45;padding-top:.25em;padding-bottom:.25em;padding-left:.25em;color:rgba(0,0,0,.6);display:flex;flex-flow:row wrap}
+#header .details span:first-child{margin-left:-.125em}
+#header .details span.email a{color:rgba(0,0,0,.85)}
+#header .details br{display:none}
+#header .details br+span::before{content:"\00a0\2013\00a0"}
+#header .details br+span.author::before{content:"\00a0\22c5\00a0";color:rgba(0,0,0,.85)}
+#header .details br+span#revremark::before{content:"\00a0|\00a0"}
+#header #revnumber{text-transform:capitalize}
+#header #revnumber::after{content:"\00a0"}
+#content>h1:first-child:not([class]){color:rgba(0,0,0,.85);border-bottom:1px solid #dddddf;padding-bottom:8px;margin-top:0;padding-top:1rem;margin-bottom:1.25rem}
+#toc{border-bottom:1px solid #e7e7e9;padding-bottom:.5em}
+#toc>ul{margin-left:.125em}
+#toc ul.sectlevel0>li>a{font-style:italic}
+#toc ul.sectlevel0 ul.sectlevel1{margin:.5em 0}
+#toc ul{font-family:"Open Sans","DejaVu Sans",sans-serif;list-style-type:none}
+#toc li{line-height:1.3334;margin-top:.3334em}
+#toc a{text-decoration:none}
+#toc a:active{text-decoration:underline}
+#toctitle{color:#7a2518;font-size:1.2em}
+@media screen and (min-width:768px){#toctitle{font-size:1.375em}
+body.toc2{padding-left:15em;padding-right:0}
+#toc.toc2{margin-top:0!important;background:#f8f8f7;position:fixed;width:15em;left:0;top:0;border-right:1px solid #e7e7e9;border-top-width:0!important;border-bottom-width:0!important;z-index:1000;padding:1.25em 1em;height:100%;overflow:auto}
+#toc.toc2 #toctitle{margin-top:0;margin-bottom:.8rem;font-size:1.2em}
+#toc.toc2>ul{font-size:.9em;margin-bottom:0}
+#toc.toc2 ul ul{margin-left:0;padding-left:1em}
+#toc.toc2 ul.sectlevel0 ul.sectlevel1{padding-left:0;margin-top:.5em;margin-bottom:.5em}
+body.toc2.toc-right{padding-left:0;padding-right:15em}
+body.toc2.toc-right #toc.toc2{border-right-width:0;border-left:1px solid #e7e7e9;left:auto;right:0}}
+@media screen and (min-width:1280px){body.toc2{padding-left:20em;padding-right:0}
+#toc.toc2{width:20em}
+#toc.toc2 #toctitle{font-size:1.375em}
+#toc.toc2>ul{font-size:.95em}
+#toc.toc2 ul ul{padding-left:1.25em}
+body.toc2.toc-right{padding-left:0;padding-right:20em}}
+#content #toc{border:1px solid #e0e0dc;margin-bottom:1.25em;padding:1.25em;background:#f8f8f7;border-radius:4px}
+#content #toc>:first-child{margin-top:0}
+#content #toc>:last-child{margin-bottom:0}
+#footer{max-width:none;background:rgba(0,0,0,.8);padding:1.25em}
+#footer-text{color:hsla(0,0%,100%,.8);line-height:1.44}
+#content{margin-bottom:.625em}
+.sect1{padding-bottom:.625em}
+@media screen and (min-width:768px){#content{margin-bottom:1.25em}
+.sect1{padding-bottom:1.25em}}
+.sect1:last-child{padding-bottom:0}
+.sect1+.sect1{border-top:1px solid #e7e7e9}
+#content h1>a.anchor,h2>a.anchor,h3>a.anchor,#toctitle>a.anchor,.sidebarblock>.content>.title>a.anchor,h4>a.anchor,h5>a.anchor,h6>a.anchor{position:absolute;z-index:1001;width:1.5ex;margin-left:-1.5ex;display:block;text-decoration:none!important;visibility:hidden;text-align:center;font-weight:400}
+#content h1>a.anchor::before,h2>a.anchor::before,h3>a.anchor::before,#toctitle>a.anchor::before,.sidebarblock>.content>.title>a.anchor::before,h4>a.anchor::before,h5>a.anchor::before,h6>a.anchor::before{content:"\00A7";font-size:.85em;display:block;padding-top:.1em}
+#content h1:hover>a.anchor,#content h1>a.anchor:hover,h2:hover>a.anchor,h2>a.anchor:hover,h3:hover>a.anchor,#toctitle:hover>a.anchor,.sidebarblock>.content>.title:hover>a.anchor,h3>a.anchor:hover,#toctitle>a.anchor:hover,.sidebarblock>.content>.title>a.anchor:hover,h4:hover>a.anchor,h4>a.anchor:hover,h5:hover>a.anchor,h5>a.anchor:hover,h6:hover>a.anchor,h6>a.anchor:hover{visibility:visible}
+#content h1>a.link,h2>a.link,h3>a.link,#toctitle>a.link,.sidebarblock>.content>.title>a.link,h4>a.link,h5>a.link,h6>a.link{color:#ba3925;text-decoration:none}
+#content h1>a.link:hover,h2>a.link:hover,h3>a.link:hover,#toctitle>a.link:hover,.sidebarblock>.content>.title>a.link:hover,h4>a.link:hover,h5>a.link:hover,h6>a.link:hover{color:#a53221}
+details,.audioblock,.imageblock,.literalblock,.listingblock,.stemblock,.videoblock{margin-bottom:1.25em}
+details{margin-left:1.25rem}
+details>summary{cursor:pointer;display:block;position:relative;line-height:1.6;margin-bottom:.625rem;outline:none;-webkit-tap-highlight-color:transparent}
+details>summary::-webkit-details-marker{display:none}
+details>summary::before{content:"";border:solid transparent;border-left:solid;border-width:.3em 0 .3em .5em;position:absolute;top:.5em;left:-1.25rem;transform:translateX(15%)}
+details[open]>summary::before{border:solid transparent;border-top:solid;border-width:.5em .3em 0;transform:translateY(15%)}
+details>summary::after{content:"";width:1.25rem;height:1em;position:absolute;top:.3em;left:-1.25rem}
+.admonitionblock td.content>.title,.audioblock>.title,.exampleblock>.title,.imageblock>.title,.listingblock>.title,.literalblock>.title,.stemblock>.title,.openblock>.title,.paragraph>.title,.quoteblock>.title,table.tableblock>.title,.verseblock>.title,.videoblock>.title,.dlist>.title,.olist>.title,.ulist>.title,.qlist>.title,.hdlist>.title{text-rendering:optimizeLegibility;text-align:left;font-family:"Noto Serif","DejaVu Serif",serif;font-size:1rem;font-style:italic}
+table.tableblock.fit-content>caption.title{white-space:nowrap;width:0}
+.paragraph.lead>p,#preamble>.sectionbody>[class=paragraph]:first-of-type p{font-size:1.21875em;line-height:1.6;color:rgba(0,0,0,.85)}
+.admonitionblock>table{border-collapse:separate;border:0;background:none;width:100%}
+.admonitionblock>table td.icon{text-align:center;width:80px}
+.admonitionblock>table td.icon img{max-width:none}
+.admonitionblock>table td.icon .title{font-weight:bold;font-family:"Open Sans","DejaVu Sans",sans-serif;text-transform:uppercase}
+.admonitionblock>table td.content{padding-left:1.125em;padding-right:1.25em;border-left:1px solid #dddddf;color:rgba(0,0,0,.6);word-wrap:anywhere}
+.admonitionblock>table td.content>:last-child>:last-child{margin-bottom:0}
+.exampleblock>.content{border:1px solid #e6e6e6;margin-bottom:1.25em;padding:1.25em;background:#fff;border-radius:4px}
+.exampleblock>.content>:first-child{margin-top:0}
+.exampleblock>.content>:last-child{margin-bottom:0}
+.sidebarblock{border:1px solid #dbdbd6;margin-bottom:1.25em;padding:1.25em;background:#f3f3f2;border-radius:4px}
+.sidebarblock>:first-child{margin-top:0}
+.sidebarblock>:last-child{margin-bottom:0}
+.sidebarblock>.content>.title{color:#7a2518;margin-top:0;text-align:center}
+.exampleblock>.content>:last-child>:last-child,.exampleblock>.content .olist>ol>li:last-child>:last-child,.exampleblock>.content .ulist>ul>li:last-child>:last-child,.exampleblock>.content .qlist>ol>li:last-child>:last-child,.sidebarblock>.content>:last-child>:last-child,.sidebarblock>.content .olist>ol>li:last-child>:last-child,.sidebarblock>.content .ulist>ul>li:last-child>:last-child,.sidebarblock>.content .qlist>ol>li:last-child>:last-child{margin-bottom:0}
+.literalblock pre,.listingblock>.content>pre{border-radius:4px;overflow-x:auto;padding:1em;font-size:.8125em}
+@media screen and (min-width:768px){.literalblock pre,.listingblock>.content>pre{font-size:.90625em}}
+@media screen and (min-width:1280px){.literalblock pre,.listingblock>.content>pre{font-size:1em}}
+.literalblock pre,.listingblock>.content>pre:not(.highlight),.listingblock>.content>pre[class=highlight],.listingblock>.content>pre[class^="highlight "]{background:#f7f7f8}
+.literalblock.output pre{color:#f7f7f8;background:rgba(0,0,0,.9)}
+.listingblock>.content{position:relative}
+.listingblock code[data-lang]::before{display:none;content:attr(data-lang);position:absolute;font-size:.75em;top:.425rem;right:.5rem;line-height:1;text-transform:uppercase;color:inherit;opacity:.5}
+.listingblock:hover code[data-lang]::before{display:block}
+.listingblock.terminal pre .command::before{content:attr(data-prompt);padding-right:.5em;color:inherit;opacity:.5}
+.listingblock.terminal pre .command:not([data-prompt])::before{content:"$"}
+.listingblock pre.highlightjs{padding:0}
+.listingblock pre.highlightjs>code{padding:1em;border-radius:4px}
+.listingblock pre.prettyprint{border-width:0}
+.prettyprint{background:#f7f7f8}
+pre.prettyprint .linenums{line-height:1.45;margin-left:2em}
+pre.prettyprint li{background:none;list-style-type:inherit;padding-left:0}
+pre.prettyprint li code[data-lang]::before{opacity:1}
+pre.prettyprint li:not(:first-child) code[data-lang]::before{display:none}
+table.linenotable{border-collapse:separate;border:0;margin-bottom:0;background:none}
+table.linenotable td[class]{color:inherit;vertical-align:top;padding:0;line-height:inherit;white-space:normal}
+table.linenotable td.code{padding-left:.75em}
+table.linenotable td.linenos,pre.pygments .linenos{border-right:1px solid;opacity:.35;padding-right:.5em;-webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;user-select:none}
+pre.pygments span.linenos{display:inline-block;margin-right:.75em}
+.quoteblock{margin:0 1em 1.25em 1.5em;display:table}
+.quoteblock:not(.excerpt)>.title{margin-left:-1.5em;margin-bottom:.75em}
+.quoteblock blockquote,.quoteblock p{color:rgba(0,0,0,.85);font-size:1.15rem;line-height:1.75;word-spacing:.1em;letter-spacing:0;font-style:italic;text-align:justify}
+.quoteblock blockquote{margin:0;padding:0;border:0}
+.quoteblock blockquote::before{content:"\201c";float:left;font-size:2.75em;font-weight:bold;line-height:.6em;margin-left:-.6em;color:#7a2518;text-shadow:0 1px 2px rgba(0,0,0,.1)}
+.quoteblock blockquote>.paragraph:last-child p{margin-bottom:0}
+.quoteblock .attribution{margin-top:.75em;margin-right:.5ex;text-align:right}
+.verseblock{margin:0 1em 1.25em}
+.verseblock pre{font-family:"Open Sans","DejaVu Sans",sans-serif;font-size:1.15rem;color:rgba(0,0,0,.85);font-weight:300;text-rendering:optimizeLegibility}
+.verseblock pre strong{font-weight:400}
+.verseblock .attribution{margin-top:1.25rem;margin-left:.5ex}
+.quoteblock .attribution,.verseblock .attribution{font-size:.9375em;line-height:1.45;font-style:italic}
+.quoteblock .attribution br,.verseblock .attribution br{display:none}
+.quoteblock .attribution cite,.verseblock .attribution cite{display:block;letter-spacing:-.025em;color:rgba(0,0,0,.6)}
+.quoteblock.abstract blockquote::before,.quoteblock.excerpt blockquote::before,.quoteblock .quoteblock blockquote::before{display:none}
+.quoteblock.abstract blockquote,.quoteblock.abstract p,.quoteblock.excerpt blockquote,.quoteblock.excerpt p,.quoteblock .quoteblock blockquote,.quoteblock .quoteblock p{line-height:1.6;word-spacing:0}
+.quoteblock.abstract{margin:0 1em 1.25em;display:block}
+.quoteblock.abstract>.title{margin:0 0 .375em;font-size:1.15em;text-align:center}
+.quoteblock.excerpt>blockquote,.quoteblock .quoteblock{padding:0 0 .25em 1em;border-left:.25em solid #dddddf}
+.quoteblock.excerpt,.quoteblock .quoteblock{margin-left:0}
+.quoteblock.excerpt blockquote,.quoteblock.excerpt p,.quoteblock .quoteblock blockquote,.quoteblock .quoteblock p{color:inherit;font-size:1.0625rem}
+.quoteblock.excerpt .attribution,.quoteblock .quoteblock .attribution{color:inherit;font-size:.85rem;text-align:left;margin-right:0}
+p.tableblock:last-child{margin-bottom:0}
+td.tableblock>.content{margin-bottom:1.25em;word-wrap:anywhere}
+td.tableblock>.content>:last-child{margin-bottom:-1.25em}
+table.tableblock,th.tableblock,td.tableblock{border:0 solid #dedede}
+table.grid-all>*>tr>*{border-width:1px}
+table.grid-cols>*>tr>*{border-width:0 1px}
+table.grid-rows>*>tr>*{border-width:1px 0}
+table.frame-all{border-width:1px}
+table.frame-ends{border-width:1px 0}
+table.frame-sides{border-width:0 1px}
+table.frame-none>colgroup+*>:first-child>*,table.frame-sides>colgroup+*>:first-child>*{border-top-width:0}
+table.frame-none>:last-child>:last-child>*,table.frame-sides>:last-child>:last-child>*{border-bottom-width:0}
+table.frame-none>*>tr>:first-child,table.frame-ends>*>tr>:first-child{border-left-width:0}
+table.frame-none>*>tr>:last-child,table.frame-ends>*>tr>:last-child{border-right-width:0}
+table.stripes-all>*>tr,table.stripes-odd>*>tr:nth-of-type(odd),table.stripes-even>*>tr:nth-of-type(even),table.stripes-hover>*>tr:hover{background:#f8f8f7}
+th.halign-left,td.halign-left{text-align:left}
+th.halign-right,td.halign-right{text-align:right}
+th.halign-center,td.halign-center{text-align:center}
+th.valign-top,td.valign-top{vertical-align:top}
+th.valign-bottom,td.valign-bottom{vertical-align:bottom}
+th.valign-middle,td.valign-middle{vertical-align:middle}
+table thead th,table tfoot th{font-weight:bold}
+tbody tr th{background:#f7f8f7}
+tbody tr th,tbody tr th p,tfoot tr th,tfoot tr th p{color:rgba(0,0,0,.8);font-weight:bold}
+p.tableblock>code:only-child{background:none;padding:0}
+p.tableblock{font-size:1em}
+ol{margin-left:1.75em}
+ul li ol{margin-left:1.5em}
+dl dd{margin-left:1.125em}
+dl dd:last-child,dl dd:last-child>:last-child{margin-bottom:0}
+li p,ul dd,ol dd,.olist .olist,.ulist .ulist,.ulist .olist,.olist .ulist{margin-bottom:.625em}
+ul.checklist,ul.none,ol.none,ul.no-bullet,ol.no-bullet,ol.unnumbered,ul.unstyled,ol.unstyled{list-style-type:none}
+ul.no-bullet,ol.no-bullet,ol.unnumbered{margin-left:.625em}
+ul.unstyled,ol.unstyled{margin-left:0}
+li>p:empty:only-child::before{content:"";display:inline-block}
+ul.checklist>li>p:first-child{margin-left:-1em}
+ul.checklist>li>p:first-child>.fa-square-o:first-child,ul.checklist>li>p:first-child>.fa-check-square-o:first-child{width:1.25em;font-size:.8em;position:relative;bottom:.125em}
+ul.checklist>li>p:first-child>input[type=checkbox]:first-child{margin-right:.25em}
+ul.inline{display:flex;flex-flow:row wrap;list-style:none;margin:0 0 .625em -1.25em}
+ul.inline>li{margin-left:1.25em}
+.unstyled dl dt{font-weight:400;font-style:normal}
+ol.arabic{list-style-type:decimal}
+ol.decimal{list-style-type:decimal-leading-zero}
+ol.loweralpha{list-style-type:lower-alpha}
+ol.upperalpha{list-style-type:upper-alpha}
+ol.lowerroman{list-style-type:lower-roman}
+ol.upperroman{list-style-type:upper-roman}
+ol.lowergreek{list-style-type:lower-greek}
+.hdlist>table,.colist>table{border:0;background:none}
+.hdlist>table>tbody>tr,.colist>table>tbody>tr{background:none}
+td.hdlist1,td.hdlist2{vertical-align:top;padding:0 .625em}
+td.hdlist1{font-weight:bold;padding-bottom:1.25em}
+td.hdlist2{word-wrap:anywhere}
+.literalblock+.colist,.listingblock+.colist{margin-top:-.5em}
+.colist td:not([class]):first-child{padding:.4em .75em 0;line-height:1;vertical-align:top}
+.colist td:not([class]):first-child img{max-width:none}
+.colist td:not([class]):last-child{padding:.25em 0}
+.thumb,.th{line-height:0;display:inline-block;border:4px solid #fff;box-shadow:0 0 0 1px #ddd}
+.imageblock.left{margin:.25em .625em 1.25em 0}
+.imageblock.right{margin:.25em 0 1.25em .625em}
+.imageblock>.title{margin-bottom:0}
+.imageblock.thumb,.imageblock.th{border-width:6px}
+.imageblock.thumb>.title,.imageblock.th>.title{padding:0 .125em}
+.image.left,.image.right{margin-top:.25em;margin-bottom:.25em;display:inline-block;line-height:0}
+.image.left{margin-right:.625em}
+.image.right{margin-left:.625em}
+a.image{text-decoration:none;display:inline-block}
+a.image object{pointer-events:none}
+sup.footnote,sup.footnoteref{font-size:.875em;position:static;vertical-align:super}
+sup.footnote a,sup.footnoteref a{text-decoration:none}
+sup.footnote a:active,sup.footnoteref a:active{text-decoration:underline}
+#footnotes{padding-top:.75em;padding-bottom:.75em;margin-bottom:.625em}
+#footnotes hr{width:20%;min-width:6.25em;margin:-.25em 0 .75em;border-width:1px 0 0}
+#footnotes .footnote{padding:0 .375em 0 .225em;line-height:1.3334;font-size:.875em;margin-left:1.2em;margin-bottom:.2em}
+#footnotes .footnote a:first-of-type{font-weight:bold;text-decoration:none;margin-left:-1.05em}
+#footnotes .footnote:last-of-type{margin-bottom:0}
+#content #footnotes{margin-top:-.625em;margin-bottom:0;padding:.75em 0}
+div.unbreakable{page-break-inside:avoid}
+.big{font-size:larger}
+.small{font-size:smaller}
+.underline{text-decoration:underline}
+.overline{text-decoration:overline}
+.line-through{text-decoration:line-through}
+.aqua{color:#00bfbf}
+.aqua-background{background:#00fafa}
+.black{color:#000}
+.black-background{background:#000}
+.blue{color:#0000bf}
+.blue-background{background:#0000fa}
+.fuchsia{color:#bf00bf}
+.fuchsia-background{background:#fa00fa}
+.gray{color:#606060}
+.gray-background{background:#7d7d7d}
+.green{color:#006000}
+.green-background{background:#007d00}
+.lime{color:#00bf00}
+.lime-background{background:#00fa00}
+.maroon{color:#600000}
+.maroon-background{background:#7d0000}
+.navy{color:#000060}
+.navy-background{background:#00007d}
+.olive{color:#606000}
+.olive-background{background:#7d7d00}
+.purple{color:#600060}
+.purple-background{background:#7d007d}
+.red{color:#bf0000}
+.red-background{background:#fa0000}
+.silver{color:#909090}
+.silver-background{background:#bcbcbc}
+.teal{color:#006060}
+.teal-background{background:#007d7d}
+.white{color:#bfbfbf}
+.white-background{background:#fafafa}
+.yellow{color:#bfbf00}
+.yellow-background{background:#fafa00}
+span.icon>.fa{cursor:default}
+a span.icon>.fa{cursor:inherit}
+.admonitionblock td.icon [class^="fa icon-"]{font-size:2.5em;text-shadow:1px 1px 2px rgba(0,0,0,.5);cursor:default}
+.admonitionblock td.icon .icon-note::before{content:"\f05a";color:#19407c}
+.admonitionblock td.icon .icon-tip::before{content:"\f0eb";text-shadow:1px 1px 2px rgba(155,155,0,.8);color:#111}
+.admonitionblock td.icon .icon-warning::before{content:"\f071";color:#bf6900}
+.admonitionblock td.icon .icon-caution::before{content:"\f06d";color:#bf3400}
+.admonitionblock td.icon .icon-important::before{content:"\f06a";color:#bf0000}
+.conum[data-value]{display:inline-block;color:#fff!important;background:rgba(0,0,0,.8);border-radius:50%;text-align:center;font-size:.75em;width:1.67em;height:1.67em;line-height:1.67em;font-family:"Open Sans","DejaVu Sans",sans-serif;font-style:normal;font-weight:bold}
+.conum[data-value] *{color:#fff!important}
+.conum[data-value]+b{display:none}
+.conum[data-value]::after{content:attr(data-value)}
+pre .conum[data-value]{position:relative;top:-.125em}
+b.conum *{color:inherit!important}
+.conum:not([data-value]):empty{display:none}
+dt,th.tableblock,td.content,div.footnote{text-rendering:optimizeLegibility}
+h1,h2,p,td.content,span.alt,summary{letter-spacing:-.01em}
+p strong,td.content strong,div.footnote strong{letter-spacing:-.005em}
+p,blockquote,dt,td.content,span.alt,summary{font-size:1.0625rem}
+p{margin-bottom:1.25rem}
+.sidebarblock p,.sidebarblock dt,.sidebarblock td.content,p.tableblock{font-size:1em}
+.exampleblock>.content{background:#fffef7;border-color:#e0e0dc;box-shadow:0 1px 4px #e0e0dc}
+.print-only{display:none!important}
+@page{margin:1.25cm .75cm}
+@media print{*{box-shadow:none!important;text-shadow:none!important}
+html{font-size:80%}
+a{color:inherit!important;text-decoration:underline!important}
+a.bare,a[href^="#"],a[href^="mailto:"]{text-decoration:none!important}
+a[href^="http:"]:not(.bare)::after,a[href^="https:"]:not(.bare)::after{content:"(" attr(href) ")";display:inline-block;font-size:.875em;padding-left:.25em}
+abbr[title]{border-bottom:1px dotted}
+abbr[title]::after{content:" (" attr(title) ")"}
+pre,blockquote,tr,img,object,svg{page-break-inside:avoid}
+thead{display:table-header-group}
+svg{max-width:100%}
+p,blockquote,dt,td.content{font-size:1em;orphans:3;widows:3}
+h2,h3,#toctitle,.sidebarblock>.content>.title{page-break-after:avoid}
+#header,#content,#footnotes,#footer{max-width:none}
+#toc,.sidebarblock,.exampleblock>.content{background:none!important}
+#toc{border-bottom:1px solid #dddddf!important;padding-bottom:0!important}
+body.book #header{text-align:center}
+body.book #header>h1:first-child{border:0!important;margin:2.5em 0 1em}
+body.book #header .details{border:0!important;display:block;padding:0!important}
+body.book #header .details span:first-child{margin-left:0!important}
+body.book #header .details br{display:block}
+body.book #header .details br+span::before{content:none!important}
+body.book #toc{border:0!important;text-align:left!important;padding:0!important;margin:0!important}
+body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-break-before:always}
+.listingblock code[data-lang]::before{display:block}
+#footer{padding:0 .9375em}
+.hide-on-print{display:none!important}
+.print-only{display:block!important}
+.hide-for-print{display:none!important}
+.show-for-print{display:inherit!important}}
+@media amzn-kf8,print{#header>h1:first-child{margin-top:1.25rem}
+.sect1{padding:0!important}
+.sect1+.sect1{border:0}
+#footer{background:none}
+#footer-text{color:rgba(0,0,0,.6);font-size:.9em}}
+@media amzn-kf8{#header,#content,#footnotes,#footer{padding:0}}
+</style>
+</head>
+<body class="book toc2 toc-left">
+<div id="header">
+<h1>Common–EGSE : Developer Manual</h1>
+<div class="details">
+<span id="author" class="author">Rik Huygen, Sara Regibo</span><br>
+<span id="revnumber">version 0.1,</span>
+<span id="revdate">21/05/2022</span>
+</div>
+<div id="toc" class="toc2">
+<div id="toctitle">Table of Contents</div>
+<ul class="sectlevel1">
+<li><a href="#_colophon">Colophon</a></li>
+<li><a href="#_contributors">Contributors</a></li>
+<li><a href="#_preface">Preface</a></li>
+<li><a href="#_documents_and_acronyms">Documents and Acronyms</a>
+<ul class="sectlevel2">
+<li><a href="#_applicable_documents">Applicable documents</a></li>
+<li><a href="#_reference_documents">Reference Documents</a></li>
+<li><a href="#_acronyms">Acronyms</a></li>
+</ul>
+</li>
+<li><a href="#_caveats">Caveats</a>
+<ul class="sectlevel2">
+<li><a href="#_setup">Setup</a></li>
+</ul>
+</li>
+<li><a href="#_part_i_development_notions">Part I — Development Notions</a>
+<ul class="sectlevel1">
+<li><a href="#_style_guide">1. Style Guide</a>
+<ul class="sectlevel2">
+<li><a href="#_tldr">1.1. TL;DR</a></li>
+<li><a href="#_general">1.2. General</a></li>
+<li><a href="#_classes">1.3. Classes</a></li>
+<li><a href="#_methods_and_functions">1.4. Methods and Functions</a></li>
+<li><a href="#_variables">1.5. Variables</a></li>
+<li><a href="#_constants">1.6. CONSTANTS</a></li>
+<li><a href="#_modules_and_packages">1.7. Modules and Packages</a></li>
+<li><a href="#_import_statements">1.8. Import Statements</a></li>
+</ul>
+</li>
+<li><a href="#_best_practices_for_error_and_exception_handling">2. Best Practices for Error and Exception Handling</a>
+<ul class="sectlevel2">
+<li><a href="#_when_do_i_catch_exceptions">2.1. When do I catch exceptions?</a></li>
+<li><a href="#_how_do_i_catch_exceptions">2.2. How do I catch Exceptions?</a></li>
+<li><a href="#_what_about_the_with_statement">2.3. What about the 'with' Statement?</a></li>
+<li><a href="#_why_not_just_return_an_error_code">2.4. Why not just return an error code?</a></li>
+<li><a href="#_when_to_test_instead_of_try">2.5. When to Test instead of Try?</a></li>
+<li><a href="#_when_to_re_throw_an_exception">2.6. When to re-throw an Exception?</a></li>
+<li><a href="#_what_about_performance">2.7. What about Performance?</a></li>
+<li><a href="#_can_i_raise_my_own_exception">2.8. Can I raise my own Exception?</a></li>
+<li><a href="#_when_should_i_use_assertions">2.9. When should I use Assertions?</a></li>
+<li><a href="#_what_are_errors">2.10. What are Errors?</a></li>
+<li><a href="#_cascading_exceptions">2.11. Cascading Exceptions</a></li>
+<li><a href="#_logging_exceptions">2.12. Logging Exceptions</a></li>
+<li><a href="#_resources">2.13. Resources</a></li>
+</ul>
+</li>
+<li><a href="#_writing_docstrings">3. Writing docstrings</a></li>
+<li><a href="#_setting_up_ssh_access_and_github_deploy_keys">4. Setting up ssh access and GitHub deploy keys</a>
+<ul class="sectlevel2">
+<li><a href="#_plato_common_egse">4.1. plato-common-egse</a></li>
+<li><a href="#_plato_test_scripts">4.2. plato-test-scripts</a></li>
+<li><a href="#_plato_cgse_conf">4.3. plato-cgse-conf</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li><a href="#_part_ii_core_concepts">Part II — Core Concepts</a>
+<ul class="sectlevel1">
+<li><a href="#_core_services">5. Core Services</a>
+<ul class="sectlevel2">
+<li><a href="#_the_configuration_manager">5.1. The Configuration Manager</a></li>
+<li><a href="#_the_storage_manager">5.2. The Storage Manager</a></li>
+<li><a href="#_the_process_manager">5.3. The Process Manager</a></li>
+<li><a href="#_the_synoptics_manager">5.4. The Synoptics Manager</a></li>
+<li><a href="#_the_telemetry_tm_dictionary">5.5. The Telemetry (TM) Dictionary</a></li>
+<li><a href="#_the_log_manager">5.6. The Log Manager</a></li>
+</ul>
+</li>
+<li><a href="#_the_commanding_concept">6. The Commanding Concept</a>
+<ul class="sectlevel2">
+<li><a href="#_the_control_server">6.1. The Control Server</a></li>
+<li><a href="#_the_proxy_class">6.2. The Proxy Class</a></li>
+<li><a href="#_the_protocol_class">6.3. The Protocol Class</a></li>
+<li><a href="#_response_failure_success">6.4. Response, Failure, Success</a></li>
+</ul>
+</li>
+<li><a href="#_the_setup">7. The Setup</a>
+<ul class="sectlevel2">
+<li><a href="#_what_is_the_setup">7.1. What is the Setup?</a></li>
+<li><a href="#_what_goes_into_the_setup">7.2. What goes into the Setup?</a></li>
+<li><a href="#_how_to_use_the_setup">7.3. How to use the Setup</a></li>
+<li><a href="#_how_to_create_and_manage_setups">7.4. How to create and manage Setups</a></li>
+</ul>
+</li>
+<li><a href="#_the_globalstate">8. The GlobalState</a>
+<ul class="sectlevel2">
+<li><a href="#_singleton_versus_shared_state">8.1. Singleton versus Shared State</a></li>
+<li><a href="#_what_is_in_the_globalstate">8.2. What is in the GlobalState?</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li><a href="#_part_iii_device_commanding">Part III — Device Commanding</a>
+<ul class="sectlevel1">
+<li><a href="#_device_control_servers">9. Device Control Servers</a>
+<ul class="sectlevel2">
+<li><a href="#_the_device_interface_classes">9.1. The Device Interface Classes</a></li>
+</ul>
+</li>
+<li><a href="#_the_system_under_test_sut_dpu_processor_and_fee_simulator">10. The System Under Test (SUT) – DPU Processor and FEE Simulator</a></li>
+</ul>
+</li>
+<li><a href="#_part_iv_unit_testing_and_beyond">Part IV — Unit Testing and beyond</a>
+<ul class="sectlevel1">
+<li><a href="#_the_test_suite">11. The Test Suite</a></li>
+<li><a href="#_code_reviews">12. Code Reviews</a>
+<ul class="sectlevel2">
+<li><a href="#_who_is_part_of_this_code_review">12.1. Who is part of this Code Review?</a></li>
+<li><a href="#_planning">12.2. Planning</a></li>
+<li><a href="#_what_needs_to_be_reviewed">12.3. What needs to be reviewed?</a></li>
+<li><a href="#_prerequisites">12.4. Prerequisites</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li><a href="#_part_v_todo">Part V — TODO</a>
+<ul class="sectlevel1">
+<li><a href="#_terminal_commands">13. Terminal Commands</a>
+<ul class="sectlevel2">
+<li><a href="#_what_goes_into_this_section">13.1. What goes into this section</a></li>
+</ul>
+</li>
+<li><a href="#_stories">14. Stories</a>
+<ul class="sectlevel2">
+<li><a href="#_seemingly_unrelated_process_manager_crash">14.1. Seemingly unrelated Process Manager Crash</a></li>
+</ul>
+</li>
+<li><a href="#_miscellaneous">15. Miscellaneous</a></li>
+<li><a href="#_system_summary">16. System Summary</a>
+<ul class="sectlevel2">
+<li><a href="#_system_configuration">16.1. System Configuration</a></li>
+<li><a href="#_system_components">16.2. System Components</a></li>
+<li><a href="#_data_flows">16.3. Data Flows</a></li>
+</ul>
+</li>
+<li><a href="#_installation_and_update">17. Installation and Update</a></li>
+<li><a href="#_getting_started">18. Getting Started</a>
+<ul class="sectlevel2">
+<li><a href="#_log_on_to_the_system">18.1. Log on to the System</a></li>
+<li><a href="#_setting_up_the_development_environment">18.2. Setting up the development environment</a></li>
+</ul>
+</li>
+<li><a href="#_index">Index</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+<div id="content">
+<div class="sect1">
+<h2 id="_colophon">Colophon</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Copyright &#169; 2022 by the KU Leuven PLATO CGSE Team</p>
+</div>
+<div class="paragraph">
+<p>1<sup>st</sup> Edition — May 2022</p>
+</div>
+<div class="paragraph">
+<p>This manual is written in PyCharm using the AsciiDoc plugin. The PDF Book version is processed with asciidoctor-pdf. The source code is available in a GitHub repository at XXXXX.</p>
+</div>
+<div class="paragraph">
+<p>When you find an error or inconsistency or you have some improvements to the text, feel free to raise an issue or create a pull request. Any contribution is greatly appreciated and will be mentioned in the acknowledgement section.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_contributors">Contributors</h2>
+<div class="sectionbody">
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 33.3333%;">
+<col style="width: 33.3333%;">
+<col style="width: 33.3334%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Name</th>
+<th class="tableblock halign-left valign-top">Affiliation</th>
+<th class="tableblock halign-left valign-top">Role</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Rik Huygen</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">KU Leuven</p></td>
+<td class="tableblock halign-left valign-top"></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Sara Regibo</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">KU Leuven</p></td>
+<td class="tableblock halign-left valign-top"></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Pierre Royer</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">KU Leuven</p></td>
+<td class="tableblock halign-left valign-top"></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Sena Gomashie</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">SRON</p></td>
+<td class="tableblock halign-left valign-top"></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Jens Johansen</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">SRON</p></td>
+<td class="tableblock halign-left valign-top"></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Nicolas Beraud</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">IAS</p></td>
+<td class="tableblock halign-left valign-top"></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Pierre Guiot</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">IAS</p></td>
+<td class="tableblock halign-left valign-top"></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Angel Valverde</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">INTA</p></td>
+<td class="tableblock halign-left valign-top"></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Jesus Saiz</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">INTA</p></td>
+<td class="tableblock halign-left valign-top"></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_preface">Preface</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>During the development/implementation process it became clear that the project was bigger then we anticipated and we would need to document how the Common-EGSE developed into this full-blown product.</p>
+</div>
+<div class="paragraph">
+<p>During the analysis, design and implementation phase we learned about so many libraries like ZeroMQ, Matplotlib, Numpy, Pandas, Rich, Textual, &#8230;&#8203; but also the standard Python library is so extremely rich of well-designed modules and language concepts that we integrated into our design and implementation.</p>
+</div>
+<div class="paragraph">
+<p>Many of the applied concepts might seem obvious for the core developers of a/this product, but it might not be for the contributors of e.g. device drivers. A full in-depth description of the system and how it was developed is therefore indispensable.</p>
+</div>
+<div class="paragraph">
+<p>The text itself gruw over the years, it started in reStructuredText and was processed with Sphinx, then we moved to Markdown and Mkdocs because of its simplicity and thinking this would encourage us to write and update the text more often. Finally, we ended up using Asciidoc which is a bit of a compromise between the previous two.</p>
+</div>
+<h2 id="_list_of_todo_topics" class="discrete">List of TODO topics</h2>
+<div class="ulist checklist">
+<ul class="checklist">
+<li>
+<p>&#10063; List the terminal commands in a simple overview table or something</p>
+</li>
+<li>
+<p>&#10063; Explain System Preferences in the settings.yaml file (and the local settings)</p>
+</li>
+<li>
+<p>&#10063; The Logger uses ZeroMQ to pass messages. That means these this ZeroMQ needs to be closed when your application ends.</p>
+</li>
+<li>
+<p>&#10063; Where do we descibe the Synoptics Manager, where does this process fit into the design fiures etc.</p>
+</li>
+<li>
+<p>&#10063; Somewhere we need to describe all the modules in the CGSE. For example, the <code>device.py</code> module defines a lot of interesting classes, including Exceptions, the device connection interfaces, and the device transport.</p>
+</li>
+<li>
+<p>&#10063; Somewhere it shall be clearly explained where all these processes need to be started, on the egse-server or egse-client, manually or by Systemd, &#8230;&#8203; or clicking an icon?</p>
+</li>
+<li>
+<p>&#10063; Should we maybe divide the developer manual in part 1 with coding advice and part 2 with the description of the CGSE code?</p>
+</li>
+<li>
+<p>&#10063; Explain how the Failure — Success — Response classes work</p>
+</li>
+<li>
+<p>&#10063; Explain how you can run the GUIs and even some control servers on your local machine using port forwarding. As an example, use the TCS or the Hexapod. This is only for hardware device connections, it is not for core services, run them as normal on your local machine.</p>
+</li>
+<li>
+<p>&#10063; Find better names for the Parts in the manual</p>
+</li>
+<li>
+<p>&#10063; WHere do we discuss devices with Ethernet interfaces and USB interfaces, the differences, the pros and cons, are there other still in use, like GPIO?</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_documents_and_acronyms">Documents and Acronyms</h2>
+<div class="sectionbody">
+<div class="sect2">
+<h3 id="_applicable_documents">Applicable documents</h3>
+<div class="hdlist">
+<table>
+<tr>
+<td class="hdlist1">
+[AD-01]
+</td>
+<td class="hdlist2">
+<p>PLATO Common-EGSE Requirements Specification, PLATO-KUL-PL-RS-0001, issue 1.4, 18/03/2020</p>
+</td>
+</tr>
+<tr>
+<td class="hdlist1">
+[AD-02]
+</td>
+<td class="hdlist2">
+<p>PLATO Common-EGSE Design Description, PLATO-KUL-PL-DD-0001, issue 1.2, 13/03/2020</p>
+</td>
+</tr>
+<tr>
+<td class="hdlist1">
+[AD-03]
+</td>
+<td class="hdlist2">
+<p>PLATO Common-EGSE Interface Control Document, PLATO-KUL-PL-ICD-0002, issue 0.1, 19/03/2020</p>
+</td>
+</tr>
+</table>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_reference_documents">Reference Documents</h3>
+<div class="hdlist">
+<table>
+<tr>
+<td class="hdlist1">
+[RD-01]
+</td>
+<td class="hdlist2">
+<p>PLATO Common-EGSE Installation Guide, PLATO-KUL-PL-MAN-0002</p>
+</td>
+</tr>
+<tr>
+<td class="hdlist1">
+[RD-02]
+</td>
+<td class="hdlist2">
+<p>PLATO Common-EGSE User Manual, PLATO-KUL-PL-MAN-0001</p>
+</td>
+</tr>
+<tr>
+<td class="hdlist1">
+[RD-03]
+</td>
+<td class="hdlist2">
+<p>Common-EGSE on-line Documentation	<a href="https://ivs-kuleuven.github.io/plato-cgse-docs/" class="bare">https://ivs-kuleuven.github.io/plato-cgse-docs/</a></p>
+</td>
+</tr>
+</table>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_acronyms">Acronyms</h3>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 50%;">
+<col style="width: 50%;">
+</colgroup>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">AEU</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Ancillary Electronics Unit</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">API</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Application Programming Interface</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">CAM</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Camera</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">COT</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Commercial off-the-shelf</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">DPU</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Data Processing Unit</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">DSI</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Diagnostic SpaceWire Interface</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">EGSE</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Electrical Ground Support Equipment</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">OS</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Operating System</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">PLM</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Payload Module</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">REP</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Read-Evaluate-Print Loop, e.g. the Python interpreter prompt</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">RMAP</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Remote Memory Access Protocol</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">SpW</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">SpaceWire</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">SVM</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Service Module</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">TBC</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">To Be Confirmed</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">TBD</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">To Be Decided or To Be Defined</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">TBW</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">To Be Written</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">TV</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Thermal Vacuum</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">USB</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Universal Serial Bus</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_caveats">Caveats</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Place general warnings here on topics where the user might make specific assumption on the code or the usage of the code.</p>
+</div>
+<div class="sect2">
+<h3 id="_setup">Setup</h3>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>It&#8217;s not a good idea to create keys with spaces and special characters, although it is allowed in a dictionary and it works without problems, the key will not be available as an attribute because it will violate the Python syntax.</p>
+<div class="literalblock">
+<div class="content">
+<pre>&gt;&gt;&gt; from egse.setup import Setup
+&gt;&gt;&gt; s = Setup()
+&gt;&gt;&gt; s["a key with spaces"] = 42
+&gt;&gt;&gt; print(s)
+NavigableDict
+└── a key with spaces: 42
+&gt;&gt;&gt; s['a key with spaces']
+42
+&gt;&gt;&gt; s.a key with spaces
+  Input In [18]
+    s.a key with spaces
+        ^
+SyntaxError: invalid syntax</pre>
+</div>
+</div>
+</li>
+<li>
+<p>When submitting a Setup to the configuration manager, the Setup is automatically pushed to the GitHub repository with the message provided with the <code>submit_setup()</code> function. No need anymore to create a pull request. There are however two thing to keep in mind here:</p>
+<div class="olist loweralpha">
+<ol class="loweralpha" type="a">
+<li>
+<p>do not add a Setup manually to your PLATO_CONF_FILE_LOCATION or to the repository. That will invalidate the repo and the cache that is maintained by the configuration manager</p>
+</li>
+<li>
+<p>you should do a git pull regularly on your local machine and also on the egse-client if the folder is not NFS mounted</p>
+</li>
+</ol>
+</div>
+</li>
+</ol>
+</div>
+</div>
+</div>
+</div>
+<h1 id="_part_i_development_notions" class="sect0">Part I — Development Notions</h1>
+<div class="sect1">
+<h2 id="_style_guide">1. Style Guide</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>This part of the developer guide contains instructions for coding styles that are adopted for this project.</p>
+</div>
+<div class="paragraph">
+<p>The style guide that we use for this project is <a href="https://www.python.org/dev/peps/pep-0008/">PEP8</a>. This is the standard for Python code and all IDEs, parsers and code formatters understand and work with this standard. PEP8 leaves room for project specific styles. A good style guide that we can follow is the <a href="https://google.github.io/styleguide/pyguide.html">Google Style Guide</a>.</p>
+</div>
+<div class="paragraph">
+<p>The following sections will give the most used conventions with a few examples of good and bad.</p>
+</div>
+<div class="sect2">
+<h3 id="_tldr">1.1. TL;DR</h3>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 50%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Type</th>
+<th class="tableblock halign-left valign-top">Style</th>
+<th class="tableblock halign-left valign-top">Example</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Classes</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">CapWords</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">ProcessManager, ImageViewer, CommandList, Observation, MetaData</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Methods&nbsp;&amp;&nbsp;Functions</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">lowercase with underscores</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">get_value, set_mask, create_image</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Variables</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">lowercase with underscores</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">key, last_value, model, index, user_info</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Constants</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">UPPERCASE with underscores</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">MAX_LINES, BLACK, COMMANDING_PORT</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Modules &amp; packages</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">lowercase <strong>no</strong> underscores</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">dataset, commanding, multiprocessing</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="sect2">
+<h3 id="_general">1.2. General</h3>
+<div class="ulist">
+<ul>
+<li>
+<p>name the class or variable or function with what it is, what it does or what it contains. A variable named <code>user_list</code> might look good at first, but what if at some point you want to change the list to a set so it can not contain duplicates. Are you going to rename everything into <code>user_set</code> or would <code>user_info</code> be a better name?</p>
+</li>
+<li>
+<p>never use dashes in any name, they will raise a <code>SyntaxError: invalid syntax</code>.</p>
+</li>
+<li>
+<p>we introduce a number of relaxations to not brake backward compatibility for the sake of a naming convention. As described in <a href="https://legacy.python.org/dev/peps/pep-0008/#a-foolish-consistency-is-the-hobgoblin-of-little-minds">A Foolish Consistency is the Hobgoblin of Little Minds</a>: <em>Consistency with this style guide is important. Consistency within a project is more important. Consistency within one module or function is the most important. [&#8230;&#8203;] do not break backwards compatibility just to comply with this PEP!</em></p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_classes">1.3. Classes</h3>
+<div class="paragraph">
+<p>Always use CamelCase (Python uses CapWords) for class names. When using acronyms, keep them all UPPER case.</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>class names should be nouns, like Observation</p>
+</li>
+<li>
+<p>make sure to name classes distinctively</p>
+</li>
+<li>
+<p>stick to one word for a concept when naming classes, i.e. words like <code>Manager</code> or <code>Controller</code> or <code>Organizer</code> all mean similar things. Choose one word for the concept and stick to it.</p>
+</li>
+<li>
+<p>if a word is already part of a package or module, don&#8217;t use the same word in the class name again.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Good names are: <code>Observation</code>, <code>CalibrationFile</code>, <code>MetaData</code>, <code>Message</code>, <code>ReferenceFrame</code>, <code>URLParser</code>.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_methods_and_functions">1.4. Methods and Functions</h3>
+<div class="paragraph">
+<p>A function or a method does something (and should only do one thing, SRP=Single Responsibility Principle), it is an action, so the name should reflect that action.</p>
+</div>
+<div class="paragraph">
+<p>Always use lowercase words separated with underscores.</p>
+</div>
+<div class="paragraph">
+<p>Good names are: <code>time_in_ms()</code>, <code>get_commanding_port()</code>, <code>is_connected()</code>, <code>parse_time()</code>, <code>setup_mask()</code>.</p>
+</div>
+<div class="paragraph">
+<p>When working with legacy code or code from another project, names may be in camelCase (with the first letter a lower case letter). So we can in this case use also <code>getCommandPort()</code> or <code>isConnected()</code> as method and function names.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_variables">1.5. Variables</h3>
+<div class="paragraph">
+<p>Use the same naming convention as functions and methods, i.e. lowercase with underscores.</p>
+</div>
+<div class="paragraph">
+<p>Good names are: <code>key</code>, <code>value</code>, <code>user_info</code>, <code>model</code>, <code>last_value</code></p>
+</div>
+<div class="paragraph">
+<p>Bad names: <code>NSegments</code>, <code>outNoise</code></p>
+</div>
+<div class="paragraph">
+<p>Take care not to use builtins: <code>list</code>, <code>type</code>, <code>filter</code>, <code>lambda</code>, <code>map</code>, <code>dict</code>, &#8230;&#8203;</p>
+</div>
+<div class="paragraph">
+<p>Private variables (for classes) start with an underscore: <code>_name</code> or <code>_total_n_args</code>.</p>
+</div>
+<div class="paragraph">
+<p>In the same spirit as method and function names, the variables can also be in camelCase for specific cases.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_constants">1.6. CONSTANTS</h3>
+<div class="paragraph">
+<p>Use ALL_UPPER_CASE with underscores for constants. Use constants always within a name space, not globally.</p>
+</div>
+<div class="paragraph">
+<p>Good names: <code>MAX_LINES</code>, <code>BLACK</code>, <code>YELLOW</code>, <code>ESL_LINK_MODE_DISABLED</code></p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_modules_and_packages">1.7. Modules and Packages</h3>
+<div class="paragraph">
+<p>Use simple words for modules, preferably just one word like <code>datasets</code> or <code>commanding</code> or <code>storage</code> or <code>extensions</code>. If two words are unavoidable, just concatenate them, like <code>multiprocessing</code> or <code>sampledata</code> or <code>testdata</code>. If needed for readability, use an underscore to separate the words, e.g. <code>image_analysis</code>.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_import_statements">1.8. Import Statements</h3>
+<div class="ulist">
+<ul>
+<li>
+<p>group and sort import statements</p>
+</li>
+<li>
+<p>never use the form <code>from &lt;module&gt; import *</code></p>
+</li>
+<li>
+<p>always use absolute imports in scripts</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Be careful that you do not name any modules the same as a module in the Python standard library. This can result in strange effects and may result in an <code>AttributeError</code>. Suppose you have named a module <code>math</code> in the <code>egse</code> directory and it is imported and used further in the code as follows:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="python"><span style="color:#080;font-weight:bold">from</span> <span style="color:#B44;font-weight:bold">egse</span> <span style="color:#080;font-weight:bold">import</span> <span style="color:#B44;font-weight:bold">math</span>
+
+...
+
+  <span style="color:#777"># in some expression further down the code you might use</span>
+
+  math.exp(a)</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>This will result in the following runtime error:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code>  File &quot;some_module.py&quot;, line 8, in &lt;module&gt;
+    print(math.exp(a))
+AttributeError: module 'egse.math' has no attribute 'exp'</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Of course this is an obvious example, but it might be more obscure like e.g. in this GitHub issue: <a href="https://github.com/ParmEd/ParmEd/issues/148">'module' object has no attribute 'Cmd'</a>.</p>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_best_practices_for_error_and_exception_handling">2. Best Practices for Error and Exception Handling</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>
+All errors and exceptions should be handled to prevent the Application from crashing. This is definitely true for server applications and services, e.g. device control servers, the storage and configuration manager. But also GUI applications should not crash due to an unhandled exception. It is important that, at least on the server side, all exceptions are logged.</p>
+</div>
+<div class="sect2">
+<h3 id="_when_do_i_catch_exceptions">2.1. When do I catch exceptions?</h3>
+<div class="paragraph">
+<p>Exceptions shouldn&#8217;t really be caught unless you have a really good plan for how to recover. If you have no such plan, let the exception propagate to a higher level in your software until you know how to handle it. In your own code, try to avoid raising an exception in the first place, design your code and classes such that you minimise throwing exceptions.</p>
+</div>
+<div class="paragraph">
+<p>If some code path simply must broadly catch all exceptions (i.e. catch the base <code>Exception</code> class) — for example, the top-level loop for some long-running persistent process — then each such caught exception must write the full stack trace to the log, along with a timestamp. Not just the exception type and message, but the full stack trace. This can easily be done in Python as follows:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="python"><span style="color:#080;font-weight:bold">try</span>:
+    main_loop()
+<span style="color:#080;font-weight:bold">except</span> <span style="color:#C00;font-weight:bold">Exception</span>:
+    logging.exception(<span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">Caught exception at the top level main_loop().</span><span style="color:#710">&quot;</span></span>)</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>This will log the exception and stacktrace with logging level ERROR.</p>
+</div>
+<div class="paragraph">
+<p>For all other except clauses — which really should be the vast majority — the caught exception type must be as specific as possible. Something like <code>KeyError</code>, <code>ConnectionTimeout</code>, etc. That should be the exception that you have a plan for, that you can handle and recover from at this level in you code.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_how_do_i_catch_exceptions">2.2. How do I catch Exceptions?</h3>
+<div class="paragraph">
+<p>
+Use the <code>try</code>/<code>except</code> blocks around code that can potentially generate an exception <em>and</em> your code can recover from that exception.</p>
+</div>
+<div class="paragraph">
+<p>Any resources such as open files or connections can be closed or cleaned up in the <em>finally</em> clause. Remember that the code within <code>finally</code> will always be executed, regardless of an Exception is thrown or not. In the example below, the function checks if there is internet connection by opening a socket to a host which is expected to be available at all times. The socket is closed in the finally clause even when the exception is raised.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="python"><span style="color:#080;font-weight:bold">import</span> <span style="color:#B44;font-weight:bold">socket</span>
+<span style="color:#080;font-weight:bold">import</span> <span style="color:#B44;font-weight:bold">logging</span>
+
+<span style="color:#080;font-weight:bold">def</span> <span style="color:#06B;font-weight:bold">has_internet</span>(host=<span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">8.8.8.8</span><span style="color:#710">&quot;</span></span>, port=<span style="color:#00D">53</span>, timeout=<span style="color:#00D">3</span>):
+    <span style="color:#D42"><span style="color:black">&quot;&quot;&quot;</span><span>Returns True if we have internet connection, False otherwise.</span><span style="color:black">&quot;&quot;&quot;</span></span>
+    <span style="color:#080;font-weight:bold">try</span>:
+        socket_ = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        socket_.settimeout(timeout)
+        socket_.connect((host, port))
+        <span style="color:#080;font-weight:bold">return</span> <span style="color:#069">True</span>
+    <span style="color:#080;font-weight:bold">except</span> socket.error <span style="color:#080;font-weight:bold">as</span> ex:
+        logging.info(f<span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">No Internet: Unable to open socket to {host}:{port} [{ex}]</span><span style="color:#710">&quot;</span></span>)
+        <span style="color:#080;font-weight:bold">return</span> <span style="color:#069">False</span>
+    <span style="color:#080;font-weight:bold">finally</span>:
+        <span style="color:#080;font-weight:bold">if</span> socket_ <span style="color:#080;font-weight:bold">is</span> <span style="color:#080;font-weight:bold">not</span> <span style="color:#069">None</span>:
+            socket_.close()</code></pre>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_what_about_the_with_statement">2.3. What about the 'with' Statement?</h3>
+<div class="paragraph">
+<p>When you use a <code>with</code> statement in your code, resources are automatically closed when an Exception is thrown, but the Exception is still thrown, so you should put the <code>with</code> block inside a <code>try</code>/<code>except</code> block.</p>
+</div>
+<div class="paragraph">
+<p>As of Python 3 the <code>socket</code> class can be used as a context manager. The example above can thus be rewritten as follows:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="python"><span style="color:#080;font-weight:bold">import</span> <span style="color:#B44;font-weight:bold">socket</span>
+<span style="color:#080;font-weight:bold">import</span> <span style="color:#B44;font-weight:bold">logging</span>
+
+<span style="color:#080;font-weight:bold">def</span> <span style="color:#06B;font-weight:bold">has_internet</span>(host=<span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">8.8.8.8</span><span style="color:#710">&quot;</span></span>, port=<span style="color:#00D">53</span>, timeout=<span style="color:#00D">3</span>):
+    <span style="color:#D42"><span style="color:black">&quot;&quot;&quot;</span><span>Returns True if we have internet connection, False otherwise.</span><span style="color:black">&quot;&quot;&quot;</span></span>
+    <span style="color:#080;font-weight:bold">try</span>:
+        <span style="color:#080;font-weight:bold">with</span> socket.socket(socket.AF_INET, socket.SOCK_STREAM) <span style="color:#080;font-weight:bold">as</span> socket_:
+            socket_.settimeout(timeout)
+            socket_.connect((host, port))
+            <span style="color:#080;font-weight:bold">return</span> <span style="color:#069">True</span>
+    <span style="color:#080;font-weight:bold">except</span> socket.error <span style="color:#080;font-weight:bold">as</span> ex:
+        logging.warning(f<span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">No Internet: Unable to open socket to {host}:{port} [{ex}]</span><span style="color:#710">&quot;</span></span>)
+        <span style="color:#080;font-weight:bold">return</span> <span style="color:#069">False</span></code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Another example from our own code base shows how to handle a Hexapod PUNA Proxy error. Suppose you want to send some commands to the PUNA within a context manager as follows:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="python"><span style="color:#080;font-weight:bold">from</span> <span style="color:#B44;font-weight:bold">egse.hexapod.symetrie.puna</span> <span style="color:#080;font-weight:bold">import</span> <span style="color:#B44;font-weight:bold">PunaProxy</span>
+
+<span style="color:#080;font-weight:bold">with</span> PunaProxy() <span style="color:#080;font-weight:bold">as</span> proxy:
+    proxy.move_absolute(<span style="color:#00D">0</span>, <span style="color:#00D">0</span>, <span style="color:#00D">2</span>, <span style="color:#00D">0</span>, <span style="color:#00D">0</span>, <span style="color:#00D">0</span>)
+    <span style="color:#777"># Send other commands to the Puna Hexapod.</span></code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>When you execute the above code and the PUNA control server is not active, the Proxy will not be able to connect and the context manager will raise a <code>ConnectionError</code>.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code>PunaProxy could not connect to its control server at tcp://localhost:6700. No commands have been loaded.
+Control Server seems to be off-line, abandoning
+Traceback (most recent call last):
+  File &quot;t.py&quot;, line 3, in &lt;module&gt;
+    with PunaProxy() as proxy:
+  File &quot;/Users/rik/Git/plato-common-egse/src/egse/proxy.py&quot;, line 129, in __enter__
+    raise ConnectionError(&quot;Proxy is not connected when entering the context.&quot;)
+ConnectionError: Proxy is not connected when entering the context.</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>So, the <code>with .. as</code> statement should be put into a <code>try .. except</code> clause. Since we probably cannot handle this exception at this level, we just re-raise the connection error.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="python"><span style="color:#080;font-weight:bold">from</span> <span style="color:#B44;font-weight:bold">egse.hexapod.symetrie.puna</span> <span style="color:#080;font-weight:bold">import</span> <span style="color:#B44;font-weight:bold">PunaProxy</span>
+
+<span style="color:#080;font-weight:bold">try</span>:
+    <span style="color:#080;font-weight:bold">with</span> PunaProxy() <span style="color:#080;font-weight:bold">as</span> proxy:
+        proxy.move_absolute(<span style="color:#00D">0</span>,<span style="color:#00D">0</span>,<span style="color:#00D">2</span>,<span style="color:#00D">0</span>,<span style="color:#00D">0</span>,<span style="color:#00D">0</span>)
+        <span style="color:#777"># Send other commands to the Puna Hexapod.</span>
+<span style="color:#080;font-weight:bold">except</span> ConnectionError <span style="color:#080;font-weight:bold">as</span> exc:
+    logger.exception(<span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">Could not send commands to the Hexapod PUNA because the control server is not reachable.</span><span style="color:#710">&quot;</span></span>)
+    <span style="color:#080;font-weight:bold">raise</span>  # <b class="conum">(1)</b></code></pre>
+</div>
+</div>
+<div class="colist arabic">
+<ol>
+<li>
+<p>use a single <code>raise</code> statement, don&#8217;t repeat the <code>ConnectionError</code> here</p>
+</li>
+</ol>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_why_not_just_return_an_error_code">2.4. Why not just return an error code?</h3>
+<div class="paragraph">
+<p>
+In languages like the C programming language is it custom to return error codes or <code>-1</code> as a return code from a function to indicate a problem has occurred.
+The main drawback here is that your code, when calling such a function, must always check it&#8217;s return codes, which is often forgotten or ignored.</p>
+</div>
+<div class="paragraph">
+<p>In Python, throw exceptions instead of returning an error code. Exceptions ensure that failures do not go unnoticed because calling code didn&#8217;t check a return code.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_when_to_test_instead_of_try">2.5. When to Test instead of Try?</h3>
+<div class="paragraph">
+<p>The question basically is if we should check for a common condition without possibly throwing an exception. Python does this different than other languages and prefers the use of exceptions. There are two different opinions about this, EAFP and LBYL. From the Python documentation:</p>
+</div>
+<h5 id="_eafp_its_easier_to_ask_for_forgiveness_than_permission" class="discrete"><em>EAFP</em>: it&#8217;s Easier to Ask for Forgiveness than Permission.</h5>
+<div class="paragraph">
+<p>This common Python coding style assumes the existence of valid keys or attributes and catches exceptions if the assumption proves false. This clean and fast style is characterized by the presence of many try and except statements. The technique contrasts with the LBYL style common to many other languages such as C.</p>
+</div>
+<h5 id="_lbyl_look_before_you_leap" class="discrete"><em>LBYL</em>: Look Before You Leap.</h5>
+<div class="paragraph">
+<p>This coding style explicitly tests for pre-conditions before making calls or lookups. This style contrasts with the EAFP approach and is characterized by the presence of many if statements. In a multi-threaded environment, the LBYL approach can risk introducing a race condition between “the looking” and “the leaping”.</p>
+</div>
+<div class="paragraph">
+<p>Consider the following two cases:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="python">XXXXX: put example <span style="color:#080;font-weight:bold">with</span> <span style="color:#080;font-weight:bold">if</span> statement here</code></pre>
+</div>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="python">XXXXX: put the same example <span style="color:#080;font-weight:bold">with</span> <span style="color:#080;font-weight:bold">try</span>..except</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>If you expect that 90% of the time your code will just run as expected, use the <code>try</code>/<code>except</code> approach. It will be faster if exceptions really are exceptional. If you expect an abnormal condition more than 50% of the time, then using <code>if</code> is probably better.</p>
+</div>
+<div class="paragraph">
+<p>In other words, the method to choose depends on how often you expect the event to occur.</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Use exception handling if the event doesn&#8217;t occur very often, that is, if the event is truly exceptional and indicates an error (such as an unexpected end-of-file). When you use exception handling, less code is executed in normal conditions.</p>
+</li>
+<li>
+<p>Check for error conditions in code if the event happens routinely and could be considered part of normal execution. When you check for common error conditions, less code is executed because you avoid exceptions.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_when_to_re_throw_an_exception">2.6. When to re-throw an Exception?</h3>
+<div class="paragraph">
+<p>
+Sometimes you just want to do something and rethrow the same Exception. This is easy in Python as shown in the following example.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="python"><span style="color:#080;font-weight:bold">try</span>:
+    <span style="color:#777"># do some work here</span>
+<span style="color:#080;font-weight:bold">except</span> SomeException:
+    logging.warning(<span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">...</span><span style="color:#710">&quot;</span></span>, exc_info=<span style="color:#069">True</span>)
+    <span style="color:#080;font-weight:bold">raise</span></code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>In some cases, it is best to have the stacktrace printed out with the logging message. I&#8217;ve include the <code>exc_info=True</code> in the example.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_what_about_performance">2.7. What about Performance?</h3>
+<div class="paragraph">
+<p>It is nearly free to set up a <code>try/except</code> block (an exception manager), while an <code>if</code> statement always costs you.</p>
+</div>
+<div class="paragraph">
+<p>Bear in mind that Python internally uses exceptions frequently. So, when you use an <code>if</code> statement to check e.g. for the existence of an attribute (the <code>hasattr()</code> method), this builtin function will call <code>getattr(obj, name)</code> and catch <code>AttributeError</code>. So, instead of doing the following:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="python"><span style="color:#080;font-weight:bold">if</span> <span style="color:#369;font-weight:bold">hasattr</span>(command, <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">'</span><span style="color:#D20">name</span><span style="color:#710">'</span></span>):
+    command_name = <span style="color:#369;font-weight:bold">getattr</span>(command, <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">'</span><span style="color:#D20">name</span><span style="color:#710">'</span></span>)
+<span style="color:#080;font-weight:bold">else</span>:
+    command_name = <span style="color:#069">None</span></code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>you can better use the <code>try/except</code>.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="python"><span style="color:#080;font-weight:bold">try</span>:
+    command_name = <span style="color:#369;font-weight:bold">getattr</span>(command, <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">'</span><span style="color:#D20">name</span><span style="color:#710">'</span></span>)
+<span style="color:#080;font-weight:bold">except</span> <span style="color:#C00;font-weight:bold">AttributeError</span>:
+    command_name = <span style="color:#069">None</span></code></pre>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_can_i_raise_my_own_exception">2.8. Can I raise my own Exception?</h3>
+<div class="paragraph">
+<p>
+As a general rule, try to use builtin exceptions from Python, especially <code>ValueError</code>, <code>IndexError</code>, <code>NameError</code>, and <code>KeyError</code>. Don&#8217;t invent your own 'parameter' or 'arguments' exceptions if the cause of the exception is clear from the builtin. The hierarchy of Exceptions can be found in the Python documentation at <a href="https://docs.python.org/3/library/exceptions.html#exception-hierarchy">Builtin-Exceptions &gt; Exception Hierarchy</a>.</p>
+</div>
+<div class="paragraph">
+<p>When the connection with a builtin exception is not clear however, create your own exception from the <code>Exception</code> class.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="python"><span style="color:#080;font-weight:bold">class</span> <span style="color:#B06;font-weight:bold">DeviceNotFoundError</span>(<span style="color:#C00;font-weight:bold">Exception</span>):
+    <span style="color:#D42"><span style="color:black">&quot;&quot;&quot;</span><span>Raised when a device could not be located or loaded.</span><span style="color:black">&quot;&quot;&quot;</span></span>
+    <span style="color:#080;font-weight:bold">pass</span></code></pre>
+</div>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<div class="title">Note</div>
+</td>
+<td class="content">
+Even if we are talking about Exceptions all the time, your own Exceptions should end with <code>Error</code> instead of <code>Exception</code>. The standard Python documentation also has a section on <a href="https://docs.python.org/3/tutorial/errors.html#user-defined-exceptions">User Defined Exceptions</a> that you might want to read.
+</td>
+</tr>
+</table>
+</div>
+<div class="paragraph">
+<p>In some situations you might want to group many possible sources of internal errors into a single exception with a clear message. For example, you might want to write a library module that throws its own exception to hide the implementation details, i.e. the user of your library shouldn&#8217;t have to care which extra libraries you use to get the job done.</p>
+</div>
+<div class="paragraph">
+<p>Since this will hide the original exception, if you throw your own exception, make sure that it contains every bit of information from the originally caught exception. You&#8217;ll be grateful for that when you read the log files that are send to you for debugging.</p>
+</div>
+<div class="paragraph">
+<p>The example below is taken from the actual source code. This code catches all kinds of exceptions that can be raised when connecting to a hardware device over a TCP socket. The caller is mainly interested of course if the connection could be established or not, but we always include the information from the original exception with the <code>raise..from</code> clause.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="python"><span style="color:#080;font-weight:bold">def</span> <span style="color:#06B;font-weight:bold">connect</span>(<span style="color:#069">self</span>):
+
+    <span style="color:#777"># Sanity checks</span>
+
+    <span style="color:#080;font-weight:bold">if</span> <span style="color:#069">self</span>.is_connection_open:
+        <span style="color:#080;font-weight:bold">raise</span> PMACException(<span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">Socket is already open</span><span style="color:#710">&quot;</span></span>)
+    <span style="color:#080;font-weight:bold">if</span> <span style="color:#069">self</span>.hostname <span style="color:#080;font-weight:bold">in</span> (<span style="color:#069">None</span>, <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#710">&quot;</span></span>):
+        <span style="color:#080;font-weight:bold">raise</span> PMACException(<span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">ERROR: hostname not initialized</span><span style="color:#710">&quot;</span></span>)
+    <span style="color:#080;font-weight:bold">if</span> <span style="color:#069">self</span>.port <span style="color:#080;font-weight:bold">in</span> (<span style="color:#069">None</span>, <span style="color:#00D">0</span>):
+        <span style="color:#080;font-weight:bold">raise</span> PMACException(<span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">ERROR: port number not initialized</span><span style="color:#710">&quot;</span></span>)
+
+    <span style="color:#777"># Create a new socket instance</span>
+
+    <span style="color:#080;font-weight:bold">try</span>:
+        <span style="color:#069">self</span>.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        <span style="color:#069">self</span>.sock.setblocking(<span style="color:#00D">1</span>)
+        <span style="color:#069">self</span>.sock.settimeout(<span style="color:#00D">3</span>)
+    <span style="color:#080;font-weight:bold">except</span> socket.error <span style="color:#080;font-weight:bold">as</span> e_socket:
+        <span style="color:#080;font-weight:bold">raise</span> PMACException(<span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">ERROR: Failed to create socket.</span><span style="color:#710">&quot;</span></span>) <span style="color:#080;font-weight:bold">from</span> <span style="color:#B44;font-weight:bold">e_socket</span>
+
+    <span style="color:#777"># Attempt to establish a connection to the remote host</span>
+
+    <span style="color:#080;font-weight:bold">try</span>:
+        logger.debug(f<span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">'</span><span style="color:#D20">Connecting a socket to host &quot;{self.hostname}&quot; using port {self.port}</span><span style="color:#710">'</span></span>)
+        <span style="color:#069">self</span>.sock.connect((<span style="color:#069">self</span>.hostname, <span style="color:#069">self</span>.port))
+    <span style="color:#080;font-weight:bold">except</span> ConnectionRefusedError <span style="color:#080;font-weight:bold">as</span> e_cr:
+        <span style="color:#080;font-weight:bold">raise</span> PMACException(f<span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">ERROR: Connection refused to {self.hostname}</span><span style="color:#710">&quot;</span></span>) <span style="color:#080;font-weight:bold">from</span> <span style="color:#B44;font-weight:bold">e_cr</span>
+    <span style="color:#080;font-weight:bold">except</span> socket.gaierror <span style="color:#080;font-weight:bold">as</span> e_gai:
+        <span style="color:#080;font-weight:bold">raise</span> PMACException(f<span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">ERROR: socket address info error for {self.hostname}</span><span style="color:#710">&quot;</span></span>) <span style="color:#080;font-weight:bold">from</span> <span style="color:#B44;font-weight:bold">e_gai</span>
+    <span style="color:#080;font-weight:bold">except</span> socket.herror <span style="color:#080;font-weight:bold">as</span> e_h:
+        <span style="color:#080;font-weight:bold">raise</span> PMACException(f<span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">ERROR: socket host address error for {self.hostname}</span><span style="color:#710">&quot;</span></span>) <span style="color:#080;font-weight:bold">from</span> <span style="color:#B44;font-weight:bold">e_h</span>
+    <span style="color:#080;font-weight:bold">except</span> socket.timeout <span style="color:#080;font-weight:bold">as</span> e_timeout:
+        <span style="color:#080;font-weight:bold">raise</span> PMACException(f<span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">ERROR: socket timeout error for {self.hostname}</span><span style="color:#710">&quot;</span></span>) <span style="color:#080;font-weight:bold">from</span> <span style="color:#B44;font-weight:bold">e_timeout</span>
+    <span style="color:#080;font-weight:bold">except</span> <span style="color:#C00;font-weight:bold">OSError</span> <span style="color:#080;font-weight:bold">as</span> e_ose:
+        <span style="color:#080;font-weight:bold">raise</span> PMACException(f<span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">ERROR: OSError caught ({e_ose}).</span><span style="color:#710">&quot;</span></span>) <span style="color:#080;font-weight:bold">from</span> <span style="color:#B44;font-weight:bold">e_ose</span>
+
+    <span style="color:#069">self</span>.is_connection_open = <span style="color:#069">True</span></code></pre>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_when_should_i_use_assertions">2.9. When should I use Assertions?</h3>
+<div class="paragraph">
+<p>
+Use assertions only to check for invariants. Assertions are meant for development and should not replace checking conditions or catching exceptions which are meant for production. A good guideline to use <code>assert</code> statements is when they are triggering a bug in your code. When your code assumes something and acts upon the assumption, it&#8217;s recommended to protect this assumption with an assert. This assert failing means your assumption isn&#8217;t correct, which means your code isn&#8217;t correct.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="python"><span style="color:#080;font-weight:bold">def</span> <span style="color:#06B;font-weight:bold">_load_register_map</span>(<span style="color:#069">self</span>):
+    <span style="color:#777"># This method shall only be called when self._name is 'N-FEE' or 'F-FEE'.</span>
+    <span style="color:#080;font-weight:bold">assert</span> <span style="color:#069">self</span>._name == <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">'</span><span style="color:#D20">N-FEE</span><span style="color:#710">'</span></span> <span style="color:#080;font-weight:bold">or</span> <span style="color:#069">self</span>._name == <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">'</span><span style="color:#D20">F-FEE</span><span style="color:#710">'</span></span></code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Another example is:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="python"><span style="color:#777"># If this assertion fails, there is a flaw in the algorithm above</span>
+<span style="color:#080;font-weight:bold">assert</span> tot_n_args == n_args + n_kwargs, (
+    f<span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">Total number of arguments ({tot_n_args}) doesn't match </span><span style="color:#710">&quot;</span></span>
+    f<span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20"># args ({n_args}) + # kwargs ({n_kwargs})</span><span style="color:#710">&quot;</span></span>
+)</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Remember also that running Python with the <code>-O</code> option will remove or disable assertions. Therefore, <em>never</em> put expressions from your normal code flow in an assertion. They will not be executed when the optimizer is used and your code will break gracefully.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_what_are_errors">2.10. What are Errors?</h3>
+<div class="paragraph">
+<p>
+This is a naming convention thing&#8230;&#8203; names of user defined sub-classes of Exception should end with <code>Error</code>.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_cascading_exceptions">2.11. Cascading Exceptions</h3>
+<div class="paragraph">
+<p>TBW</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_logging_exceptions">2.12. Logging Exceptions</h3>
+<div class="paragraph">
+<p>Generally, you should not log exceptions at lower levels, but instead throw exceptions and rely on some top level code to do the logging. Otherwise, you&#8217;ll end up with the same exception logged multiple times at different  layers in your application.</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><a href="https://docs.sentry.io/error-reporting/quickstart/?platform=python" class="bare">https://docs.sentry.io/error-reporting/quickstart/?platform=python</a></p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_resources">2.13. Resources</h3>
+<div class="paragraph">
+<p>Some of the explanations were taken shamelessly from the following resources:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><a href="https://docs.microsoft.com/en-us/dotnet/standard/exceptions/best-practices-for-exceptions" class="bare">https://docs.microsoft.com/en-us/dotnet/standard/exceptions/best-practices-for-exceptions</a></p>
+</li>
+<li>
+<p><a href="https://stackoverflow.com/questions/1835756/using-try-vs-if-in-python" class="bare">https://stackoverflow.com/questions/1835756/using-try-vs-if-in-python</a></p>
+</li>
+<li>
+<p><a href="https://stackoverflow.com/questions/24752395/python-raise-from-usage" class="bare">https://stackoverflow.com/questions/24752395/python-raise-from-usage</a></p>
+</li>
+<li>
+<p><a href="https://realpython.com/the-most-diabolical-python-antipattern/" class="bare">https://realpython.com/the-most-diabolical-python-antipattern/</a></p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_writing_docstrings">3. Writing docstrings</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>This might need to go into the style guide or we leave it here as a stand-alone section.</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Explain which format of docstring we have chosen &#8594; Google</p>
+</li>
+<li>
+<p>What needs to go into the docstring and what not</p>
+</li>
+<li>
+<p>where will the docstring show up &#8594; in PyCharm help, in the REPL, pdoc3</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_setting_up_ssh_access_and_github_deploy_keys">4. Setting up ssh access and GitHub deploy keys</h2>
+<div class="sectionbody">
+<div class="sect2">
+<h3 id="_plato_common_egse">4.1. plato-common-egse</h3>
+<div class="ulist">
+<ul>
+<li>
+<p>ssh-keygen -t ed25519 -C "&lt;your email address&gt;"</p>
+<div class="ulist">
+<ul>
+<li>
+<p>name of the file: <code>id_cgse_egse_server_&lt;TH&gt;</code></p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p>copy the content of <code>id_cgse_egse_server_&lt;TH&gt;.pub</code> into the deploy keys @ GitHub
+**name is plato-data@egse-server (id_cgse_egse_server_&lt;TH&gt;)</p>
+</li>
+<li>
+<p>add the following lines to ~/.ssh/config</p>
+</li>
+</ul>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code>Host repo-common-egse
+    Hostname github.com
+    IdentityFile ~/.ssh/id_cgse_egse_server_&lt;TH&gt;</code></pre>
+</div>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>make sure the files in <code>~/.ssh</code> have the right permissions</p>
+</li>
+</ul>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code>chmod 644 ~/.ssh/config</code></pre>
+</div>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>add a remote for doing the updates</p>
+</li>
+</ul>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight nowrap"><code data-lang="source">git remote add updates git@repo-common-egse:IvS-KULeuven/plato-common-egse.git</code></pre>
+</div>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>then perform an update:</p>
+<div class="ulist">
+<ul>
+<li>
+<p>if this is the first-time-install:</p>
+<div class="literalblock">
+<div class="content">
+<pre>git fetch updates
+git checkout tags/2022.2-&lt;TH&gt;-CGSE -b 2022.2-&lt;TH&gt;-CGSE-branch
+python -m pip uninstall Common-EGSE
+python setup.py install --force --home=/cgse/</pre>
+</div>
+</div>
+</li>
+<li>
+<p>for existing installations, a new command has been implemented that automates the above update procedure:</p>
+<div class="literalblock">
+<div class="content">
+<pre>update_cgse ops --tag=2022.2-&lt;TH&gt;-CGSE</pre>
+</div>
+</div>
+</li>
+</ul>
+</div>
+</li>
+</ul>
+</div>
+<div class="admonitionblock warning">
+<table>
+<tr>
+<td class="icon">
+<div class="title">Warning</div>
+</td>
+<td class="content">
+<div class="paragraph">
+<p>You might experience the following problem starting the core egse services on the egse-server with Systemd:</p>
+</div>
+<div class="literalblock">
+<div class="content">
+<pre>systemctl restart log_cs sm_cs cm_cs pm_cs</pre>
+</div>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>the problem was reported as (code=exited, status=200/CHDIR)</p>
+</li>
+<li>
+<p>the service files contain a WorkingDirectory pointing to <code>~/workdir</code> and that folder did not exist on the machine.</p>
+</li>
+</ul>
+</div>
+</td>
+</tr>
+</table>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_plato_test_scripts">4.2. plato-test-scripts</h3>
+<div class="ulist">
+<ul>
+<li>
+<p>ssh-keygen -t ed25519 -C ["<a href="mailto:rik.huygen@kuleuven.be">rik.huygen@kuleuven.be</a>](mailto:%<a href="mailto:22rik.huygen@kuleuven.be">22rik.huygen@kuleuven.be</a>)"</p>
+<div class="ulist">
+<ul>
+<li>
+<p>name of the file: <code>id_ts_egseclient2_&lt;TH&gt;</code></p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p>copy the content of <code>id_ts_egseclient2_&lt;TH&gt;.pub</code> into the deploy keys @ GitHub</p>
+<div class="ulist">
+<ul>
+<li>
+<p>name is plato-data@egse-client (id_ts_egse_client_&lt;TH&gt;)</p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p>add the following lines to ~/.ssh/config</p>
+<div class="literalblock">
+<div class="content">
+<pre>Host repo-test-scripts
+    Hostname github.com
+    IdentityFile ~/.ssh/id_ts_egseclient2_csl</pre>
+</div>
+</div>
+</li>
+<li>
+<p>make sure the files in ~/.ssh have the right permissions</p>
+<div class="literalblock">
+<div class="content">
+<pre>chmod 644 ~/.ssh/config</pre>
+</div>
+</div>
+</li>
+<li>
+<p>add a remote for doing the updates</p>
+<div class="literalblock">
+<div class="content">
+<pre>git remote add updates [git@repo-test-scripts:IvS-KULeuven/plato-test-scripts.git](mailto:git@repo-common-egse:IvS-KULeuven/plato-common-egse.git)</pre>
+</div>
+</div>
+</li>
+<li>
+<p>if you had not yet installed the repo, clone it</p>
+<div class="literalblock">
+<div class="content">
+<pre>git clone **[git**@repo-test-scripts:IvS-KULeuven/plato-test-scripts.**git**](mailto:git@repo-test-scripts:IvS-KULeuven/plato-test-scripts.git)</pre>
+</div>
+</div>
+</li>
+<li>
+<p>on a first-time-installation, perform an update as follows:</p>
+<div class="literalblock">
+<div class="content">
+<pre>git fetch updates
+git rebase updates/develop
+python -m pip install -e</pre>
+</div>
+</div>
+</li>
+<li>
+<p>otherwise:</p>
+<div class="literalblock">
+<div class="content">
+<pre>update_ts</pre>
+</div>
+</div>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_plato_cgse_conf">4.3. plato-cgse-conf</h3>
+<div class="paragraph">
+<p>Basically the same procedure as for the previous two repos, except for plato-cgse-conf using the configuration manager: when you add the deploy key to GitHub, you must check the <em>Allow write access</em> checkbox. That will allow the configuration manager to upload new Setups to the repo.</p>
+</div>
+<div class="imageblock text-center">
+<div class="content">
+<img src="../images/add-deploy-key.png" alt="add deploy key">
+</div>
+</div>
+<div class="paragraph">
+<p>For the configuration manager, we will also name the remote ‘upload’.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code>git remote add upload git@repo-cgse-conf:IvS-KULeuven/plato-cgse-conf.git</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>The following environment variable is needed in <code>/cgse/env.txt</code>:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="bash">export PLATO_CONF_REPO_LOCATION=/home/plato-data/git/plato-cgse-conf</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Make sure that the branch has the upload/main as its tracking branch:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="bash">$ git branch -u upload/main
+$ git branch -vv
+* main 17fb23c [upload/main] change filter wheels parameters</code></pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+<h1 id="_part_ii_core_concepts" class="sect0">Part II — Core Concepts</h1>
+<div class="sect1">
+<h2 id="_core_services">5. Core Services</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>What are considered core services?</p>
+</div>
+<div class="paragraph">
+<p>The core services are provided by four control servers that run on the  egse-server  machine: the  storage manager, the  configuration manager, the  process manager, and the  log manager. The services are described in full detail In the following sections.</p>
+</div>
+<div class="sect2">
+<h3 id="_the_configuration_manager">5.1. The Configuration Manager</h3>
+<div class="paragraph">
+<p>The configuration manager is a core service&#8230;&#8203;</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>The GlobalState</p>
+</li>
+<li>
+<p>The Setup</p>
+</li>
+<li>
+<p>The Observation concept</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_the_storage_manager">5.2. The Storage Manager</h3>
+<div class="paragraph">
+<p>The storage manager is responsible for storing the following data:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>all housekeeping from the devices that are connected by a control server</p>
+</li>
+<li>
+<p>all housekeeping and CCD data that is transferred from the N-FEE and the F-FEE during camera tests.</p>
+</li>
+<li>
+<p>Origin = defined in the ICD, include a list of predefined origin strings</p>
+</li>
+</ul>
+</div>
+<div class="sect3">
+<h4 id="_file_naming">5.2.1. File Naming</h4>
+
+</div>
+<div class="sect3">
+<h4 id="_file_formats">5.2.2. File Formats</h4>
+
+</div>
+</div>
+<div class="sect2">
+<h3 id="_the_process_manager">5.3. The Process Manager</h3>
+<div class="paragraph">
+<p>The job of the process manager is to keep track of running processes during the Camera Tests.</p>
+</div>
+<div class="paragraph">
+<p>There are known processes that should be running all the time, i.e. the configuration manager, and the Storage Manager. Then, there are device control servers that are dependent on the Site and the Setup at that site. The process manager needs to know which device control servers are available and how to contact them. That information is available in the configuration manager. We need to decide how the interface between the PM and the CM looks like and what information is exchanged in which format.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_the_synoptics_manager">5.4. The Synoptics Manager</h3>
+<div class="paragraph">
+<p><em>Synoptics</em> = in a form of a summary or synopsis; taking or involving a comprehensive mental view. According to the Oxford Dictionary.</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>what is this?</p>
+</li>
+<li>
+<p>Which parameters are Synoptic?</p>
+</li>
+<li>
+<p>From the device to the Grafana screen, what is the data flow, where are the name changes, where are the calibrations….</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_the_telemetry_tm_dictionary">5.5. The Telemetry (TM) Dictionary</h3>
+<div class="paragraph">
+<p>The <code>tm-dicionary.csv</code> file (further referred to as the "telemetry &#8482; dictionary") provides an overview of all housekeeping (HK) and metrics parameters in the EGSE system.  It is used:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>By the <code>get_housekeeping</code> function (in <code>egse.hk</code>) to know in which file the values of the requested HK parameter should be looked for;</p>
+</li>
+<li>
+<p>To create a translation table to convert — in the <code>get_housekeeping</code> function of the device protocols — the original names from the device itself to the EGSE-conform name (see further);</p>
+</li>
+<li>
+<p>For the HK that should be included in the synoptics: to create a translation table to convert the original device-specific (but EGSE-conform) names to the corresponding synoptical name in the Synoptics Manager (in <code>egse.synoptics</code>).</p>
+</li>
+</ul>
+</div>
+<div class="sect3">
+<h4 id="_the_files_content">5.5.1. The File&#8217;s Content</h4>
+<div class="paragraph">
+<p>For each device we need to add all HK parameters to the TM dictionary.  For each of these parameters you need to add one line with the following information (in the designated columns):</p>
+</div>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Column name</th>
+<th class="tableblock halign-left valign-top">Expected content</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">TM source</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Arbitrary (but clear) name for the device.  Ideally this name is short but clear enough for outsiders to understand what the device/process is for.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Storage mnemonic</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Storage mnemonic of the device.  This will show up in the filename of the device HK file and can be found in the settings file (<code>settings.yaml</code>) in the block for that specific device/process.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">CAM EGSE mnemonic</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">EGSE-conform parameter name (see next Sect.) for the parameter.  Note that the same name should be used for the HK parameter and the corresponding metrics.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Original name in EGSE</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">In the <code>get_housekeeping</code> method of the device protocols, it is - in some cases (e.g. for the N-FEE HK) - possible that you have a dictionary with all/most of the required HK parameters, but with a non-EGSE-conform name.  The latter should go in this column.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Name of corresponding timestamp</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">In the device HK files, one of the columns holds the timestamp for the considered HK parameter.  The name of that timestamp column should go in this column of the TM dictionary.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Origin of synoptics at CSL</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Should only be filled for the entries in the TM dictionary for the Synoptics Manager.  This is the original EGSE-conform name of the synoptical parameter in the CSL-specific HK file comprising this HK parameter.  Leave empty for all other devices!</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Origin of synoptics at SRON</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Should only be filled for the entries in the TM dictionary for the Synoptics Manager.  This is the original EGSE-conform name of the synoptical parameter in the SRON-specific HK file comprising this HK parameter.  Leave empty for all other devices!</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Origin of synoptics at IAS</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Should only be filled for the entries in the TM dictionary for the Synoptics Manager.  This is the original EGSE-conform name of the synoptical parameter in the IAS-specific HK file comprising this HK parameter.  Leave empty for all other devices!</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Origin of synoptics at INTA</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Should only be filled for the entries in the TM dictionary for the Synoptics Manager.  This is the original EGSE-conform name of the synoptical parameter in the INTA-specific HK file comprising this HK parameter.  Leave empty for all other devices!</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Description</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Short description of what the parameter represents.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">MON screen</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Name of the Grafana dashboard in which the parameter can be inspected.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">unit cal1</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Unit in which the parameter is expressed.  Try to be consistent in the use of the names (e.g. Volts, Ampère, Seconds, Degrees, DegCelsius, etc.).</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">offset b cal1</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">For raw parameters that can be calibrated with a linear relationship, this column holds the offset <code>b</code> in the relation <code>calibrated = a * raw + b</code>.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">slope a cal1</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">For raw parameters that can be calibrated with a linear relationship, this column holds the slope <code>a</code> in the relation <code>calibrated = a * raw + b</code>.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">calibration function</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Not used at the moment.  Can be left emtpy.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">MAX nonops</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Maximum non-operational value.  Should be expressed in the same unit as the parameter itself.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">MIN nonops</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Minimum non-operational value.  Should be expressed in the same unit as the parameter itself.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">MAX ops</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Maximum operational value.  Should be expressed in the same unit as the parameter itself.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">MIN ops</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Minimum operational value.  Should be expressed in the same unit as the parameter itself.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Comment</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Any additional comment about the parameter that is interesting enough to be mentioned but not interesting enough for it to be included in the description of the parameter.</p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p>Since the TM dictionary grows longer and longer, the included devices/processes are ordered as follows (so it is easier to find back the telemetry parameters that apply to your TH):</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Devices/processes that all test houses have in common: AEU, N-FEE, TCS, Synoptics Manager, etc.</p>
+</li>
+<li>
+<p>Devices that are CSL-specific;</p>
+</li>
+<li>
+<p>Devices that are SRON-specific;</p>
+</li>
+<li>
+<p>Devices that are IAS-specific;</p>
+</li>
+<li>
+<p>Devices that are INTA-specific.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_egse_conform_parameter_names">5.5.2. EGSE-Conform Parameter Names</h4>
+<div class="paragraph">
+<p>The correct (i.e. EGSE-conform) naming of the telemetry should be taken care of in the <code>get_housekeeping</code> method of the device protocols.</p>
+</div>
+<div class="sect4">
+<h5 id="_common_parameters">Common Parameters</h5>
+<div class="paragraph">
+<p>A limited set of devices/processes is shared by (almost) all test houses.  Their telemetry should have the following prefix:</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 75%;">
+<col style="width: 25%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Device/process</th>
+<th class="tableblock halign-left valign-top">Prefix</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Configuration Manager</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">CM_</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">AEU (Ancillary Electrical Unit)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">GAEU_</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">N-FEE (Normal Front-End Electronics)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">NFEE_</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">TCS (Thermal Control System)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">GTCS_</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">FOV (source position)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">FOV_</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Synoptics Manager</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">GSYN_</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="sect4">
+<h5 id="_th_specific_parameters">TH-Specific Parameters</h5>
+<div class="paragraph">
+<p>Some devices are used in only one or two test houses.  Their telemetry should have TH-specific prefix:</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 50%;">
+<col style="width: 50%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">TH</th>
+<th class="tableblock halign-left valign-top">Prefix</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">CSL</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">GCSL_</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">SRON</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">GSRON_</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">IAS</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">GIAS_</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">INTA</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">GINTA_</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_synoptics">5.5.3. Synoptics</h4>
+<div class="paragraph">
+<p>The Synoptics Manager groups a pre-defined set of HK values in a single file.  It&#8217;s not the original EGSE-conform names that are use in the synoptics, but names with the prefix <code>GSYN_</code>.  The following information is comprised in the synoptics:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Acquired by common devices/processes:</p>
+</li>
+<li>
+<p>Calibrated temperatures from the N-FEE;</p>
+</li>
+<li>
+<p>Calibrated temperatures from the TCS;</p>
+</li>
+<li>
+<p>Source position (commanded + actual).</p>
+</li>
+<li>
+<p>Acquired by TH-specific devices:</p>
+</li>
+<li>
+<p>Calibrated temperatures from the TH DAQs;</p>
+</li>
+<li>
+<p>Information about the OGSE (intensity, lamp and laser status, shutter status, measured power).</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>For the first type of telemetry parameters, their original EGSE-conform name should be put into the column <code>CAM EGSE mnemonic</code>, as they are not TH-specific.</p>
+</div>
+<div class="paragraph">
+<p>The second type of telemetry parameters is measured with TH-specific devices.  The original TH-specific  EGSE-conform name should go in the column <code>Origin of synoptics at ...</code>.</p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_translation_tables">5.5.4. Translation Tables</h4>
+<div class="paragraph">
+<p>The translation tables that were mentioned in the introduction, can be created by the <code>read_conversion_dict</code> function in <code>egse.hk</code>.  It takes the following input parameters:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>storage_mnemonic</code>: Storage mnemonic of the device/process generating the HK;</p>
+</li>
+<li>
+<p><code>use_site</code>: Boolean indicating whether you want the translation table for the TH-specific telemetry rather than the common telemetry (<code>False</code> by default).</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>To apply the actual translation, you can use the <code>convert_hk_names</code> function from <code>egse.hk</code>, which takes the following input parameters:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>original_hk</code>: HK dictionary with the original names;</p>
+</li>
+<li>
+<p><code>conversion_dict</code>: Conversion table you got as output from the <code>read_conversion_dict</code> function.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_sending_hk_to_synoptics">5.5.5. Sending HK to Synoptics</h4>
+<div class="paragraph">
+<p>When you want to include HK of your devices, you need to take the following actions:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Make sure that the TM dictionary is complete (as described above);</p>
+</li>
+<li>
+<p>In the device protocol:</p>
+<div class="ulist">
+<ul>
+<li>
+<p>At initialisation: establish a connection with the Synoptics Manager: <code>self.synoptics = SynopticsManagerProxy()</code></p>
+</li>
+<li>
+<p>In <code>get_housekeeping</code> (both take the dictionary with HK as input):</p>
+<div class="ulist">
+<ul>
+<li>
+<p>For TH-specific HK: <code>self.synoptics.store_th_synoptics(hk_for_synoptics)</code>;</p>
+</li>
+<li>
+<p>For common HK: <code>self.synoptics.store_common_synoptics(hk_for_synoptics)</code>.</p>
+</li>
+</ul>
+</div>
+</li>
+</ul>
+</div>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Please, do not introduce new synoptics without further discussion!</p>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_the_log_manager">5.6. The Log Manager</h3>
+<div class="paragraph">
+<p>TBW</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>local logging using the standard logging module</p>
+</li>
+<li>
+<p>log messages sent to the log manager log_cs via ZeroMQ</p>
+</li>
+<li>
+<p>why am I not seeing some log messages in my terminal or Python console? &#8594; only level INFO and higher</p>
+</li>
+<li>
+<p>should I configure the logger, how?</p>
+</li>
+<li>
+<p>Cutelog and Textualog &#8594; user manual?</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_the_commanding_concept">6. The Commanding Concept</h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>Proxy – Protocol – Controller</p>
+</li>
+<li>
+<p>Control Servers</p>
+</li>
+<li>
+<p>YAML command files</p>
+</li>
+<li>
+<p>Dynamic commanding</p>
+</li>
+</ul>
+</div>
+<div class="imageblock text-center">
+<div class="content">
+<img src="../images/cgse-commanding-component-diagram.png" alt="cgse commanding component diagram" width="80%">
+</div>
+</div>
+<div class="sect2">
+<h3 id="_the_control_server">6.1. The Control Server</h3>
+<div class="paragraph">
+<p>TODO:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Explain what the CS does during startup and what happens when this fails.</p>
+</li>
+<li>
+<p>description of the <code>control.py</code> module</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_the_proxy_class">6.2. The Proxy Class</h3>
+<div class="paragraph">
+<p>The Proxy class automatically tries to connect to its control server. When the control server is up and running, the Proxy loads the device commands from the control server. When the control server is not running, a warning is issued, and the device commands are not loaded. If you then try to call one of the device methods, you will get a <code>NotImplementedError</code>. The ZeroMQ connection initiated by the Proxy will just sit there until the control server comes up, so you can fix the problem with the control server and call the <code>load_commands()</code> method on the Proxy again to load the commands.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_the_protocol_class">6.3. The Protocol Class</h3>
+<div class="paragraph">
+<p>The DPU Protocol starts a thread called <em>DPU Processor</em> Thread. This thread is a loop that continuously reads packets from the FEE and writes RMAP commands when there is a command put on the queue. When the control server receives a quit command, this thread also needs to be terminated gracefully since it has a connection and registration with the Storage manager. Therefore, the Protocol class has a <code>quit()</code> method which is called by the control server when it is terminated. The DPU Protocol class implements this <code>quit()</code> method to notify the DPU Processor Thread. Other Protocol implementations usually don&#8217;t implement the <code>quit()</code> method.</p>
+</div>
+<div class="paragraph">
+<p>Another example of a control server that starts a sub-process through its Protocol class in the TCS control server. The control server start the TCS Telemetry process to handle reading housekeeping from the TCS EGSE using a separate port [6667 by default].</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_response_failure_success">6.4. Response, Failure, Success</h3>
+<div class="paragraph">
+<p>The <code>control.py</code> module defines a number of classes that can be used to send a response on a device command to the client. Responses are handle by the <code>Protocol</code> class in the <code>handle_device_method()</code> method.</p>
+</div>
+<div class="paragraph">
+<p>The main reason why these classes are provided is because Exceptions that happen in the server process should somehow propagate to the client process. A <code>Response</code> object can contain a return value if the command was executed successfully, or it can contain an Exception object when the device command has failed. If the command has failed or not can be checked by the client with the <code>successful()</code> method.</p>
+</div>
+<div class="paragraph">
+<p>The <code>Response</code> class has three sub-classes, <code>Success</code>, <code>Failure</code>, and <code>Message</code>. A <code>Success</code> object is returned by the server process with the actual response in the property <code>return_code</code>. In the case of an Exception, the server process logs the error message and packs the Exception object in a <code>Failure</code> object.</p>
+</div>
+<div class="paragraph">
+<p>XXXXX: insert a class diagram of Response and it&#8217;s three sub-classes here</p>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_the_setup">7. The Setup</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>TODO:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>What is the difference between a Setup and the Settings?</p>
+<div class="ulist">
+<ul>
+<li>
+<p>Settings are for constants, IP addresses, system definitions, &#8230;&#8203;</p>
+</li>
+<li>
+<p>Setup contains configuration items, conversion coefficients and tables, identification of devices, everything that defines the configuration of the system and that can change from test to test and has influence on the data, HK, &#8230;&#8203;</p>
+</li>
+</ul>
+</div>
+</li>
+</ul>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+The content of this section needs to be split between the developer manual and the user manual. Usage shall go into the User Manual, the Developer Manual shall explain how the Setup is coded and how it is used in code. What about the <code>GlobalState.setup</code>?
+</td>
+</tr>
+</table>
+</div>
+<div class="paragraph">
+<p>The <em>Setup</em> is the name we give to the set of configuration items that make up your test environment. A configuration item is e.g. a device like a temperature controller, a mechanism like a Hexapod, a camera (which is the SUT: System Under Test). The <em>Setup</em> groups all these items in one <em>configuration</em>.<sup class="footnote">[<a id="_footnoteref_1" class="footnote" href="#_footnotedef_1" title="View footnote.">1</a>]</sup></p>
+</div>
+<div class="paragraph">
+<p>This section will explain what the Setup contains, when and where it is used, how the different Setups are managed and how you can create a new Setup.</p>
+</div>
+<div class="sect2">
+<h3 id="_what_is_the_setup">7.1. What is the Setup?</h3>
+<div class="admonitionblock warning">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-warning" title="Warning"></i>
+</td>
+<td class="content">
+Explain the Setup is a <code>NavigableDict</code> and what that means to the usage etc. See also further in this section, it&#8217;s partly explained.
+This is explained further in &#8230;&#8203;
+</td>
+</tr>
+</table>
+</div>
+<div class="paragraph">
+<p>The <em>Setup</em> is defined as a hierarchy of configuration items and their specific settings and definitions. All the hardware and software that make up your complete test setup will be described in the YAML file. As a quick example, the lines below define a typical setup for the Hexapod PUNA that is used at CSL:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code>Setup:
+    gse:
+        hexapod:
+            device_name: Symetrie Puna Hexapod
+            device: class//egse.hexapod.symetrie.puna.PunaProxy
+            ID: 172543
+            firmware: 3.14
+            time_request_granularity: 0.1</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>The <em>Setup</em> is implemented as YAML configuration file and loaded into a special Python dictionary. The dictionary is special because it allows you to navigate with a 'dot' notation in addition to keys. The following two lines are equivalent (assuming the Setup is loaded in the variable <code>setup</code>):</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code>&gt;&gt;&gt; setup.gse.hexapod.ID
+172543
+
+&gt;&gt;&gt; setup[&quot;gse&quot;][&quot;hexapod&quot;][&quot;ID&quot;]
+172543</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Another advantage of this special dictionary is that some fields are interpreted and loaded for you. For example, the device field of the Hexapod starts with <code>class//</code> and provides the class name for the Hexapod device. When you access this field, the class will automatically be instantiate for you and you can start commanding or querying the device. The following example initiates a homing command on the Hexapod controller:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code>&gt;&gt;&gt; setup.gse.hexapod.device.homing()</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>When you want to know which configuration items are defined in the Setup at e.g. the <code>gse</code> level, use the <code>keys()</code> function:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code>&gt;&gt;&gt; setup.gse.keys()
+dict_keys(['hexapod', 'stages', 'thorlabs', 'shutter', 'ogse', 'filter_wheel'])</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>When you want a full printout of the <code>setup.gse</code>, use the <code>print</code> function. This will print out the dictionary structure as loaded from the YAML file.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code>&gt;&gt;&gt; print(setup.gse)</code></pre>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_what_goes_into_the_setup">7.2. What goes into the Setup?</h3>
+<div class="paragraph">
+<p>The <em>Setup</em> will contain configuration information of your test equipment. This includes calibration and conversion information, identification, alignment information, etc. All items that can change from one setup to the next should be fully described in the <em>Setup</em>.</p>
+</div>
+<div class="paragraph">
+<p>The following list gives an idea of what is contained and managed by a Setup. This list is not comprehensive.</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>site: identification of the Site, e.g. CSL, IAS, INTA, SRON.</p>
+</li>
+<li>
+<p>position: if you have different test setups, each of them should be identifiable, e.g. at CSL there are four positions with different setups.</p>
+</li>
+<li>
+<p>gse: the ground support equipment like mechanisms, temperature controllers and sensors/heaters, optical equipment, shutter, hexapod, power meters, SpaceWire interface, TEB, etc.</p>
+</li>
+<li>
+<p>camera: this is the System Under Test (SUT) and it has different sub-items like FEE, TOU, DPU software, model and type, all with their specific characteristics.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>For all of these items the Setup shall hold enough information to uniquely identify the configuration item, but also to reproduce the state of that item, i.e. version numbers of firmware software, transformation matrices for alignment, conversion coefficients, calibration tables, etc.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_how_to_use_the_setup">7.3. How to use the Setup</h3>
+<div class="paragraph">
+<p>As described above, the Setup is a special dictionary that contains all the configuration information of your test equipment. This information resides in several files maintained by the configuration control server. You can request a list of Setups that are available from the configuration manager with the <code>list_setups()</code> function. This is a convenience function that will print the list in your Python session.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code>&gt;&gt;&gt; list_setups()</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>The above command will contact the configuration control server and request the list of Setups. To load the current active Setup into your session, use the <code>load_setup()</code> method. This function takes one optional argument to load a specific Setup. Now you can work with this setup as explained above, accessing its content and navigate through the hierarchy with the 'dot' notation.</p>
+</div>
+<div class="paragraph">
+<p>If you need to make a change to one of the configuration items in the Setup, you can just assign a new value to that field. Suppose we have upgraded the firmware of the PUNA Hexapod that is used in this setup, we can use the following commands to make that change:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code>&gt;&gt;&gt; setup.gse.hexapod.Firmware = 3.1415</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>The change then needs to be submitted to the configuration control server who will put it under configuration control, i.e. assign a new unique Setup identifier and save the entier Setup into a new YAML file.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code>&gt;&gt;&gt; setup = submit_setup(setup, description=&quot;Updated firmware of PUNA Hexapod&quot;)</code></pre>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_how_to_create_and_manage_setups">7.4. How to create and manage Setups</h3>
+<div class="paragraph">
+<p>Whenever you make a change to an item in the Setup, or you add a configuration item, a new Setup will be created with a new unique <code>id</code> as soon as you submit the Setup to the configuration manager.</p>
+</div>
+<div class="paragraph">
+<p>The configuration control server has no insight or knowledge about the content of a Setup, so you can freely add new items when needed. The simplest way to start with a Setup and adapt it to your current test equipment environment, is to load a Setup that closely resembles your current environment, and only make the changes necessary for the new Setup, then submit the new Setup to the configuration control server.</p>
+</div>
+<div class="paragraph">
+<p>If you need to start from scratch, create a new empty Setup or feed it with a dictionary that contains already some of the information for the Setup:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code>&gt;&gt;&gt; from egse.setup import Setup
+&gt;&gt;&gt; setup = Setup({&quot;gse&quot;: {&quot;hexapod&quot;: {&quot;ID&quot;: 42, &quot;name&quot;: &quot;PUNA&quot;}}})
+&gt;&gt;&gt; print(setup)
+gse:
+    hexapod:
+        ID: 42
+        name: PUNA</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>If you need to set the firmware version for the Hexapod controller.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code>&gt;&gt;&gt; setup.gse.hexapod.firmware = &quot;2020.07&quot;
+&gt;&gt;&gt; print(setup)
+gse:
+    hexapod:
+        ID: 42
+        name: PUNA
+        firmware: 2020.07</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>This way it is easy to update and maintain your Setup. When ready, submit to the configuration control server as shown above.</p>
+</div>
+<div class="paragraph">
+<p>If you want to save your Setup temporarily on your local system, use the <code>to_yaml_file()</code> method of Setup. This will save the Setup in your working directory.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code>&gt;&gt;&gt; setup.to_yaml_file(filename=&quot;SETUP-42-FIXED.yaml&quot;)</code></pre>
+</div>
+</div>
+<div class="admonitionblock warning">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-warning" title="Warning"></i>
+</td>
+<td class="content">
+Explain here how the user should submit a Setup from the client machin. That will send the Setup to the configuration manager and automatically push the new Setup to the GitHub repository provided the proper permissions are in place, i.e. a deploy key with write access. Where shall this be described?
+</td>
+</tr>
+</table>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_the_globalstate">8. The GlobalState</h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>Why would we want a global state?</p>
+</li>
+<li>
+<p>They always tell me that we should not use global variables!</p>
+</li>
+<li>
+<p>What is in the <code>GlobalState</code>?</p>
+</li>
+<li>
+<p>What can we do with the <code>GlobalState</code>?</p>
+</li>
+</ul>
+</div>
+<div class="sect2">
+<h3 id="_singleton_versus_shared_state">8.1. Singleton versus Shared State</h3>
+<div class="paragraph">
+<p>From within several places in the code, we needed access to a certain state and act accordingly. One of these states is the <code>dry_run</code> which allows us to execute command sequences (test scripts) without actually sending instructions to the hardware, but just logging that the command would have been executed with its arguments. We could have gone with a singleton pattern, i.e. a class for which only one instance exists in your session, but a singleton is a difficult pattern to test and control. Another possible solution is to use a class for which all instances have a shared state. That means even if the class is instantiated multiple times, its state is the same for all those instances. This pattern is also known as the Borg pattern or the shared-state pattern.</p>
+</div>
+<div class="paragraph">
+<p>The name <code>GlobalState</code> is maybe not such a good name as this class actually shares state between its instances, but this shared state is not global in the sense of a global variable. The objects can be instantiated from anywhere at anytime, which is what makes them globally available.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_what_is_in_the_globalstate">8.2. What is in the GlobalState?</h3>
+<div class="sect3">
+<h4 id="_the_setup_2">8.2.1. The Setup</h4>
+<div class="paragraph">
+<p>The complete configuration of the test setup. From the Setup you can access all devices that are known by the configuration manager, and you have access to calibration settings. The Setup is fully described in the API documentation of the class at <code>egse.setup</code>. The Setup that comes with the GlobalState is loaded from the Configuration Manager. Use the <code>GlobalState.load_setup()</code> to load the current Setup that is active on the Configuration Manager.</p>
+</div>
+<div class="paragraph">
+<p>If you need to work with different Setups, <code>GlobalState</code> is not the right place to be. Load any Setup directly from the <code>Setup</code> class with the static methods <code>from_dict(my_dict)</code> or <code>from_yaml_file(filename)</code>.</p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_performing_a_dry_run">8.2.2. Performing a Dry Run</h4>
+<div class="paragraph">
+<p>At some point we need to check the test scripts that we write in order to see if the proper commands will be executed with their proper arguments. But we don&#8217;t want the commands to be send to the mechanisms or controllers. We want to do a dry run where the script is executed as normal, but no instructions are sent to any device.</p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_retrieve_the_command_sequence">8.2.3. Retrieve the Command Sequence</h4>
+<div class="paragraph">
+<p>Whenever a building block is executed, a command sequence is generated and stored in the <code>GlobalState</code>. There are two functions that access this command sequence: (1) the <code>execute()</code> function will copy the command sequence into the test dataset, and (2) the <code>generate_command_sequence()</code> will return the command sequence as a list (TODO: this will probably get its own class eventually).</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+<h1 id="_part_iii_device_commanding" class="sect0">Part III — Device Commanding</h1>
+<div class="sect1">
+<h2 id="_device_control_servers">9. Device Control Servers</h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>Mechanisms</p>
+</li>
+<li>
+<p>Sensors</p>
+</li>
+<li>
+<p>Heaters</p>
+</li>
+<li>
+<p>Facility</p>
+</li>
+</ul>
+</div>
+<div class="sect2">
+<h3 id="_the_device_interface_classes">9.1. The Device Interface Classes</h3>
+<div class="ulist">
+<ul>
+<li>
+<p>Naming convention</p>
+</li>
+<li>
+<p>SCPI</p>
+</li>
+<li>
+<p>Where are device drivers configured?</p>
+</li>
+<li>
+<p>Direct communication with devices</p>
+</li>
+<li>
+<p>Device simulators</p>
+</li>
+<li>
+<p>Device Interfaces</p>
+</li>
+<li>
+<p>Description of the <code>device.py</code> module</p>
+</li>
+</ul>
+</div>
+<div class="sect3">
+<h4 id="_the_connection_interface">9.1.1. The Connection Interface</h4>
+<div class="paragraph">
+<p>A <strong>connection interface</strong> defines the commands that are used to establish a connection, terminate a connection, and check if a connection has been established. We have two main connection interfaces: (1) a connection to a hardware device, e.g. a temperature controller or a filter wheel, and (2) a connection to a control server. A control server is the single point access to a hardware device.</p>
+</div>
+<div class="sect4">
+<h5 id="_connection_interface_for_devices">Connection Interface for Devices</h5>
+<div class="paragraph">
+<p>A <em>Controller</em> is a class that connects directly to the hardware. This can be through e.g. an Ethernet TCP socket or a USB interface or any other connection. The details of a connection are buried in low level device interface classes which use all kinds of different protocols. The Controller will use these low level device classes to control the connection, and then provide a uniform interface to connect and disconnect from the device to the user.</p>
+</div>
+<div class="paragraph">
+<p>So, we defined a generic interface for working with device connections. The interface defines the following commands: <code>connect</code>, <code>disconnect</code>, and <code>is_connected</code>.</p>
+</div>
+<div class="paragraph">
+<p>Use the <code>connect()</code> method to establish a connection to the hardware controller of the device.</p>
+</div>
+<div class="paragraph">
+<p>Use the <code>disconnect()</code> method to terminate the connection to the hardware controller.</p>
+</div>
+<div class="paragraph">
+<p>The previous two commands raise a device specific error (Exception) when a connection can not be established or terminated.</p>
+</div>
+<div class="paragraph">
+<p>Use the <code>is_connected()</code> method to check if a connection with the controller is established. This command returns <code>True</code> if there is a working connection with the device, <code>False</code> otherwise.</p>
+</div>
+<div class="paragraph">
+<p>This interface shall be implemented by device controller classes, device simulators, and <code>Proxy</code> sub-classes. Examples of device controllers are <code>PunaController</code> and <code>ThorlabsPM100Controller</code>, while their simulators are called <code>PunaSimulator</code> and <code>ThorlabsPM100Simulator</code> and the <code>Proxy</code> sub-classes <code>PunaProxy</code> and <code>ThorlabsPM100Proxy</code>.</p>
+</div>
+<div class="paragraph">
+<p>In the example below we make a connection to the PUNA Hexapod and issue a homing and an absolute movement command, then close the connection.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="Python"><span style="color:#080;font-weight:bold">from</span> <span style="color:#B44;font-weight:bold">egse.hexapod</span> <span style="color:#080;font-weight:bold">import</span> <span style="color:#B44;font-weight:bold">HexapodError</span>
+<span style="color:#080;font-weight:bold">from</span> <span style="color:#B44;font-weight:bold">egse.hexapod.symetrie.puna</span> <span style="color:#080;font-weight:bold">import</span> <span style="color:#B44;font-weight:bold">PunaController</span>
+
+puna = PunaController()
+<span style="color:#080;font-weight:bold">try</span>:
+    puna.connect()
+    puna.homing()
+    puna.move_absolute(<span style="color:#00D">0</span>, <span style="color:#00D">0</span>, <span style="color:#00D">18</span>, <span style="color:#00D">0</span>, <span style="color:#00D">0</span>, <span style="color:#00D">0</span>)
+<span style="color:#080;font-weight:bold">except</span> HexapodError <span style="color:#080;font-weight:bold">as</span> exc:
+    logger.error(f<span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">There was an error during the interaction with the PUNA Hexapod: {exc}</span><span style="color:#710">&quot;</span></span>)
+    <span style="color:#777"># do recovery action here if needed</span>
+<span style="color:#080;font-weight:bold">finally</span>:
+    <span style="color:#080;font-weight:bold">if</span> puna.is_connected():
+        puna.disconnect()</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Most of the Controllers can also be used as a context manager. The following code does the same as the example above. The connection is automatically established and terminated by the context manager.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="Python"><span style="color:#080;font-weight:bold">from</span> <span style="color:#B44;font-weight:bold">egse.hexapod.symetrie.puna</span> <span style="color:#080;font-weight:bold">import</span> <span style="color:#B44;font-weight:bold">PunaController</span>
+
+<span style="color:#080;font-weight:bold">with</span> PunaController() <span style="color:#080;font-weight:bold">as</span> puna:
+    puna.homing()
+    puna.move_absolute(<span style="color:#00D">0</span>, <span style="color:#00D">0</span>, <span style="color:#00D">18</span>, <span style="color:#00D">0</span>, <span style="color:#00D">0</span>, <span style="color:#00D">0</span>)</code></pre>
+</div>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_connection_interface_for_proxy_classes">Connection Interface for <code>Proxy</code> Classes</h5>
+<div class="paragraph">
+<p><code>Proxy</code> classes make a connection to a control server, e.g. the <code>PunaProxy</code> class will make a connection to the <code>PunaControlServer</code>. The control server will in turn be connected to either a Controller or a Simulator. The <code>Proxy</code> classes are called this way, because they act as a gateway for device commands, i.e. the proxy forwards device commands to the Controllers through the control server.</p>
+</div>
+<div class="paragraph">
+<p>As stated above, a <code>Proxy</code> sub-class implements the device connection interface with the <code>connect()</code>, <code>disconnect()</code>, and <code>is_connected()</code> methods. That is because a Proxy completely mimics a Controller device interface. The Proxy however also establishes and manages a connection with its control server, but we cannot use the same connection interface for this type of connection.</p>
+</div>
+<div class="paragraph">
+<p>The Proxy connection to its control server is defined by the <code>ControlServerConnectionInterface</code> and is implemented in the <code>Proxy</code> base class. This interface defines the following commands:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>connect_cs</code>,</p>
+</li>
+<li>
+<p><code>disconnect_cs</code>,</p>
+</li>
+<li>
+<p><code>reconnect_cs</code>,</p>
+</li>
+<li>
+<p><code>reset_cs_connection</code>,</p>
+</li>
+<li>
+<p>and <code>is_cs_connected</code>.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Use the <code>connect_cs()</code> and <code>disconnect_cs()</code> methods to establish and terminate a connection to the control server. The <code>reconnect_cs()</code> method currently basically does the same as the <code>connect_cs()</code> method, it is provided as a convenience to make the flow of connecting and reconnecting clearer in your code when needed.</p>
+</div>
+<div class="paragraph">
+<p>Use the <code>reset_cs_connection()</code> method when the connection is in an undefined state. This method will try to connect and reconnect to the control server for a number of retries before failing.</p>
+</div>
+<div class="paragraph">
+<p>Use the <code>is_cs_connected()</code> method to check if a connection with the control server is established. This command returns <code>True</code> if there is a working connection with the server, <code>False</code> otherwise.</p>
+</div>
+<div class="paragraph">
+<p>This interface is implemented in the Proxy base class and there is no need to worry about this in your Proxy sub-class implementation.</p>
+</div>
+<div class="paragraph">
+<p>Also a Proxy can be used as a context manager. The example for the <code>PunaController</code> above can therefore be rewritten for the <code>PunaProxy</code>:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="Python"><span style="color:#080;font-weight:bold">from</span> <span style="color:#B44;font-weight:bold">egse.hexapod.symetrie.puna</span> <span style="color:#080;font-weight:bold">import</span> <span style="color:#B44;font-weight:bold">PunaProxy</span>
+
+<span style="color:#080;font-weight:bold">with</span> PunaProxy() <span style="color:#080;font-weight:bold">as</span> puna:
+    puna.homing()
+    puna.move_absolute(<span style="color:#00D">0</span>, <span style="color:#00D">0</span>, <span style="color:#00D">18</span>, <span style="color:#00D">0</span>, <span style="color:#00D">0</span>, <span style="color:#00D">0</span>)</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Note however that the Context Manager in this case will connect and disconnect to the control server, leaving the connection to the hardware device untouched.</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_the_system_under_test_sut_dpu_processor_and_fee_simulator">10. The System Under Test (SUT) – DPU Processor and FEE Simulator</h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>Commanding is the same as all other devices, DPU Control Server and Controller, Proxy, etc</p>
+</li>
+<li>
+<p>DPU Processor as a separate thread to communicate to the FEE (Simulator)</p>
+</li>
+<li>
+<p>DPU Protocol starts the DPU Processor process</p>
+</li>
+<li>
+<p>DPU Controller and DPU Processor communicate via three Queues, the command queue, the response queue, and a priority queue.</p>
+</li>
+<li>
+<p>Timing: timecode packet, HK packet, [Data packets], Commanding through RMAP requests</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Commands that are given on the Python prompt are by definition synchronous meaning when you call a function or execute a building block, the function or building block will wait for its return value before finishing. This is usually not a problem, because we most of the time have a pretty good idea how long a calculation or action will take. Most functions return within a few hundred milliseconds or less, which is practically immediate. When commanding the FEE however, things are more complicated. The FEE has strict timing when it comes to commanding. During the sync period (usually 6.25s unless commanded different) there is a slot of at least 2s at the end of the period, which is reserved for commanding. The sync period starts with a timecode packet followed by the FEE housekeeping packet. That takes just a few milliseconds. Depending on the FEE mode, we can then expect data packets filling up until 4s after the time code. There can be less or no data packets, leaving more time for commanding. Commanding the FEE is done by sending SpaceWire RMAP requests to the FEE in that 2s+ timeslot. When we send a command from the Python prompt to the FEE, it arrives in the Queue at the DPU Processor and will be send to the FEE in the next 2s+ command timeslot. When the Command enters the Queue at the beginning of the readout period, i.e. right after the timecode, maximum 4s will pass before the command is actually send to and executed on the FEE. All this time, the Python prompt will be blocked while waiting for the response. The next command can only be sent on return of the previous. So, we have two issues to solve, (1) the duration and blocking of all the steps in the commanding chain, and (2) sending more than just one command to the FEE in the same timeslot.</p>
+</div>
+</div>
+</div>
+<h1 id="_part_iv_unit_testing_and_beyond" class="sect0">Part IV — Unit Testing and beyond</h1>
+<div class="sect1">
+<h2 id="_the_test_suite">11. The Test Suite</h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>pytest</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_code_reviews">12. Code Reviews</h2>
+<div class="sectionbody">
+<div class="admonitionblock warning">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-warning" title="Warning"></i>
+</td>
+<td class="content">
+<em>This section is not finished and needs further updates. Please send me any comments and suggestions for improvement. Thanks, Rik.</em>
+</td>
+</tr>
+</table>
+</div>
+<div class="paragraph">
+<p>This is a proposal for a software source code review for the Common-EGSE. Code review is in principle a continuing process. With every pull request in GitHub there should be one of your colleagues doing a quick review of your changes before they are accepted and merged. We will add a section in <a href="../contributing-code/pull-requests.md">Contributing to the Code &gt; Pull Requests</a> explaining how to review the code changes from a pull request.</p>
+</div>
+<div class="paragraph">
+<p>This section handles a slightly more formal code review that is required at certain milestones in the development process.</p>
+</div>
+<div class="paragraph">
+<p>We will have a code review at TBD week.</p>
+</div>
+<div class="paragraph">
+<p>The code review is done primarily for the following reasons:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Share knowledge: you write code for yourself, your colleagues, test operators, scientists and engineers. Each of them should have a certain understanding of the system, but not all at the same detail.</p>
+</li>
+<li>
+<p>Maintainability: code should be understandable and at least two developers should know what the code does and why. These two developers are you and one of your colleagues.</p>
+</li>
+<li>
+<p>Finding bugs and design flaws.</p>
+</li>
+<li>
+<p>Consistent error and exception handling.</p>
+</li>
+<li>
+<p>Consistent logging.</p>
+</li>
+<li>
+<p>Finding functionality creep.</p>
+</li>
+<li>
+<p>Proper testing: test coverage, functionality testing.</p>
+</li>
+<li>
+<p>Development Principles: SOLID, DRY.</p>
+</li>
+<li>
+<p>Meet coding standards.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Please remember that the purpose of the code review is <strong>not to reject</strong> the code, but <strong>to improve</strong> the code quality. Focus is on how easy it is to understand the code.</p>
+</div>
+<div class="sect2">
+<h3 id="_who_is_part_of_this_code_review">12.1. Who is part of this Code Review?</h3>
+<div class="paragraph">
+<p>Developers: Rik Huygen, Sara Regibo, &#8230;&#8203;</p>
+</div>
+<div class="paragraph">
+<p>Instrument Experts: Pierre Royer, Bart Vandenbussche</p>
+</div>
+<div class="paragraph">
+<p>Do we need more reviewers? The EGSE engineers from INTA and SRON? Somebody from the PCOT?</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_planning">12.2. Planning</h3>
+<div class="paragraph">
+<p>For each reviewer I will prepare an issue where you can check off the parts which have been reviewed. WHERE TO PUT THE REVIEW REPORTS/COMMENTS?</p>
+</div>
+<div class="paragraph">
+<p>It is very important that the review is done in a timely fashion. We don&#8217;t want to be bothered with this for weeks.</p>
+</div>
+<div class="paragraph">
+<p>Proposal for reviewer/review items:</p>
+</div>
+<div class="paragraph">
+<p>Sara Regibo:</p>
+</div>
+<div class="ulist checklist">
+<ul class="checklist">
+<li>
+<p><i class="fa fa-square-o"></i> Commanding Concept</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Nicolas Beraud:</p>
+</div>
+<div class="ulist checklist">
+<ul class="checklist">
+<li>
+<p><i class="fa fa-square-o"></i> Hexapod package</p>
+</li>
+<li>
+<p><i class="fa fa-square-o"></i> Stages package</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Rik Huygen:</p>
+</div>
+<div class="ulist checklist">
+<ul class="checklist">
+<li>
+<p><i class="fa fa-square-o"></i> Image Viewer</p>
+</li>
+<li>
+<p><i class="fa fa-square-o"></i> Powermeter</p>
+</li>
+<li>
+<p><i class="fa fa-square-o"></i> Shutter</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Pierre Royer:</p>
+</div>
+<div class="ulist checklist">
+<ul class="checklist">
+<li>
+<p><i class="fa fa-square-o"></i> GlobalState</p>
+</li>
+<li>
+<p><i class="fa fa-square-o"></i> Setup</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Bart Vandenbussche:</p>
+</div>
+<div class="ulist checklist">
+<ul class="checklist">
+<li>
+<p><i class="fa fa-square-o"></i> Image Viewer functionality</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_what_needs_to_be_reviewed">12.3. What needs to be reviewed?</h3>
+<div class="paragraph">
+<p>TODO: Make a checklist!</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><strong>documentation</strong>:</p>
+<div class="ulist">
+<ul>
+<li>
+<p>API documentation at <a href="https://ivs-kuleuven.github.io/plato-common-egse/api/egse/">GitHub.io</a></p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p><strong>docstrings</strong>: Do you understand from the docstring of the functions and public methods what the functionality is, what is needed as input and what is returned, if we need to catch exceptions?</p>
+</li>
+<li>
+<p><strong>coding style</strong>: Do I understand what the code does, is the control flow not too complicated, &#8230;&#8203;</p>
+</li>
+<li>
+<p><strong>whatch-outs</strong>:</p>
+<div class="ulist">
+<ul>
+<li>
+<p>mutable default parameters</p>
+</li>
+</ul>
+</div>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Be constructive!<br>
+Be specific!</p>
+</div>
+<div class="paragraph">
+<p>The goal is to ship good and maintainable code, it&#8217;s not the goal to prove how good or clever we are.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_prerequisites">12.4. Prerequisites</h3>
+<div class="paragraph">
+<p>Before the code review, all the code will be run through a number of automated steps:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>check for trailing white space;</p>
+</li>
+<li>
+<p>check for end of file blank lines;</p>
+</li>
+<li>
+<p>check format of the YAML files;</p>
+</li>
+<li>
+<p>run the code through <a href="https://black.readthedocs.io/en/stable/">black</a> to make sure we have a consistent formatting;</p>
+</li>
+<li>
+<p>run the code through <a href="https://flake8.pycqa.org/en/latest/">flake8</a> to make sure the style guide is being followed;</p>
+</li>
+<li>
+<p>run all  the test harnesses, preferably with hardware attached, but also with the simulators. Have the test coverage report ready.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>There will be a specific release for the code review with tag <code>code-review-2020-Q2</code>.</p>
+</div>
+</div>
+</div>
+</div>
+<h1 id="_part_v_todo" class="sect0">Part V — TODO</h1>
+<div class="openblock partintro">
+<div class="content">
+Everything in this part of the manual needs to be worked on and relocated in one of the above parts/sections.
+</div>
+</div>
+<div class="sect1">
+<h2 id="_terminal_commands">13. Terminal Commands</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>A lot of testing and monitoring can be done from the command terminal and doesn&#8217;t need a specific GUI or PyCharm. This section will explain how to check status of most of the control servers, how to inspect log files and HDF5 files, how to generate reports and how you can update the Common-EGSE and the test scripts.</p>
+</div>
+<div class="sect2">
+<h3 id="_what_goes_into_this_section">13.1. What goes into this section</h3>
+<div class="ulist">
+<ul>
+<li>
+<p>See cheatsheet CGSE  → included below</p>
+</li>
+<li>
+<p>describe all _cs commands and their options, when to use them and when NOT to use them</p>
+</li>
+<li>
+<p>describe all _ui commands and their options</p>
+</li>
+<li>
+<p>what other terminal commands are used</p>
+<div class="ulist">
+<ul>
+<li>
+<p>ps -ef|grep _cs</p>
+</li>
+<li>
+<p>kill PID or %1</p>
+</li>
+<li>
+<p>python -m egse (and all the other info modules)</p>
+</li>
+<li>
+<p>python ../src/scripts/check_hdf5_files.py</p>
+</li>
+<li>
+<p>python ../src/scripts/create_hdf5_report.py</p>
+</li>
+<li>
+<p>export_grafana_dashboards</p>
+</li>
+<li>
+<p>update_cgse → should become <code>cgse update</code></p>
+</li>
+<li>
+<p>update_ts → should become <code>ts update</code></p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p>often used git commands</p>
+<div class="ulist">
+<ul>
+<li>
+<p>git status</p>
+</li>
+<li>
+<p>git describe —tags</p>
+</li>
+<li>
+<p>git stash [pop]</p>
+</li>
+<li>
+<p>git fetch update</p>
+</li>
+<li>
+<p>git rebase update/develop</p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p>Textualog, see <a href="#_the_log_manager">Section 5.6</a></p>
+</li>
+</ul>
+</div>
+<div style="page-break-after: always;"></div>
+<div class="imageblock">
+<div class="content">
+<img src="../images/cgse-cheat-sheet.pdf" alt="cgse cheat sheet" height="80%">
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_stories">14. Stories</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>This section contains short stories of debugging sessions and working with the system that are otherwise difficult to explain in the previous sections.</p>
+</div>
+<div class="sect2">
+<h3 id="_seemingly_unrelated_process_manager_crash">14.1. Seemingly unrelated Process Manager Crash</h3>
+<div class="paragraph">
+<p>Related to issue: xxxx</p>
+</div>
+<div class="paragraph">
+<p>The filter wheel control server (<code>fw8smc4_cs</code>) didn&#8217;t start when using the process manager GUI (<code>pm_ui</code>). When the button was clicked nothing happened, but we got some error messages in the logger:</p>
+</div>
+<div class="imageblock">
+<div class="content">
+<img src="../images/stories-process-manager-crash.png" alt="stories process manager crash">
+</div>
+</div>
+<div class="paragraph">
+<p>There was no clear error message except that the PM was already registered at the storage manager. We thought that could be due to the fact the pm_ui crashed already several times before, or maybe a STORAGE_MNEMONIC in the Settings that was not set correctly. So we checked the Settings YAML file, and also the local settings file. The command to do that is:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>python -m egse.settings</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>We looked at the Setups and inspected the source of the filter wheel control server, but could not relate the problem to anything in the code. Especially, since the control server could be started without problem from the terminal.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>fw8smc4_cs start</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>So we started to look into all kinds of settings that were important when starting a control server from the process manager, e.g. the DEVICE_SETTINGS variable that is expected in the module and should contain the definition of the ControlServer. XXXXX: xref to document/section explaining this. We fixed a number of these things, see for example PR #1963, but still the problem remained.</p>
+</div>
+<div class="paragraph">
+<p>We were still confused about the message that the PM was already registered at the Storage Manager. Why does this appear here? Why would the process manager try to register again. Looking at the debug messages before the error, we saw that the process manager actually restarted. That&#8217;s of course the reason why it tries to register to the Storage, and the fact that it is already registered is probably due to the fact that the process manager crashed. So, instructing the <code>pm_cs</code> to start the <code>fw8smc4_cs</code> (by clicking the button in the <code>pm_ui</code>) crashes the process manager. And it is of course immediately restarted by the Systemd services.</p>
+</div>
+<div class="paragraph">
+<p>So, we checked the logging messages of the Systemd for the <code>pm_cs.services</code>:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="nowrap">May 24 14:46:35 plato-arrakis pm_cs[2526576]: libximc.so: cannot open shared object file: No such file or directory
+May 24 14:46:35 plato-arrakis pm_cs[2526576]: Can't load libximc library. Please add all shared libraries to the appropriate places. It is decribed in detail in developers' documentation. On Linux make sure you installed libximc-dev package.
+May 24 14:46:35 plato-arrakis pm_cs[2526576]: make sure that the architecture of the system and the interpreter is the same
+May 24 14:46:35 plato-arrakis pm_cs[2526576]: System Exit with code None.</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>The problem seems to be that the <code>pm_cs</code> can not load the <code>libximc</code> shared library which is needed for the filter wheel control server. This works in the terminal, because there the <code>LD_LIBRARY_PATH</code> is set, but it is not known to the process manager control server. To fix this, the environment variable must be set in the <code>/cgse/env.txt</code> file that is used in the services file to start the <code>pm_cs.services</code>. The content of the files:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="nowrap">[plato-data@plato-arrakis ~]$ cat /cgse/env.txt
+PYTHONPATH=/cgse/lib/python/
+PLATO_LOCAL_SETTINGS=/cgse/local_settings.yaml
+PLATO_CONF_DATA_LOCATION=/data/IAS/conf
+PLATO_CONF_REPO_LOCATION=/home/plato-data/git/plato-cgse-conf
+PLATO_DATA_STORAGE_LOCATION=/data/IAS
+PLATO_LOG_FILE_LOCATION=/data/IAS/log
+LD_LIBRARY_PATH=/home/plato-data/git/plato-common-egse/src/egse/lib/ximc/libximc.framework</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>and</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="nowrap">[plato-data@plato-arrakis ~]$ cat /etc/systemd/system/pm_cs.service
+[Unit]
+Description=Process Manager Control Server
+After=network-online.target cm_cs.service
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=3
+User=plato-data
+Group=plato-data
+EnvironmentFile=/cgse/env.txt
+WorkingDirectory=/home/plato-data/workdir
+ExecStartPre=/bin/sleep 3
+ExecStart=/cgse/bin/pm_cs start
+
+[Install]
+Alias=pm_cs.service
+WantedBy=multi-user.target</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>After this fix, the <code>fw8smc4_cs</code> could be started from the process manager GUI.</p>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_miscellaneous">15. Miscellaneous</h2>
+<div class="sectionbody">
+<div class="admonitionblock warning">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-warning" title="Warning"></i>
+</td>
+<td class="content">
+Below this point we have miscellaneous topics that still need their place in the developer manual.
+</td>
+</tr>
+</table>
+</div>
+<div class="paragraph">
+<p>This file contains sections that are not assigned a proper location in the developer document. When we are ready for one of the sections, just move it out into its dedicated file.</p>
+</div>
+<div class="paragraph">
+<p>Sections below are copied from the Word document PLATO-KUL-PL-MAN-0003.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_system_summary">16. System Summary</h2>
+<div class="sectionbody">
+<div class="sect2">
+<h3 id="_system_configuration">16.1. System Configuration</h3>
+<div class="ulist">
+<ul>
+<li>
+<p>How to determine the version that is installed?</p>
+<div class="ulist">
+<ul>
+<li>
+<p><code>from egse.version import VERSION</code></p>
+</li>
+<li>
+<p><code>from egse.version import RELEASE</code></p>
+</li>
+<li>
+<p>The VERSION and RELEASE are defined and maintained in the settings.yaml file in the egse package..</p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p>Which files to edit for configuring the system?</p>
+<div class="ulist">
+<ul>
+<li>
+<p><code>egse/settings.yaml</code> do not edit this, instead edit the local_settings file pointed to by PLATO_LOCAL_SETTINGS environment variable.</p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p>Where do I describe which components are part of the system?</p>
+</li>
+<li>
+<p>What if CSL has two Keithley DAQ6510 devices? How will they be distinguished?</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_system_components">16.2. System Components</h3>
+<div class="paragraph">
+<p>This section describes the main components of the Common-EGSE system.</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Storage Manager</p>
+</li>
+<li>
+<p>Configuration Manager</p>
+</li>
+<li>
+<p>Process Manager</p>
+</li>
+<li>
+<p>Device Control Servers</p>
+</li>
+<li>
+<p>System Under Test (SUT)</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_data_flows">16.3. Data Flows</h3>
+<div class="paragraph">
+<p>The Common-EGSE provides functionality to configure, control and/or readout the following devices:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Camera N-FEE and F-FEE, i.e. configure the camera and readout the CCDs</p>
+</li>
+<li>
+<p>CAM TCS EGSE, i.e. thermal control of the TOU and FEE</p>
+</li>
+<li>
+<p>AEU EGSE, i.e. provide secondary power and synchronisation to the FEE</p>
+</li>
+<li>
+<p>Optical, e.g. control and attenuate laser light source</p>
+</li>
+<li>
+<p>Mechanisms, e.g. hexapod, translation and rotation stages, gimbal</p>
+</li>
+<li>
+<p>Thermal control or monitoring of test setup</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>All data that is output by any of these devices will be archived in global and/or test specific files. The file types and formats are described in section Error! Reference source not found. Error! Reference source not found..</p>
+</div>
+<div id="img-cgse-components" class="imageblock text-center">
+<div class="content">
+<img src="../images/cgse-container-diagram.png" alt="cgse container diagram" width="80%">
+</div>
+<div class="title">Figure 1. The main components of the Common-EGSE (bleu) and how they interface to each other (internal interfaces) and to the test setup (grey) and the PLATO camera (SUT) (external interfaces).</div>
+</div>
+<div class="paragraph">
+<p>The Common-EGSE consists of several components, each with specific responsibilities, that communicate over a ZeroMQ network protocol. The following components have been identified and are part of the core functionality of the Common-EGSE:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Test Control: execution of test and commanding scripts</p>
+</li>
+<li>
+<p>Configuration Manager: control the systems configuration</p>
+</li>
+<li>
+<p>DPU Simulator: configuration of the FEE and readout of the CCD and housekeeping data</p>
+</li>
+<li>
+<p>Logging: central logging component for status information and events</p>
+</li>
+<li>
+<p>Monitoring: monitor crucial housekeeping and telemetry and perform limit checks</p>
+</li>
+<li>
+<p>Storage: archive all data like images, housekeeping, telemetry, SpaceWire packets, commanding sequences etc.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p><a href="#img-cgse-components">Figure 1</a> above summarises the main components in the core Common-EGSE and test setup and defines their connections.</p>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_installation_and_update">17. Installation and Update</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>The Common-EGSE software system is installed and updated via GitHub. The installation is more complex than a simple download-and-install procedure and is fully described in its installation guide [RD-01].</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_getting_started">18. Getting Started</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>If you work with the system for the first time, you should go through the user manual [RD-02] to get familiar with the Common-EGSE setup, services and interactions. This section will explain how to log onto the Common-EGSE and how to prepare your development environment.</p>
+</div>
+<div class="sect2">
+<h3 id="_log_on_to_the_system">18.1. Log on to the System</h3>
+<div class="ulist">
+<ul>
+<li>
+<p>Who does login to the system?</p>
+</li>
+<li>
+<p>How, as which user, privileges is the user logged in?</p>
+</li>
+<li>
+<p>What services are running anyway, started at system boot?</p>
+</li>
+<li>
+<p>Developer Desktop versus operational desktop</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_setting_up_the_development_environment">18.2. Setting up the development environment</h3>
+<div class="ulist">
+<ul>
+<li>
+<p>Git</p>
+</li>
+<li>
+<p>Fork and clone the GitHub repository</p>
+</li>
+<li>
+<p>Install the Common-EGSE system – see the installation guide [RD-01]</p>
+</li>
+<li>
+<p>PYTHONPATH</p>
+</li>
+<li>
+<p>Being in the right directory</p>
+</li>
+<li>
+<p>PyCharm or another IDE</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_index">Index</h2>
+<div class="sectionbody">
+
+</div>
+</div>
+</div>
+<div id="footnotes">
+<hr>
+<div class="footnote" id="_footnotedef_1">
+<a href="#_footnoteref_1">1</a>. Both <em>Setup</em> and <em>configuration</em> are overloaded words, if not clear from the context, I&#8217;ll try to explain them when used.
+</div>
+</div>
+<div id="footer">
+<div id="footer-text">
+Version 0.1<br>
+Last updated 2022-05-30 17:56:11 +0200
+</div>
+</div>
+</body>
+</html>

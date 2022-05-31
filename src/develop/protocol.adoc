@@ -1,0 +1,5 @@
+==	The Protocol Class
+
+The DPU Protocol starts a thread called _DPU Processor_ Thread. This thread is a loop that continuously reads packets from the FEE and writes RMAP commands when there is a command put on the queue. When the control server receives a quit command, this thread also needs to be terminated gracefully since it has a connection and registration with the Storage manager. Therefore, the Protocol class has a `quit()` method which is called by the control server when it is terminated. The DPU Protocol class implements this `quit()` method to notify the DPU Processor Thread. Other Protocol implementations usually don't implement the `quit()` method.
+
+Another example of a control server that starts a sub-process through its Protocol class in the TCS control server. The control server start the TCS Telemetry process to handle reading housekeeping from the TCS EGSE using a separate port [6667 by default].

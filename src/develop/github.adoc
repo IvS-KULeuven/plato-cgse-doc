@@ -1,0 +1,118 @@
+== Setting up ssh access and GitHub deploy keys
+
+=== plato-common-egse
+
+* ssh-keygen -t ed25519 -C "<your email address>"
+** name of the file: `id_cgse_egse_server_<TH>`
+* copy the content of `id_cgse_egse_server_<TH>.pub` into the deploy keys @ GitHub
+**name is plato-data@egse-server (id_cgse_egse_server_<TH>)
+* add the following lines to ~/.ssh/config
+
+[source]
+----
+Host repo-common-egse
+    Hostname github.com
+    IdentityFile ~/.ssh/id_cgse_egse_server_<TH>
+----
+
+* make sure the files in `~/.ssh` have the right permissions
+
+[source]
+----
+chmod 644 ~/.ssh/config
+----
+
+* add a remote for doing the updates
+
+[%nowrap,source]
+----
+git remote add updates git@repo-common-egse:IvS-KULeuven/plato-common-egse.git
+----
+
+* then perform an update:
+** if this is the first-time-install:
+
+    git fetch updates
+    git checkout tags/2022.2-<TH>-CGSE -b 2022.2-<TH>-CGSE-branch
+    python -m pip uninstall Common-EGSE
+    python setup.py install --force --home=/cgse/
+
+** for existing installations, a new command has been implemented that automates the above update procedure:
+
+    update_cgse ops --tag=2022.2-<TH>-CGSE
+
+
+[WARNING]
+====
+You might experience the following problem starting the core egse services on the egse-server with Systemd:
+
+    systemctl restart log_cs sm_cs cm_cs pm_cs
+
+*  the problem was reported as (code=exited, status=200/CHDIR)
+*  the service files contain a WorkingDirectory pointing to `~/workdir` and that folder did not exist on the machine.
+====
+
+
+=== plato-test-scripts
+
+* ssh-keygen -t ed25519 -C ["rik.huygen@kuleuven.be](mailto:%22rik.huygen@kuleuven.be)"
+** name of the file: `id_ts_egseclient2_<TH>`
+* copy the content of `id_ts_egseclient2_<TH>.pub` into the deploy keys @ GitHub
+** name is plato-data@egse-client (id_ts_egse_client_<TH>)
+* add the following lines to ~/.ssh/config
+
+    Host repo-test-scripts
+        Hostname github.com
+        IdentityFile ~/.ssh/id_ts_egseclient2_csl
+
+* make sure the files in ~/.ssh have the right permissions
+
+    chmod 644 ~/.ssh/config
+
+* add a remote for doing the updates
+
+    git remote add updates [git@repo-test-scripts:IvS-KULeuven/plato-test-scripts.git](mailto:git@repo-common-egse:IvS-KULeuven/plato-common-egse.git)
+
+* if you had not yet installed the repo, clone it
+
+    git clone **[git**@repo-test-scripts:IvS-KULeuven/plato-test-scripts.**git**](mailto:git@repo-test-scripts:IvS-KULeuven/plato-test-scripts.git)
+
+* on a first-time-installation, perform an update as follows:
+
+    git fetch updates
+    git rebase updates/develop
+    python -m pip install -e
+
+* otherwise:
+
+    update_ts
+
+
+=== plato-cgse-conf
+
+Basically the same procedure as for the previous two repos, except for plato-cgse-conf using the configuration manager: when you add the deploy key to GitHub, you must check the _Allow write access_ checkbox. That will allow the configuration manager to upload new Setups to the repo.
+
+image::add-deploy-key.png[align="center"]
+
+For the configuration manager, we will also name the remote ‘upload’.
+
+[source]
+----
+git remote add upload git@repo-cgse-conf:IvS-KULeuven/plato-cgse-conf.git
+----
+
+The following environment variable is needed in `/cgse/env.txt`:
+
+[source,bash]
+----
+export PLATO_CONF_REPO_LOCATION=/home/plato-data/git/plato-cgse-conf
+----
+
+Make sure that the branch has the upload/main as its tracking branch:
+
+[source,bash]
+----
+$ git branch -u upload/main
+$ git branch -vv
+* main 17fb23c [upload/main] change filter wheels parameters
+----

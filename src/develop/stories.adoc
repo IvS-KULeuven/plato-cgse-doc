@@ -1,0 +1,79 @@
+== Stories
+:imagesdir: ../images
+
+This section contains short stories of debugging sessions and working with the system that are otherwise difficult to explain in the previous sections.
+
+=== Seemingly unrelated Process Manager Crash
+
+Related to issue: xxxx
+
+The filter wheel control server (`fw8smc4_cs`) didn't start when using the process manager GUI (`pm_ui`). When the button was clicked nothing happened, but we got some error messages in the logger:
+
+image::stories-process-manager-crash.png[]
+
+There was no clear error message except that the PM was already registered at the storage manager. We thought that could be due to the fact the pm_ui crashed already several times before, or maybe a STORAGE_MNEMONIC in the Settings that was not set correctly. So we checked the Settings YAML file, and also the local settings file. The command to do that is:
+
+----
+python -m egse.settings
+----
+
+We looked at the Setups and inspected the source of the filter wheel control server, but could not relate the problem to anything in the code. Especially, since the control server could be started without problem from the terminal.
+
+----
+fw8smc4_cs start
+----
+
+So we started to look into all kinds of settings that were important when starting a control server from the process manager, e.g. the DEVICE_SETTINGS variable that is expected in the module and should contain the definition of the ControlServer. XXXXX: xref to document/section explaining this. We fixed a number of these things, see for example PR #1963, but still the problem remained.
+
+We were still confused about the message that the PM was already registered at the Storage Manager. Why does this appear here? Why would the process manager try to register again. Looking at the debug messages before the error, we saw that the process manager actually restarted. That's of course the reason why it tries to register to the Storage, and the fact that it is already registered is probably due to the fact that the process manager crashed. So, instructing the `pm_cs` to start the `fw8smc4_cs` (by clicking the button in the `pm_ui`) crashes the process manager. And it is of course immediately restarted by the Systemd services.
+
+So, we checked the logging messages of the Systemd for the `pm_cs.services`:
+
+[%nowrap]
+----
+May 24 14:46:35 plato-arrakis pm_cs[2526576]: libximc.so: cannot open shared object file: No such file or directory
+May 24 14:46:35 plato-arrakis pm_cs[2526576]: Can't load libximc library. Please add all shared libraries to the appropriate places. It is decribed in detail in developers' documentation. On Linux make sure you installed libximc-dev package.
+May 24 14:46:35 plato-arrakis pm_cs[2526576]: make sure that the architecture of the system and the interpreter is the same
+May 24 14:46:35 plato-arrakis pm_cs[2526576]: System Exit with code None.
+----
+
+The problem seems to be that the `pm_cs` can not load the `libximc` shared library which is needed for the filter wheel control server. This works in the terminal, because there the `LD_LIBRARY_PATH` is set, but it is not known to the process manager control server. To fix this, the environment variable must be set in the `/cgse/env.txt` file that is used in the services file to start the `pm_cs.services`. The content of the files:
+
+[%nowrap]
+----
+[plato-data@plato-arrakis ~]$ cat /cgse/env.txt
+PYTHONPATH=/cgse/lib/python/
+PLATO_LOCAL_SETTINGS=/cgse/local_settings.yaml
+PLATO_CONF_DATA_LOCATION=/data/IAS/conf
+PLATO_CONF_REPO_LOCATION=/home/plato-data/git/plato-cgse-conf
+PLATO_DATA_STORAGE_LOCATION=/data/IAS
+PLATO_LOG_FILE_LOCATION=/data/IAS/log
+LD_LIBRARY_PATH=/home/plato-data/git/plato-common-egse/src/egse/lib/ximc/libximc.framework
+----
+
+and
+
+[%nowrap]
+----
+[plato-data@plato-arrakis ~]$ cat /etc/systemd/system/pm_cs.service
+[Unit]
+Description=Process Manager Control Server
+After=network-online.target cm_cs.service
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=3
+User=plato-data
+Group=plato-data
+EnvironmentFile=/cgse/env.txt
+WorkingDirectory=/home/plato-data/workdir
+ExecStartPre=/bin/sleep 3
+ExecStart=/cgse/bin/pm_cs start
+
+[Install]
+Alias=pm_cs.service
+WantedBy=multi-user.target
+----
+
+After this fix, the `fw8smc4_cs` could be started from the process manager GUI.

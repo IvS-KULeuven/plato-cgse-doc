@@ -1,0 +1,143 @@
+== The Setup
+:icons: font
+
+TODO:
+
+*	What is the difference between a Setup and the Settings?
+**	Settings are for constants, IP addresses, system definitions, ...
+**	Setup contains configuration items, conversion coefficients and tables, identification of devices, everything that defines the configuration of the system and that can change from test to test and has influence on the data, HK, ...
+
+
+NOTE: The content of this section needs to be split between the developer manual and the user manual. Usage shall go into the User Manual, the Developer Manual shall explain how the Setup is coded and how it is used in code. What about the `GlobalState.setup`?
+
+The __Setup__ is the name we give to the set of configuration items that make up your test environment. A configuration item is e.g. a device like a temperature controller, a mechanism like a Hexapod, a camera (which is the SUT: System Under Test). The __Setup__ groups all these items in one __configuration__.footnote:[Both __Setup__ and __configuration__ are overloaded words, if not clear from the context, I'll try to explain them when used.]
+
+This section will explain what the Setup contains, when and where it is used, how the different Setups are managed and how you can create a new Setup.
+
+===  What is the Setup?
+
+WARNING: Explain the Setup is a `NavigableDict` and what that means to the usage etc. See also further in this section, it's partly explained.
+This is explained further in ...
+
+The __Setup__ is defined as a hierarchy of configuration items and their specific settings and definitions. All the hardware and software that make up your complete test setup will be described in the YAML file. As a quick example, the lines below define a typical setup for the Hexapod PUNA that is used at CSL:
+
+[source]
+----
+Setup:
+    gse:
+        hexapod:
+            device_name: Symetrie Puna Hexapod
+            device: class//egse.hexapod.symetrie.puna.PunaProxy
+            ID: 172543
+            firmware: 3.14
+            time_request_granularity: 0.1
+----
+
+The __Setup__ is implemented as YAML configuration file and loaded into a special Python dictionary. The dictionary is special because it allows you to navigate with a 'dot' notation in addition to keys. The following two lines are equivalent (assuming the Setup is loaded in the variable `setup`):
+
+[source]
+----
+>>> setup.gse.hexapod.ID
+172543
+
+>>> setup["gse"]["hexapod"]["ID"]
+172543
+----
+
+Another advantage of this special dictionary is that some fields are interpreted and loaded for you. For example, the device field of the Hexapod starts with `class//` and provides the class name for the Hexapod device. When you access this field, the class will automatically be instantiate for you and you can start commanding or querying the device. The following example initiates a homing command on the Hexapod controller:
+
+[source]
+----
+>>> setup.gse.hexapod.device.homing()
+----
+When you want to know which configuration items are defined in the Setup at e.g. the `gse` level, use the `keys()` function:
+
+[source]
+----
+>>> setup.gse.keys()
+dict_keys(['hexapod', 'stages', 'thorlabs', 'shutter', 'ogse', 'filter_wheel'])
+----
+When you want a full printout of the `setup.gse`, use the `print` function. This will print out the dictionary structure as loaded from the YAML file.
+
+[source]
+----
+>>> print(setup.gse)
+----
+
+=== What goes into the Setup?
+
+The __Setup__ will contain configuration information of your test equipment. This includes calibration and conversion information, identification, alignment information, etc. All items that can change from one setup to the next should be fully described in the __Setup__.
+
+The following list gives an idea of what is contained and managed by a Setup. This list is not comprehensive.
+
+* site: identification of the Site, e.g. CSL, IAS, INTA, SRON.
+* position: if you have different test setups, each of them should be identifiable, e.g. at CSL there are four positions with different setups.
+* gse: the ground support equipment like mechanisms, temperature controllers and sensors/heaters, optical equipment, shutter, hexapod, power meters, SpaceWire interface, TEB, etc.
+* camera: this is the System Under Test (SUT) and it has different sub-items like FEE, TOU, DPU software, model and type, all with their specific characteristics.
+
+For all of these items the Setup shall hold enough information to uniquely identify the configuration item, but also to reproduce the state of that item, i.e. version numbers of firmware software, transformation matrices for alignment, conversion coefficients, calibration tables, etc.
+
+
+=== How to use the Setup
+
+As described above, the Setup is a special dictionary that contains all the configuration information of your test equipment. This information resides in several files maintained by the configuration control server. You can request a list of Setups that are available from the configuration manager with the `list_setups()` function. This is a convenience function that will print the list in your Python session.
+
+[source]
+----
+>>> list_setups()
+----
+The above command will contact the configuration control server and request the list of Setups. To load the current active Setup into your session, use the `load_setup()` method. This function takes one optional argument to load a specific Setup. Now you can work with this setup as explained above, accessing its content and navigate through the hierarchy with the 'dot' notation.
+
+If you need to make a change to one of the configuration items in the Setup, you can just assign a new value to that field. Suppose we have upgraded the firmware of the PUNA Hexapod that is used in this setup, we can use the following commands to make that change:
+
+[source]
+----
+>>> setup.gse.hexapod.Firmware = 3.1415
+----
+The change then needs to be submitted to the configuration control server who will put it under configuration control, i.e. assign a new unique Setup identifier and save the entier Setup into a new YAML file.
+
+[source]
+----
+>>> setup = submit_setup(setup, description="Updated firmware of PUNA Hexapod")
+----
+
+=== How to create and manage Setups
+
+Whenever you make a change to an item in the Setup, or you add a configuration item, a new Setup will be created with a new unique `id` as soon as you submit the Setup to the configuration manager.
+
+The configuration control server has no insight or knowledge about the content of a Setup, so you can freely add new items when needed. The simplest way to start with a Setup and adapt it to your current test equipment environment, is to load a Setup that closely resembles your current environment, and only make the changes necessary for the new Setup, then submit the new Setup to the configuration control server.
+
+If you need to start from scratch, create a new empty Setup or feed it with a dictionary that contains already some of the information for the Setup:
+
+[source]
+----
+>>> from egse.setup import Setup
+>>> setup = Setup({"gse": {"hexapod": {"ID": 42, "name": "PUNA"}}})
+>>> print(setup)
+gse:
+    hexapod:
+        ID: 42
+        name: PUNA
+----
+If you need to set the firmware version for the Hexapod controller.
+
+[source]
+----
+>>> setup.gse.hexapod.firmware = "2020.07"
+>>> print(setup)
+gse:
+    hexapod:
+        ID: 42
+        name: PUNA
+        firmware: 2020.07
+----
+This way it is easy to update and maintain your Setup. When ready, submit to the configuration control server as shown above.
+
+If you want to save your Setup temporarily on your local system, use the `to_yaml_file()` method of Setup. This will save the Setup in your working directory.
+
+[source]
+----
+>>> setup.to_yaml_file(filename="SETUP-42-FIXED.yaml")
+----
+
+WARNING: Explain here how the user should submit a Setup from the client machin. That will send the Setup to the configuration manager and automatically push the new Setup to the GitHub repository provided the proper permissions are in place, i.e. a deploy key with write access. Where shall this be described?

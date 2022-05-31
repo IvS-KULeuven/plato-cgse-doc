@@ -1,0 +1,122 @@
+== The Telemetry \(TM) Dictionary
+
+The `tm-dicionary.csv` file (further referred to as the "telemetry (TM) dictionary") provides an overview of all housekeeping (HK) and metrics parameters in the EGSE system.  It is used:
+
+- By the `get_housekeeping` function (in `egse.hk`) to know in which file the values of the requested HK parameter should be looked for;
+- To create a translation table to convert — in the `get_housekeeping` function of the device protocols — the original names from the device itself to the EGSE-conform name (see further);
+- For the HK that should be included in the synoptics: to create a translation table to convert the original device-specific (but EGSE-conform) names to the corresponding synoptical name in the Synoptics Manager (in `egse.synoptics`).
+
+=== The File's Content
+
+For each device we need to add all HK parameters to the TM dictionary.  For each of these parameters you need to add one line with the following information (in the designated columns):
+
+[%header,cols="1,3"]
+|===
+| Column name | Expected content
+| TM source | Arbitrary (but clear) name for the device.  Ideally this name is short but clear enough for outsiders to understand what the device/process is for.
+| Storage mnemonic | Storage mnemonic of the device.  This will show up in the filename of the device HK file and can be found in the settings file (`settings.yaml`) in the block for that specific device/process.
+| CAM EGSE mnemonic | EGSE-conform parameter name (see next Sect.) for the parameter.  Note that the same name should be used for the HK parameter and the corresponding metrics.
+| Original name in EGSE | In the `get_housekeeping` method of the device protocols, it is - in some cases (e.g. for the N-FEE HK) - possible that you have a dictionary with all/most of the required HK parameters, but with a non-EGSE-conform name.  The latter should go in this column.
+| Name of corresponding timestamp | In the device HK files, one of the columns holds the timestamp for the considered HK parameter.  The name of that timestamp column should go in this column of the TM dictionary.
+| Origin of synoptics at CSL | Should only be filled for the entries in the TM dictionary for the Synoptics Manager.  This is the original EGSE-conform name of the synoptical parameter in the CSL-specific HK file comprising this HK parameter.  Leave empty for all other devices!
+| Origin of synoptics at SRON | Should only be filled for the entries in the TM dictionary for the Synoptics Manager.  This is the original EGSE-conform name of the synoptical parameter in the SRON-specific HK file comprising this HK parameter.  Leave empty for all other devices!
+| Origin of synoptics at IAS | Should only be filled for the entries in the TM dictionary for the Synoptics Manager.  This is the original EGSE-conform name of the synoptical parameter in the IAS-specific HK file comprising this HK parameter.  Leave empty for all other devices!
+| Origin of synoptics at INTA | Should only be filled for the entries in the TM dictionary for the Synoptics Manager.  This is the original EGSE-conform name of the synoptical parameter in the INTA-specific HK file comprising this HK parameter.  Leave empty for all other devices!
+| Description | Short description of what the parameter represents.
+| MON screen | Name of the Grafana dashboard in which the parameter can be inspected.
+| unit cal1 | Unit in which the parameter is expressed.  Try to be consistent in the use of the names (e.g. Volts, Ampère, Seconds, Degrees, DegCelsius, etc.).
+| offset b cal1 | For raw parameters that can be calibrated with a linear relationship, this column holds the offset `b` in the relation `calibrated = a * raw + b`.
+| slope a cal1 | For raw parameters that can be calibrated with a linear relationship, this column holds the slope `a` in the relation `calibrated = a * raw + b`.
+| calibration function | Not used at the moment.  Can be left emtpy.
+| MAX nonops | Maximum non-operational value.  Should be expressed in the same unit as the parameter itself.
+| MIN nonops | Minimum non-operational value.  Should be expressed in the same unit as the parameter itself.
+| MAX ops | Maximum operational value.  Should be expressed in the same unit as the parameter itself.
+| MIN ops | Minimum operational value.  Should be expressed in the same unit as the parameter itself.
+| Comment | Any additional comment about the parameter that is interesting enough to be mentioned but not interesting enough for it to be included in the description of the parameter.
+|===
+
+Since the TM dictionary grows longer and longer, the included devices/processes are ordered as follows (so it is easier to find back the telemetry parameters that apply to your TH):
+
+- Devices/processes that all test houses have in common: AEU, N-FEE, TCS, Synoptics Manager, etc.
+- Devices that are CSL-specific;
+- Devices that are SRON-specific;
+- Devices that are IAS-specific;
+- Devices that are INTA-specific.
+
+
+=== EGSE-Conform Parameter Names
+
+The correct (i.e. EGSE-conform) naming of the telemetry should be taken care of in the `get_housekeeping` method of the device protocols.
+
+==== Common Parameters
+
+A limited set of devices/processes is shared by (almost) all test houses.  Their telemetry should have the following prefix:
+
+[%header, cols="3,1", width=50%]
+|===
+| Device/process | Prefix
+| Configuration Manager | CM_
+| AEU (Ancillary Electrical Unit) | GAEU_
+| N-FEE (Normal Front-End Electronics) | NFEE_
+| TCS (Thermal Control System) | GTCS_
+| FOV (source position) | FOV_
+| Synoptics Manager | GSYN_
+|===
+
+
+==== TH-Specific Parameters
+
+Some devices are used in only one or two test houses.  Their telemetry should have TH-specific prefix:
+
+[%header,cols="1,1",width=50%]
+|===
+| TH | Prefix
+| CSL | GCSL_
+| SRON | GSRON_
+| IAS | GIAS_
+| INTA | GINTA_
+|===
+
+
+=== Synoptics
+
+The Synoptics Manager groups a pre-defined set of HK values in a single file.  It's not the original EGSE-conform names that are use in the synoptics, but names with the prefix `GSYN_`.  The following information is comprised in the synoptics:
+
+- Acquired by common devices/processes:
+  - Calibrated temperatures from the N-FEE;
+  - Calibrated temperatures from the TCS;
+  - Source position (commanded + actual).
+- Acquired by TH-specific devices:
+  - Calibrated temperatures from the TH DAQs;
+  - Information about the OGSE (intensity, lamp and laser status, shutter status, measured power).
+
+For the first type of telemetry parameters, their original EGSE-conform name should be put into the column `CAM EGSE mnemonic`, as they are not TH-specific.
+
+The second type of telemetry parameters is measured with TH-specific devices.  The original TH-specific  EGSE-conform name should go in the column `Origin of synoptics at \...`.
+
+
+=== Translation Tables
+
+The translation tables that were mentioned in the introduction, can be created by the `read_conversion_dict` function in `egse.hk`.  It takes the following input parameters:
+
+- `storage_mnemonic`: Storage mnemonic of the device/process generating the HK;
+- `use_site`: Boolean indicating whether you want the translation table for the TH-specific telemetry rather than the common telemetry (`False` by default).
+
+To apply the actual translation, you can use the `convert_hk_names` function from `egse.hk`, which takes the following input parameters:
+
+- `original_hk`: HK dictionary with the original names;
+- `conversion_dict`: Conversion table you got as output from the `read_conversion_dict` function.
+
+
+=== Sending HK to Synoptics
+
+When you want to include HK of your devices, you need to take the following actions:
+
+* Make sure that the TM dictionary is complete (as described above);
+* In the device protocol:
+** At initialisation: establish a connection with the Synoptics Manager: `self.synoptics = SynopticsManagerProxy()`
+** In `get_housekeeping` (both take the dictionary with HK as input):
+*** For TH-specific HK: `self.synoptics.store_th_synoptics(hk_for_synoptics)`;
+*** For common HK: `self.synoptics.store_common_synoptics(hk_for_synoptics)`.
+
+Please, do not introduce new synoptics without further discussion!

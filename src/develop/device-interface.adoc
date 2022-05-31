@@ -1,0 +1,97 @@
+== The Device Interface Classes
+
+* Naming convention
+* SCPI
+* Where are device drivers configured?
+* Direct communication with devices
+* Device simulators
+* Device Interfaces
+* Description of the `device.py` module
+
+=== The Connection Interface
+
+A *connection interface* defines the commands that are used to establish a connection, terminate a connection, and check if a connection has been established. We have two main connection interfaces: (1) a connection to a hardware device, e.g. a temperature controller or a filter wheel, and (2) a connection to a control server. A control server is the single point access to a hardware device.
+
+
+==== Connection Interface for Devices
+
+A __Controller__ is a class that connects directly to the hardware. This can be through e.g. an Ethernet TCP socket or a USB interface or any other connection. The details of a connection are buried in low level device interface classes which use all kinds of different protocols. The Controller will use these low level device classes to control the connection, and then provide a uniform interface to connect and disconnect from the device to the user.
+
+So, we defined a generic interface for working with device connections. The interface defines the following commands: `connect`, `disconnect`, and `is_connected`.
+
+Use the `connect()` method to establish a connection to the hardware controller of the device.
+
+Use the `disconnect()` method to terminate the connection to the hardware controller.
+
+The previous two commands raise a device specific error (Exception) when a connection can not be established or terminated.
+
+Use the `is_connected()` method to check if a connection with the controller is established. This command returns `True` if there is a working connection with the device, `False` otherwise.
+
+This interface shall be implemented by device controller classes, device simulators, and `Proxy` sub-classes. Examples of device controllers are `PunaController` and `ThorlabsPM100Controller`, while their simulators are called `PunaSimulator` and `ThorlabsPM100Simulator` and the `Proxy` sub-classes `PunaProxy` and `ThorlabsPM100Proxy`.
+
+In the example below we make a connection to the PUNA Hexapod and issue a homing and an absolute movement command, then close the connection.
+
+[source,Python]
+----
+from egse.hexapod import HexapodError
+from egse.hexapod.symetrie.puna import PunaController
+
+puna = PunaController()
+try:
+    puna.connect()
+    puna.homing()
+    puna.move_absolute(0, 0, 18, 0, 0, 0)
+except HexapodError as exc:
+    logger.error(f"There was an error during the interaction with the PUNA Hexapod: {exc}")
+    # do recovery action here if needed
+finally:
+    if puna.is_connected():
+        puna.disconnect()
+----
+
+Most of the Controllers can also be used as a context manager. The following code does the same as the example above. The connection is automatically established and terminated by the context manager.
+
+[source,Python]
+----
+from egse.hexapod.symetrie.puna import PunaController
+
+with PunaController() as puna:
+    puna.homing()
+    puna.move_absolute(0, 0, 18, 0, 0, 0)
+----
+
+
+==== Connection Interface for `Proxy` Classes
+
+`Proxy` classes make a connection to a control server, e.g. the `PunaProxy` class will make a connection to the `PunaControlServer`. The control server will in turn be connected to either a Controller or a Simulator. The `Proxy` classes are called this way, because they act as a gateway for device commands, i.e. the proxy forwards device commands to the Controllers through the control server.
+
+As stated above, a `Proxy` sub-class implements the device connection interface with the `connect()`, `disconnect()`, and `is_connected()` methods. That is because a Proxy completely mimics a Controller device interface. The Proxy however also establishes and manages a connection with its control server, but we cannot use the same connection interface for this type of connection.
+
+The Proxy connection to its control server is defined by the `ControlServerConnectionInterface` and is implemented in the `Proxy` base class. This interface defines the following commands:
+
+* `connect_cs`,
+* `disconnect_cs`,
+* `reconnect_cs`,
+* `reset_cs_connection`,
+* and `is_cs_connected`.
+
+Use the `connect_cs()` and `disconnect_cs()` methods to establish and terminate a connection to the control server. The `reconnect_cs()` method currently basically does the same as the `connect_cs()` method, it is provided as a convenience to make the flow of connecting and reconnecting clearer in your code when needed.
+
+Use the `reset_cs_connection()` method when the connection is in an undefined state. This method will try to connect and reconnect to the control server for a number of retries before failing.
+
+Use the `is_cs_connected()` method to check if a connection with the control server is established. This command returns `True` if there is a working connection with the server, `False` otherwise.
+
+This interface is implemented in the Proxy base class and there is no need to worry about this in your Proxy sub-class implementation.
+
+Also a Proxy can be used as a context manager. The example for the `PunaController` above can therefore be rewritten for the `PunaProxy`:
+
+[source,Python]
+----
+from egse.hexapod.symetrie.puna import PunaProxy
+
+with PunaProxy() as puna:
+    puna.homing()
+    puna.move_absolute(0, 0, 18, 0, 0, 0)
+----
+
+Note however that the Context Manager in this case will connect and disconnect to the control server, leaving the connection to the hardware device untouched.
