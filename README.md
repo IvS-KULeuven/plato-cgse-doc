@@ -1,13 +1,14 @@
 # Documentation of the Common–EGSE
 
-This repo contains written (not generated) documentation for the PLATO Common–EGSE project. 
+This repo contains written and generated documentation for the PLATO Common–EGSE project. 
 
-For the API documentation of the CGSE project, checkout ...
 
-The website is created in the `docs` folder using [HUGO](https://gohugo.io). Make sure HUGO is installed on your system to generate the HTML code. In a terminal go into the `hugo` folder of the project and type
+The website is created from the asciidoc files in the `hugo` folder using the [HUGO](https://gohugo.io) static site generator. Make sure HUGO is installed on your system to generate the HTML code. In a terminal go into the `hugo` folder of the project and type
 ```
 $ hugo
 ```
+This will generated the full documentation site in the `docs` folder of the project.
+
 Before committing and pushing the code, you should generate the CGSE manuals. The source for these manuals is located in the `src` folder. The manuals are generated using AsciiDoctor. To create a PDF file for e.g. the developer manual, go into the `src/develop` folder and run the following command:
 ```
 $ asciidoctor-pdf developer-manual.adoc
