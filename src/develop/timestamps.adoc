@@ -1,0 +1,32 @@
+== Date, Time and Timestamps
+
+This section explains how and where time is used in the CGSE code and in the data.
+
+What goes in?
+----
+* the format_datetime() function
+* timestamps in the CSV files
+* timestamps in the HDF5 files
+* timestamps in the FITS files
+* timestamps in the log files
+* UTC versus local time
+* time synchronisation -> NTP or otherwise
+----
+
+=== Formatting the date and time
+
+In the `egse.system` module we have provided a few functions to work with datetime in a consistent way. The most important is the `format_datetime()` function which is used for instance to create the timestamps for all CSV housekeeping data files.
+
+[python]
+----
+>>> format_datetime()
+'2022-06-01T07:47:25.672+0000'
+----
+The format that is returned by default is `"YYYY-mm-ddTHH:MM:SS.μs+0000"` which means the time is expressed in UTC. The function has a few optional parameters that allows to tune the returned string. This should be used only for specific purposes, use the default always to generate a timestamp for your data.
+
+If you need to parse the timestamp string returned by the `format_datetime()` function, use the following format string: `"%Y-%m-%dT%H:%M:%S.%f%z"`. We might provide a `parse_datetime()` function in the future to standardize and simplify the parsing of datetime objects.
+
+----
+>>> datetime.strptime(format_datetime(), "%Y-%m-%dT%H:%M:%S.%f%z")
+datetime.datetime(2022, 6, 1, 8, 22, 3, 686000, tzinfo=datetime.timezone.utc)
+----
