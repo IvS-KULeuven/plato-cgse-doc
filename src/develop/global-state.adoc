@@ -1,29 +1,63 @@
 == The GlobalState
 
-* Why would we want a global state?
-* They always tell me that we should not use global variables!
-* What is in the `GlobalState`?
 * What can we do with the `GlobalState`?
+* How to use the GlobalState in test scripts?
 
+[WARNING]
+This section needs to be updated!
 
 === Singleton versus Shared State
 
-From within several places in the code, we needed access to a certain state and act accordingly. One of these states is the `dry_run` which allows us to execute command sequences (test scripts) without actually sending instructions to the hardware, but just logging that the command would have been executed with its arguments. We could have gone with a singleton pattern, i.e. a class for which only one instance exists in your session, but a singleton is a difficult pattern to test and control. Another possible solution is to use a class for which all instances have a shared state. That means even if the class is instantiated multiple times, its state is the same for all those instances. This pattern is also known as the Borg pattern or the shared-state pattern.
+From within several places deep in the code of the test scripts, we need access to a certain state of the system and act accordingly. The main state to access is the Setup which provides all configuration and calibration parameters of the test equipment and of the SUT.
+
+Another use is the `dry_run` state which allows you to execute command sequences (test scripts) without actually sending instructions to the hardware, but just logging that the command would have been executed with its arguments. We could have gone with a singleton pattern, i.e. a class for which only one instance exists in your session, but a singleton is a difficult pattern to test and control. Another possible solution is to use a class for which all instances have a shared state. That means even if the class is instantiated multiple times, its state is the same for all those instances. This pattern is also known as the Borg pattern or the shared-state pattern.
 
 The name `GlobalState` is maybe not such a good name as this class actually shares state between its instances, but this shared state is not global in the sense of a global variable. The objects can be instantiated from anywhere at anytime, which is what makes them globally available.
 
 
 === What is in the GlobalState?
 
+The following sections describe the different states and function provided by the ((GlobalState)). Remember the GlobalState is intended to be used within functions and methods of the test scripts in order to access global state information. That means the GlobalState needs to be initialised for some functions to work properly. Don't use the GlobalState in Common-EGSE modules. If you need access to the Setup from the CGSE, explicitly request the Setup from the configuration manager using the `get_setup()` function.
+
 ==== The Setup
 
-The complete configuration of the test setup. From the Setup you can access all devices that are known by the configuration manager, and you have access to calibration settings. The Setup is fully described in the API documentation of the class at `egse.setup`. The Setup that comes with the GlobalState is loaded from the Configuration Manager. Use the `GlobalState.load_setup()` to load the current Setup that is active on the Configuration Manager.
+You can access the ((Setup)) from the GlobalState as follows:
 
-If you need to work with different Setups, `GlobalState` is not the right place to be. Load any Setup directly from the `Setup` class with the static methods `from_dict(my_dict)` or `from_yaml_file(filename)`.
+----
+from camtest import GlobalState
+
+setup = GlobalState.setup
+----
+
+On system startup however, when no Setup has been loaded, the above code will return `None`. You can load the Setup with the function `load_setup()` and this will then also automatically populate the GlobalState:
+
+----
+from egse.setup import load_setup
+
+setup = load_setup()
+----
+
+From the Setup you can access all devices that are known by the configuration manager, and you have access to configuration and calibration settings. The Setup is fully described in the API documentation of the class at `egse.setup`. The Setup that comes with the GlobalState is loaded from the Configuration Manager.
+
+If you need to work with different Setups simultaneously, `GlobalState` is not the right place to be. You can get any Setup with the `get_setup()` function without loading that Setup in the configuration manager.
+
+----
+from egse.setup import get_setup
+
+setup_67 = get_setup(67)
+----
+
+[WARNING]
+There is a subtle difference between the `get_setup()` and the `load_setup()` function. The `get_setup()` function retrieves the requested Setup from the configuration manager without replacing the current Setup in the configuration manager control server. The `load_setup()` returns the requested Setup **and** replaces the currently active Setup in the configuration manager control server.
+
+
+Alternatively, you can load any Setup directly from a dictionary or a YAML file using the static methods `from_dict(my_dict)` or `from_yaml_file(filename)` of the `Setup` class.
+
+There is a full section on the Setup, how to populate it, how it is managed and controlled and what it shall contain and what not. Ckech out xref:the-setup.adoc#_the_setup[] to get more details.
 
 ==== Performing a Dry Run
 
-At some point we need to check the test scripts that we write in order to see if the proper commands will be executed with their proper arguments. But we don't want the commands to be send to the mechanisms or controllers. We want to do a dry run where the script is executed as normal, but no instructions are sent to any device.
+At some point we need to check the test scripts that we write in order to see if the proper commands will be executed with their intended arguments. But we don't want the commands to be sent to the mechanisms or controllers. We want to do a dry run where the script is executed as normal, but no instructions are sent to any device.
 
 ==== Retrieve the Command Sequence
 

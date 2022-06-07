@@ -1,0 +1,45 @@
+== Metrics, Prometheus and Grafana
+
+The CGSE provides mechanisms for monitoring metrics from different processes and devices with Grafana. This chapter will explain how the metrics are defined for your favorite process and device, how their values are gathered and propagated to the Prometheus server and how Grafana queries Prometheus to create timeseries that are displayed in your browser.
+
+=== Setup Prometheus
+
+- [ ] what should go in the `prometheus-egse-server.yml`
+- [ ] what about the timestamps that are associated with the metrics?
+
+=== Define you metrics
+
+Depending on your needs, you can choose different methods for the timestamp of your metrics. We will discuss three ways to get and use metrics timestamps:
+
+1. the timestamp for the metric comes with the device housekeeping.
+2. the timestamp is created by the device controller when the metric is retrieved.
+3. the timestamp is created by Prometheus and is the time of querying the http server that is started by each of the control servers.
+
+
+Option 1. is the best way for timestamps for your metrics when the accuracy of the time when the metric was retrieved is important. The timestamp then itself is a metric (Gauge) and might need to be converted to a float that represents the time in the expected way, depending on the target application.
+
+Option 2. can be used when the device housekeeping doesn't contain the timestamp of the metrics. This method be a few to a few tens of milliseconds off depending on the device response time. For some devices and depending on the duration of the query and the number of parameters this can be even longer. One example is the DAQ6510 when tens of temperatures are scanned several times before returning an average value. A full scan can take up to 20s or more.
+
+----
+import time, datetime
+import prometheus_client as prom
+
+x = prom.Gauge("x", "the metric")
+x_ts = prom.Gauge("x_ts", "the metric timestamp")
+
+# Option 1: timestamp is a metric
+
+x.set( <the value of the parameter> )
+x_ts.set( <the timestamp for the value as a float> )
+prom.write_to_textfile('metrics.txt', prom.REGISTRY)
+
+# Option 2. timestamp is set by the device controller
+
+x.set( <the value of the parameter> )
+x_ts.set(datetime.datetime.now(tz=datetime.timezone.utc).timestamp())
+prom.write_to_textfile('metrics.txt', prom.REGISTRY)
+----
+
+Option 3. is used when the exact time is not really important and may be a few (tens of) seconds off. This is the case for most temperature measurements evolving slowly.
+
+The time used by Prometheus is the https://en.wikipedia.org/wiki/Unix_time[unixtime] which means localtime (not UTC) and Epoch 01/01/1970, excluding leap seconds. This is the same as what is returned by the Python `time.time()` function.

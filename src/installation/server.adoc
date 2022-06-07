@@ -316,12 +316,11 @@ Please note that in the developer documentation under the section [Monitoring](.
     tar xzvf prometheus-2.25.0.linux-amd64.tar.gz
     ln -s prometheus-2.25.0.linux-amd64 prometheus
 
-We want to automatically start the Prometheus server from the systemd services as we did with the core egse services. The service file, i.e. `prometheus.service`, can be copied from the `server` directory in the distribution to the `/etc/systemd/system` folder, same as for the core egse services. Make sure you update the locations if necessary. The configuration files for Prometheus, i.e. `prometheus-egse-server.yml` and `prometheus.rules.yml`, should be copied from the `metrics` folder into the installation folder of Prometheus.
+We want to automatically start the Prometheus server from the systemd services as we did with the core egse services. The service file, i.e. `prometheus.service`, can be copied from the `server` directory in the distribution to the `/etc/systemd/system` folder, same as for the core egse services. Make sure you update the locations if necessary. For the configuration files for Prometheus, i.e. `prometheus-egse-server.yml` and `prometheus.rules.yml`, a soft link can be create from the `metrics` folder into the installation folder of Prometheus.
 
-    cd ~/git/plato-common-egse
-    cp ./server/prometheus.service /etc/systemd/system
-    cp ./metrics/prometheus-egse-server.yml ~/software/prometheus
-    cp ./metrics/prometheus.rules.yml ~/software/prometheus
+    cp ~/git/plato-common-egse/server/prometheus.service /etc/systemd/system
+    ln -s ~/git/plato-common-egse/metrics/prometheus-egse-server.yml ~/software/prometheus
+    ln -s ~/git/plato-common-egse/metrics/prometheus.rules.yml ~/software/prometheus
 
 Finally, create the `metrics/data` directory in the proper location, e.g. in `/data`. That is the location given with the `--storage.tsdb.path` option in the Prometheus service file.
 

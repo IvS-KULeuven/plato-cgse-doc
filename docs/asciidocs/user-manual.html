@@ -463,7 +463,17 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <li><a href="#_where_do_i_start">4.2. Where do I start?</a></li>
 </ul>
 </li>
-<li><a href="#_frequently_asked_questions_faq">5. Frequently Asked Questions (FAQ)</a></li>
+<li><a href="#_update_the_common_egse_software">5. Update the Common-EGSE Software</a></li>
+<li><a href="#_starting_the_core_services">6. Starting the Core Services</a></li>
+<li><a href="#_frequently_asked_questions_faq">7. Frequently Asked Questions (FAQ)</a>
+<ul class="sectlevel2">
+<li><a href="#_how_can_i_check_the_installed_version_of_the_cgse_and_test_scripts">7.1. How can I check the installed version of the CGSE and Test Scripts</a></li>
+<li><a href="#_how_do_i_check_if_all_the_devices_have_been_connected_properly_and_are_active">7.2. How do I check if all the devices have been connected properly and are active?</a></li>
+<li><a href="#_how_do_i_check_if_the_storage_manager_is_running">7.3. How do I check if the Storage manager is running?</a></li>
+<li><a href="#_how_do_i_check_if_the_configuration_manager_is_running">7.4. How do I check if the Configuration Manager is running?</a></li>
+<li><a href="#_where_can_i_find_my_test_data">7.5. Where can I find my test data?</a></li>
+</ul>
+</li>
 </ul>
 </div>
 </div>
@@ -479,6 +489,24 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <div class="sect1">
 <h2 id="_todo">2. TODO</h2>
 <div class="sectionbody">
+<div class="paragraph">
+<p>What can be a good structure for this manual? I was thinking about make chapters per topics and not so much per component. Something like:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>Starting up
+  Starting the core egse services
+  The Process Manager
+Monitoring the system
+  Using device GUIs
+  Using Grafana
+Running test scripts
+  The as-run procedure
+  Using PyCharm
+Inspecting the data
+  Location of housekeeping and image data</pre>
+</div>
+</div>
 <div class="ulist">
 <ul>
 <li>
@@ -804,31 +832,214 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 </div>
 </div>
 <div class="sect1">
-<h2 id="_frequently_asked_questions_faq">5. Frequently Asked Questions (FAQ)</h2>
+<h2 id="_update_the_common_egse_software">5. Update the Common-EGSE Software</h2>
 <div class="sectionbody">
+<div class="listingblock">
+<div class="content">
+<pre>update_cgse develop</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>To update the Common-EGSE on the operational machine, use the <code>ops</code> argument instead. An operational installation is different from a developer installation. There is no virtual environment and the all required Python packages, including the Common-EGSE are installed at a specific location. The installation process makes use of the following environment variables:</p>
+</div>
 <div class="ulist">
 <ul>
 <li>
-<p>How do I check if all the devices have been connected properly and are active?</p>
+<p><code>PLATO_COMMON_EGSE_PATH</code>: the location of the plato-common-egse repository
+on your machine, e.g., <code>~/git/plato-common-egse</code></p>
 </li>
 <li>
-<p>How do I check if the Storage manager is running?</p>
-</li>
-<li>
-<p>How do I check if the Configuration Manager is running?</p>
-</li>
-<li>
-<p>Where can I find my test data?</p>
+<p><code>PLATO_INSTALL_LOCATION</code>: the location where the packages shall be
+installed, usually <code>/cgse</code></p>
 </li>
 </ul>
 </div>
+<div class="listingblock">
+<div class="content">
+<pre>update_cgse ops --tag=2022.2.2-&lt;TH&gt;-CGSE</pre>
 </div>
+</div>
+<div class="paragraph">
+<p>The <code>&lt;TH&gt;</code> must be replaced with the test house name, CSL, IAS, INTA, or SRON.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_starting_the_core_services">6. Starting the Core Services</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>The <em>core services</em> of the Common-EGSE are those services that should be running all the time and preferably on the dedicated EGSE server. In the production environment, i.e. when we are actually running the tests in the lab, these services will be started automatically when the system boots [XXXXX: make a reference to the server installation procedure Systemd]. During our development and when using the Common-EGSE outside of the Camera Test environment, we can start the core services on our local machine.</p>
+</div>
+<div class="paragraph">
+<p>When the system is properly installed, you should have an <code>invoke</code> command available from the terminal. When you run it with the <code>--list</code> option, it will show which commands are available.</p>
+</div>
+<div class="literalblock">
+<div class="content">
+<pre>$ invoke --list</pre>
+</div>
+</div>
+<div class="literalblock">
+<div class="content">
+<pre>Available tasks:</pre>
+</div>
+</div>
+<div class="literalblock">
+<div class="content">
+<pre>generate-docs     Generate the documentation for this project.
+pytests           Run the tests for this project.
+start-core-egse   Start the Core Common-EGSE services.
+stop-core-egse    Stop the Core Common-EGSE services.
+upload-docs       Upload the documentation to GitHub pages.</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Some of these commands are for development purposes, but the <code>start-core-egse</code> and the <code>stop-core-egse</code> commands can be used to start/stop the core services.</p>
+</div>
+<div class="literalblock">
+<div class="content">
+<pre>$ invoke start-core-egse
+Starting log manager..
+Starting storage manager..
+Starting configuration manager..
+Starting process manager..
+Starting synoptics manager..</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>The servers are started in a background job.<sup class="footnote">[<a id="_footnoteref_1" class="footnote" href="#_footnotedef_1" title="View footnote.">1</a>]</sup> To see if they are indeed started, you can run the following in your terminal:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="nowrap">$ ps -ef|grep _cs
+459800007 64147     1   0  2:25PM ttys001    0:00.42 /Library/Frameworks/Python.framework/Versions/3.8/Resources/Python.app/Contents/MacOS/Python /Users/rik/Git/plato-common-egse/venv38/bin/log_cs start
+459800007 64148     1   0  2:25PM ttys001    0:02.73 /Library/Frameworks/Python.framework/Versions/3.8/Resources/Python.app/Contents/MacOS/Python /Users/rik/Git/plato-common-egse/venv38/bin/sm_cs start
+459800007 64162     1   0  2:25PM ttys001    0:07.90 /Library/Frameworks/Python.framework/Versions/3.8/Resources/Python.app/Contents/MacOS/Python /Users/rik/Git/plato-common-egse/venv38/bin/cm_cs start
+459800007 64171     1   0  2:25PM ttys001    0:03.14 /Library/Frameworks/Python.framework/Versions/3.8/Resources/Python.app/Contents/MacOS/Python /Users/rik/Git/plato-common-egse/venv38/bin/pm_cs start
+459800007 64180     1   0  2:25PM ttys001    0:02.94 /Library/Frameworks/Python.framework/Versions/3.8/Resources/Python.app/Contents/MacOS/Python /Users/rik/Git/plato-common-egse/venv38/bin/syn_cs start</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Keep the core services running, they do not harm and other components of the Common-EGSE need these services. But, if you want to stop them anyway at the end of a long working day, just use:</p>
+</div>
+<div class="literalblock">
+<div class="content">
+<pre>$ invoke stop-core-egse</pre>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_frequently_asked_questions_faq">7. Frequently Asked Questions (FAQ)</h2>
+<div class="sectionbody">
+<div class="sect2">
+<h3 id="_how_can_i_check_the_installed_version_of_the_cgse_and_test_scripts">7.1. How can I check the installed version of the CGSE and Test Scripts</h3>
+<div class="paragraph">
+<p>Use the following commands in a terminal:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>$ python -m egse.version
+version: 2022.2.15-IAS-CGSE
+release: May 2022, 2022.2.15-IAS-CGSE</pre>
+</div>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>$ python -m camtest.version
+CAMTEST Test Scripts version = 2022.1.12-SRON-TS-37-ga4f04cd</pre>
+</div>
+</div>
+<div class="dlist">
+<dl>
+<dt class="hdlist1">NOTE</dt>
+<dd>
+<p>The Common-EGSE is installed on both the egse-server and the egse-client and shall have the same version.</p>
+</dd>
+</dl>
+</div>
+<div class="paragraph">
+<p>See the section <a href="#_update_the_common_egse_software">Chapter 5</a> on how to get the latest version installed in your environment.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_how_do_i_check_if_all_the_devices_have_been_connected_properly_and_are_active">7.2. How do I check if all the devices have been connected properly and are active?</h3>
+<div class="paragraph">
+<p>TBW</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_how_do_i_check_if_the_storage_manager_is_running">7.3. How do I check if the Storage manager is running?</h3>
+<div class="paragraph">
+<p>You can check this in a terminal with the following command:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>$ sm_cs status
+Storage Manager:
+  Status: active
+  Hostname: 172.20.10.3
+  Monitoring port: 6101
+  Commanding port: 6100
+  Service port: 6102
+  Storage location: /Users/rik/data/CSL/
+  Registrations: ['obsid', 'CM', 'PM', 'SYN-HK', 'SYN']</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>If you need more information e.g. to debug which files are being used to save the observation data, add the <code>--full</code> option to the above command:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight nowrap"><code data-lang="source">$ sm_cs status --full
+Storage Manager:
+  Status: active
+  Hostname: 172.20.10.3
+  Monitoring port: 6101
+  Commanding port: 6100
+  Service port: 6102
+  Storage location: /Users/rik/data/CSL/
+  Registrations: ['obsid', 'CM', 'PM', 'SYN-HK', 'SYN']
+Filenames for all registered items:
+  obsid      -&gt;  [PosixPath('/Users/rik/data/CSL/obsid-table.txt')]
+  CM         -&gt;  [PosixPath('/Users/rik/data/CSL/daily/20220530/20220530_CSL_CM.csv')]
+  PM         -&gt;  [PosixPath('/Users/rik/data/CSL/daily/20220530/20220530_CSL_PM.csv')]
+  SYN-HK     -&gt;  [PosixPath('/Users/rik/data/CSL/daily/20220530/20220530_CSL_SYN-HK.csv')]
+  SYN        -&gt;  [PosixPath('/Users/rik/data/CSL/daily/20220530/20220530_CSL_SYN.csv')]
+No observation is registered.
+Total disk space: 931.547 GiB
+Used disk space: 887.819 GiB (95.31%)
+Free disk space: 43.728 GiB (4.69%)</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>More information can be found in the</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_how_do_i_check_if_the_configuration_manager_is_running">7.4. How do I check if the Configuration Manager is running?</h3>
+<div class="paragraph">
+<p>TBW</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_where_can_i_find_my_test_data">7.5. Where can I find my test data?</h3>
+<div class="paragraph">
+<p>TBW</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div id="footnotes">
+<hr>
+<div class="footnote" id="_footnotedef_1">
+<a href="#_footnoteref_1">1</a>. After the storage manager started, there will be a short delay of 2 seconds, this allows the service to fully start and initialise before the other services (confman &amp; procman) try to register to the storage.
 </div>
 </div>
 <div id="footer">
 <div id="footer-text">
 Version 0.1<br>
-Last updated 2022-05-31 11:23:04 +0200
+Last updated 2022-06-01 08:31:15 +0200
 </div>
 </div>
 </body>
