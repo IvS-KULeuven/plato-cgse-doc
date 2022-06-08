@@ -8,21 +8,67 @@ A lot of testing and monitoring can be done from the command terminal and doesn'
 * describe all _cs commands and their options, when to use them and when NOT to use them
 * describe all _ui commands and their options
 * what other terminal commands are used
-** ps -ef|grep _cs
-** kill PID or %1
 ** python -m egse (and all the other info modules)
 ** python ../src/scripts/check_hdf5_files.py
 ** python ../src/scripts/create_hdf5_report.py
 ** export_grafana_dashboards
 ** update_cgse → should become `cgse update`
 ** update_ts → should become `ts update`
-* often used git commands
-** git status
-** git describe —tags
-** git stash [pop]
-** git fetch update
-** git rebase update/develop
 * Textualog, see xref:The Log Manager[]
+
+=== Often used terminal commands
+
+[%header,cols="2,4"]
+|===
+| Command
+| Description
+
+| `ps -ef\|grep _cs`
+| Check which control servers are running. The names of all control servers end with _cs, except `das`, `fov_hk`, `n_fee_hk`, and `fitsgen`.
+
+| `kill [-9] PID`
+| Terminate the command with the given process  identifier (PID). The `-9` option is used to force a kill.
+
+| `kill %1`
+| After you have sent a command to the background with `^Z`, this command must still be killed. The `%1` represents the jobs number.
+
+| `df -h /data /archive`
+| Check the available disk space on the data and archive disks.
+
+| `curl localhost:<port>`
+| Most of the control servers generate metrics data that will be ingested in a Prometheus time-series database. The metrics can be inspected with this `curl` command. Run the command on the egse-server or replace `localhost` with the egse-server IP address. The `port` is dependent on the metrics that you want to inspect, each control server has a specific metrics port.
+|===
+
+=== Often used git commands
+
+The `git` commands need to be executed in the project folder or a sub-folder thereof, e.g. `~/git/plato-common-egse`.
+
+[%header,cols="2,4"]
+|===
+| Command
+| Description
+
+| `git status`
+| Check the status of the working directory. This is mainly used to list the files that have been changed and need to be added and committed before pushing to the repository. Sometimes these files need to be stashed before an update.
+
+| `git stash [pop]`
+| Temporarily saves (stashes) the files that were changed in your working directory. Use this command to clear your working directory before updating the project. The `pop` option is used to put back the saved files after update.
+
+| `git describe --tags [--long]`
+| Print the most recent tag which represents your installed version or release. If the `--long` option is used, the additional information is the number of commits since the tag and the abbreviated commit hash.
+
+| `git remote -v`
+| Check the remote repositories that are known on your local copy.
+
+| `git branch`
+| Print the branches known on your local repo. The current branch has an asterisk '*' in front of its name.
+
+| `git fetch updates`
+| Fetch all changes from the remote `updates`
+
+| `git rebase updates/develop`
+| Apply the changes from `updates/develop` on the current branch. This is equivalent to merging.
+|===
 
 <<<
 

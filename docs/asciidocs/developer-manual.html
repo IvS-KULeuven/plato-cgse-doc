@@ -567,7 +567,7 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <li><a href="#_metrics_prometheus_and_grafana">14. Metrics, Prometheus and Grafana</a>
 <ul class="sectlevel2">
 <li><a href="#_setup_prometheus">14.1. Setup Prometheus</a></li>
-<li><a href="#_define_you_metrics">14.2. Define you metrics</a></li>
+<li><a href="#_define_your_metrics">14.2. Define your metrics</a></li>
 </ul>
 </li>
 </ul>
@@ -596,6 +596,8 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <li><a href="#_terminal_commands">19. Terminal Commands</a>
 <ul class="sectlevel2">
 <li><a href="#_what_goes_into_this_section">19.1. What goes into this section</a></li>
+<li><a href="#_often_used_terminal_commands">19.2. Often used terminal commands</a></li>
+<li><a href="#_often_used_git_commands">19.3. Often used git commands</a></li>
 </ul>
 </li>
 <li><a href="#_stories">20. Stories</a>
@@ -633,7 +635,7 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <p>1<sup>st</sup> Edition — May 2022</p>
 </div>
 <div class="paragraph">
-<p>This manual is written in PyCharm using the AsciiDoc plugin. The PDF Book version is processed with asciidoctor-pdf. The source code is available in a GitHub repository at XXXXX.</p>
+<p>This manual is written in PyCharm using the AsciiDoc plugin. The PDF Book version is processed with asciidoctor-pdf. The source code is available in a GitHub repository at <a href="https://github.com/rhuygen/plato-cgse-doc">rhuygen/plato-cgse-doc</a>.</p>
 </div>
 <div class="paragraph">
 <p>When you find an error or inconsistency or you have some improvements to the text, feel free to raise an issue or create a pull request. Any contribution is greatly appreciated and will be mentioned in the acknowledgement section.</p>
@@ -3067,7 +3069,7 @@ puna = PunaController()
 </div>
 </div>
 <div class="sect2">
-<h3 id="_define_you_metrics">14.2. Define you metrics</h3>
+<h3 id="_define_your_metrics">14.2. Define your metrics</h3>
 <div class="paragraph">
 <p>Depending on your needs, you can choose different methods for the timestamp of your metrics. We will discuss three ways to get and use metrics timestamps:</p>
 </div>
@@ -3087,28 +3089,34 @@ puna = PunaController()
 <div class="paragraph">
 <p>Option 1. is the best way for timestamps for your metrics when the accuracy of the time when the metric was retrieved is important. The timestamp then itself is a metric (Gauge) and might need to be converted to a float that represents the time in the expected way, depending on the target application.</p>
 </div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="Python"><span style="color:#080;font-weight:bold">import</span> <span style="color:#B44;font-weight:bold">prometheus_client</span> <span style="color:#080;font-weight:bold">as</span> prom
+
+x = prom.Gauge(<span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">x</span><span style="color:#710">&quot;</span></span>, <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">the metric</span><span style="color:#710">&quot;</span></span>)
+x_ts = prom.Gauge(<span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">x_ts</span><span style="color:#710">&quot;</span></span>, <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">the metric timestamp</span><span style="color:#710">&quot;</span></span>)
+
+<span style="color:#777"># Option 1: timestamp is a metric</span>
+
+x.set( &lt;the value of the parameter&gt; )
+x_ts.set( &lt;the timestamp <span style="color:#080;font-weight:bold">for</span> the value <span style="color:#080;font-weight:bold">as</span> a <span style="color:#369;font-weight:bold">float</span>&gt; )</code></pre>
+</div>
+</div>
 <div class="paragraph">
-<p>Option 2. can be used when the device housekeeping doesn&#8217;t contain the timestamp of the metrics. This method be a few to a few tens of milliseconds off depending on the device response time. For some devices and depending on the duration of the query and the number of parameters this can be even longer. One example is the DAQ6510 when tens of temperatures are scanned several times before returning an average value. A full scan can take up to 20s or more.</p>
+<p>Option 2. can be used when the device housekeeping doesn&#8217;t contain the timestamp of the metrics. This method can be a few to a few tens of milliseconds off depending on the device response time. For some devices and depending on the duration of the query and the number of parameters this can be even longer. One example is the DAQ6510 when tens of temperatures are scanned several times before returning an average value. A full scan can take up to 20s or more.</p>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre>import time, datetime
-import prometheus_client as prom
+<pre class="CodeRay highlight"><code data-lang="Python"><span style="color:#080;font-weight:bold">import</span> <span style="color:#B44;font-weight:bold">prometheus_client</span> <span style="color:#080;font-weight:bold">as</span> prom
+<span style="color:#080;font-weight:bold">import</span> <span style="color:#B44;font-weight:bold">datetime</span>
 
-x = prom.Gauge("x", "the metric")
-x_ts = prom.Gauge("x_ts", "the metric timestamp")
+x = prom.Gauge(<span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">x</span><span style="color:#710">&quot;</span></span>, <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">the metric</span><span style="color:#710">&quot;</span></span>)
+x_ts = prom.Gauge(<span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">x_ts</span><span style="color:#710">&quot;</span></span>, <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">the metric timestamp</span><span style="color:#710">&quot;</span></span>)
 
-# Option 1: timestamp is a metric
-
-x.set( &lt;the value of the parameter&gt; )
-x_ts.set( &lt;the timestamp for the value as a float&gt; )
-prom.write_to_textfile('metrics.txt', prom.REGISTRY)
-
-# Option 2. timestamp is set by the device controller
+<span style="color:#777"># Option 2. timestamp is set by the device controller</span>
 
 x.set( &lt;the value of the parameter&gt; )
-x_ts.set(datetime.datetime.now(tz=datetime.timezone.utc).timestamp())
-prom.write_to_textfile('metrics.txt', prom.REGISTRY)</pre>
+x_ts.set(datetime.datetime.now(tz=datetime.timezone.utc).timestamp())</code></pre>
 </div>
 </div>
 <div class="paragraph">
@@ -3446,12 +3454,6 @@ Everything in this part of the manual needs to be worked on and relocated in one
 <div class="ulist">
 <ul>
 <li>
-<p>ps -ef|grep _cs</p>
-</li>
-<li>
-<p>kill PID or %1</p>
-</li>
-<li>
 <p>python -m egse (and all the other info modules)</p>
 </li>
 <li>
@@ -3473,32 +3475,95 @@ Everything in this part of the manual needs to be worked on and relocated in one
 </div>
 </li>
 <li>
-<p>often used git commands</p>
-<div class="ulist">
-<ul>
-<li>
-<p>git status</p>
-</li>
-<li>
-<p>git describe —tags</p>
-</li>
-<li>
-<p>git stash [pop]</p>
-</li>
-<li>
-<p>git fetch update</p>
-</li>
-<li>
-<p>git rebase update/develop</p>
-</li>
-</ul>
-</div>
-</li>
-<li>
 <p>Textualog, see <a href="#_the_log_manager">Section 6.6</a></p>
 </li>
 </ul>
 </div>
+</div>
+<div class="sect2">
+<h3 id="_often_used_terminal_commands">19.2. Often used terminal commands</h3>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 33.3333%;">
+<col style="width: 66.6667%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Command</th>
+<th class="tableblock halign-left valign-top">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>ps -ef|grep _cs</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Check which control servers are running. The names of all control servers end with _cs, except <code>das</code>, <code>fov_hk</code>, <code>n_fee_hk</code>, and <code>fitsgen</code>.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>kill [-9] PID</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Terminate the command with the given process  identifier (PID). The <code>-9</code> option is used to force a kill.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>kill %1</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">After you have sent a command to the background with <code>^Z</code>, this command must still be killed. The <code>%1</code> represents the jobs number.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>df -h /data /archive</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Check the available disk space on the data and archive disks.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>curl localhost:&lt;port&gt;</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Most of the control servers generate metrics data that will be ingested in a Prometheus time-series database. The metrics can be inspected with this <code>curl</code> command. Run the command on the egse-server or replace <code>localhost</code> with the egse-server IP address. The <code>port</code> is dependent on the metrics that you want to inspect, each control server has a specific metrics port.</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="sect2">
+<h3 id="_often_used_git_commands">19.3. Often used git commands</h3>
+<div class="paragraph">
+<p>The <code>git</code> commands need to be executed in the project folder or a sub-folder thereof, e.g. <code>~/git/plato-common-egse</code>.</p>
+</div>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 33.3333%;">
+<col style="width: 66.6667%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Command</th>
+<th class="tableblock halign-left valign-top">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>git status</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Check the status of the working directory. This is mainly used to list the files that have been changed and need to be added and committed before pushing to the repository. Sometimes these files need to be stashed before an update.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>git stash [pop]</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Temporarily saves (stashes) the files that were changed in your working directory. Use this command to clear your working directory before updating the project. The <code>pop</code> option is used to put back the saved files after update.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>git describe --tags [--long]</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Print the most recent tag which represents your installed version or release. If the <code>--long</code> option is used, the additional information is the number of commits since the tag and the abbreviated commit hash.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>git remote -v</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Check the remote repositories that are known on your local copy.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>git branch</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Print the branches known on your local repo. The current branch has an asterisk '*' in front of its name.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>git fetch updates</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Fetch all changes from the remote <code>updates</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>git rebase updates/develop</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Apply the changes from <code>updates/develop</code> on the current branch. This is equivalent to merging.</p></td>
+</tr>
+</tbody>
+</table>
 <div style="page-break-after: always;"></div>
 <div class="imageblock">
 <div class="content">
