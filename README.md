@@ -27,4 +27,6 @@ $ pdoc3 --html --output-dir api egse --force
 ```
 The move the `api` folder from the `plato-common-egse` repo into the `docs` folder of this repo.
 
-You are now ready to commit and push the updated documentation or to make a pull request. The site will automatically be uploaded to the GitHub pages and be available at [github.io](https://rhuygen.github.io/plato-cgse-doc/).
+You are now ready to commit and push the updated documentation or to make a pull request. The site will automatically be uploaded to the GitHub pages and be available at [github.io](https://ivs-kuleuven.github.io/plato-cgse-doc/).
+
+If you are using PyCharm, updating this documentation is easiest if you install the `Asciidoc` plugin in PyCharm. That will allow you to generate the HTML and PDF documents with just one click.
