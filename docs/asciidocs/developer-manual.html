@@ -3153,16 +3153,16 @@ x_ts.set(datetime.datetime.now(tz=datetime.timezone.utc).timestamp())</code></pr
 <div class="ulist checklist">
 <ul class="checklist">
 <li>
-<p><i class="fa fa-square-o"></i> what are building blocks?</p>
+<p><i class="fa fa-check-square-o"></i> what are building blocks?</p>
 </li>
 <li>
-<p><i class="fa fa-square-o"></i> why do we need them?</p>
+<p><i class="fa fa-check-square-o"></i> why do we need them?</p>
 </li>
 <li>
-<p><i class="fa fa-square-o"></i> where do they live?</p>
+<p><i class="fa fa-check-square-o"></i> where do they live?</p>
 </li>
 <li>
-<p><i class="fa fa-square-o"></i> how are they implemented?</p>
+<p><i class="fa fa-check-square-o"></i> how are they implemented?</p>
 <div class="ulist">
 <ul>
 <li>
@@ -3172,7 +3172,7 @@ x_ts.set(datetime.datetime.now(tz=datetime.timezone.utc).timestamp())</code></pr
 </div>
 </li>
 <li>
-<p><i class="fa fa-square-o"></i> how are they executed?</p>
+<p><i class="fa fa-check-square-o"></i> how are they executed?</p>
 <div class="ulist">
 <ul>
 <li>
@@ -3183,6 +3183,133 @@ x_ts.set(datetime.datetime.now(tz=datetime.timezone.utc).timestamp())</code></pr
 </li>
 <li>
 <p><i class="fa fa-square-o"></i> generate_command_sequence()????</p>
+</li>
+<li>
+<p><i class="fa fa-square-o"></i> need to be executed within an observation (between start_ and end_observation() or by execute()) to enforce the creation of a unique obsid.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>A building block is a Python function implementing the commands corresponding to a logical entity within a test or denoting an entire test (called the “test-script”). The function is decorated with a <code>@building_block</code> and has several benifits and restrictions that will be explained in this section. A typical small building block is shown below:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="python"><span style="color:#B0B">@building_block</span>
+<span style="color:#080;font-weight:bold">def</span> <span style="color:#06B;font-weight:bold">set_trp1</span>(temperature: <span style="color:#369;font-weight:bold">float</span>) -&gt; <span style="color:#069">None</span>:
+    <span style="color:#D42"><span style="color:black">&quot;&quot;&quot;</span><span>
+</span><span>    Set the temperature setpoint for TRP1.</span><span>
+</span><span>
+</span><span>    Args:</span><span>
+</span><span>        temperature: Temperature setpoint for TRP1 [°C].</span><span>
+</span><span>
+</span><span>    Raises:</span><span>
+</span><span>        If a task is already running in the TCS EGSE, an Abort is raised.</span><span>
+</span><span>    </span><span style="color:black">&quot;&quot;&quot;</span></span>
+
+    <span style="color:#080;font-weight:bold">if</span> is_task_running():
+        <span style="color:#080;font-weight:bold">raise</span> Abort(<span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">Cannot change the TRP1 setpoint, a task is running on the TCS</span><span style="color:#710">&quot;</span></span>)
+
+    tcs: TCSInterface = GlobalState.setup.gse.tcs.device
+    tcs.set_parameter(name=<span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">ch1_tset</span><span style="color:#710">&quot;</span></span>, value=temperature)
+    tcs.commit()</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>A building block can only run within the context of an observation and all the arguments need to be explicitly provided as keyword arguments. The reason for this is the concept of <em>explicit is better than implicit</em>  which definitely holds for commanding test equipment and certainly a million dollar PLATO Camera. The requirement to explicitly provide all arguments with their name reduces the chance for making errors and prevents changes in argument defaults. The above building block will therefore be executed as follows:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="python"><span style="color:#080;font-weight:bold">from</span> <span style="color:#B44;font-weight:bold">camtest.commanding</span> <span style="color:#080;font-weight:bold">import</span> <span style="color:#B44;font-weight:bold">tcs</span>
+
+start_observation(<span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">Configure the TCS EGSE</span><span style="color:#710">&quot;</span></span>)
+...
+tcs.set_trp1(temperature=-<span style="color:#60E">70.0</span>)
+...
+end_observation()</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>All functions that result in a change in the systems behaviour or a change in the test equipment shall be decorated as a building block. Status functions and so-called getters usually are not building blocks.</p>
+</div>
+<div class="paragraph">
+<p>Building blocks implement some safeguards, imposing a number of limitations on the code:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Building blocks cannot be called recursively. Beware of building blocks calling other building blocks. Avoid too many layers. Avoid functions calling building blocks.</p>
+</li>
+<li>
+<p>At run time, the names and the values of every argument of a building block must be explicitly given, even if the argument is <code>None</code>. Building blocks with many parameters are hence strongly discouraged.</p>
+</li>
+<li>
+<p>Positional arguments are rejected in building blocks, all arguments must be specified as keyword arguments.</p>
+</li>
+<li>
+<p>All arguments must be given the default value None in the building block definition.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>The building block concept is part of the PLATO Test Scripts and not of the Common-EGSE. All building blocks that are defined will therefore live in the <code>plato-test-scripts</code> repository, mostly in the <code>camtest.commanding</code> module. The <code>@building_block</code> decorator itself is defined in the module <code>camtest.core.exec</code>.</p>
+</div>
+<div class="paragraph">
+<p>The building block decorator is defined as <code>def building_block(func: Callable) &#8594; Callable:</code> which means the decorator must be used without brackets <code>()</code> or arguments. The function which is decorated must be defined with keyword only arguments that all have a default value of <code>None</code>.</p>
+</div>
+<div class="paragraph">
+<p>The building block decorator performs the following actions and checks for the function at import time:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>the decorated function <code>func</code> is attributed as a building block, i.e. the <code>func</code> will get the attribute <code>BUILDING_BLOCK_FUNC</code> set to <code>True</code>. This is internally used in the <code>execute</code> function to ensure the executed function is a building block.</p>
+</li>
+<li>
+<p>the decorator will check if a YAML file exists with the definition of default keyword arguments. The location of the YAML file is fixed.</p>
+</li>
+</ul>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+<div class="title">Possible future change</div>
+<div class="paragraph">
+<p>Consider putting building block defaults in one <em>defaults.yaml</em> file located at the same location as the building block definition. That would create one file for all defaults at that location, instead of one file for each building block. What to do when two building blocks have identical names, but defined in a different module?</p>
+</div>
+</td>
+</tr>
+</table>
+</div>
+<div class="paragraph">
+<p>The building block decorator performs the following actions and checks for the function at runtime:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>check that no positional arguments are passed into the function,</p>
+</li>
+<li>
+<p>fill the default value for keyword arguments that were not passed into the function, provided the function has defaults,</p>
+</li>
+<li>
+<p>check if there are still missing arguments, required keyword arguments that have no default and are not provided in the call.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Then, before the function is actually called, the <code>start_building_block()</code> function is called. This will register the building block in the observation context and add the command to the command sequence in the GlobalState if this is a dry run. A corresponding <code>end_building_block()</code> will de-register the function from the observation context and the command sequence.</p>
+</div>
+<div class="paragraph">
+<p>The overhead for a function decorated as a building block is about 350μs.</p>
+</div>
+<div class="ulist checklist">
+<ul class="checklist">
+<li>
+<p><i class="fa fa-square-o"></i> higher level test house independent commanding scripts</p>
 </li>
 </ul>
 </div>
@@ -3892,7 +4019,7 @@ Below this point we have miscellaneous topics that still need their place in the
 <div id="footer">
 <div id="footer-text">
 Version 0.1<br>
-Last updated 2022-06-07 22:47:03 +0200
+Last updated 2022-06-13 17:24:40 +0200
 </div>
 </div>
 <script type="text/x-mathjax-config">
