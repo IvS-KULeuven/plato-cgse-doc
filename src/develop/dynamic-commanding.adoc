@@ -1,0 +1,135 @@
+[#_dynamic_commanding]
+== Dynamic Commanding
+
+=== What should this section contain?
+
+- [ ] what does dynamic commanding mean in the context of the CGSE
+- [ ] what is the difference between `dynamic_interface` and `dynamic_command`?
+
+
+'''
+
+Two of the requirements that were formulated when we started the analysis and design of the CGSE was that (1) it shouldn't be too difficult to implement device controllers and (2) the definition of the commands shall be done at one place only.So we started out with a design where the commands were defined in a YAML file (called the _command yaml file_) and the code would use this information to build the API for the device.That would make it —from the device developer point of view— rather easy to create the commanding interface for a new device.Unfortunately, the implementation was not that easy or straightforward.We are working in a client-server or even microservices environment which means the device commanding should be available on both the server side (what we call the Controller) and on the client side (what we call the Proxy).
+
+
+=== The Dynamic Interface Decorator
+
+A `@dynamic_interface` decorator adds a private static variable to a function or method. The variable name that is attributed is `__dynamic_interface` and it is used as a marker on the function.
+
+The static variable is used by the Proxy class to check if a method is meant to be overridden dynamically. The idea behind this is to loosen the contract of an abstract base class (ABC) into an interface. For an ABC, the abstract methods must be implemented at construction/initialization. This is not possible for the Proxy subclasses as they load their commands (i.e. methods) from the control server, and the method will be added to the Proxy interface after loading. Nevertheless, we like the interface already defined for auto-completion during development or interactive use.
+
+When a Proxy subclass that implements an interface with methods decorated by the `@dynamic_interface` does overwrite one or more of the decorated methods statically, these methods will not be dynamically overwritten when loading the interface from the control server. A warning will be logged instead.
+
+[XXXXX: This paragraph shall be rewritten, clarified, ....]
+The methods of the Proxy sub-class are added by the base class method `load_commands()`. This method asks the control server to send all device command definitions. The control server replies with a dictionary of user-defined methods and their names as keys. The commands are attributed to the Proxy class as methods with the key as their method names, unless the attribute name already exists in the Proxy and is not decorated as a dynamic interface.
+[source,python]
+----
+def _add_commands(self):
+    for key in self._commands:
+        if hasattr(self, key):
+            attribute = getattr(self, key)
+            if (
+                isinstance(attribute, types.MethodType) and
+                not hasattr(attribute, "__dynamic_interface")
+            ):
+                continue
+        command = self._commands[key]
+        new_method = MethodType(command.client_call, self)
+        new_method = set_docstring(new_method, command)
+        setattr(self, key, new_method)
+----
+
+The command from the dictionary is not just added as a new attribute of course (that would be too easy 😀). Instead, each command is defined as an instance of a client-server command class (`ClientServerCommand`). The ClientServerCommand has two methods `client_call()` and `server_call()` and —you guessed it— all the dynamically attached methods are the `client_call()` method for that command, but carrying the name of the command, i.e. the key in the dictionary.
+
+// XXXXX: try to remember why we can not just do `setattr(self, command.client_call, self)` or even with a plain assignment. -> see https://stackoverflow.com/questions/47797661/python-types-methodtype
+
+The `command.client_call` is a function, i.e. an unbound class method. We are now trying to associate this function with the class instance (`self`) of the Proxy sub-class. We need to create a method that is _bound_ to the class instance. Think of it as _binding_ the class instance to the first argument of the function (the `self` argument).
+
+The `MethodType()` returns a new callable object that holds both the function and the instance, and if you call this object, its first argument is automatically bound to the `self` argument.
+
+The `setattr(self, key, new_method)` can not be replaced by a plain assignment because the name of the method is a string and we can not do something like `self.key = new_method` because the method name would be `key`.
+
+So, during the creation of the Proxy object, the command list is requested from the control server, and when the command is not already an attribute of the Proxy sub-class, its `client_call()` method is connected as a new method to the Proxy sub-class.
+
+- [ ] describe how the `client_call()` method then works.
+
+=== The Dynamic Command Decorator
+
+One of the of the dynamic interface decorator is that during construction of the Proxy class, the control server must be contacted to request the list of commands, other wise, the Proxy is not functional.
+
+
+=== Update your code to use the @dynamic_command decorator
+
+* Each method in the interface needs to be changed from a `@dynamic_interface` to a `@dynamic_command`. Remember the `@dynamic_interface` only marked the method with the `__dynamic_interface` attribute. The `@dynamic_command` defines the type of command, how the command string is contructed and how the response needs to be decoded. As an example, consider the `get_current_position()` method in the `HuberSMC9300Interface` class.
+
+[source,python]
+----
+    @dynamic_interface
+    def get_current_position(self, axis) -> float:
+        """
+        Returns the current position for this axis as a float.
+        """
+        raise NotImplementedError
+
+----
+The method takes an argument `axis` and returns the current position as a float. The implementation is found in the `HuberSMC9300Controller` class.
+
+[source,python]
+----
+    def get_current_position(self, axis) -> float:
+        cmd_string = cmd_q_pos.get_cmd_string(axis)
+        retStr = self.huber.get_response(cmd_string)
+
+        # The response will look like '<axis>:<retPos>;'
+        # where <axis> is the axis number and <retPos> is the current position
+        # as a float
+        retPos = float(retStr[2:-1])
+
+        return retPos
+----
+In the new scheme, the method in the interface class will look like below and the method in the controller class will be removed.
+[source,python]
+----
+    @dynamic_command(cmd_type="query", cmd_string="?p${axis}",
+                     process_cmd_string=process_cmd_string,
+                     process_response=decode_axis_float)
+    def get_current_position(self, axis: int) -> float:
+        """
+        Returns the current position for this axis as a float.
+        """
+        raise NotImplementedError
+----
+The command is a _query_ command and therefore expects a response from the device. The command string is given in the form of a string template where 'axis' is replaced by the value of the `axis` argument of the method. The cmd_string will become `"?p1"` when `axis=1`. The `process_cmd_string` is a function that will prepare the command string for sending to the device. In the case of the HUBER stages, it appends `\r\n` before sending.
+
+The `decode_axis_float` is a function used to decode the response from the device. It's a function that can be used to process all responses in the form of `<axis>:<float>;`.
+[source,python]
+----
+def decode_axis_float(response: bytes) -> float:
+    """
+    Decodes the response of type '<axis>:<float>;' and strips off the newline.
+    """
+
+    response = response.decode().rstrip()
+
+    return float(response[2:-1])
+----
+So, we removed the method from the _Controller_ class and converted the _Interface_ method from a `@dynamic_interface` to a `@dynamic_command`.
+The _Controller_ class still inherits from the _Interface_ class, but additionally it now also needs to inherit from the `DynamicCommandMixin` class which is defined in the `egse.mixin` module.
+
+[source,python]
+----
+    class HuberSMC9300Controller(HuberSMC9300Interface, DynamicCommandMixin):
+        ...
+----
+
+* The Proxy class needs to inherit from `DynamicProxy` instead of `Proxy:
+
+[source,python]
+----
+    class HuberSMC9300Proxy(DynamicProxy, HuberSMC9300Interface):
+        ...
+----
+
+* Finally, remove all device command definitions from the device YAML file, in our case `smc9300.yaml`.
+
+We now have walked through all the steps to upgrade your device commanding. The next thing to do is testing!
