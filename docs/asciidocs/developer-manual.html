@@ -528,6 +528,7 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <li><a href="#_the_proxy_class">7.2. The Proxy Class</a></li>
 <li><a href="#_the_protocol_class">7.3. The Protocol Class</a></li>
 <li><a href="#_response_failure_success">7.4. Response, Failure, Success</a></li>
+<li><a href="#_dynamic_commanding">7.5. Dynamic Commanding</a></li>
 </ul>
 </li>
 <li><a href="#_the_setup">8. The Setup</a>
@@ -2395,6 +2396,189 @@ $ git branch -vv
 <p>XXXXX: insert a class diagram of Response and it&#8217;s three sub-classes here</p>
 </div>
 </div>
+<div class="sect2">
+<h3 id="_dynamic_commanding">7.5. Dynamic Commanding</h3>
+<div class="sect3">
+<h4 id="_what_should_this_section_contain">7.5.1. What should this section contain?</h4>
+<div class="ulist checklist">
+<ul class="checklist">
+<li>
+<p><i class="fa fa-square-o"></i> what does dynamic commanding mean in the context of the CGSE</p>
+</li>
+<li>
+<p><i class="fa fa-square-o"></i> what is the difference between <code>dynamic_interface</code> and <code>dynamic_command</code>?</p>
+</li>
+</ul>
+</div>
+<hr>
+<div class="paragraph">
+<p>Two of the requirements that were formulated when we started the analysis and design of the CGSE was that (1) it shouldn&#8217;t be too difficult to implement device controllers and (2) the definition of the commands shall be done at one place only.So we started out with a design where the commands were defined in a YAML file (called the <em>command yaml file</em>) and the code would use this information to build the API for the device.That would make it —from the device developer point of view— rather easy to create the commanding interface for a new device.Unfortunately, the implementation was not that easy or straightforward.We are working in a client-server or even microservices environment which means the device commanding should be available on both the server side (what we call the Controller) and on the client side (what we call the Proxy).</p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_the_dynamic_interface_decorator">7.5.2. The Dynamic Interface Decorator</h4>
+<div class="paragraph">
+<p>A <code>@dynamic_interface</code> decorator adds a private static variable to a function or method. The variable name that is attributed is <code>__dynamic_interface</code> and it is used as a marker on the function.</p>
+</div>
+<div class="paragraph">
+<p>The static variable is used by the Proxy class to check if a method is meant to be overridden dynamically. The idea behind this is to loosen the contract of an abstract base class (ABC) into an interface. For an ABC, the abstract methods must be implemented at construction/initialization. This is not possible for the Proxy subclasses as they load their commands (i.e. methods) from the control server, and the method will be added to the Proxy interface after loading. Nevertheless, we like the interface already defined for auto-completion during development or interactive use.</p>
+</div>
+<div class="paragraph">
+<p>When a Proxy subclass that implements an interface with methods decorated by the <code>@dynamic_interface</code> does overwrite one or more of the decorated methods statically, these methods will not be dynamically overwritten when loading the interface from the control server. A warning will be logged instead.</p>
+</div>
+<div class="paragraph">
+<p>The methods of the Proxy sub-class are added by the base class method <code>load_commands()</code>. This method asks the control server to send all device command definitions. The control server replies with a dictionary of user-defined methods and their names as keys. The commands are attributed to the Proxy class as methods with the key as their method names, unless the attribute name already exists in the Proxy and is not decorated as a dynamic interface.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="python"><span style="color:#080;font-weight:bold">def</span> <span style="color:#06B;font-weight:bold">_add_commands</span>(<span style="color:#069">self</span>):
+    <span style="color:#080;font-weight:bold">for</span> key <span style="color:#080;font-weight:bold">in</span> <span style="color:#069">self</span>._commands:
+        <span style="color:#080;font-weight:bold">if</span> <span style="color:#369;font-weight:bold">hasattr</span>(<span style="color:#069">self</span>, key):
+            attribute = <span style="color:#369;font-weight:bold">getattr</span>(<span style="color:#069">self</span>, key)
+            <span style="color:#080;font-weight:bold">if</span> (
+                <span style="color:#369;font-weight:bold">isinstance</span>(attribute, types.MethodType) <span style="color:#080;font-weight:bold">and</span>
+                <span style="color:#080;font-weight:bold">not</span> <span style="color:#369;font-weight:bold">hasattr</span>(attribute, <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">__dynamic_interface</span><span style="color:#710">&quot;</span></span>)
+            ):
+                <span style="color:#080;font-weight:bold">continue</span>
+        command = <span style="color:#069">self</span>._commands[key]
+        new_method = MethodType(command.client_call, <span style="color:#069">self</span>)
+        new_method = set_docstring(new_method, command)
+        <span style="color:#369;font-weight:bold">setattr</span>(<span style="color:#069">self</span>, key, new_method)</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>The command from the dictionary is not just added as a new attribute of course (that would be too easy 😀). Instead, each command is defined as an instance of a client-server command class (<code>ClientServerCommand</code>). The ClientServerCommand has two methods <code>client_call()</code> and <code>server_call()</code> and —you guessed it— all the dynamically attached methods are the <code>client_call()</code> method for that command, but carrying the name of the command, i.e. the key in the dictionary.</p>
+</div>
+<div class="paragraph">
+<p>The <code>command.client_call</code> is a function, i.e. an unbound class method. We are now trying to associate this function with the class instance (<code>self</code>) of the Proxy sub-class. We need to create a method that is <em>bound</em> to the class instance. Think of it as <em>binding</em> the class instance to the first argument of the function (the <code>self</code> argument).</p>
+</div>
+<div class="paragraph">
+<p>The <code>MethodType()</code> returns a new callable object that holds both the function and the instance, and if you call this object, its first argument is automatically bound to the <code>self</code> argument.</p>
+</div>
+<div class="paragraph">
+<p>The <code>setattr(self, key, new_method)</code> can not be replaced by a plain assignment because the name of the method is a string and we can not do something like <code>self.key = new_method</code> because the method name would be <code>key</code>.</p>
+</div>
+<div class="paragraph">
+<p>So, during the creation of the Proxy object, the command list is requested from the control server, and when the command is not already an attribute of the Proxy sub-class, its <code>client_call()</code> method is connected as a new method to the Proxy sub-class.</p>
+</div>
+<div class="ulist checklist">
+<ul class="checklist">
+<li>
+<p><i class="fa fa-square-o"></i> describe how the <code>client_call()</code> method then works.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_the_dynamic_command_decorator">7.5.3. The Dynamic Command Decorator</h4>
+<div class="paragraph">
+<p>One of the of the dynamic interface decorator is that during construction of the Proxy class, the control server must be contacted to request the list of commands, other wise, the Proxy is not functional.</p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_update_your_code_to_use_the_dynamic_command_decorator">7.5.4. Update your code to use the @dynamic_command decorator</h4>
+<div class="ulist">
+<ul>
+<li>
+<p>Each method in the interface needs to be changed from a <code>@dynamic_interface</code> to a <code>@dynamic_command</code>. Remember the <code>@dynamic_interface</code> only marked the method with the <code>__dynamic_interface</code> attribute. The <code>@dynamic_command</code> defines the type of command, how the command string is contructed and how the response needs to be decoded. As an example, consider the <code>get_current_position()</code> method in the <code>HuberSMC9300Interface</code> class.</p>
+</li>
+</ul>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="python">    <span style="color:#B0B">@dynamic_interface</span>
+    <span style="color:#080;font-weight:bold">def</span> <span style="color:#06B;font-weight:bold">get_current_position</span>(<span style="color:#069">self</span>, axis) -&gt; <span style="color:#369;font-weight:bold">float</span>:
+        <span style="color:#D42"><span style="color:black">&quot;&quot;&quot;</span><span>
+</span><span>        Returns the current position for this axis as a float.</span><span>
+</span><span>        </span><span style="color:black">&quot;&quot;&quot;</span></span>
+        <span style="color:#080;font-weight:bold">raise</span> <span style="color:#C00;font-weight:bold">NotImplementedError</span></code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>The method takes an argument <code>axis</code> and returns the current position as a float. The implementation is found in the <code>HuberSMC9300Controller</code> class.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="python">    <span style="color:#080;font-weight:bold">def</span> <span style="color:#06B;font-weight:bold">get_current_position</span>(<span style="color:#069">self</span>, axis) -&gt; <span style="color:#369;font-weight:bold">float</span>:
+        cmd_string = cmd_q_pos.get_cmd_string(axis)
+        retStr = <span style="color:#069">self</span>.huber.get_response(cmd_string)
+
+        <span style="color:#777"># The response will look like '&lt;axis&gt;:&lt;retPos&gt;;'</span>
+        <span style="color:#777"># where &lt;axis&gt; is the axis number and &lt;retPos&gt; is the current position</span>
+        <span style="color:#777"># as a float</span>
+        retPos = <span style="color:#369;font-weight:bold">float</span>(retStr[<span style="color:#00D">2</span>:-<span style="color:#00D">1</span>])
+
+        <span style="color:#080;font-weight:bold">return</span> retPos</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>In the new scheme, the method in the interface class will look like below and the method in the controller class will be removed.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="python">    <span style="color:#B0B">@dynamic_command</span>(cmd_type=<span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">query</span><span style="color:#710">&quot;</span></span>, cmd_string=<span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">?p${axis}</span><span style="color:#710">&quot;</span></span>,
+                     process_cmd_string=process_cmd_string,
+                     process_response=decode_axis_float)
+    <span style="color:#080;font-weight:bold">def</span> <span style="color:#06B;font-weight:bold">get_current_position</span>(<span style="color:#069">self</span>, axis: <span style="color:#369;font-weight:bold">int</span>) -&gt; <span style="color:#369;font-weight:bold">float</span>:
+        <span style="color:#D42"><span style="color:black">&quot;&quot;&quot;</span><span>
+</span><span>        Returns the current position for this axis as a float.</span><span>
+</span><span>        </span><span style="color:black">&quot;&quot;&quot;</span></span>
+        <span style="color:#080;font-weight:bold">raise</span> <span style="color:#C00;font-weight:bold">NotImplementedError</span></code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>The command is a <em>query</em> command and therefore expects a response from the device. The command string is given in the form of a string template where 'axis' is replaced by the value of the <code>axis</code> argument of the method. The cmd_string will become <code>"?p1"</code> when <code>axis=1</code>. The <code>process_cmd_string</code> is a function that will prepare the command string for sending to the device. In the case of the HUBER stages, it appends <code>\r\n</code> before sending.</p>
+</div>
+<div class="paragraph">
+<p>The <code>decode_axis_float</code> is a function used to decode the response from the device. It&#8217;s a function that can be used to process all responses in the form of <code>&lt;axis&gt;:&lt;float&gt;;</code>.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="python"><span style="color:#080;font-weight:bold">def</span> <span style="color:#06B;font-weight:bold">decode_axis_float</span>(response: <span style="color:#369;font-weight:bold">bytes</span>) -&gt; <span style="color:#369;font-weight:bold">float</span>:
+    <span style="color:#D42"><span style="color:black">&quot;&quot;&quot;</span><span>
+</span><span>    Decodes the response of type '&lt;axis&gt;:&lt;float&gt;;' and strips off the newline.</span><span>
+</span><span>    </span><span style="color:black">&quot;&quot;&quot;</span></span>
+
+    response = response.decode().rstrip()
+
+    <span style="color:#080;font-weight:bold">return</span> <span style="color:#369;font-weight:bold">float</span>(response[<span style="color:#00D">2</span>:-<span style="color:#00D">1</span>])</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>So, we removed the method from the <em>Controller</em> class and converted the <em>Interface</em> method from a <code>@dynamic_interface</code> to a <code>@dynamic_command</code>.
+The <em>Controller</em> class still inherits from the <em>Interface</em> class, but additionally it now also needs to inherit from the <code>DynamicCommandMixin</code> class which is defined in the <code>egse.mixin</code> module.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="python">    <span style="color:#080;font-weight:bold">class</span> <span style="color:#B06;font-weight:bold">HuberSMC9300Controller</span>(HuberSMC9300Interface, DynamicCommandMixin):
+        ...</code></pre>
+</div>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>The Proxy class needs to inherit from <code>DynamicProxy</code> instead of `Proxy:</p>
+</li>
+</ul>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="python">    <span style="color:#080;font-weight:bold">class</span> <span style="color:#B06;font-weight:bold">HuberSMC9300Proxy</span>(DynamicProxy, HuberSMC9300Interface):
+        ...</code></pre>
+</div>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Finally, remove all device command definitions from the device YAML file, in our case <code>smc9300.yaml</code>.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>We now have walked through all the steps to upgrade your device commanding. The next thing to do is testing!</p>
+</div>
+</div>
+</div>
 </div>
 </div>
 <div class="sect1">
@@ -4019,7 +4203,7 @@ Below this point we have miscellaneous topics that still need their place in the
 <div id="footer">
 <div id="footer-text">
 Version 0.1<br>
-Last updated 2022-06-13 17:24:40 +0200
+Last updated 2022-06-21 13:43:34 +0200
 </div>
 </div>
 <script type="text/x-mathjax-config">
