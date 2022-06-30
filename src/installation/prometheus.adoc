@@ -1,0 +1,34 @@
+[#prometheus-install]
+== Install the Prometheus server
+
+Please note that in the developer documentation under the section xref:../develop/monitoring.adoc#monitoring[Monitoring] there is a description on _Installing Prometheus_. I will here only describe the setup for the `egse-server`. The best is to create a dedicated directory for the software installations, e.g. `~/software`. Then install Prometheus into that folder:
+
+[%nowrap]
+----
+$ mkdir ~/software
+$ cd ~/software
+$ curl -L -o prometheus-2.36.2.linux-amd64.tar.gz https://github.com/prometheus/prometheus/releases/download/v2.36.2/prometheus-2.36.2.linux-amd64.tar.gz  # <1>
+$ tar xzvf prometheus-2.36.2.linux-amd64.tar.gz
+$ ln -s prometheus-2.36.2.linux-amd64 prometheus
+----
+<1> the `-L` option is needed because the link will redirect and with this option `curl` follows the redirect.
+
+We want to automatically start the Prometheus server from the systemd services as we did with the core-egse services. The service file, i.e. `prometheus.service`, can be copied from the `server` directory in the distribution to the `/etc/systemd/system` folder, same as for the core-egse services. Make sure you update the locations if necessary. The configuration files for Prometheus, i.e. `prometheus.yml` and `prometheus.rules.yml`, can best be soft linked from the `metrics` folder into the installation folder of Prometheus. That will automatically keep these files update-to-date with a new release of the software.
+----
+$ cp ~/git/plato-common-egse/server/prometheus.service /etc/systemd/system
+$ ln -s ~/git/plato-common-egse/metrics/prometheus.yml ~/software/prometheus
+$ ln -s ~/git/plato-common-egse/metrics/prometheus.rules.yml ~/software/prometheus
+----
+
+Finally, create the `metrics/data` directory in the proper location, e.g. in `/data`. That is the location given with the `--storage.tsdb.path` option in the Prometheus service file.
+
+----
+$ mkdir -p /data/metrics/data
+----
+
+Then enable the service as user `plato-admin` and reload the systemd services daemon:
+----
+$ sudo systemctl enable prometheus
+$ sudo systemctl daemon-reload
+$ sudo systemctl start prometheus
+----

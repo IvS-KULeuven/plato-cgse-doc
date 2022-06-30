@@ -1,13 +1,13 @@
 = Common-EGSE : Installation Manual
 Sara Regibo, Rik Huygen
-1.0, 20 May, 2022
+Version 1.0, 30/06/2022
 :toc: left
 :icons: font
 :organization: KU Leuven
 :doc-nr: PLATO-KUL-PL-MAN-0002
 :doctype: book
 :toc: left
-:toclevels: 2
+:toclevels: 3
 :sectnums:
 :!chapter-signifier:
 :xrefstyle: short
@@ -21,100 +21,52 @@ ifdef::backend-pdf[]
 //:rouge-style: github
 endif::[]
 
+:sectnums!:
+
 include::todo.adoc[]
 
-== Introduction
+include::../colophon.adoc[]
 
-This guide explains the installation and configuration of the components:
+include::../typography.adoc[]
 
-* The operating system on the egse-server and egse-client
-* The installation of basic tools like git, python
-* The installation of the Common-EGSE (CGSE)
-* The installation of the Test Scripts (TS)
+:sectnums:
+
+include::intro.adoc[]
 
 == Installing the Operating System
 
-include::server.adoc[leveloffset=1]
+include::server-install.adoc[leveloffset=1]
 
-include::client.adoc[leveloffset=1]
+include::client-install.adoc[leveloffset=1]
 
-=== Setting up the users
+include::user-admin.adoc[leveloffset=1]
 
-== Installation of Python
+include::prometheus.adoc[]
 
-== Installation of PyCharm
+include::grafana.adoc[]
 
-PyCharm is the IDE that we will use to execute test scripts. For this purpose the PyCharm Community edition is sufficient.
+include::python.adoc[]
 
-include::git.adoc[]
+include::pycharm.adoc[]
 
-XXXXX: what's next?
+// include::git.adoc[]
 
-Make sure the environment variables are set: PLATO_COMMON_EGSE_PATH, and PLATO_INSTALL_LOCATION
+include::cgse-install.adoc[]
 
-* install for develop -> `python -m pip install -e .`
-* install for ops -> 'python setup.py install --force --home=$PLATO_INSTALL_LOCATION`
+include::test-scripts-install.adoc[]
 
+include::environment.adoc[]
 
-== Installing the Common-EGSE
+include::github-deploy.adoc[]
 
-=== First-time Installation
+include::cgse-update.adoc[]
 
-=== Update the Common-EGSE
+include::test-scripts-update.adoc[]
 
-== Installing the Test Scripts
-
-=== First-time Installation
-
-=== Update the Test Scripts
-
-== Update Python packages
-
-Ideally, the installed thirds party packages should be the versions that are given the requirements file. If the requirements file is updated, you can use the following command to update your installation:
-
-----
-$ cd $PLATO_COMMON_EGSE_PATH
-$ python3 -m pip install --upgrade -r requirements.txt
-----
-
-To update the test scripts, make sure you are inside the virtual environment:
-
-----
-$ cd ~/git/plato-test-scripts
-$ source venv/bin/activate
-$ python3 -m pip install --upgrade -r requirements.txt
-----
+include::python-update.adoc[]
 
 include::data-propagation.adoc[]
 
-== Shared Libraries
+include::shared-libs.adoc[]
 
-Some components use a shared library that is loaded by the Python interpreter. In order to load the library, the absolute path to the shared object file must be known. Different modules handle this in their own way.
-
-The `egse.dsi` module searches for the RMAP and ESL libraries in the operating system specific folder in the  `egse.lib` module. The libraries are then loaded using the `ctypes` module. If the CGSE is properly installed, this should work out-of-the-box.
-
-The `egse.filterwheel.eksma` module needs a library `libximc` which is also provided in the `egse.lib` module, but the Python code needs the proper location in the environment variable `LD_LIBRARY_PATH`.  The required files are included in the CGSE repo at `~/git/plato-common-egse/src/egse/lib/ximc/libximc.framework`.  The library that is needed can also be downloaded from: https://files.xisupport.com/libximc/libximc-2.13.3-all.tar.gz.
-
-The preferred solution is to add the location of the library files to the environment variable `$LD_LIBRARY_PATH`.  In your terminal or better in your bash profile:
-
-[%nowrap,source]
-----
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:~/git/plato-common-egse/src/egse/lib/ximc/libximc.framework/
-----
-
-Alternatively, you can install the '.deb' package from the link above on your system with dpkg. That will put the files under `/usr/lib`.
-
-== Installating External Tools
-
-=== Cutelog GUI
-
-=== Textualog TUI
-
-Textualog is a terminal application that allows you to inspect the log files in `$PLATO_LOG_FILE_LOCATION`. The package is open-source and can be installed in your virtual environment from PyPI using `pip`:
-
-[bash]
-----
-python -m pip install textualog
-----
-
-Textualog is extremely useful to inspect and follow logging messages in a remote terminal.
+include::external-tools.adoc[]

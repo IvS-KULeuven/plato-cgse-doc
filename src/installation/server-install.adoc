@@ -1,0 +1,207 @@
+[#egse-server-install]
+== Server Installation
+
+=== Server Hardware
+
+Proposed hardware for the egse-server:
+
+* 1x Supermicro SYS-6019P-MT
+* 2x Intel Xeon Gold 5120 s3647 Skylake-SP 14 Cores 28 Threads 2.2GHz 2.6GHz Turbo
+* 4x Samsung 32GB DDR4-2666 2Rx4 (128GB main memory)
+* 1x Intel SSD 240GB -> system disk
+* 1x Intel SSD 2TB -> life data disk
+* 1x Seagate SATA 12TB -> archive disk
+* 2x Ethernet RJ45 1Gb/s
+
+The `egse-server` will do quite some work in communicating with all the test equipment, receive commands from the GUIs and Python REPL running on the `egse-client`, commanding the system under test (SUT), retrieve CCD data from the Camera, and store all data from all communication to disk. Especially, the storage of all the data is demanding and needs to be as performant as possible in order to keep up with the data rate from the N-FEE or F-FEE during testing. That is the reason we have chosen three separate disks in the `egse-server` machine. The small SSD is used to install the operating system and the home directories. The larger SSD is the `/data` disk where the life data is stored. This disk needs to be an SSD in order to keep up with the datarate. We have seen in tests that this is a crucial part in the chain to prevent the N-FEE from reporting internal buffer overflows because data is not read fast enough. It is important to keep the `/data` disk from running full, you need about 20% free for an SSD to be performant. The big SATA disk is the `/archive` disk which will contain all test data and is synchronised periodically from the `/data` life data.
+
+The two Ethernet cards are foreseen to split network traffic from the SpaceWire connection if needed. Especially for the F-FEE it might be needed to allocate the full bandwith of one Ethernet cable in order to cope with the multiplexed four SpaceWire connections.
+
+In the next sections, we will briefly explain how to install the `egse-server` and `egse-client` machines.
+
+=== Basic Installation of CentOS 8
+
+Perform a normal/default installation of CentOS-8. Follow the default settings.
+
+* Version: CentOS Linux release 8.1
+* Boot mode: UEFI
+
+
+=== Disk and Storage
+
+The following directories will be created on the server side:
+
+* `/home`: used for the software installations and daily work.
+* `/data`: used to store life data, i.e. image data from the FEEs,
+housekeeping data, logging information, metrics, etc. This is the mounted SSD disk of 2TB.
+* `/archive`: used to archive all data. This data is transferred to the data archive in Leuven on a daily basis. This is the mounted SATA disk of 12TB.
+
+
+=== Installation of Python 3.8
+
+We will install Python from the official Python website, as described in <<python-install>>. The procedure is as follows: We first install the development tools for CentOS and a number of `devel` packages that are needed for header files during compilation. We then get the Python source distribution from `www.python.org`, unpack, configure and compile. Use `altinstall` instead of `install` if you don't want previous installations of Python to be overwritten. This will install `python3.8` in `/usr/local/bin`. All the commands need to be executes as root.
+
+    yum -y groupinstall "Development Tools"
+    yum -y install openssl-devel bzip2-devel libffi-devel
+    yum -y install wget
+    curl https://www.python.org/ftp/python/3.8.13/Python-3.8.13.tgz --output Python-3.8.13.tgz
+    tar xvf Python-3.8.13.tgz
+    cd Python-3.8.13/
+    ./configure --enable-optimizations
+    make altinstall
+
+
+=== Open Ports on the Firewall
+
+By default CentOS-8 has the Firewall enabled. When your system is installed in a save environment without external connectivity, you could consider to disable the Firewall altogether.
+
+[source]
+----
+systemctl status firewalld
+systemctl stop firewalld
+systemctl disable firewalld
+systemctl mask firewalld
+----
+
+When you do need the Firewall to be enabled, open up all the ports that are used by the Common-EGSE core services. This might be a lot of work, but fortunately, you can define ranges when making ports available.
+
+The following type of ports are used by control servers and other processes:
+
+[%header,cols="1,2"]
+|===
+| Name | Description
+| SSH | Normal secure shell communication port
+| COMMANDING_PORT | Used by the control servers for commanding the devices
+| MONITORING_PORT | Used by the control servers to periodically send out monitoring info
+| SERVICE_PORT | Used by the control servers for services not related to commanding
+| METRICS_PORT | Used by the control servers, data acquisition, and GUIs to serve the metrics to Prometheus through an internal HTTP service.
+| LOGGING_PORT | Used by the CGSE Logger
+| DATA_DISTRIBUTION_PORT | Used by the DPU Processor to distribute the N-FEE data
+| DEVICE | Device specific port that are used by the controllers or device interfaces to connect to.
+| OTHER | Grafana [3000], Cutelog [19996]
+|===
+
+All the port numbers for the different processes are defined in the `settings.yaml` file in the CGSE distribution and can be overwritten in the local settings file at `$PLATO_LOCAL_SETTINGS`.
+
+Opening ports and port ranges can be done by introducing a new service on the server. The example below opens up the ports for the Hexapod PUNA Control Server. The commands to set up the service on the `firewalld` are:
+
+    sudo firewall-cmd --permanent --new-service=puna-conrol
+    sudo firewall-cmd --permanent --service=puna-control --set-description="Hexapod PUNA Control Services"
+    sudo firewall-cmd --permanent --service=puna-control --add-port=6700-6703/tcp
+    sudo firewall-cmd --permanent --zone=public --add-service=puna-control
+    sudo firewall-cmd --reload
+
+Repeat the same sequence for the other control services and processes.
+
+
+=== Setup Services for Core Control Servers with Systemd
+
+[NOTE]
+====
+You might want to do these steps only after you have installed Prometheus [<<prometheus-install>>], Grafana [<<grafana-install>>] and the Common-EGSE [<<cgse-install>>]
+====
+
+The control servers for this project that run on the ``egse-server`` are all
+managed by the ``systemd`` service manager. For information on *systemd* check
+out the documentation on the Redhat System Administration Site at https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux/7/html/system_administrators_guide/chap-managing_services_with_systemd[RHEL7].
+
+The service files for each of the core control servers are located in the `server` directory at the root of the `plato-common-egse` project. You will have to adapt the services —especially the absolute paths— to your needs and setup. Then copy the service files into the ``/etc/systemd/system`` directory:
+
+    sudo cp sm_cs.service /etc/systemd/system
+    sudo cp cm_cs.service /etc/systemd/system
+    sudo cp pm_cs.service /etc/systemd/system
+    sudo cp log_cs.service /etc/systemd/system
+    sudo cp syn_cs.service /etc/systemd/system
+
+The following code lists the entire service for the Storage Manager Control Server. The text `EnvironmentFile` and `WorkingDirectory` need special attention for your specific setup.
+
+----
+[Unit]
+Description=Storage Manager Control Server
+After=network-online.target
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=3
+User=plato-data
+Group=plato-data
+EnvironmentFile=/cgse/env.txt
+WorkingDirectory=/home/plato-data/workdir
+ExecStart=/cgse/bin/sm_cs
+
+[Install]
+Alias=sm_cs.service
+WantedBy=multi-user.target
+----
+
+The service starts the specific control server from a script that was created during the `setuptools` installation, in our example in the `/cgse/bin` folder. Check the services files for the Configuration Manager and Process Manager also, they contain a specific delay time of 3s to ensure the Storage manager had enough time to start up and process registrations.
+
+----
+[Service]
+ExecStartPre=/bin/sleep 3
+----
+
+[WARNING]
+====
+You will also need to create the `/home/plato-data/workdir` folder for the user `plato-data`. Without this folder, the service will not start and you will get a `(code=exited, status=200/CHDIR)` when you run a `systemctl status` command for the service.
+====
+
+Once the services file is correct, start the service as follows:
+
+    sudo systemctl start sm_cs
+
+and to automatically start the service on boot:
+
+    sudo systemctl enable sm_cs
+
+The counter parts of the above commands are *stop* and *disable* where the former just stops the service and the latter prevents the service to start at boot time.
+
+Whenever you have made a change to the services file and copied it back into the ``/etc/systemd/system`` directory, reload the daemons as follows:
+
+    sudo systemctl daemon-reload
+
+If you need to know the status of one of the control services, use the following command, e.g. for the Process manager:
+
+    sudo systemctl status pm_cs.service
+
+This prints out the status info on the service plus the last few messages that were send to stdout or stderr.
+
+When you want to check and follow the output in ``/var/log/messages`` for the specific service, you can use the `journalctl` command. An example for the process manager `pm_cs`:
+
+    sudo journalctl -f -u pm_cs
+
+When you run into a authentication error while starting the control servers, you will need to disable SELinux (Security-Enhanced Linux). The error will look something like this (excerpt from `/var/log/messages`):
+
+[source%nowrap]
+----
+Sep 11 17:59:46 localhost systemd[1]: sm_cs.service: Service RestartSec=3s expired, scheduling restart.
+Sep 11 17:59:46 localhost systemd[1]: sm_cs.service: Scheduled restart job, restart counter is at 369.
+Sep 11 17:59:46 localhost systemd[1]: Stopped Storage Manager Control Server.
+Sep 11 17:59:46 localhost systemd[1]: Started Storage Manager Control Server.
+Sep 11 17:59:46 localhost systemd[22013]: sm_cs.service: Failed to execute command: Permission denied
+Sep 11 17:59:46 localhost systemd[22013]: sm_cs.service: Failed at step EXEC spawning /cgse/bin/sm_cs: Permission denied
+Sep 11 17:59:46 localhost systemd[1]: sm_cs.service: Main process exited, code=exited, status=203/EXEC
+Sep 11 17:59:46 localhost systemd[1]: sm_cs.service: Failed with result 'exit-code'.
+Sep 11 17:59:47 localhost setroubleshoot[19162]: failed to retrieve rpm info for /cgse/bin/sm_cs
+Sep 11 17:59:47 localhost setroubleshoot[19162]: SELinux is preventing /usr/lib/systemd/systemd from 'read, open' accesses on the file /cgse/bin/sm_cs. For complete SELinux messages run: sealert -l a77af8c2-c91a-43cd-9b64-e7c0a5b24311
+Sep 11 17:59:47 localhost platform-python[19162]: SELinux is preventing /usr/lib/systemd/systemd from 'read, open' accesses on the file /cgse/bin/sm_cs.#012#012*****  Plugin catchall (100. confidence) suggests   **************************#012#012If you believe that systemd should be allowed read open access on the sm_cs file by default.#012Then you should report this as a bug.#012You can generate a local policy module to allow this access.#012Do#012allow this access for now by executing:#012# ausearch -c '(sm_cs)' --raw | audit2allow -M my-smcs#012# semodule -X 300 -i my-smcs.pp#012
+----
+To disable SELinux, edit the `/etc/selinux/config` file and set `SELINUX=disabled`. Then reboot your system (this is a kernel setting, therefore we need to reboot).
+
+=== Check your services
+
+A simple and quick way to check if the core services are still running together with Prometheusfootnote:[The installation of Prometheus is explained in <<prometheus-install>>] and Grafanafootnote:[The installation of Grafana is explained in <<grafana-install>>] is to check the running processes:
+
+[source%nowrap]
+----
+[plato-data@egse-server]$ ps -ef|egrep "prometheus|grafana|_cs"
+plato-d+   64839       1  5 Jun24 ?        08:17:43 /home/plato-data/software/prometheus/prometheus --config.file /home/plato-data/software/prometheus/prometheus-egse-server.yml --storage.tsdb.path /data/metrics/data/
+plato-d+  808513       1  0 Apr19 ?        06:33:25 /home/plato-data/software/grafana/bin/grafana-server
+plato-d+ 2519545       1  4 Jun21 ?        09:12:10 /usr/bin/python3 /cgse/bin/sm_cs start
+plato-d+ 2519684       1  3 Jun21 ?        06:57:04 /usr/bin/python3 /cgse/bin/syn_cs start
+plato-d+ 2519771       1  2 Jun21 ?        04:36:55 /usr/bin/python3 /cgse/bin/cm_cs start
+plato-d+ 2543093       1  0 Jun21 ?        00:28:03 /usr/bin/python3 /cgse/bin/log_cs start
+plato-d+ 2633916       1  2 Jun21 ?        04:28:20 /usr/bin/python3 /cgse/bin/pm_cs start
+[plato-data@egse-server]$
+----

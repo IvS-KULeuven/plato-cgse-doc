@@ -1,0 +1,78 @@
+[#cgse-install]
+== Installation of the Common-EGSE
+
+The installation will be done as the `plato-data` user. We will _clone_ the IvS-KULeuven `plato-common-egse` repository. There is no need to _fork_ because we will not develop from this account and will therefore not do any
+pushes or  pull requests.
+
+Create a `~/git` folder in the home directory of the `plato-data` user, move into that directory and clone the GitHub repository. Then move into the `plato-common-egse` folder that was created by the __clone__ command.
+----
+$ mkdir -p ~/git
+$ cd git
+$ git clone https://github.com/IvS-KULeuven/plato-common-egse.git
+$ cd plato-common-egse/
+----
+The installation of the Common-EGSE will be done in a location that is accessible for `plato-data` and `plato-user`. Run the following commands as root. That will create the location where the Python installation will be done and give the proper permissions to the folders.
+----
+$ mkdir -p /cgse/lib/python
+$ chown -R plato-data:plato-data /cgse
+$ ls -ld /cgse
+drwxr-xr-x. 4 plato-data plato-data 4096 Sep 11 16:55 /cgse
+----
+If not done already, you will need to install the `wheel` package, which is needed to install binary Python distributions.
+
+[source]
+----
+$ python3.8 -m pip install wheel
+----
+Before actually installing the Common-EGSE, we have to set the `PATH` and `PYTHONPATH` environment variables, and checkout the branch of the releae that we want to installfootnote:[The latest release tag can be found on the GitHub pages of the repository].
+----
+$ PATH=/cgse/bin:$PATH
+$ export PYTHONPATH=/cgse/lib/python/
+$ git fetch updates
+$ git checkout tags/<release tag> -b <release tag>-branch  <1>
+$ python3.8 setup.py install --home=/cgse/
+$ git checkout develop  <2>
+----
+<1> The release tag takes the form `YYYY.MAJOR.MINOR-TH-CGSE`, e.g. `2022.2.17-IAS-CGSE`
+<2> make sure to go back to the develop branch after the installation
+
+The above commands install the full Common-EGSE and all its dependencies in the `/cgse/lib/python` folder. Note that we have not used any Python virtual environment for this installation.
+
+After a successful installation, you can check which packages are known to Python and where they are located:
+
+[source]
+----
+[plato-data@localhost ~]$ python3.8 -m site
+sys.path = [
+    '/cgse/lib/python',
+    '/cgse/lib/python/ThorlabsPM100-1.2.2-py3.8.egg',
+    '/cgse/lib/python/PyVISA-1.12.0-py3.8.egg',
+    '/cgse/lib/python/PyVISA_py-0.5.3-py3.8.egg',
+    '/cgse/lib/python/pyserial-3.5-py3.8.egg',
+    '/cgse/lib/python/pylibftdi-0.20.0-py3.8.egg',
+    '/cgse/lib/python/pyusb-1.2.1-py3.8.egg',
+    '/cgse/lib/python/xlrd-2.0.1-py3.8.egg',
+    '/cgse/lib/python/visidata-2.8-py3.8.egg',
+    '/cgse/lib/python/typing_extensions-4.2.0-py3.8.egg',
+    '/cgse/lib/python/transitions-0.8.11-py3.8.egg',
+    '/cgse/lib/python/transforms3d-0.3.1-py3.8.egg',
+    '/cgse/lib/python/textual-0.1.18-py3.8.egg',
+    '/cgse/lib/python/sshtunnel-0.4.0-py3.8.egg',
+    '/cgse/lib/python/rich-12.4.4-py3.8.egg',
+
+    ...
+
+    '/cgse/lib/python/pycparser-2.21-py3.8.egg',
+    '/cgse/lib/python/pytz_deprecation_shim-0.1.0.post0-py3.8.egg',
+    '/cgse/lib/python/tzdata-2022.1-py3.8.egg',
+    '/cgse/lib/python/Common_EGSE-2022.2.16_IAS_CGSE-py3.8.egg',
+    '/usr/local/lib/python38.zip',
+    '/usr/local/lib/python3.8',
+    '/usr/local/lib/python3.8/lib-dynload',
+    '/usr/local/lib/python3.8/site-packages',
+]
+USER_BASE: '/home/plato-data/.local' (doesn't exist)
+USER_SITE: '/home/plato-data/.local/lib/python3.8/site-packages' (doesn't exist)
+ENABLE_USER_SITE: True
+[plato-data@localhost ~]$
+----

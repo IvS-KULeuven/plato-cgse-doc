@@ -1,0 +1,16 @@
+== Shared Libraries
+
+Some components use a shared library that is loaded by the Python interpreter. In order to load the library, the absolute path to the shared object file must be known. Different modules handle this in their own way.
+
+The `egse.dsi` module searches for the RMAP and ESL libraries in the operating system specific folder in the  `egse.lib` module. The libraries are then loaded using the `ctypes` module. If the CGSE is properly installed, this should work out-of-the-box.
+
+The `egse.filterwheel.eksma` module needs a library `libximc` which is also provided in the `egse.lib` module, but the Python code needs the proper location in the environment variable `LD_LIBRARY_PATH`.  The required files are included in the CGSE repo at `~/git/plato-common-egse/src/egse/lib/ximc/libximc.framework`.  The library that is needed can also be downloaded from: https://files.xisupport.com/libximc/libximc-2.13.3-all.tar.gz.
+
+The preferred solution is to add the location of the library files to the environment variable `$LD_LIBRARY_PATH`.  In your terminal or better in your bash profile:
+
+[%nowrap,source]
+----
+$ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:~/git/plato-common-egse/src/egse/lib/ximc/libximc.framework/
+----
+
+Alternatively, you can install the '.deb' package from the link above on your system with dpkg. That will put the files under `/usr/lib`.
