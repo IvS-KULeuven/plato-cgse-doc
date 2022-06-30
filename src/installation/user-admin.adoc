@@ -1,0 +1,8 @@
+== User Administration
+
+There are 4 specific PLATO users defined:
+
+* `plato-admin`: has basically the same rights as root and is used for system installation and administration tasks. All root commands must be executed with `sudo`, no password will be asked. Do not usually login to this account.
+* `plato-ops`: is used to administer and control the Common-EGSE core services. This user can start and stop the Common-EGSE control servers as a service with the systemd command `systemctl`. Log in to this account to monitor the systemd services with `systemctl` and `journalctl`. This user can also control and monitor the Prometheus and Grafana servers using `systemctl` and `journalctl`.
+* `plato-data`: all services should run under `plato-data`, data locations will be writable by `plato-data` and readable by `plato-user`. You do not normally log into this account, but the services are started under this account. All the software (Common-EGSE and Test Scripts), and all the data created by the different processes and control servers can best be run and created by the `plato-data` user for consistency. If device control servers need to be started manually, use this account.
+* `plato-user`: the generic user account for running the test scripts, start GUIs and analysing the data. This user has no `sudo` rights, but has read access to the `/data` directory. This is the account used to execute the test scripts. Don't use this account on the `egse-server` unless you know what you are doing.

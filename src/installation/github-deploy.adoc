@@ -1,0 +1,150 @@
+== Setting up ssh access and GitHub deploy keys
+:imagesdir: ../images
+
+We have a semi-automatic update procedure in place for the Common-EGSE and the Test Scripts. This procedure will be described in <<cgse-update>> and <<test-scripts-update>>, but before we can use that we need to have the proper permissions to fetch changes from the different GitHub repositories without the need to provide our credentials every time. The best way to do that is to set up deploy keys on the GitHub repos.
+
+=== Create a deploy key for the plato-common-egse
+
+You can create an ssh key-pair for the CGSE with the following command. Execute this code on the `egse-server` as user `plato-data` in the folder `~/.ssh` (create the folder if it doesn't exist).
+----
+$ cd ~/.ssh
+$ ssh-keygen -t ed25519 -C plato-data@egse-server-inta  <1>
+Generating public/private ed25519 key pair.
+Enter file in which to save the key (/home/plato-data/.ssh/id_ed25519): id_cgse_egse_server_inta  <2>
+Enter passphrase (empty for no passphrase):  <3>
+Enter same passphrase again:
+Your identification has been saved in id_cgse_egse_server_inta
+Your public key has been saved in id_cgse_egse_server_inta.pub
+The key fingerprint is:
+SHA256:kOUBdc***************************7NSgd1WX+Ds plato-data@egse-server-inta
+The key's randomart image is:
++--[ED25519 256]--+
+|  ..ooo+*oo=..+.+|
+|   . ..+ =++o..oo|
+|    . o o oo+o= .|
+|     . =  .oo= =.|
+|    . + S  .o B +|
+|     o       = E |
+|    o         . .|
+|   o             |
+|  .              |
++----[SHA256]-----+
+----
+<1> The email address can be `plato-data@egse-server-<th>` where `<th>` is your test house site id.
+<2> name of the file: `id_cgse_egse_server_<th>`, again `<th>` is the test house site id.
+<3> do not provide a passphrase, just hit return
+
+Send the `id_cgse_egse_server_<th>.pub` file to the maintainer of the GitHub repository. She will copy the content of this file into a new deploy key for the `plato-common-egse` @ GitHub.
+
+Now we need to create a generic hostname for the repository such that this can be picked up by the ssh protocol when accessing the repository at GitHub. Add the following lines to the file `~/.ssh/config`:
+
+[source]
+----
+Host repo-common-egse
+    Hostname github.com
+    IdentityFile ~/.ssh/id_cgse_egse_server_<th>  <1>
+----
+<1> don't forget to use your test house site id
+
+Since we have created some new files in the `~/.ssh` folder we have to make sure the permissions of these files are correct and also the `~/.ssh` folder itself is fully protected.
+
+----
+$ ls -ld .ssh
+drwx------. 2 plato-data plato-data 4096 May 25 12:24 .ssh
+
+$ ls -l .ssh
+-rw-r--r--  1 plato-data plato-data   412 May 23 14:19 config
+-rw-------  1 plato-data plato-data   419 May 23 14:16 id_cgse_egse_server_inta
+-rw-r--r--  1 plato-data plato-data   109 May 23 14:16 id_cgse_egse_server_inta.pub
+----
+The file permissions can be changed with the `chmod` command as follows:
+----
+$ chmod 700 ~/.ssh
+$ chmod 644 ~/.ssh/config
+----
+
+We will now add a new remote to our git repository. This is needed to (1) use the generic hostname created above, and (2) use a standard name for the remote that is used by the update script. Add a remote for doing the updates as follows:
+
+[%nowrap,source]
+----
+$ cd ~/git/plato-common-egse
+$ git remote add updates git@repo-common-egse:IvS-KULeuven/plato-common-egse.git
+----
+
+That was the last step, we can now try to fetch new updates from the GitHub repo to confirm that this works as expected:
+----
+$ git fetch updates
+----
+
+=== Create a deploy key for the plato-test-scripts
+
+TBW
+
+////
+* ssh-keygen -t ed25519 -C <your email address>
+** name of the file: `id_ts_egse_client_<TH>`
+* copy the content of `id_ts_egse_client_<TH>.pub` into the deploy keys @ GitHub
+** name is plato-data@egse-client (id_ts_egse_client_<TH>)
+* add the following lines to `~/.ssh/config`
+
+    Host repo-test-scripts
+        Hostname github.com
+        IdentityFile ~/.ssh/id_ts_egse_client_csl
+
+* make sure the files in `~/.ssh` have the right permissions
+
+    chmod 644 ~/.ssh/config
+
+* add a remote for doing the updates
+
+    git remote add updates git@repo-test-scripts:IvS-KULeuven/plato-test-scripts.git
+
+* if you had not yet installed the repo, clone it
+
+    git clone git@repo-test-scripts:IvS-KULeuven/plato-test-scripts.git
+
+* on a first-time-installation, perform an update as follows:
+
+    git fetch updates
+    git rebase updates/develop
+    python -m pip install -e .
+
+* otherwise:
+
+    update_ts
+////
+
+=== Create a deploy key for the plato-cgse-conf
+
+TBW
+
+////
+Basically the same procedure as for the previous two repos, except for plato-cgse-conf using the configuration manager: when you add the deploy key to GitHub, you must check the _Allow write access_ checkbox. That will allow the configuration manager to upload new Setups to the repo.
+
+image::add-deploy-key.png[align="center"]
+
+For the configuration manager, we will also name the remote ‘upload’ (instead of 'updates').
+
+[source]
+----
+git remote add upload git@repo-cgse-conf:IvS-KULeuven/plato-cgse-conf.git
+----
+
+The following environment variable is needed in `/cgse/env.txt`:
+
+[source,bash]
+----
+export PLATO_CONF_REPO_LOCATION=/home/plato-data/git/plato-cgse-conf
+----
+
+Make sure that the branch has the upload/main as its tracking branch:
+
+[source,bash]
+----
+$ git branch -u upload/main
+$ git branch -vv
+* main 17fb23c [upload/main] change filter wheels parameters  # <1>
+----
+<1> between square brackets is the remote/branch that is tracked.
+
+////

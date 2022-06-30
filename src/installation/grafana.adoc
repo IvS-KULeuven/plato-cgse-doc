@@ -1,0 +1,14 @@
+[#grafana-install]
+== Install the Grafana server
+
+Please note that in the developer documentation under the section xref:../develop/monitoring.adoc#monitoring[Monitoring] there is a description on _Installing Grafana_. I will here only describe the setup for the `egse-server`. The best is to create a dedicated directory for the software installations, e.g. `~/software`. Then install Grafana into that folder.footnote:[Don't try  to install Grafana using `yum`, because that will bring you into trouble with configuration files etc.]
+
+----
+$ curl -L -o grafana-enterprise-8.5.6.linux-amd64.tar.gz https://dl.grafana.com/enterprise/release/grafana-enterprise-8.5.6.linux-amd64.tar.gz
+$ tar xzvf grafana-enterprise-8.5.6.linux-amd64.tar.gz
+$ ln -s grafana-8.5.6 grafana
+----
+
+Grafana doesn't need any further configuration. That is done in the dashboards that are loaded as explained in XXXXX xref:../develop/monitoring.adoc[Monitoring/Dashboard Configuration].
+
+We also want the Grafana server to automatically start from the systemd services as we did for Prometheus. We currently use Grafana with the default configuration and have the database located in the installation directory. The service file is located in the `server` folder of the Common-EGSE project and should be copied to `/etc/systemd/system`. After that, enable Grafana with `systemctl` and reload the services daemon.

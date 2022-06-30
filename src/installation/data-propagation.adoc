@@ -2,6 +2,35 @@
 
 * [ ] Shortly describe the storage strategy (refer to developer manual section for more detail)
 * [ ] Refer to section about disk organisation
-* [ ] describe rsync from /data to /archive
-* [ ] describe rsync to Leuven
-* [ ] crontab examples
+* [x] describe rsync from /data to /archive
+* [x] describe rsync to Leuven
+* [x] crontab examples
+
+The following line is a crontab entry for syncing the `/data` life data storage to the `/archive` permanent storage every 15 minutes.
+
+----
+# Synchronise /data to /archive
+*/15 * * * * rsync -av /data/ /archive/
+----
+
+The next line is a crontab entry for syncing the `/data` folder from IAS to the KU Leuven archive. It will update destination files in place and exclude FITS image files because they are intermediate files before generating the FITS cubes and do not need to be archived. The `-rloptD` options represent the archiving mode and the `-x` option is to prevent rsync to cross filesystem boundaries.
+
+[%nowrap]
+----
+# Synchronise /data to KU Leuven
+*/15 * * * * rsync -rloptDv --chmod=Dg+s,Dug=rwx,Do=rx,Do-w,Fug=rw,Fo=rx,Fo-w --inplace --exclude '_images.fits' -x /data/ ias@copernicus.ster.kuleuven.be:/STER/platodata/IAS/data/
+----
+
+The similar rsync command for syncing the `/archive` folder to KU Leuven is given below:
+[%nowrap]
+----
+# Synchronise /archive to KU Leuven
+*/15 * * * * rsync -rloptDv --chmod=Dg+s,Dug=rwx,Do=rx,Do-w,Fug=rw,Fo=rx,Fo-w --inplace --exclude '_images.fits' -x /archive/ ias@copernicus.ster.kuleuven.be:/STER/platodata/IAS/archive/
+----
+
+The above examples are stripped from logging commands to focus on the relevant parts of the `rsync` command. A full crontab entry for the synchronisation of `/data` to KU Leuven is given below for completeness.
+
+[%nowrap]
+----
+*/15 * * * * echo "--------------------------------------------------" >> /home/plato-data/logs-rsync-data-to-KU-Leuven ; date >> /home/plato-data/logs-rsync-data-to-KU-Leuven ; rsync -rloptDv --chmod=Dg+s,Dug=rwx,Do=rx,Do-w,Fug=rw,Fo=rx,Fo-w --inplace --exclude ’_images.fits’ -x /data/ ias@copernicus.ster.kuleuven.be:/STER/platodata/IAS/data/ 2>&1 >> /home/plato-data/logs-rsync-data-to-KU-Leuven
+----

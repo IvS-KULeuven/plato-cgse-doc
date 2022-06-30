@@ -1,0 +1,64 @@
+== Virtual Environments
+
+
+Because the required dependencies are not the same for all projects you may work on (think: different modules, different versions of the same module,...) and because it helps for system maintenance that everyone works under similar circumstances (e.g. to reproduce problems), we advise you to use virtual environments in your development installations.  That way, each project can have its own designated environment, and you can swap between them _ad libitum_.
+
+[WARNING]
+.Conda virtual environments no longer suppported
+
+For the creation of such a virtual environment we strongly advise you to use the standard `venv` command. In despite of earlier messages, we now strongly discourage the use of conda environments (even when you have installed Python with the Anaconda distribution).
+
+On the operational machines however, the installation of the `plato-common-egse` **does not** involve setting up a virtual environment, i.e. the CGSE is set up without a virtual environment. Only the `plato-test-scripts` installation is set up with a virtual environment on the operation `egse-client` machine. To summarize:
+
+Operational `egse-server`::
+
+Install the `plato-common-egse` without virtual environment, do **not** install the `plato-test-scripts`.
+
+Operational `egse-client`::
+
+Install the `plato-common-egse` without virtual environment, the `plato-test-scripts` **do** have a virtual environment.
+
+Development machine::
+
+Install both `plato-common-egse` and `plato-test-scripts` in their own virtual environment.
+
+
+
+In the next sections we describe the procedure you need to follow to create a virtual environment with the standard `venv` command.
+
+[WARNING]
+.Make sure you are not in a conda environment
+
+In order to be able to use this type of virtual environment, you must make absolutely sure that you are not in a conda environment, when you create a venv environment.  When you have installed Python via the Anaconda distribution, check your `.bash_profile` and remove everything in the from `>>> conda initialize >>>` to `<<< conda initialize <<<`, as this will automatically bring you in the base conda environment upon start-up.  When you remove these lines, do not forget to source your `.bash_profile ` before you continue or start a new terminal session altogether.
+
+=== Creating a New Environment
+
+To create a new environment and prepare it for the installation of the dependencies, you need to execute the following set of commands **in the root folder of the project**, usually `~/git/plato-test-scripts`:
+
+----
+    $ python3 -m venv venv --prompt TS <1>
+    $ source ./venv/bin/activate <2>
+
+    $ python -m pip list
+
+    $ python -m pip install --upgrade pip <3>
+    $ python -m pip install --upgrade setuptools
+    $ python -m pip install wheel
+----
+<1> This will create a folder named `venv` in the project directory and assign the alternative prompt prefix `TS` for the environmentfootnote:[It is recommended to keep the folder name close to `venv` and choose a project specific prompt to recognise the environment you are using. For example, in this project I have two environments, one for Python 3.8 and one for Python 3.10. The folders are called `venv38` and `venv310`, but the environments are named `CGSE 3.8` and `CGSE 3.10` which will be reflected on the command prompt in my terminal.].
+<2> The second line will activate the new virtual environment. There should be only a few packages installed in the new environment, usually `pip` and `setuptools`, which can be checked with the `pip list` command.
+<3> The last lines update these two packages and installs the `wheel` package which is needed for installing pre-constructed binaries.
+
+
+=== De-activating an Environment
+
+When you are done working, or you need to switch to another project/environment, you can deactivate the current environment as follows:
+
+    $ deactivate
+
+=== Removing a Corrupt Environment
+
+In case you would have a corrupt environment, the best you can do is to de-activate and remove the environment, and start over again.  This can be done by executing the following commands **in the root directory of the project**:
+
+    $ deactivate
+    $ rm -r ./venv
