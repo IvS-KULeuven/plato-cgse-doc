@@ -1412,7 +1412,8 @@ the size of the field-of-view, and a red dot indicating the current position of 
 
     self.statusBar().setStyleSheet(&#34;border: 0; background-color: #FFF8DC;&#34;)
     self.statusBar().setStyleSheet(&#34;QStatusBar::item {border: none;}&#34;)
-    self.statusBar().addPermanentWidget(VLine())</code></pre>
+    self.statusBar().addPermanentWidget(VLine())
+    # self.statusBar().addPermanentWidget(self.mode_label)</code></pre>
 </details>
 </dd>
 <dt id="egse.fov.fov_ui.FOVUIView.create_toolbar"><code class="name flex">
@@ -2309,7 +2310,10 @@ to notify the GUI.</p></div>
     &#34;&#34;&#34;
 
     self.is_socket_connected = False
-    self.monitoring_socket.close()</code></pre>
+    self.monitoring_socket.close()
+
+    # self.monitoring_socket.disconnect(self.monitoring_address)
+    # self.monitoring_socket.close(linger=0)</code></pre>
 </details>
 </dd>
 </dl>
@@ -2514,7 +2518,47 @@ to notify the GUI.</p></div>
         distance_sma = -self.position_translation_stage + self.offset_delta_x
 
         return distance_sma / self.height_collimated_beam == \
-            tan(radians(self.position_small_rotation_stage + self.offset_alpha + 45))</code></pre>
+            tan(radians(self.position_small_rotation_stage + self.offset_alpha + 45))
+
+    # def get_focal_plane_position(self):
+    #
+    #     &#34;&#34;&#34;
+    #     Calculates and returns the focal-plane coordinates (x, y) [mm] of the source, given the
+    #     position of the associated hexapod and stages, and taking the field distortion into account.
+    #
+    #     :return: Focal-plane coordinates (x, y) [mm] of the source, given the position of the
+    #              associated hexapod and stages, and taking the field distortion into account.
+    #     &#34;&#34;&#34;
+    #
+    #     angle_big_rotation_stage = self.position_big_rotation_stage
+
+        # # Rotation angle of the big rotation stage [degrees]
+        # # - counterclockwise rotation
+        # # - 0° -&gt; axis of the focal plane aligned with GL_FIX
+        #
+        # angle_big_rotation_stage = self.position_big_rotation_stage
+        #
+        # # Rotation angle of the small rotation stage [degrees]
+        # # - clockwise rotation
+        # # - 0° -&gt; ?
+        #
+        # angle_small_rotation_stage = self.position_small_rotation_stage
+        #
+        # # Radial distance without field distortion [mm] and corresponding focal-plane coordinates [mm]
+        # # Note that the height of the lower triangle is very close to the focal length
+        #
+        # theta = 2 * angle_small_rotation_stage  # [degrees]
+        #
+        # radial_distance_undistorted = self.focal_length * tan(radians(theta))
+        #
+        # x_undistorted = -radial_distance_undistorted * cos(-radians(angle_big_rotation_stage))
+        # y_undistorted = -radial_distance_undistorted * sin(-radians(angle_big_rotation_stage))
+        #
+        # x_distorted, y_distorted = \
+        #     undistorted_to_distorted_focal_plane_coordinates(x_undistorted, y_undistorted,
+        #                                                      self.distortion_coefficients, self.focal_length)
+        #
+        # return x_distorted, y_distorted</code></pre>
 </details>
 <h3>Ancestors</h3>
 <ul class="hlist">
@@ -2595,7 +2639,47 @@ the field distortion into account.</p>
     distance_sma = -self.position_translation_stage + self.offset_delta_x
 
     return distance_sma / self.height_collimated_beam == \
-        tan(radians(self.position_small_rotation_stage + self.offset_alpha + 45))</code></pre>
+        tan(radians(self.position_small_rotation_stage + self.offset_alpha + 45))
+
+# def get_focal_plane_position(self):
+#
+#     &#34;&#34;&#34;
+#     Calculates and returns the focal-plane coordinates (x, y) [mm] of the source, given the
+#     position of the associated hexapod and stages, and taking the field distortion into account.
+#
+#     :return: Focal-plane coordinates (x, y) [mm] of the source, given the position of the
+#              associated hexapod and stages, and taking the field distortion into account.
+#     &#34;&#34;&#34;
+#
+#     angle_big_rotation_stage = self.position_big_rotation_stage
+
+    # # Rotation angle of the big rotation stage [degrees]
+    # # - counterclockwise rotation
+    # # - 0° -&gt; axis of the focal plane aligned with GL_FIX
+    #
+    # angle_big_rotation_stage = self.position_big_rotation_stage
+    #
+    # # Rotation angle of the small rotation stage [degrees]
+    # # - clockwise rotation
+    # # - 0° -&gt; ?
+    #
+    # angle_small_rotation_stage = self.position_small_rotation_stage
+    #
+    # # Radial distance without field distortion [mm] and corresponding focal-plane coordinates [mm]
+    # # Note that the height of the lower triangle is very close to the focal length
+    #
+    # theta = 2 * angle_small_rotation_stage  # [degrees]
+    #
+    # radial_distance_undistorted = self.focal_length * tan(radians(theta))
+    #
+    # x_undistorted = -radial_distance_undistorted * cos(-radians(angle_big_rotation_stage))
+    # y_undistorted = -radial_distance_undistorted * sin(-radians(angle_big_rotation_stage))
+    #
+    # x_distorted, y_distorted = \
+    #     undistorted_to_distorted_focal_plane_coordinates(x_undistorted, y_undistorted,
+    #                                                      self.distortion_coefficients, self.focal_length)
+    #
+    # return x_distorted, y_distorted</code></pre>
 </details>
 </dd>
 <dt id="egse.fov.fov_ui.StagesMonitoringWorker.position_has_changed"><code class="name flex">

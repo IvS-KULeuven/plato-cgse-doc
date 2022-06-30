@@ -245,8 +245,11 @@ class MonitoringWorker(QObject):
                 commanding_port = ctrl_settings[name][&#34;COMMANDING_PORT&#34;]
                 monitoring_port = ctrl_settings[name][&#34;MONITORING_PORT&#34;]
 
-            else:
+            elif module_name == &#34;egse.powermeter.ni.cdaq9184&#34;:
+                commanding_port = ctrl_settings.CDAQ9184[&#34;COMMANDING_PORT&#34;]
+                monitoring_port = ctrl_settings.CDAQ9184[&#34;MONITORING_PORT&#34;]
 
+            else:
                 commanding_port = ctrl_settings.COMMANDING_PORT
                 monitoring_port = ctrl_settings.MONITORING_PORT
 
@@ -474,7 +477,7 @@ class ProcessMonitoringWorker(QObject):
 
                         # Check (max 15x) to see whether pressing the button had an effect
 
-                        is_running = self.module.send_request(&#34;status&#34;) == &#34;ACK&#34;
+                        is_running = self.module.send_request(&#34;status&#34;).get(&#34;status&#34;) == &#34;ACK&#34;
                         if self.was_running_before != is_running:
                             break
                         time.sleep(2)
@@ -873,8 +876,13 @@ class FitsgenWidget(NonCSProcessWidget):
 
     def __init__(self, parent):
 
-        super(FitsgenWidget, self).__init__(FILE_GENERATION_PROCESS_NAMES.FITSGEN, parent, include_gui_button=False,
+        super(FitsgenWidget, self).__init__(FILE_GENERATION_PROCESS_NAMES.FITSGEN, parent, include_gui_button=True,
                                             include_start_stop_button=True)
+
+    def start_gui(self):
+
+        gui_process = SubProcess(&#34;MyApp&#34;, [sys.executable, &#34;-m&#34;, &#34;egse.dpu.fitsgen_ui&#34;])
+        gui_process.execute(detach_from_parent=True)
 
     def start_service(self):
 
@@ -2450,8 +2458,13 @@ comprise the following components:</p>
 
     def __init__(self, parent):
 
-        super(FitsgenWidget, self).__init__(FILE_GENERATION_PROCESS_NAMES.FITSGEN, parent, include_gui_button=False,
+        super(FitsgenWidget, self).__init__(FILE_GENERATION_PROCESS_NAMES.FITSGEN, parent, include_gui_button=True,
                                             include_start_stop_button=True)
+
+    def start_gui(self):
+
+        gui_process = SubProcess(&#34;MyApp&#34;, [sys.executable, &#34;-m&#34;, &#34;egse.dpu.fitsgen_ui&#34;])
+        gui_process.execute(detach_from_parent=True)
 
     def start_service(self):
 
@@ -2473,6 +2486,21 @@ comprise the following components:</p>
 </ul>
 <h3>Methods</h3>
 <dl>
+<dt id="egse.procman.procman_ui.FitsgenWidget.start_gui"><code class="name flex">
+<span>def <span class="ident">start_gui</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def start_gui(self):
+
+    gui_process = SubProcess(&#34;MyApp&#34;, [sys.executable, &#34;-m&#34;, &#34;egse.dpu.fitsgen_ui&#34;])
+    gui_process.execute(detach_from_parent=True)</code></pre>
+</details>
+</dd>
 <dt id="egse.procman.procman_ui.FitsgenWidget.start_service"><code class="name flex">
 <span>def <span class="ident">start_service</span></span>(<span>self)</span>
 </code></dt>
@@ -2753,8 +2781,11 @@ comprise the following components:</p>
                 commanding_port = ctrl_settings[name][&#34;COMMANDING_PORT&#34;]
                 monitoring_port = ctrl_settings[name][&#34;MONITORING_PORT&#34;]
 
-            else:
+            elif module_name == &#34;egse.powermeter.ni.cdaq9184&#34;:
+                commanding_port = ctrl_settings.CDAQ9184[&#34;COMMANDING_PORT&#34;]
+                monitoring_port = ctrl_settings.CDAQ9184[&#34;MONITORING_PORT&#34;]
 
+            else:
                 commanding_port = ctrl_settings.COMMANDING_PORT
                 monitoring_port = ctrl_settings.MONITORING_PORT
 
@@ -2967,8 +2998,11 @@ comprise the following components:</p>
             commanding_port = ctrl_settings[name][&#34;COMMANDING_PORT&#34;]
             monitoring_port = ctrl_settings[name][&#34;MONITORING_PORT&#34;]
 
-        else:
+        elif module_name == &#34;egse.powermeter.ni.cdaq9184&#34;:
+            commanding_port = ctrl_settings.CDAQ9184[&#34;COMMANDING_PORT&#34;]
+            monitoring_port = ctrl_settings.CDAQ9184[&#34;MONITORING_PORT&#34;]
 
+        else:
             commanding_port = ctrl_settings.COMMANDING_PORT
             monitoring_port = ctrl_settings.MONITORING_PORT
 
@@ -3193,7 +3227,10 @@ to notify the GUI.</p></div>
     &#34;&#34;&#34;
 
     self.is_socket_connected = False
-    self.monitoring_socket.close()</code></pre>
+    self.monitoring_socket.close()
+
+    # self.monitoring_socket.disconnect(self.monitoring_address)
+    # self.monitoring_socket.close(linger=0)</code></pre>
 </details>
 </dd>
 </dl>
@@ -4558,7 +4595,9 @@ updates in the process status (in the background) and display these in the GUI.<
     self.overview_widget_file_services_layout.addWidget(self.n_fee_hk_widget)
 
     self.overview_widget_file_services = QGroupBox(&#34;File generation&#34;, self)
-    self.overview_widget_file_services.setLayout(self.overview_widget_file_services_layout)</code></pre>
+    self.overview_widget_file_services.setLayout(self.overview_widget_file_services_layout)
+    # self.overview_widget_file_services.setToolTip(
+    #     &#34;EGSE core processes: must be running at all times.&#34;)</code></pre>
 </details>
 </dd>
 <dt id="egse.procman.procman_ui.ProcessManagerUIView.create_statusbar"><code class="name flex">
@@ -4574,7 +4613,8 @@ updates in the process status (in the background) and display these in the GUI.<
     &#34;&#34;&#34; Create the status bar.&#34;&#34;&#34;
 
     self.statusBar().setStyleSheet(&#34;border: 0; background-color: #FFF8DC;&#34;)
-    self.statusBar().setStyleSheet(&#34;QStatusBar::item {border: none;}&#34;)</code></pre>
+    self.statusBar().setStyleSheet(&#34;QStatusBar::item {border: none;}&#34;)
+    # self.statusBar().addPermanentWidget(VLine())</code></pre>
 </details>
 </dd>
 <dt id="egse.procman.procman_ui.ProcessManagerUIView.create_toolbar"><code class="name flex">
@@ -5358,7 +5398,7 @@ show the stop icon again and the simulator mode button is disabled again.</p></d
 
                         # Check (max 15x) to see whether pressing the button had an effect
 
-                        is_running = self.module.send_request(&#34;status&#34;) == &#34;ACK&#34;
+                        is_running = self.module.send_request(&#34;status&#34;).get(&#34;status&#34;) == &#34;ACK&#34;
                         if self.was_running_before != is_running:
                             break
                         time.sleep(2)
@@ -5425,7 +5465,7 @@ def run(self):
 
                     # Check (max 15x) to see whether pressing the button had an effect
 
-                    is_running = self.module.send_request(&#34;status&#34;) == &#34;ACK&#34;
+                    is_running = self.module.send_request(&#34;status&#34;).get(&#34;status&#34;) == &#34;ACK&#34;
                     if self.was_running_before != is_running:
                         break
                     time.sleep(2)
@@ -6024,6 +6064,7 @@ Indic.ORANGE, or Indic.RED.</li>
 <li>
 <h4><code><a title="egse.procman.procman_ui.FitsgenWidget" href="#egse.procman.procman_ui.FitsgenWidget">FitsgenWidget</a></code></h4>
 <ul class="">
+<li><code><a title="egse.procman.procman_ui.FitsgenWidget.start_gui" href="#egse.procman.procman_ui.FitsgenWidget.start_gui">start_gui</a></code></li>
 <li><code><a title="egse.procman.procman_ui.FitsgenWidget.start_service" href="#egse.procman.procman_ui.FitsgenWidget.start_service">start_service</a></code></li>
 <li><code><a title="egse.procman.procman_ui.FitsgenWidget.stop_service" href="#egse.procman.procman_ui.FitsgenWidget.stop_service">stop_service</a></code></li>
 </ul>

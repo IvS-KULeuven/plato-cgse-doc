@@ -111,12 +111,13 @@ def start():
     except KeyboardInterrupt:
         print(&#34;Shutdown requested...exiting&#34;)
     except SystemExit as exit_code:
-        print(&#34;System Exit with code {}.&#34;.format(exit_code))
+        print(f&#34;System Exit with code {exit_code}.&#34;)
         sys.exit(exit_code)
-    except Exception:  # ignore: too broad exception clause
-        import traceback
+    except (Exception, ) as exc:  # ignore: too broad exception clause
+        logger.error(f&#34;Caught Exception: {exc}&#34;, exc_info=True)
 
-        traceback.print_exc(file=sys.stdout)
+        # import traceback
+        # traceback.print_exc(file=sys.stdout)
 
     return 0
 

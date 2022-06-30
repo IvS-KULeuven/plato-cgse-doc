@@ -183,7 +183,8 @@ class FITS(PersistenceLayer):
                     * in case of windowing mode or windowing pattern mode: dictionary with one window list for each CCD;
                     * expected_last_packet_flags (List[bool]): expected last packet flags;
                     * obsid: observation identifier;
-                    * cycle_time: image cycle time [s].
+                    * cycle_time: image cycle time [s];
+                    * cgse_version: version of the Common EGSE.
         &#34;&#34;&#34;
 
         self._filepath = Path(filename)
@@ -227,6 +228,7 @@ class FITS(PersistenceLayer):
         self.h_end = prep[&#34;h_end&#34;]                                  # Last transmitted column
         self.rows_final_dump = prep[&#34;rows_final_dump&#34;]              # Number of rows to be dumped after readout
         self.cycle_time = prep[&#34;cycle_time&#34;]                        # Image cycle time [s]
+        self.cgse_version = prep[&#34;cgse_version&#34;]                    # Version of the Common EGSE
         self.obsid = prep[&#34;obsid&#34;]
 
         # Read information from the setup
@@ -496,6 +498,7 @@ class FITS(PersistenceLayer):
         primary_header[&#34;CYCLETIME&#34;] = (self.cycle_time, &#34;Image cycle time [s]&#34;)
         primary_header[&#34;READTIME&#34;] = (self.readout_time,
                                       &#34;Time needed to read out the requested part for a single CCD side [s]&#34;)
+        primary_header[&#34;CGSE&#34;] = (self.cgse_version, &#34;Version of the Common EGSE&#34;)
 
         logger.info(f&#34;Obsid in FITS persistence layer: {self.obsid}&#34;)
 
@@ -3162,7 +3165,8 @@ read out;</li>
 <li>in case of windowing mode or windowing pattern mode: dictionary with one window list for each CCD;</li>
 <li>expected_last_packet_flags (List[bool]): expected last packet flags;</li>
 <li>obsid: observation identifier;</li>
-<li>cycle_time: image cycle time [s].</li>
+<li>cycle_time: image cycle time [s];</li>
+<li>cgse_version: version of the Common EGSE.</li>
 </ul>
 </li>
 </ul></div>
@@ -3215,7 +3219,8 @@ read out;</li>
                     * in case of windowing mode or windowing pattern mode: dictionary with one window list for each CCD;
                     * expected_last_packet_flags (List[bool]): expected last packet flags;
                     * obsid: observation identifier;
-                    * cycle_time: image cycle time [s].
+                    * cycle_time: image cycle time [s];
+                    * cgse_version: version of the Common EGSE.
         &#34;&#34;&#34;
 
         self._filepath = Path(filename)
@@ -3259,6 +3264,7 @@ read out;</li>
         self.h_end = prep[&#34;h_end&#34;]                                  # Last transmitted column
         self.rows_final_dump = prep[&#34;rows_final_dump&#34;]              # Number of rows to be dumped after readout
         self.cycle_time = prep[&#34;cycle_time&#34;]                        # Image cycle time [s]
+        self.cgse_version = prep[&#34;cgse_version&#34;]                    # Version of the Common EGSE
         self.obsid = prep[&#34;obsid&#34;]
 
         # Read information from the setup
@@ -3528,6 +3534,7 @@ read out;</li>
         primary_header[&#34;CYCLETIME&#34;] = (self.cycle_time, &#34;Image cycle time [s]&#34;)
         primary_header[&#34;READTIME&#34;] = (self.readout_time,
                                       &#34;Time needed to read out the requested part for a single CCD side [s]&#34;)
+        primary_header[&#34;CGSE&#34;] = (self.cgse_version, &#34;Version of the Common EGSE&#34;)
 
         logger.info(f&#34;Obsid in FITS persistence layer: {self.obsid}&#34;)
 
@@ -5066,6 +5073,7 @@ done at the moment the serial pre-scan will be written to file.</p>
     primary_header[&#34;CYCLETIME&#34;] = (self.cycle_time, &#34;Image cycle time [s]&#34;)
     primary_header[&#34;READTIME&#34;] = (self.readout_time,
                                   &#34;Time needed to read out the requested part for a single CCD side [s]&#34;)
+    primary_header[&#34;CGSE&#34;] = (self.cgse_version, &#34;Version of the Common EGSE&#34;)
 
     logger.info(f&#34;Obsid in FITS persistence layer: {self.obsid}&#34;)
 
@@ -5670,7 +5678,16 @@ The last item is the last element of the list of keys, sorted with natural order
 
         logger.debug(f&#34;{self._h5file.filename}: {keys=}&#34;)
 
-        return 0 if len(keys) == 0 else natsort.natsorted(keys)[-1]</code></pre>
+        return 0 if len(keys) == 0 else natsort.natsorted(keys)[-1]
+
+        # This following lines is a longer version of the previous two lines, keep them for
+        # debugging because I had problems and not yet sure what is the cause...
+
+        # sorted_keys = natsort.natsorted(keys)
+        # logger.debug(f&#34;{self._h5file.filename}: {sorted_keys=}&#34;)
+        # key = sorted_keys[-1]
+        # logger.debug(f&#34;{key=}&#34;)
+        # return key</code></pre>
 </details>
 </dd>
 </dl>

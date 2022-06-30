@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1" />
 <meta name="generator" content="pdoc 0.10.0" />
 <title>egse.stages.huber.smc9300_devif API documentation</title>
-<meta name="description" content="HUBER Device Interface to the SMC 9300 motor controller …" />
+<meta name="description" content="HUBER Device Interface to the SMC 9300 motor controller." />
 <link rel="preload stylesheet" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/11.0.1/sanitize.min.css" integrity="sha256-PK9q560IAAa6WVRRh76LtCaI8pjTJ2z11v0miyNNjrs=" crossorigin>
 <link rel="preload stylesheet" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/11.0.1/typography.min.css" integrity="sha256-7l/o7C8jubJiy74VsKTidCy1yBkRtiUGbVkYBylBqUg=" crossorigin>
 <link rel="stylesheet preload" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/10.1.1/styles/github.min.css" crossorigin>
@@ -23,15 +23,12 @@
 </header>
 <section id="section-intro">
 <p>HUBER Device Interface to the SMC 9300 motor controller.</p>
-<p>Author: Rik Huygen</p>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">&#34;&#34;&#34;
 HUBER Device Interface to the SMC 9300 motor controller.
-
-Author: Rik Huygen
 &#34;&#34;&#34;
 
 import logging
@@ -39,13 +36,26 @@ import socket
 import threading
 import time
 
-from egse.bits import beautify_binary
 from egse.command import ClientServerCommand
+from egse.device import DeviceConnectionError
+from egse.device import DeviceConnectionInterface
+from egse.device import DeviceTimeoutError
+from egse.device import DeviceTransport
 from egse.settings import Settings
+from egse.system import Timer
+from egse.system import format_datetime
 
-logger = logging.getLogger(__name__)
+# Explicitly set the module name instead of __name__. When module is executed instead of imported
+# __name__ will result in __main__ and no logging to zmq will be done.
 
-huber_settings = Settings.load(&#34;Huber Controller&#34;)
+MODULE_LOGGER = logging.getLogger(&#34;egse.stages.huber.smc9300_devif&#34;)
+
+READ_TIMEOUT = 10.0  # seconds
+WRITE_TIMEOUT = 1.0  # seconds
+CONNECT_TIMEOUT = 3.0  # seconds
+
+HUBER_SETTINGS = Settings.load(&#34;Huber Controller&#34;)
+DEVICE_NAME = &#34;SMC9300&#34;
 
 
 class HuberError(Exception):
@@ -58,70 +68,70 @@ class HuberSMC9300Command(ClientServerCommand):
         return out + &#34;\r\n&#34;
 
 
-# These definitions should be loaded from the huber.yaml file!
+class HuberSMC9300EthernetInterface(DeviceConnectionInterface, DeviceTransport):
+    &#34;&#34;&#34;
+    Defines the low-level interface to the HUBER stages controller.
 
-cmd_q_system_info      = HuberSMC9300Command(name=&#39;get_system_info&#39;,   cmd=&#39;?&#39;)
-cmd_q_version          = HuberSMC9300Command(name=&#39;get_version&#39;,       cmd=&#39;?v&#39;)
-cmd_q_configuration    = HuberSMC9300Command(name=&#39;get_configuration&#39;, cmd=&#39;?conf{axis}&#39;)
-cmd_q_state            = HuberSMC9300Command(name=&#39;get_state&#39;,         cmd=&#39;?s{axis}&#39;)
-cmd_q_status           = HuberSMC9300Command(name=&#39;get_status&#39;,        cmd=&#39;?status{axis}&#39;)
-cmd_q_error            = HuberSMC9300Command(name=&#39;get_error&#39;,         cmd=&#39;?err{axis}&#39;)
-cmd_q_pos              = HuberSMC9300Command(name=&#39;get_current_position&#39;, cmd=&#39;?p{axis}&#39;)
-cmd_q_e                = HuberSMC9300Command(name=&#39;get_current_encoder_position&#39;, cmd=&#39;?e{axis}&#39;)
-cmd_q_ec               = HuberSMC9300Command(name=&#39;get_current_encoder_counter_value&#39;, cmd=&#39;?ec{axis}&#39;)
+    Args:
+        hostname (str): the IP address or fully qualified hostname of the OGSE hardware
+            controller. The default is defined in the ``settings.yaml`` configuration file.
 
+        port (int): the IP port number to connect to. The default is defined in the
+            `settings.yaml` configuration file.
+    &#34;&#34;&#34;
+    def __init__(self, hostname: str = None, port: int = None):
 
-cmd_ecl                = HuberSMC9300Command(name=&#39;ecl&#39;,              cmd=&#39;ecl{axis}:{mode}&#39;)
-cmd_goto               = HuberSMC9300Command(name=&#39;goto&#39;,             cmd=&#39;goto{axis}:{position}&#39;)
-cmd_move               = HuberSMC9300Command(name=&#39;move&#39;,             cmd=&#39;move{axis}:{distance}&#39;)
-cmd_cerr               = HuberSMC9300Command(name=&#39;clear_error&#39;,      cmd=&#39;cerr{axis}&#39;)
-cmd_echo               = HuberSMC9300Command(name=&#39;echo&#39;,             cmd=&#39;echo{}&#39;)
-cmd_zero               = HuberSMC9300Command(name=&#39;zero&#39;,             cmd=&#39;zero{axis}&#39;)
-cmd_list               = HuberSMC9300Command(name=&#39;list&#39;,             cmd=&#39;list&#39;)
-cmd_quit               = HuberSMC9300Command(name=&#39;quit&#39;,             cmd=&#39;quit&#39;)
-cmd_ffast              = HuberSMC9300Command(name=&#39;ffast&#39;,            cmd=&#39;ffast{axis}:{speed}&#39;)
-
-
-class HuberSMC9300EthernetInterface(object):
-    def __init__(self):
-
-        self.modelName = None  # Will be initialized by the getHuberModel() call
+        super().__init__()
 
         # Basic connection settings, loaded from the configuration YAML file
 
-        self.hostname = huber_settings.HOSTNAME
-        self.port = huber_settings.PORT
+        self.hostname = hostname or HUBER_SETTINGS.HOSTNAME
+        self.port = port or HUBER_SETTINGS.PORT
+        self.sock = None
 
         # Access-to-the-connection semaphore. Use this to lock/unlock I/O access to the
         # connection (whatever type it is) in child classes.
 
         self.semaphore = threading.Semaphore()
 
-        self.isConnectionOpen = False
+        self.is_connection_open = False
 
-        self._num_axes = huber_settings.NUMBER_OF_AXES
-
-    def setConnectionParameters(self, host=&#34;localhost&#34;, port=None):
-        self.hostname = str(host)
-        if port is not None:
-            self.port = int(str(port))
+        self._num_axes = HUBER_SETTINGS.NUMBER_OF_AXES
 
     def connect(self):
+        &#34;&#34;&#34;
+        Connects the TCP socket to the device controller.
 
+        Returns:
+            None.
+
+        Raises:
+            ValueError when hostname or port number are not initialized properly.
+
+            DeviceConnectionError on any socket error except timeouts.
+
+            DeviceTimeoutError on a socket timeout.
+        &#34;&#34;&#34;
         # Sanity checks
 
-        if self.isConnectionOpen:
-            raise HuberError(&#39;Socket is already open&#39;)
-        if self.hostname in (None, &#39;&#39;):
-            raise HuberError(&#39;ERROR: hostname not initialized&#39;)
+        if self.is_connection_open:
+            MODULE_LOGGER.warning(
+                f&#34;{DEVICE_NAME}: trying to connect to an already connected socket.&#34;)
+            return
+
+        if self.hostname in (None, &#34;&#34;):
+            raise ValueError(f&#34;{DEVICE_NAME}: hostname is not initialized.&#34;)
+
         if self.port in (None, 0):
-            raise HuberError(&#39;ERROR: port number not initialized&#39;)
+            raise ValueError(f&#34;{DEVICE_NAME}: port number is not initialized.&#34;)
 
         # Create a new socket instance
 
         try:
             self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            #self.sock.setblocking(1)
+
+            # self.sock.setblocking(1)
+
             # DON&#39;T set a timeout on the socket, this will not result in the expected behavior.
             #
             # If the timeout is set, this will result in the following problem:
@@ -132,264 +142,236 @@ class HuberSMC9300EthernetInterface(object):
             # WARNING  263    huber.py  wait_for_response: Socket timeout error from timed out
             # DEBUG    200    huber.py  get_response: Received from HUBER: b&#39;\r\n&#39;
             #
-            #self.sock.settimeout(3)
+
+            # self.sock.settimeout(3)
+
         except socket.error as e_socket:
-            raise HuberError(&#34;ERROR: Failed to create socket.&#34;) from e_socket
+            raise DeviceConnectionError(DEVICE_NAME, &#34;Failed to create socket.&#34;) from e_socket
 
         # Attempt to establish a connection to the remote host
 
         # FIXME: Socket shall be closed on exception?
 
         # We set a timeout of 3 sec before connecting and reset to None
-        # (=blocking) after the connect. The reason for this is because when no
-        # HUBER SMC is available, e.g during testing, the timeout will take about
+        # (=blocking) after the connect() method. The reason for this that when no
+        # HUBER SMC is available, e.g. during testing, the timeout will take about
         # two minutes which is way too long. It needs to be evaluated if this
         # approach is acceptable and not causing problems during production.
 
         try:
-            logger.debug(f&#39;Connecting a socket to host &#34;{self.hostname}&#34; using port {self.port}&#39;)
-            self.sock.settimeout(3)
+            MODULE_LOGGER.debug(
+                f&#39;Connecting a socket to host &#34;{self.hostname}&#34; using port {self.port}&#39;)
+            self.sock.settimeout(CONNECT_TIMEOUT)
             self.sock.connect((self.hostname, self.port))
             self.sock.settimeout(None)
-        except ConnectionRefusedError as e_cr:
-            raise HuberError(f&#39;ERROR: Connection refused to {self.hostname}&#39;) from e_cr
-        except TimeoutError as e_timeout:
-            raise HuberError(f&#39;ERROR: Connection to {self.hostname} timed out&#39;) from e_timeout
-        except socket.gaierror as e_gai:
-            raise HuberError(f&#39;ERROR: socket address info error for {self.hostname}&#39;) from e_gai
-        except socket.herror as e_h:
-            raise HuberError(f&#39;ERROR: socket host address error for {self.hostname}&#39;) from e_h
-        except socket.timeout as e_timeout:
-            raise HuberError(f&#39;ERROR: socket timeout error for {self.hostname}&#39;) from e_timeout
-        except OSError as ose:
-            raise HuberError(f&#34;ERROR: OSError caught ({ose}).&#34;) from ose
+        except ConnectionRefusedError as exc:
+            raise DeviceConnectionError(
+                DEVICE_NAME, f&#34;Connection refused to {self.hostname}:{self.port}.&#34;
+            ) from exc
+        except TimeoutError as exc:
+            raise DeviceTimeoutError(
+                DEVICE_NAME, f&#34;Connection to {self.hostname}:{self.port} timed out.&#34;
+            ) from exc
+        except socket.gaierror as exc:
+            raise DeviceConnectionError(
+                DEVICE_NAME, f&#34;socket address info error for {self.hostname}&#34;
+            ) from exc
+        except socket.herror as exc:
+            raise DeviceConnectionError(
+                DEVICE_NAME, f&#34;socket host address error for {self.hostname}&#34;
+            ) from exc
+        except socket.timeout as exc:
+            raise DeviceTimeoutError(
+                DEVICE_NAME, f&#34;socket timeout error for {self.hostname}:{self.port}&#34;
+            ) from exc
+        except OSError as exc:
+            raise DeviceConnectionError(DEVICE_NAME, f&#34;OSError caught ({exc}).&#34;) from exc
 
-        self.isConnectionOpen = True
+        self.is_connection_open = True
 
         # The first thing to receive should be the &#39;smc 1.2.1093&#39; string.
 
-        response = self.wait_for_response()
-        logger.debug(f&#34;After connection, we got &#39;{response}&#39; as a response.&#34;)
-
-        # Check that we are connected to a pmac by issuing the &#34;VERSION&#34; command -- expecting the 1.947 in return.
-        # If we don&#39;t get the right response, then disconnect automatically
-
-        if not self.is_connected():
-            raise HuberError(f&#34;Device is not connected, check logging messages for the cause.&#34;)
+        response = self.read()
+        MODULE_LOGGER.debug(f&#34;After connection, we got &#39;{response}&#39; as a response.&#34;)
 
     def disconnect(self):
         &#34;&#34;&#34;
-        Disconnect from the Ethernet connection.
+        Disconnect the Ethernet connection from the device controller.
 
-        Raises a HuberError on failure.
+        Raises:
+             a DeviceConnectionError on failure.
         &#34;&#34;&#34;
         try:
-            if self.isConnectionOpen:
-                logger.debug(f&#39;Disconnecting from {self.hostname}&#39;)
+            if self.is_connection_open:
+                MODULE_LOGGER.debug(f&#39;Disconnecting from {self.hostname}&#39;)
                 self.semaphore.acquire()
                 self.sock.close()
                 self.semaphore.release()
-                self.isConnectionOpen = False
+                self.is_connection_open = False
         except Exception as e_exc:
-            raise HuberError(f&#34;Could not close socket to {self.hostname}&#34;) from e_exc
+            raise DeviceConnectionError(
+                DEVICE_NAME, f&#34;Could not close socket to {self.hostname}&#34;) from e_exc
 
-    def is_connected(self):
+    def reconnect(self):
 
-        if not self.isConnectionOpen:
-            return False
-
-        try:
-            response = self.get_response(cmd_q_version.get_cmd_string())
-        except HuberError as e_huber:
-            if len(e_huber.args) &gt;= 2 and e_huber.args[1] == -1:
-                logger.error(f&#39;While trying to talk to the device the following exception occured, exception={e_huber}&#39;)
-                logger.error(f&#34;Most probably the client connection was closed. Disconnectiing...&#34;)
-                self.disconnect()
-                return False
-            else:
-                logger.error(f&#39;While trying to talk to the device the following exception occured, exception={e_huber}&#39;)
-                self.disconnect()
-                return False
-        finally:
-            pass
-
-        version = response
-
-        if not version:
-            # if the response was not matching the regex then we&#39;re not talking to a PMAC!
-            logger.error(f&#39;Device did not respond correctly to a &#34;VERSION&#34; command, response={response}. Disconnecting...&#39;)
+        if self.is_connection_open:
             self.disconnect()
-            return False
+        self.connect()
 
-        return True
-
-    def get_response(self, command: str, shouldWait=True):
+    def is_connected(self) -&gt; bool:
         &#34;&#34;&#34;
-        Send a single command to the controller and block until a response from the controller.
+        Check if the device is connected.
 
-        Arguments:  command (str): is the command to be sent
-
-                    shouldWait (bool, optional, default True): whether to wait on the semaphore.
-                        This should normally be left default. If we have acquired the semaphore
-                        manually, then specify shouldWait = False (and don&#39;t forget to release
-                        the semaphore eventually).
-
-        Returns:    response (str): is either a string returned by the PMAC (on success), or
-                    an error message (on failure)
-
-        Exception:  HuberError when there was an I/O problem during comm with the PMAC or the
-                    response does not have recognised terminators.
-
-                    Note that PMAC may still return an &#34;ERRxxx&#34; code; this function will still
-                    consider that a successful transmission.
-
+        Returns:
+             True is the device is connected, False otherwise.
         &#34;&#34;&#34;
+
+        return bool(self.is_connection_open)
+
+    def read(self) -&gt; bytes:
+        &#34;&#34;&#34;
+        Read a response from the device.
+
+        Returns:
+            A bytes object containing the response from the device. No processing is done
+            on the response.
+        Raises:
+            A DeviceTimeoutError when the read operation timed out.
+        &#34;&#34;&#34;
+        idx, n_total = 0, 0
+        buf_size = 1024 * 10
+        response = bytes()
+
+        # Set a timeout of READ_TIMEOUT to the socket.recv
+
+        saved_timeout = self.sock.gettimeout()
+        self.sock.settimeout(READ_TIMEOUT)
 
         try:
-            if shouldWait:
-                self.semaphore.acquire()
-
-            # Attempt to send the complete command to HUBER
-
-            self.sock.sendall(command.encode())
-            # logger.debug(f&#39;Sent out to HUBER: {command!r}&#39;)
-
-            # Give the SMC time to fill the buffer
-            # time.sleep(0.001)
-
-            # wait for, read and return the response from HUBER (will be at most TBD chars)
-
-            # logger.debug (f&#34;Receiving data after cmd=&#39;{command!r}&#39;...&#34;)
-            response = self.wait_for_response()
-            # logger.debug(f&#39;Received from HUBER: {response!r}&#39;)
-
-            return response.decode()[:-2]
-
+            for _ in range(100):
+                # time.sleep(0.1)  # Give the device time to fill the buffer
+                data = self.sock.recv(buf_size)
+                n = len(data)
+                n_total += n
+                response += data
+                if n &lt; buf_size:
+                    break
         except socket.timeout as e_timeout:
-            raise HuberError(&#39;Socket timeout error&#39;) from e_timeout
-        except socket.error as e_socket:
-            # Interpret any socket-related error as an I/O error
-            raise HuberError(&#39;Socket communication error.&#39;) from e_socket
+            MODULE_LOGGER.warning(f&#34;Socket timeout error: {e_timeout}&#34;)
+            raise DeviceTimeoutError(DEVICE_NAME, &#34;Socket timeout error&#34;) from e_timeout
         finally:
-            if shouldWait:
-                self.semaphore.release()
+            self.sock.settimeout(saved_timeout)
 
-    def send_direct_command(self, command: str, shouldWait=False):
+        # logger.debug(f&#34;Total number of bytes received is {n_total}, idx={idx}&#34;)
+        # logger.debug(f&#34;&gt; {response[:80]=}&#34;)
+
+        return response
+
+    def write(self, command: str) -&gt; None:
         &#34;&#34;&#34;
-        Send a single command to the controller.
+        Send a command to the device.
 
-        :param str command: is the command string to be sent
+        No processing is done on the command string, except for the encoding into a bytes object.
 
-        :param bool shouldWait: whether to wait on the semaphore. Default is False
-                        This should normally be left default. If we have acquired the semaphore manually,
-                        then specify shouldWait = False (and don&#39;t forget to release the semaphore eventually).
+        Args:
+            command: the command string including terminators.
 
-        :raises: HuberError when there was an I/O problem during communication with the HUBER.
-
+        Raises:
+            A DeviceTimeoutError when the sendall() timed out, and a DeviceConnectionError if
+            there was a socket related error.
         &#34;&#34;&#34;
+
+        # MODULE_LOGGER.debug(f&#34;{command.encode() = }&#34;)
 
         try:
-            if shouldWait:
-                self.semaphore.acquire()
-
-            # Attempt to send the complete command to HUBER
-
             self.sock.sendall(command.encode())
-            # logger.debug(f&#39;Sent out to HUBER: {command!r}&#39;)
 
             # Give the SMC time to start a new command: see issue #1209
             time.sleep(0.5)
 
         except socket.timeout as e_timeout:
-            raise HuberError(&#39;Socket timeout error&#39;) from e_timeout
+            raise DeviceTimeoutError(DEVICE_NAME, &#34;Socket timeout error&#34;) from e_timeout
         except socket.error as e_socket:
             # Interpret any socket-related error as an I/O error
-            raise HuberError(&#39;Socket communication error.&#39;) from e_socket
-        finally:
-            if shouldWait:
-                self.semaphore.release()
+            raise DeviceConnectionError(DEVICE_NAME, &#34;Socket communication error.&#34;) from e_socket
 
-    def wait_for_response(self):
-        n_total = 0
-        buf_size = 2048
+    def trans(self, command: str) -&gt; bytes:
+        &#34;&#34;&#34;
+        Send a command to the device and wait for the response.
+
+        No processing is done on the command string, except for the encoding into a bytes object.
+
+        Args:
+            command: the command string including terminators.
+
+        Returns:
+            A bytes object containing the response from the device. No processing is done
+            on the response.
+
+        Raises:
+            A DeviceTimeoutError when the sendall() timed out, and a DeviceConnectionError if
+            there was a socket related error.
+        &#34;&#34;&#34;
+        # MODULE_LOGGER.debug(f&#34;{command.encode() = }&#34;)
 
         try:
-            for idx in range(100):
-                # Give the SMC time to fill the buffer
-                # time.sleep(0.05)
-                data = self.sock.recv(buf_size)
-                n = len(data)
-                # logger.debug (f&#34;recv: {data.decode()!r}&#34;)
-                n_total += n
-                if n &lt; buf_size:
-                    break
+            # Attempt to send the complete command
+
+            self.sock.sendall(command.encode())
+
+            # wait for, read and return the response (will be at most TBD chars)
+
+            return self.read()
+
         except socket.timeout as e_timeout:
-            logger.warning(f&#34;Socket timeout error from {e_timeout}&#34;)
-            return b&#39;\r\n&#39;
-
-        # logger.debug (f&#34;Total number of bytes received is {n_total}, idx={idx}&#34;)
-
-        return data
-
-    def wait_until_axis_ready(self, axis):
-        &#34;&#34;&#34;
-        Send the given axis a status query and wait for the response.
-
-        This function will return only when one of the following states has been reached:
-
-        1. The LIMIT- switch was activated
-        2. The LIMIT+ switch was activated
-        3. The end position was reached, axis ready (bit 0) &amp; controller ready (bit 7)
-
-        :return: 0 on success, i.e. position is reached
-        :return: +1 when LIMIT+ switch is reached
-        :return: -1 when LIMIT- switch is reached
-        &#34;&#34;&#34;
-        logger.debug(f&#34;Wait until axis {axis} is ready...&#34;)
-        while True:
-            time.sleep(0.5)
-            response = self.get_response(cmd_q_state.get_cmd_string(axis))
-            # response is e.g. &#39;1:&lt;status&gt;;&#39;
-            # cut &#39;1:&#39; and &#39;;&#39;
-            response = response[2:-1]
-            status = int(response)
-
-            logger.debug(f&#34;Status for axis {axis}: {beautify_binary(status)} ({status})&#34;)
-
-            if status &amp; 4 == 4:
-                logger.debug (&#34;LIMIT- active!&#34;)
-                rv = -1
-                break
-
-            if status &amp; 8 == 8:
-                logger.debug (&#34;LIMIT+ active!&#34;)
-                rv = +1
-                break
-
-            if status &amp; 512 == 512:
-                logger.error(f&#34;oscillation positioning error (encoder)&#34;)
-
-            if status &amp; 129 == 129:
-                # exit loop when position is reached
-                # status bit 0 and bit 7 indicate &#39;axis ready&#39; AND &#39;controller ready&#39; (i.e. all axes stopped)
-                rv = 0
-                break
-
-            if status &amp; 16384:
-                response = self.get_response(cmd_q_error.get_cmd_string(axis))
-                logger.error(f&#34;ERROR on axis {axis}: {response}&#34;)
-                self.send_direct_command(cmd_cerr.get_cmd_string(axis))
+            raise DeviceTimeoutError(DEVICE_NAME, &#34;Socket timeout error&#34;) from e_timeout
+        except socket.error as e_socket:
+            # Interpret any socket-related error as an I/O error
+            raise DeviceConnectionError(DEVICE_NAME, &#34;Socket communication error.&#34;) from e_socket
 
 
-        # The sleep of 0.5s here is empirically determined because tests failed randomly because the position was
-        # apparently not completely reached. We also noticed an oscilation when arriving at a certain position.
-        # A daignostic test revealed that the status sometimes changes bit 0 and bit 7 indicating the axis/controller
-        # ready before the mechanism actually reached the setpoont. We need about 0.2s before the actual value is
-        # reached, 0.5 seconds is a safe wait time.
+if __name__ == &#34;__main__&#34;:
 
-        time.sleep(0.5)
+    from rich import print
 
-        return rv</code></pre>
+    def send_command(cmd):
+        cmd = cmd.rstrip()
+        with Timer(f&#34;{DEVICE_NAME} Query&#34;):
+            response = huber.query(cmd + &#34;\r\n&#34;)
+        print(f&#34;{format_datetime()} Response for {cmd:&gt;20s}: {response}&#34;)
+        response = response.rstrip()
+        return response
+
+    huber = HuberSMC9300EthernetInterface()
+
+    print(f&#34;{&#39; &#39; :-&gt;10} Connecting to {DEVICE_NAME}..&#34;)
+
+    huber.connect()
+
+    print(f&#34;{&#39; &#39; :-&gt;10} Requesting info..&#34;)
+
+    send_command(&#34;?&#34;)
+    send_command(&#34;?v&#34;)
+    send_command(&#34;?s1&#34;)
+    send_command(&#34;?status1&#34;)
+    send_command(&#34;?status2&#34;)
+    send_command(&#34;?status3&#34;)
+    send_command(&#34;?err1&#34;)
+    send_command(&#34;?conf1&#34;)
+    send_command(&#34;?conf2&#34;)
+    send_command(&#34;?conf3&#34;)
+    send_command(&#34;?p1&#34;)
+    send_command(&#34;?e1&#34;)
+    send_command(&#34;?ec1&#34;)
+    send_command(&#34;?ip&#34;)
+    send_command(&#34;?pgm&#34;)  # command not yet available
+    send_command(&#34;?ffast1&#34;)
+    send_command(&#34;?ffast2&#34;)
+    send_command(&#34;?ffast3&#34;)
+
+    print(f&#34;{&#39; &#39; :-&gt;10} Closing connection..&#34;)
+
+    huber.disconnect()</code></pre>
 </details>
 </section>
 <section>
@@ -474,53 +456,87 @@ Arguments can be positional or keyword arguments, not both.</p></div>
 </dd>
 <dt id="egse.stages.huber.smc9300_devif.HuberSMC9300EthernetInterface"><code class="flex name class">
 <span>class <span class="ident">HuberSMC9300EthernetInterface</span></span>
+<span>(</span><span>hostname: str = None, port: int = None)</span>
 </code></dt>
 <dd>
-<div class="desc"></div>
+<div class="desc"><p>Defines the low-level interface to the HUBER stages controller.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>hostname</code></strong> :&ensp;<code>str</code></dt>
+<dd>the IP address or fully qualified hostname of the OGSE hardware
+controller. The default is defined in the <code>settings.yaml</code> configuration file.</dd>
+<dt><strong><code>port</code></strong> :&ensp;<code>int</code></dt>
+<dd>the IP port number to connect to. The default is defined in the
+<code>settings.yaml</code> configuration file.</dd>
+</dl></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">class HuberSMC9300EthernetInterface(object):
-    def __init__(self):
+<pre><code class="python">class HuberSMC9300EthernetInterface(DeviceConnectionInterface, DeviceTransport):
+    &#34;&#34;&#34;
+    Defines the low-level interface to the HUBER stages controller.
 
-        self.modelName = None  # Will be initialized by the getHuberModel() call
+    Args:
+        hostname (str): the IP address or fully qualified hostname of the OGSE hardware
+            controller. The default is defined in the ``settings.yaml`` configuration file.
+
+        port (int): the IP port number to connect to. The default is defined in the
+            `settings.yaml` configuration file.
+    &#34;&#34;&#34;
+    def __init__(self, hostname: str = None, port: int = None):
+
+        super().__init__()
 
         # Basic connection settings, loaded from the configuration YAML file
 
-        self.hostname = huber_settings.HOSTNAME
-        self.port = huber_settings.PORT
+        self.hostname = hostname or HUBER_SETTINGS.HOSTNAME
+        self.port = port or HUBER_SETTINGS.PORT
+        self.sock = None
 
         # Access-to-the-connection semaphore. Use this to lock/unlock I/O access to the
         # connection (whatever type it is) in child classes.
 
         self.semaphore = threading.Semaphore()
 
-        self.isConnectionOpen = False
+        self.is_connection_open = False
 
-        self._num_axes = huber_settings.NUMBER_OF_AXES
-
-    def setConnectionParameters(self, host=&#34;localhost&#34;, port=None):
-        self.hostname = str(host)
-        if port is not None:
-            self.port = int(str(port))
+        self._num_axes = HUBER_SETTINGS.NUMBER_OF_AXES
 
     def connect(self):
+        &#34;&#34;&#34;
+        Connects the TCP socket to the device controller.
 
+        Returns:
+            None.
+
+        Raises:
+            ValueError when hostname or port number are not initialized properly.
+
+            DeviceConnectionError on any socket error except timeouts.
+
+            DeviceTimeoutError on a socket timeout.
+        &#34;&#34;&#34;
         # Sanity checks
 
-        if self.isConnectionOpen:
-            raise HuberError(&#39;Socket is already open&#39;)
-        if self.hostname in (None, &#39;&#39;):
-            raise HuberError(&#39;ERROR: hostname not initialized&#39;)
+        if self.is_connection_open:
+            MODULE_LOGGER.warning(
+                f&#34;{DEVICE_NAME}: trying to connect to an already connected socket.&#34;)
+            return
+
+        if self.hostname in (None, &#34;&#34;):
+            raise ValueError(f&#34;{DEVICE_NAME}: hostname is not initialized.&#34;)
+
         if self.port in (None, 0):
-            raise HuberError(&#39;ERROR: port number not initialized&#39;)
+            raise ValueError(f&#34;{DEVICE_NAME}: port number is not initialized.&#34;)
 
         # Create a new socket instance
 
         try:
             self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            #self.sock.setblocking(1)
+
+            # self.sock.setblocking(1)
+
             # DON&#39;T set a timeout on the socket, this will not result in the expected behavior.
             #
             # If the timeout is set, this will result in the following problem:
@@ -531,292 +547,250 @@ Arguments can be positional or keyword arguments, not both.</p></div>
             # WARNING  263    huber.py  wait_for_response: Socket timeout error from timed out
             # DEBUG    200    huber.py  get_response: Received from HUBER: b&#39;\r\n&#39;
             #
-            #self.sock.settimeout(3)
+
+            # self.sock.settimeout(3)
+
         except socket.error as e_socket:
-            raise HuberError(&#34;ERROR: Failed to create socket.&#34;) from e_socket
+            raise DeviceConnectionError(DEVICE_NAME, &#34;Failed to create socket.&#34;) from e_socket
 
         # Attempt to establish a connection to the remote host
 
         # FIXME: Socket shall be closed on exception?
 
         # We set a timeout of 3 sec before connecting and reset to None
-        # (=blocking) after the connect. The reason for this is because when no
-        # HUBER SMC is available, e.g during testing, the timeout will take about
+        # (=blocking) after the connect() method. The reason for this that when no
+        # HUBER SMC is available, e.g. during testing, the timeout will take about
         # two minutes which is way too long. It needs to be evaluated if this
         # approach is acceptable and not causing problems during production.
 
         try:
-            logger.debug(f&#39;Connecting a socket to host &#34;{self.hostname}&#34; using port {self.port}&#39;)
-            self.sock.settimeout(3)
+            MODULE_LOGGER.debug(
+                f&#39;Connecting a socket to host &#34;{self.hostname}&#34; using port {self.port}&#39;)
+            self.sock.settimeout(CONNECT_TIMEOUT)
             self.sock.connect((self.hostname, self.port))
             self.sock.settimeout(None)
-        except ConnectionRefusedError as e_cr:
-            raise HuberError(f&#39;ERROR: Connection refused to {self.hostname}&#39;) from e_cr
-        except TimeoutError as e_timeout:
-            raise HuberError(f&#39;ERROR: Connection to {self.hostname} timed out&#39;) from e_timeout
-        except socket.gaierror as e_gai:
-            raise HuberError(f&#39;ERROR: socket address info error for {self.hostname}&#39;) from e_gai
-        except socket.herror as e_h:
-            raise HuberError(f&#39;ERROR: socket host address error for {self.hostname}&#39;) from e_h
-        except socket.timeout as e_timeout:
-            raise HuberError(f&#39;ERROR: socket timeout error for {self.hostname}&#39;) from e_timeout
-        except OSError as ose:
-            raise HuberError(f&#34;ERROR: OSError caught ({ose}).&#34;) from ose
+        except ConnectionRefusedError as exc:
+            raise DeviceConnectionError(
+                DEVICE_NAME, f&#34;Connection refused to {self.hostname}:{self.port}.&#34;
+            ) from exc
+        except TimeoutError as exc:
+            raise DeviceTimeoutError(
+                DEVICE_NAME, f&#34;Connection to {self.hostname}:{self.port} timed out.&#34;
+            ) from exc
+        except socket.gaierror as exc:
+            raise DeviceConnectionError(
+                DEVICE_NAME, f&#34;socket address info error for {self.hostname}&#34;
+            ) from exc
+        except socket.herror as exc:
+            raise DeviceConnectionError(
+                DEVICE_NAME, f&#34;socket host address error for {self.hostname}&#34;
+            ) from exc
+        except socket.timeout as exc:
+            raise DeviceTimeoutError(
+                DEVICE_NAME, f&#34;socket timeout error for {self.hostname}:{self.port}&#34;
+            ) from exc
+        except OSError as exc:
+            raise DeviceConnectionError(DEVICE_NAME, f&#34;OSError caught ({exc}).&#34;) from exc
 
-        self.isConnectionOpen = True
+        self.is_connection_open = True
 
         # The first thing to receive should be the &#39;smc 1.2.1093&#39; string.
 
-        response = self.wait_for_response()
-        logger.debug(f&#34;After connection, we got &#39;{response}&#39; as a response.&#34;)
-
-        # Check that we are connected to a pmac by issuing the &#34;VERSION&#34; command -- expecting the 1.947 in return.
-        # If we don&#39;t get the right response, then disconnect automatically
-
-        if not self.is_connected():
-            raise HuberError(f&#34;Device is not connected, check logging messages for the cause.&#34;)
+        response = self.read()
+        MODULE_LOGGER.debug(f&#34;After connection, we got &#39;{response}&#39; as a response.&#34;)
 
     def disconnect(self):
         &#34;&#34;&#34;
-        Disconnect from the Ethernet connection.
+        Disconnect the Ethernet connection from the device controller.
 
-        Raises a HuberError on failure.
+        Raises:
+             a DeviceConnectionError on failure.
         &#34;&#34;&#34;
         try:
-            if self.isConnectionOpen:
-                logger.debug(f&#39;Disconnecting from {self.hostname}&#39;)
+            if self.is_connection_open:
+                MODULE_LOGGER.debug(f&#39;Disconnecting from {self.hostname}&#39;)
                 self.semaphore.acquire()
                 self.sock.close()
                 self.semaphore.release()
-                self.isConnectionOpen = False
+                self.is_connection_open = False
         except Exception as e_exc:
-            raise HuberError(f&#34;Could not close socket to {self.hostname}&#34;) from e_exc
+            raise DeviceConnectionError(
+                DEVICE_NAME, f&#34;Could not close socket to {self.hostname}&#34;) from e_exc
 
-    def is_connected(self):
+    def reconnect(self):
 
-        if not self.isConnectionOpen:
-            return False
-
-        try:
-            response = self.get_response(cmd_q_version.get_cmd_string())
-        except HuberError as e_huber:
-            if len(e_huber.args) &gt;= 2 and e_huber.args[1] == -1:
-                logger.error(f&#39;While trying to talk to the device the following exception occured, exception={e_huber}&#39;)
-                logger.error(f&#34;Most probably the client connection was closed. Disconnectiing...&#34;)
-                self.disconnect()
-                return False
-            else:
-                logger.error(f&#39;While trying to talk to the device the following exception occured, exception={e_huber}&#39;)
-                self.disconnect()
-                return False
-        finally:
-            pass
-
-        version = response
-
-        if not version:
-            # if the response was not matching the regex then we&#39;re not talking to a PMAC!
-            logger.error(f&#39;Device did not respond correctly to a &#34;VERSION&#34; command, response={response}. Disconnecting...&#39;)
+        if self.is_connection_open:
             self.disconnect()
-            return False
+        self.connect()
 
-        return True
-
-    def get_response(self, command: str, shouldWait=True):
+    def is_connected(self) -&gt; bool:
         &#34;&#34;&#34;
-        Send a single command to the controller and block until a response from the controller.
+        Check if the device is connected.
 
-        Arguments:  command (str): is the command to be sent
-
-                    shouldWait (bool, optional, default True): whether to wait on the semaphore.
-                        This should normally be left default. If we have acquired the semaphore
-                        manually, then specify shouldWait = False (and don&#39;t forget to release
-                        the semaphore eventually).
-
-        Returns:    response (str): is either a string returned by the PMAC (on success), or
-                    an error message (on failure)
-
-        Exception:  HuberError when there was an I/O problem during comm with the PMAC or the
-                    response does not have recognised terminators.
-
-                    Note that PMAC may still return an &#34;ERRxxx&#34; code; this function will still
-                    consider that a successful transmission.
-
+        Returns:
+             True is the device is connected, False otherwise.
         &#34;&#34;&#34;
+
+        return bool(self.is_connection_open)
+
+    def read(self) -&gt; bytes:
+        &#34;&#34;&#34;
+        Read a response from the device.
+
+        Returns:
+            A bytes object containing the response from the device. No processing is done
+            on the response.
+        Raises:
+            A DeviceTimeoutError when the read operation timed out.
+        &#34;&#34;&#34;
+        idx, n_total = 0, 0
+        buf_size = 1024 * 10
+        response = bytes()
+
+        # Set a timeout of READ_TIMEOUT to the socket.recv
+
+        saved_timeout = self.sock.gettimeout()
+        self.sock.settimeout(READ_TIMEOUT)
 
         try:
-            if shouldWait:
-                self.semaphore.acquire()
-
-            # Attempt to send the complete command to HUBER
-
-            self.sock.sendall(command.encode())
-            # logger.debug(f&#39;Sent out to HUBER: {command!r}&#39;)
-
-            # Give the SMC time to fill the buffer
-            # time.sleep(0.001)
-
-            # wait for, read and return the response from HUBER (will be at most TBD chars)
-
-            # logger.debug (f&#34;Receiving data after cmd=&#39;{command!r}&#39;...&#34;)
-            response = self.wait_for_response()
-            # logger.debug(f&#39;Received from HUBER: {response!r}&#39;)
-
-            return response.decode()[:-2]
-
+            for _ in range(100):
+                # time.sleep(0.1)  # Give the device time to fill the buffer
+                data = self.sock.recv(buf_size)
+                n = len(data)
+                n_total += n
+                response += data
+                if n &lt; buf_size:
+                    break
         except socket.timeout as e_timeout:
-            raise HuberError(&#39;Socket timeout error&#39;) from e_timeout
-        except socket.error as e_socket:
-            # Interpret any socket-related error as an I/O error
-            raise HuberError(&#39;Socket communication error.&#39;) from e_socket
+            MODULE_LOGGER.warning(f&#34;Socket timeout error: {e_timeout}&#34;)
+            raise DeviceTimeoutError(DEVICE_NAME, &#34;Socket timeout error&#34;) from e_timeout
         finally:
-            if shouldWait:
-                self.semaphore.release()
+            self.sock.settimeout(saved_timeout)
 
-    def send_direct_command(self, command: str, shouldWait=False):
+        # logger.debug(f&#34;Total number of bytes received is {n_total}, idx={idx}&#34;)
+        # logger.debug(f&#34;&gt; {response[:80]=}&#34;)
+
+        return response
+
+    def write(self, command: str) -&gt; None:
         &#34;&#34;&#34;
-        Send a single command to the controller.
+        Send a command to the device.
 
-        :param str command: is the command string to be sent
+        No processing is done on the command string, except for the encoding into a bytes object.
 
-        :param bool shouldWait: whether to wait on the semaphore. Default is False
-                        This should normally be left default. If we have acquired the semaphore manually,
-                        then specify shouldWait = False (and don&#39;t forget to release the semaphore eventually).
+        Args:
+            command: the command string including terminators.
 
-        :raises: HuberError when there was an I/O problem during communication with the HUBER.
-
+        Raises:
+            A DeviceTimeoutError when the sendall() timed out, and a DeviceConnectionError if
+            there was a socket related error.
         &#34;&#34;&#34;
+
+        # MODULE_LOGGER.debug(f&#34;{command.encode() = }&#34;)
 
         try:
-            if shouldWait:
-                self.semaphore.acquire()
-
-            # Attempt to send the complete command to HUBER
-
             self.sock.sendall(command.encode())
-            # logger.debug(f&#39;Sent out to HUBER: {command!r}&#39;)
 
             # Give the SMC time to start a new command: see issue #1209
             time.sleep(0.5)
 
         except socket.timeout as e_timeout:
-            raise HuberError(&#39;Socket timeout error&#39;) from e_timeout
+            raise DeviceTimeoutError(DEVICE_NAME, &#34;Socket timeout error&#34;) from e_timeout
         except socket.error as e_socket:
             # Interpret any socket-related error as an I/O error
-            raise HuberError(&#39;Socket communication error.&#39;) from e_socket
-        finally:
-            if shouldWait:
-                self.semaphore.release()
+            raise DeviceConnectionError(DEVICE_NAME, &#34;Socket communication error.&#34;) from e_socket
 
-    def wait_for_response(self):
-        n_total = 0
-        buf_size = 2048
+    def trans(self, command: str) -&gt; bytes:
+        &#34;&#34;&#34;
+        Send a command to the device and wait for the response.
+
+        No processing is done on the command string, except for the encoding into a bytes object.
+
+        Args:
+            command: the command string including terminators.
+
+        Returns:
+            A bytes object containing the response from the device. No processing is done
+            on the response.
+
+        Raises:
+            A DeviceTimeoutError when the sendall() timed out, and a DeviceConnectionError if
+            there was a socket related error.
+        &#34;&#34;&#34;
+        # MODULE_LOGGER.debug(f&#34;{command.encode() = }&#34;)
 
         try:
-            for idx in range(100):
-                # Give the SMC time to fill the buffer
-                # time.sleep(0.05)
-                data = self.sock.recv(buf_size)
-                n = len(data)
-                # logger.debug (f&#34;recv: {data.decode()!r}&#34;)
-                n_total += n
-                if n &lt; buf_size:
-                    break
+            # Attempt to send the complete command
+
+            self.sock.sendall(command.encode())
+
+            # wait for, read and return the response (will be at most TBD chars)
+
+            return self.read()
+
         except socket.timeout as e_timeout:
-            logger.warning(f&#34;Socket timeout error from {e_timeout}&#34;)
-            return b&#39;\r\n&#39;
-
-        # logger.debug (f&#34;Total number of bytes received is {n_total}, idx={idx}&#34;)
-
-        return data
-
-    def wait_until_axis_ready(self, axis):
-        &#34;&#34;&#34;
-        Send the given axis a status query and wait for the response.
-
-        This function will return only when one of the following states has been reached:
-
-        1. The LIMIT- switch was activated
-        2. The LIMIT+ switch was activated
-        3. The end position was reached, axis ready (bit 0) &amp; controller ready (bit 7)
-
-        :return: 0 on success, i.e. position is reached
-        :return: +1 when LIMIT+ switch is reached
-        :return: -1 when LIMIT- switch is reached
-        &#34;&#34;&#34;
-        logger.debug(f&#34;Wait until axis {axis} is ready...&#34;)
-        while True:
-            time.sleep(0.5)
-            response = self.get_response(cmd_q_state.get_cmd_string(axis))
-            # response is e.g. &#39;1:&lt;status&gt;;&#39;
-            # cut &#39;1:&#39; and &#39;;&#39;
-            response = response[2:-1]
-            status = int(response)
-
-            logger.debug(f&#34;Status for axis {axis}: {beautify_binary(status)} ({status})&#34;)
-
-            if status &amp; 4 == 4:
-                logger.debug (&#34;LIMIT- active!&#34;)
-                rv = -1
-                break
-
-            if status &amp; 8 == 8:
-                logger.debug (&#34;LIMIT+ active!&#34;)
-                rv = +1
-                break
-
-            if status &amp; 512 == 512:
-                logger.error(f&#34;oscillation positioning error (encoder)&#34;)
-
-            if status &amp; 129 == 129:
-                # exit loop when position is reached
-                # status bit 0 and bit 7 indicate &#39;axis ready&#39; AND &#39;controller ready&#39; (i.e. all axes stopped)
-                rv = 0
-                break
-
-            if status &amp; 16384:
-                response = self.get_response(cmd_q_error.get_cmd_string(axis))
-                logger.error(f&#34;ERROR on axis {axis}: {response}&#34;)
-                self.send_direct_command(cmd_cerr.get_cmd_string(axis))
-
-
-        # The sleep of 0.5s here is empirically determined because tests failed randomly because the position was
-        # apparently not completely reached. We also noticed an oscilation when arriving at a certain position.
-        # A daignostic test revealed that the status sometimes changes bit 0 and bit 7 indicating the axis/controller
-        # ready before the mechanism actually reached the setpoont. We need about 0.2s before the actual value is
-        # reached, 0.5 seconds is a safe wait time.
-
-        time.sleep(0.5)
-
-        return rv</code></pre>
+            raise DeviceTimeoutError(DEVICE_NAME, &#34;Socket timeout error&#34;) from e_timeout
+        except socket.error as e_socket:
+            # Interpret any socket-related error as an I/O error
+            raise DeviceConnectionError(DEVICE_NAME, &#34;Socket communication error.&#34;) from e_socket</code></pre>
 </details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="egse.device.DeviceConnectionInterface" href="../../device.html#egse.device.DeviceConnectionInterface">DeviceConnectionInterface</a></li>
+<li><a title="egse.device.DeviceConnectionObservable" href="../../device.html#egse.device.DeviceConnectionObservable">DeviceConnectionObservable</a></li>
+<li><a title="egse.device.DeviceTransport" href="../../device.html#egse.device.DeviceTransport">DeviceTransport</a></li>
+</ul>
 <h3>Methods</h3>
 <dl>
 <dt id="egse.stages.huber.smc9300_devif.HuberSMC9300EthernetInterface.connect"><code class="name flex">
 <span>def <span class="ident">connect</span></span>(<span>self)</span>
 </code></dt>
 <dd>
-<div class="desc"></div>
+<div class="desc"><p>Connects the TCP socket to the device controller.</p>
+<h2 id="returns">Returns</h2>
+<p>None.</p>
+<h2 id="raises">Raises</h2>
+<p>ValueError when hostname or port number are not initialized properly.</p>
+<p>DeviceConnectionError on any socket error except timeouts.</p>
+<p>DeviceTimeoutError on a socket timeout.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def connect(self):
+    &#34;&#34;&#34;
+    Connects the TCP socket to the device controller.
 
+    Returns:
+        None.
+
+    Raises:
+        ValueError when hostname or port number are not initialized properly.
+
+        DeviceConnectionError on any socket error except timeouts.
+
+        DeviceTimeoutError on a socket timeout.
+    &#34;&#34;&#34;
     # Sanity checks
 
-    if self.isConnectionOpen:
-        raise HuberError(&#39;Socket is already open&#39;)
-    if self.hostname in (None, &#39;&#39;):
-        raise HuberError(&#39;ERROR: hostname not initialized&#39;)
+    if self.is_connection_open:
+        MODULE_LOGGER.warning(
+            f&#34;{DEVICE_NAME}: trying to connect to an already connected socket.&#34;)
+        return
+
+    if self.hostname in (None, &#34;&#34;):
+        raise ValueError(f&#34;{DEVICE_NAME}: hostname is not initialized.&#34;)
+
     if self.port in (None, 0):
-        raise HuberError(&#39;ERROR: port number not initialized&#39;)
+        raise ValueError(f&#34;{DEVICE_NAME}: port number is not initialized.&#34;)
 
     # Create a new socket instance
 
     try:
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        #self.sock.setblocking(1)
+
+        # self.sock.setblocking(1)
+
         # DON&#39;T set a timeout on the socket, this will not result in the expected behavior.
         #
         # If the timeout is set, this will result in the following problem:
@@ -827,373 +801,284 @@ Arguments can be positional or keyword arguments, not both.</p></div>
         # WARNING  263    huber.py  wait_for_response: Socket timeout error from timed out
         # DEBUG    200    huber.py  get_response: Received from HUBER: b&#39;\r\n&#39;
         #
-        #self.sock.settimeout(3)
+
+        # self.sock.settimeout(3)
+
     except socket.error as e_socket:
-        raise HuberError(&#34;ERROR: Failed to create socket.&#34;) from e_socket
+        raise DeviceConnectionError(DEVICE_NAME, &#34;Failed to create socket.&#34;) from e_socket
 
     # Attempt to establish a connection to the remote host
 
     # FIXME: Socket shall be closed on exception?
 
     # We set a timeout of 3 sec before connecting and reset to None
-    # (=blocking) after the connect. The reason for this is because when no
-    # HUBER SMC is available, e.g during testing, the timeout will take about
+    # (=blocking) after the connect() method. The reason for this that when no
+    # HUBER SMC is available, e.g. during testing, the timeout will take about
     # two minutes which is way too long. It needs to be evaluated if this
     # approach is acceptable and not causing problems during production.
 
     try:
-        logger.debug(f&#39;Connecting a socket to host &#34;{self.hostname}&#34; using port {self.port}&#39;)
-        self.sock.settimeout(3)
+        MODULE_LOGGER.debug(
+            f&#39;Connecting a socket to host &#34;{self.hostname}&#34; using port {self.port}&#39;)
+        self.sock.settimeout(CONNECT_TIMEOUT)
         self.sock.connect((self.hostname, self.port))
         self.sock.settimeout(None)
-    except ConnectionRefusedError as e_cr:
-        raise HuberError(f&#39;ERROR: Connection refused to {self.hostname}&#39;) from e_cr
-    except TimeoutError as e_timeout:
-        raise HuberError(f&#39;ERROR: Connection to {self.hostname} timed out&#39;) from e_timeout
-    except socket.gaierror as e_gai:
-        raise HuberError(f&#39;ERROR: socket address info error for {self.hostname}&#39;) from e_gai
-    except socket.herror as e_h:
-        raise HuberError(f&#39;ERROR: socket host address error for {self.hostname}&#39;) from e_h
-    except socket.timeout as e_timeout:
-        raise HuberError(f&#39;ERROR: socket timeout error for {self.hostname}&#39;) from e_timeout
-    except OSError as ose:
-        raise HuberError(f&#34;ERROR: OSError caught ({ose}).&#34;) from ose
+    except ConnectionRefusedError as exc:
+        raise DeviceConnectionError(
+            DEVICE_NAME, f&#34;Connection refused to {self.hostname}:{self.port}.&#34;
+        ) from exc
+    except TimeoutError as exc:
+        raise DeviceTimeoutError(
+            DEVICE_NAME, f&#34;Connection to {self.hostname}:{self.port} timed out.&#34;
+        ) from exc
+    except socket.gaierror as exc:
+        raise DeviceConnectionError(
+            DEVICE_NAME, f&#34;socket address info error for {self.hostname}&#34;
+        ) from exc
+    except socket.herror as exc:
+        raise DeviceConnectionError(
+            DEVICE_NAME, f&#34;socket host address error for {self.hostname}&#34;
+        ) from exc
+    except socket.timeout as exc:
+        raise DeviceTimeoutError(
+            DEVICE_NAME, f&#34;socket timeout error for {self.hostname}:{self.port}&#34;
+        ) from exc
+    except OSError as exc:
+        raise DeviceConnectionError(DEVICE_NAME, f&#34;OSError caught ({exc}).&#34;) from exc
 
-    self.isConnectionOpen = True
+    self.is_connection_open = True
 
     # The first thing to receive should be the &#39;smc 1.2.1093&#39; string.
 
-    response = self.wait_for_response()
-    logger.debug(f&#34;After connection, we got &#39;{response}&#39; as a response.&#34;)
-
-    # Check that we are connected to a pmac by issuing the &#34;VERSION&#34; command -- expecting the 1.947 in return.
-    # If we don&#39;t get the right response, then disconnect automatically
-
-    if not self.is_connected():
-        raise HuberError(f&#34;Device is not connected, check logging messages for the cause.&#34;)</code></pre>
+    response = self.read()
+    MODULE_LOGGER.debug(f&#34;After connection, we got &#39;{response}&#39; as a response.&#34;)</code></pre>
 </details>
 </dd>
 <dt id="egse.stages.huber.smc9300_devif.HuberSMC9300EthernetInterface.disconnect"><code class="name flex">
 <span>def <span class="ident">disconnect</span></span>(<span>self)</span>
 </code></dt>
 <dd>
-<div class="desc"><p>Disconnect from the Ethernet connection.</p>
-<p>Raises a HuberError on failure.</p></div>
+<div class="desc"><p>Disconnect the Ethernet connection from the device controller.</p>
+<h2 id="raises">Raises</h2>
+<p>a DeviceConnectionError on failure.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def disconnect(self):
     &#34;&#34;&#34;
-    Disconnect from the Ethernet connection.
+    Disconnect the Ethernet connection from the device controller.
 
-    Raises a HuberError on failure.
+    Raises:
+         a DeviceConnectionError on failure.
     &#34;&#34;&#34;
     try:
-        if self.isConnectionOpen:
-            logger.debug(f&#39;Disconnecting from {self.hostname}&#39;)
+        if self.is_connection_open:
+            MODULE_LOGGER.debug(f&#39;Disconnecting from {self.hostname}&#39;)
             self.semaphore.acquire()
             self.sock.close()
             self.semaphore.release()
-            self.isConnectionOpen = False
+            self.is_connection_open = False
     except Exception as e_exc:
-        raise HuberError(f&#34;Could not close socket to {self.hostname}&#34;) from e_exc</code></pre>
-</details>
-</dd>
-<dt id="egse.stages.huber.smc9300_devif.HuberSMC9300EthernetInterface.get_response"><code class="name flex">
-<span>def <span class="ident">get_response</span></span>(<span>self, command: str, shouldWait=True)</span>
-</code></dt>
-<dd>
-<div class="desc"><p>Send a single command to the controller and block until a response from the controller.</p>
-<p>Arguments:
-command (str): is the command to be sent</p>
-<pre><code>        shouldWait (bool, optional, default True): whether to wait on the semaphore.
-            This should normally be left default. If we have acquired the semaphore
-            manually, then specify shouldWait = False (and don't forget to release
-            the semaphore eventually).
-</code></pre>
-<p>Returns:
-response (str): is either a string returned by the PMAC (on success), or
-an error message (on failure)</p>
-<p>Exception:
-HuberError when there was an I/O problem during comm with the PMAC or the
-response does not have recognised terminators.</p>
-<pre><code>        Note that PMAC may still return an "ERRxxx" code; this function will still
-        consider that a successful transmission.
-</code></pre></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def get_response(self, command: str, shouldWait=True):
-    &#34;&#34;&#34;
-    Send a single command to the controller and block until a response from the controller.
-
-    Arguments:  command (str): is the command to be sent
-
-                shouldWait (bool, optional, default True): whether to wait on the semaphore.
-                    This should normally be left default. If we have acquired the semaphore
-                    manually, then specify shouldWait = False (and don&#39;t forget to release
-                    the semaphore eventually).
-
-    Returns:    response (str): is either a string returned by the PMAC (on success), or
-                an error message (on failure)
-
-    Exception:  HuberError when there was an I/O problem during comm with the PMAC or the
-                response does not have recognised terminators.
-
-                Note that PMAC may still return an &#34;ERRxxx&#34; code; this function will still
-                consider that a successful transmission.
-
-    &#34;&#34;&#34;
-
-    try:
-        if shouldWait:
-            self.semaphore.acquire()
-
-        # Attempt to send the complete command to HUBER
-
-        self.sock.sendall(command.encode())
-        # logger.debug(f&#39;Sent out to HUBER: {command!r}&#39;)
-
-        # Give the SMC time to fill the buffer
-        # time.sleep(0.001)
-
-        # wait for, read and return the response from HUBER (will be at most TBD chars)
-
-        # logger.debug (f&#34;Receiving data after cmd=&#39;{command!r}&#39;...&#34;)
-        response = self.wait_for_response()
-        # logger.debug(f&#39;Received from HUBER: {response!r}&#39;)
-
-        return response.decode()[:-2]
-
-    except socket.timeout as e_timeout:
-        raise HuberError(&#39;Socket timeout error&#39;) from e_timeout
-    except socket.error as e_socket:
-        # Interpret any socket-related error as an I/O error
-        raise HuberError(&#39;Socket communication error.&#39;) from e_socket
-    finally:
-        if shouldWait:
-            self.semaphore.release()</code></pre>
+        raise DeviceConnectionError(
+            DEVICE_NAME, f&#34;Could not close socket to {self.hostname}&#34;) from e_exc</code></pre>
 </details>
 </dd>
 <dt id="egse.stages.huber.smc9300_devif.HuberSMC9300EthernetInterface.is_connected"><code class="name flex">
-<span>def <span class="ident">is_connected</span></span>(<span>self)</span>
+<span>def <span class="ident">is_connected</span></span>(<span>self) ‑> bool</span>
 </code></dt>
 <dd>
-<div class="desc"></div>
+<div class="desc"><p>Check if the device is connected.</p>
+<h2 id="returns">Returns</h2>
+<p>True is the device is connected, False otherwise.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def is_connected(self):
+<pre><code class="python">def is_connected(self) -&gt; bool:
+    &#34;&#34;&#34;
+    Check if the device is connected.
 
-    if not self.isConnectionOpen:
-        return False
+    Returns:
+         True is the device is connected, False otherwise.
+    &#34;&#34;&#34;
 
-    try:
-        response = self.get_response(cmd_q_version.get_cmd_string())
-    except HuberError as e_huber:
-        if len(e_huber.args) &gt;= 2 and e_huber.args[1] == -1:
-            logger.error(f&#39;While trying to talk to the device the following exception occured, exception={e_huber}&#39;)
-            logger.error(f&#34;Most probably the client connection was closed. Disconnectiing...&#34;)
-            self.disconnect()
-            return False
-        else:
-            logger.error(f&#39;While trying to talk to the device the following exception occured, exception={e_huber}&#39;)
-            self.disconnect()
-            return False
-    finally:
-        pass
-
-    version = response
-
-    if not version:
-        # if the response was not matching the regex then we&#39;re not talking to a PMAC!
-        logger.error(f&#39;Device did not respond correctly to a &#34;VERSION&#34; command, response={response}. Disconnecting...&#39;)
-        self.disconnect()
-        return False
-
-    return True</code></pre>
+    return bool(self.is_connection_open)</code></pre>
 </details>
 </dd>
-<dt id="egse.stages.huber.smc9300_devif.HuberSMC9300EthernetInterface.send_direct_command"><code class="name flex">
-<span>def <span class="ident">send_direct_command</span></span>(<span>self, command: str, shouldWait=False)</span>
+<dt id="egse.stages.huber.smc9300_devif.HuberSMC9300EthernetInterface.read"><code class="name flex">
+<span>def <span class="ident">read</span></span>(<span>self) ‑> bytes</span>
 </code></dt>
 <dd>
-<div class="desc"><p>Send a single command to the controller.</p>
-<p>:param str command: is the command string to be sent</p>
-<p>:param bool shouldWait: whether to wait on the semaphore. Default is False
-This should normally be left default. If we have acquired the semaphore manually,
-then specify shouldWait = False (and don't forget to release the semaphore eventually).</p>
-<p>:raises: HuberError when there was an I/O problem during communication with the HUBER.</p></div>
+<div class="desc"><p>Read a response from the device.</p>
+<h2 id="returns">Returns</h2>
+<p>A bytes object containing the response from the device. No processing is done
+on the response.</p>
+<h2 id="raises">Raises</h2>
+<p>A DeviceTimeoutError when the read operation timed out.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def send_direct_command(self, command: str, shouldWait=False):
+<pre><code class="python">def read(self) -&gt; bytes:
     &#34;&#34;&#34;
-    Send a single command to the controller.
+    Read a response from the device.
 
-    :param str command: is the command string to be sent
-
-    :param bool shouldWait: whether to wait on the semaphore. Default is False
-                    This should normally be left default. If we have acquired the semaphore manually,
-                    then specify shouldWait = False (and don&#39;t forget to release the semaphore eventually).
-
-    :raises: HuberError when there was an I/O problem during communication with the HUBER.
-
+    Returns:
+        A bytes object containing the response from the device. No processing is done
+        on the response.
+    Raises:
+        A DeviceTimeoutError when the read operation timed out.
     &#34;&#34;&#34;
+    idx, n_total = 0, 0
+    buf_size = 1024 * 10
+    response = bytes()
+
+    # Set a timeout of READ_TIMEOUT to the socket.recv
+
+    saved_timeout = self.sock.gettimeout()
+    self.sock.settimeout(READ_TIMEOUT)
 
     try:
-        if shouldWait:
-            self.semaphore.acquire()
+        for _ in range(100):
+            # time.sleep(0.1)  # Give the device time to fill the buffer
+            data = self.sock.recv(buf_size)
+            n = len(data)
+            n_total += n
+            response += data
+            if n &lt; buf_size:
+                break
+    except socket.timeout as e_timeout:
+        MODULE_LOGGER.warning(f&#34;Socket timeout error: {e_timeout}&#34;)
+        raise DeviceTimeoutError(DEVICE_NAME, &#34;Socket timeout error&#34;) from e_timeout
+    finally:
+        self.sock.settimeout(saved_timeout)
 
-        # Attempt to send the complete command to HUBER
+    # logger.debug(f&#34;Total number of bytes received is {n_total}, idx={idx}&#34;)
+    # logger.debug(f&#34;&gt; {response[:80]=}&#34;)
+
+    return response</code></pre>
+</details>
+</dd>
+<dt id="egse.stages.huber.smc9300_devif.HuberSMC9300EthernetInterface.trans"><code class="name flex">
+<span>def <span class="ident">trans</span></span>(<span>self, command: str) ‑> bytes</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Send a command to the device and wait for the response.</p>
+<p>No processing is done on the command string, except for the encoding into a bytes object.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>command</code></strong></dt>
+<dd>the command string including terminators.</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<p>A bytes object containing the response from the device. No processing is done
+on the response.</p>
+<h2 id="raises">Raises</h2>
+<p>A DeviceTimeoutError when the sendall() timed out, and a DeviceConnectionError if
+there was a socket related error.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def trans(self, command: str) -&gt; bytes:
+    &#34;&#34;&#34;
+    Send a command to the device and wait for the response.
+
+    No processing is done on the command string, except for the encoding into a bytes object.
+
+    Args:
+        command: the command string including terminators.
+
+    Returns:
+        A bytes object containing the response from the device. No processing is done
+        on the response.
+
+    Raises:
+        A DeviceTimeoutError when the sendall() timed out, and a DeviceConnectionError if
+        there was a socket related error.
+    &#34;&#34;&#34;
+    # MODULE_LOGGER.debug(f&#34;{command.encode() = }&#34;)
+
+    try:
+        # Attempt to send the complete command
 
         self.sock.sendall(command.encode())
-        # logger.debug(f&#39;Sent out to HUBER: {command!r}&#39;)
+
+        # wait for, read and return the response (will be at most TBD chars)
+
+        return self.read()
+
+    except socket.timeout as e_timeout:
+        raise DeviceTimeoutError(DEVICE_NAME, &#34;Socket timeout error&#34;) from e_timeout
+    except socket.error as e_socket:
+        # Interpret any socket-related error as an I/O error
+        raise DeviceConnectionError(DEVICE_NAME, &#34;Socket communication error.&#34;) from e_socket</code></pre>
+</details>
+</dd>
+<dt id="egse.stages.huber.smc9300_devif.HuberSMC9300EthernetInterface.write"><code class="name flex">
+<span>def <span class="ident">write</span></span>(<span>self, command: str) ‑> None</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Send a command to the device.</p>
+<p>No processing is done on the command string, except for the encoding into a bytes object.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>command</code></strong></dt>
+<dd>the command string including terminators.</dd>
+</dl>
+<h2 id="raises">Raises</h2>
+<p>A DeviceTimeoutError when the sendall() timed out, and a DeviceConnectionError if
+there was a socket related error.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def write(self, command: str) -&gt; None:
+    &#34;&#34;&#34;
+    Send a command to the device.
+
+    No processing is done on the command string, except for the encoding into a bytes object.
+
+    Args:
+        command: the command string including terminators.
+
+    Raises:
+        A DeviceTimeoutError when the sendall() timed out, and a DeviceConnectionError if
+        there was a socket related error.
+    &#34;&#34;&#34;
+
+    # MODULE_LOGGER.debug(f&#34;{command.encode() = }&#34;)
+
+    try:
+        self.sock.sendall(command.encode())
 
         # Give the SMC time to start a new command: see issue #1209
         time.sleep(0.5)
 
     except socket.timeout as e_timeout:
-        raise HuberError(&#39;Socket timeout error&#39;) from e_timeout
+        raise DeviceTimeoutError(DEVICE_NAME, &#34;Socket timeout error&#34;) from e_timeout
     except socket.error as e_socket:
         # Interpret any socket-related error as an I/O error
-        raise HuberError(&#39;Socket communication error.&#39;) from e_socket
-    finally:
-        if shouldWait:
-            self.semaphore.release()</code></pre>
-</details>
-</dd>
-<dt id="egse.stages.huber.smc9300_devif.HuberSMC9300EthernetInterface.setConnectionParameters"><code class="name flex">
-<span>def <span class="ident">setConnectionParameters</span></span>(<span>self, host='localhost', port=None)</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def setConnectionParameters(self, host=&#34;localhost&#34;, port=None):
-    self.hostname = str(host)
-    if port is not None:
-        self.port = int(str(port))</code></pre>
-</details>
-</dd>
-<dt id="egse.stages.huber.smc9300_devif.HuberSMC9300EthernetInterface.wait_for_response"><code class="name flex">
-<span>def <span class="ident">wait_for_response</span></span>(<span>self)</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def wait_for_response(self):
-    n_total = 0
-    buf_size = 2048
-
-    try:
-        for idx in range(100):
-            # Give the SMC time to fill the buffer
-            # time.sleep(0.05)
-            data = self.sock.recv(buf_size)
-            n = len(data)
-            # logger.debug (f&#34;recv: {data.decode()!r}&#34;)
-            n_total += n
-            if n &lt; buf_size:
-                break
-    except socket.timeout as e_timeout:
-        logger.warning(f&#34;Socket timeout error from {e_timeout}&#34;)
-        return b&#39;\r\n&#39;
-
-    # logger.debug (f&#34;Total number of bytes received is {n_total}, idx={idx}&#34;)
-
-    return data</code></pre>
-</details>
-</dd>
-<dt id="egse.stages.huber.smc9300_devif.HuberSMC9300EthernetInterface.wait_until_axis_ready"><code class="name flex">
-<span>def <span class="ident">wait_until_axis_ready</span></span>(<span>self, axis)</span>
-</code></dt>
-<dd>
-<div class="desc"><p>Send the given axis a status query and wait for the response.</p>
-<p>This function will return only when one of the following states has been reached:</p>
-<ol>
-<li>The LIMIT- switch was activated</li>
-<li>The LIMIT+ switch was activated</li>
-<li>The end position was reached, axis ready (bit 0) &amp; controller ready (bit 7)</li>
-</ol>
-<p>:return: 0 on success, i.e. position is reached
-:return: +1 when LIMIT+ switch is reached
-:return: -1 when LIMIT- switch is reached</p></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def wait_until_axis_ready(self, axis):
-    &#34;&#34;&#34;
-    Send the given axis a status query and wait for the response.
-
-    This function will return only when one of the following states has been reached:
-
-    1. The LIMIT- switch was activated
-    2. The LIMIT+ switch was activated
-    3. The end position was reached, axis ready (bit 0) &amp; controller ready (bit 7)
-
-    :return: 0 on success, i.e. position is reached
-    :return: +1 when LIMIT+ switch is reached
-    :return: -1 when LIMIT- switch is reached
-    &#34;&#34;&#34;
-    logger.debug(f&#34;Wait until axis {axis} is ready...&#34;)
-    while True:
-        time.sleep(0.5)
-        response = self.get_response(cmd_q_state.get_cmd_string(axis))
-        # response is e.g. &#39;1:&lt;status&gt;;&#39;
-        # cut &#39;1:&#39; and &#39;;&#39;
-        response = response[2:-1]
-        status = int(response)
-
-        logger.debug(f&#34;Status for axis {axis}: {beautify_binary(status)} ({status})&#34;)
-
-        if status &amp; 4 == 4:
-            logger.debug (&#34;LIMIT- active!&#34;)
-            rv = -1
-            break
-
-        if status &amp; 8 == 8:
-            logger.debug (&#34;LIMIT+ active!&#34;)
-            rv = +1
-            break
-
-        if status &amp; 512 == 512:
-            logger.error(f&#34;oscillation positioning error (encoder)&#34;)
-
-        if status &amp; 129 == 129:
-            # exit loop when position is reached
-            # status bit 0 and bit 7 indicate &#39;axis ready&#39; AND &#39;controller ready&#39; (i.e. all axes stopped)
-            rv = 0
-            break
-
-        if status &amp; 16384:
-            response = self.get_response(cmd_q_error.get_cmd_string(axis))
-            logger.error(f&#34;ERROR on axis {axis}: {response}&#34;)
-            self.send_direct_command(cmd_cerr.get_cmd_string(axis))
-
-
-    # The sleep of 0.5s here is empirically determined because tests failed randomly because the position was
-    # apparently not completely reached. We also noticed an oscilation when arriving at a certain position.
-    # A daignostic test revealed that the status sometimes changes bit 0 and bit 7 indicating the axis/controller
-    # ready before the mechanism actually reached the setpoont. We need about 0.2s before the actual value is
-    # reached, 0.5 seconds is a safe wait time.
-
-    time.sleep(0.5)
-
-    return rv</code></pre>
+        raise DeviceConnectionError(DEVICE_NAME, &#34;Socket communication error.&#34;) from e_socket</code></pre>
 </details>
 </dd>
 </dl>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="egse.device.DeviceConnectionInterface" href="../../device.html#egse.device.DeviceConnectionInterface">DeviceConnectionInterface</a></b></code>:
+<ul class="hlist">
+<li><code><a title="egse.device.DeviceConnectionInterface.add_observer" href="../../device.html#egse.device.DeviceConnectionObservable.add_observer">add_observer</a></code></li>
+<li><code><a title="egse.device.DeviceConnectionInterface.notify_observers" href="../../device.html#egse.device.DeviceConnectionObservable.notify_observers">notify_observers</a></code></li>
+<li><code><a title="egse.device.DeviceConnectionInterface.reconnect" href="../../device.html#egse.device.DeviceConnectionInterface.reconnect">reconnect</a></code></li>
+</ul>
+</li>
+<li><code><b><a title="egse.device.DeviceTransport" href="../../device.html#egse.device.DeviceTransport">DeviceTransport</a></b></code>:
+<ul class="hlist">
+<li><code><a title="egse.device.DeviceTransport.query" href="../../device.html#egse.device.DeviceTransport.query">query</a></code></li>
+</ul>
+</li>
+</ul>
 </dd>
 </dl>
 </section>
@@ -1222,15 +1107,13 @@ then specify shouldWait = False (and don't forget to release the semaphore event
 </li>
 <li>
 <h4><code><a title="egse.stages.huber.smc9300_devif.HuberSMC9300EthernetInterface" href="#egse.stages.huber.smc9300_devif.HuberSMC9300EthernetInterface">HuberSMC9300EthernetInterface</a></code></h4>
-<ul class="">
+<ul class="two-column">
 <li><code><a title="egse.stages.huber.smc9300_devif.HuberSMC9300EthernetInterface.connect" href="#egse.stages.huber.smc9300_devif.HuberSMC9300EthernetInterface.connect">connect</a></code></li>
 <li><code><a title="egse.stages.huber.smc9300_devif.HuberSMC9300EthernetInterface.disconnect" href="#egse.stages.huber.smc9300_devif.HuberSMC9300EthernetInterface.disconnect">disconnect</a></code></li>
-<li><code><a title="egse.stages.huber.smc9300_devif.HuberSMC9300EthernetInterface.get_response" href="#egse.stages.huber.smc9300_devif.HuberSMC9300EthernetInterface.get_response">get_response</a></code></li>
 <li><code><a title="egse.stages.huber.smc9300_devif.HuberSMC9300EthernetInterface.is_connected" href="#egse.stages.huber.smc9300_devif.HuberSMC9300EthernetInterface.is_connected">is_connected</a></code></li>
-<li><code><a title="egse.stages.huber.smc9300_devif.HuberSMC9300EthernetInterface.send_direct_command" href="#egse.stages.huber.smc9300_devif.HuberSMC9300EthernetInterface.send_direct_command">send_direct_command</a></code></li>
-<li><code><a title="egse.stages.huber.smc9300_devif.HuberSMC9300EthernetInterface.setConnectionParameters" href="#egse.stages.huber.smc9300_devif.HuberSMC9300EthernetInterface.setConnectionParameters">setConnectionParameters</a></code></li>
-<li><code><a title="egse.stages.huber.smc9300_devif.HuberSMC9300EthernetInterface.wait_for_response" href="#egse.stages.huber.smc9300_devif.HuberSMC9300EthernetInterface.wait_for_response">wait_for_response</a></code></li>
-<li><code><a title="egse.stages.huber.smc9300_devif.HuberSMC9300EthernetInterface.wait_until_axis_ready" href="#egse.stages.huber.smc9300_devif.HuberSMC9300EthernetInterface.wait_until_axis_ready">wait_until_axis_ready</a></code></li>
+<li><code><a title="egse.stages.huber.smc9300_devif.HuberSMC9300EthernetInterface.read" href="#egse.stages.huber.smc9300_devif.HuberSMC9300EthernetInterface.read">read</a></code></li>
+<li><code><a title="egse.stages.huber.smc9300_devif.HuberSMC9300EthernetInterface.trans" href="#egse.stages.huber.smc9300_devif.HuberSMC9300EthernetInterface.trans">trans</a></code></li>
+<li><code><a title="egse.stages.huber.smc9300_devif.HuberSMC9300EthernetInterface.write" href="#egse.stages.huber.smc9300_devif.HuberSMC9300EthernetInterface.write">write</a></code></li>
 </ul>
 </li>
 </ul>

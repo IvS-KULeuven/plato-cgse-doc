@@ -94,7 +94,6 @@ class BeagleboneDeviceInterface:
         self._dev_gpio = [None, None, None, None, None, None]
         for dev_idx, dev_name in enumerate(self.dev_gpio_names):
             self._dev_gpio[dev_idx] = Device(dev_name, config, hal)
-            self._export_leds(dev_idx)
             
         # Hardcode the proper period
         for htr in range(len(self._dev_pwm)):
@@ -114,11 +113,6 @@ class BeagleboneDeviceInterface:
 
     def is_connected(self):
         return self._is_connected
-
-    def _export_leds(self, dev_idx):
-        for led_pin in LED_PINS:
-            self._dev_gpio[dev_idx].setMultiple([(&#39;GPIO_PIN&#39;, led_pin), (&#39;GPIO_EXPORT&#39;, True), (&#39;GPIO_EXPORT&#39;, True), (&#39;GPIO_DIRECTION&#39;, True), (&#39;GPIO_VALUE&#39;, False)])
-
 
     def set_enable(self, dev_idx, chnl_idx, enable):
         # logger.debug(f&#34;Setting Heater {dev_idx + 1} Channel {chnl_idx + 1} to state: {enable}&#34;)
@@ -313,7 +307,6 @@ Arguments can be positional or keyword arguments, not both.</p></div>
         self._dev_gpio = [None, None, None, None, None, None]
         for dev_idx, dev_name in enumerate(self.dev_gpio_names):
             self._dev_gpio[dev_idx] = Device(dev_name, config, hal)
-            self._export_leds(dev_idx)
             
         # Hardcode the proper period
         for htr in range(len(self._dev_pwm)):
@@ -333,11 +326,6 @@ Arguments can be positional or keyword arguments, not both.</p></div>
 
     def is_connected(self):
         return self._is_connected
-
-    def _export_leds(self, dev_idx):
-        for led_pin in LED_PINS:
-            self._dev_gpio[dev_idx].setMultiple([(&#39;GPIO_PIN&#39;, led_pin), (&#39;GPIO_EXPORT&#39;, True), (&#39;GPIO_EXPORT&#39;, True), (&#39;GPIO_DIRECTION&#39;, True), (&#39;GPIO_VALUE&#39;, False)])
-
 
     def set_enable(self, dev_idx, chnl_idx, enable):
         # logger.debug(f&#34;Setting Heater {dev_idx + 1} Channel {chnl_idx + 1} to state: {enable}&#34;)

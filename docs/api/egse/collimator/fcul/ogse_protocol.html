@@ -26,18 +26,22 @@
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">from egse.collimator.fcul.ogse import OGSEController
+<pre><code class="python">import logging
+
+from egse.collimator.fcul.ogse import OGSEController
 from egse.collimator.fcul.ogse import OGSESimulator
 from egse.control import ControlServer
+from egse.control import Failure
 from egse.protocol import DynamicCommandProtocol
 from egse.settings import Settings
 from egse.state import GlobalState
 from egse.synoptics import SynopticsManagerProxy
-
 from egse.system import format_datetime
 
 DEVICE_SETTINGS = Settings.load(filename=&#34;ogse.yaml&#34;)
 SITE = Settings.load(&#34;SITE&#34;)
+
+MODULE_LOGGER = logging.getLogger(__name__)
 
 
 class OGSEProtocol(DynamicCommandProtocol):
@@ -68,33 +72,49 @@ class OGSEProtocol(DynamicCommandProtocol):
 
         ogse_status = self.device.status()
 
-        hk[f&#34;G{SITE.ID}_OGSE_LDLS_LAMP&#34;] = ogse_status[&#34;lamp&#34;] == &#34;ON&#34;                 # LDLS lamp on
-        hk[f&#34;G{SITE.ID}_OGSE_LDLS_LASER&#34;] = self.device.get_laser() == &#34;laser: ON&#34;     # LDLS laser on
-        hk[f&#34;G{SITE.ID}_OGSE_PM_CH1_PWR&#34;] = ogse_status[&#34;power1&#34;]                      # Powermeter channel 1 power
-        hk[f&#34;G{SITE.ID}_OGSE_PM_CH2_PWR&#34;] = ogse_status[&#34;power2&#34;]                      # Powermeter channel 2 power
-        hk[f&#34;G{SITE.ID}_OGSE_REL_INTENSITY&#34;] = ogse_status[&#34;att_factor&#34;]                           # Relative intensity (0..1)
-        hk[f&#34;G{SITE.ID}_OGSE_FWC_FRACTION&#34;] = ogse_status[&#34;att_factor&#34;] / self.fwc_calibration     # FWC fraction
+        if isinstance(ogse_status, Failure):
+            MODULE_LOGGER.info(
+                &#34;Failure detected while requesting the status of the OGSE. &#34;
+                &#34;No housekeeping generated. Check the log file for more information on the cause.&#34;
+            )
+            MODULE_LOGGER.error(f&#34;Failure: {ogse_status}&#34;, exc_info=False)
+            return hk
+
+        hk[f&#34;G{SITE.ID}_OGSE_LDLS_LAMP&#34;] = ogse_status[&#34;lamp&#34;] == &#34;ON&#34;  # LDLS lamp on
+        hk[f&#34;G{SITE.ID}_OGSE_LDLS_LASER&#34;] = self.device.get_laser() == &#34;laser: ON&#34;  # LDLS laser on
+        hk[f&#34;G{SITE.ID}_OGSE_PM_CH1_PWR&#34;] = ogse_status[&#34;power1&#34;]  # Powermeter channel 1 power
+        hk[f&#34;G{SITE.ID}_OGSE_PM_CH2_PWR&#34;] = ogse_status[&#34;power2&#34;]  # Powermeter channel 2 power
+        hk[f&#34;G{SITE.ID}_OGSE_REL_INTENSITY&#34;] = ogse_status[
+            &#34;att_factor&#34;]  # Relative intensity (0..1)
+        hk[f&#34;G{SITE.ID}_OGSE_FWC_FRACTION&#34;] = ogse_status[
+                                                  &#34;att_factor&#34;] / self.fwc_calibration  # FWC fraction
 
         # Send the HK acquired so far to the Synoptics Manager
         hk_for_synoptics = hk.copy()
         # The GOGSE_SHUTTER_OPEN parameter is not in the CSL OGSE HK but is included in the synoptics
-        if SITE.ID == &#34;CSL&#34;:
+        if &#34;CSL&#34; in SITE.ID:
             hk_for_synoptics[f&#34;G{SITE.ID}_OGSE_SHUTTER_OPEN&#34;] = True
         self.synoptics.store_th_synoptics(hk_for_synoptics)
 
-        hk[f&#34;G{SITE.ID}_OGSE_LDLS_INTERLOCK&#34;] = ogse_status[&#34;interlock&#34;] == &#34;ON&#34;  # LDLS power interlock on
-        hk[f&#34;G{SITE.ID}_OGSE_LDLS_POWER&#34;] = ogse_status[&#34;power&#34;] == &#34;ON&#34;          # LDLS power on
-        hk[f&#34;G{SITE.ID}_OGSE_LDLS_PSU&#34;] = ogse_status[&#34;psu&#34;] == &#34;ON&#34;              # PSU on`
-        hk[f&#34;G{SITE.ID}_OGSE_PM_CH1_TEMP&#34;] = ogse_status[&#34;temp1&#34;]                 # Powermeter channel 1 temperature
-        hk[f&#34;G{SITE.ID}_OGSE_PM_CH2_TEMP&#34;] = ogse_status[&#34;temp2&#34;]                 # Powermeter channel 2 temperature
-        hk[f&#34;G{SITE.ID}_OGSE_LDLS_LAMP_FAULT&#34;] = self.device.get_lamp_fault() == &#34;lamp-fault: NO-ERROR&#34;   # LDLS lap fault
-        hk[f&#34;G{SITE.ID}_OGSE_LDLS_CTRL_FAULT&#34;] = self.device.get_controller_fault() == &#34;controller-fault: NO-ERROR&#34;  # LDLS controller fault
-        hk[f&#34;G{SITE.ID}_OGSE_LDLS_OPERATE&#34;] = self.device.get_operate() == &#34;operate: ON&#34;  # LDLS operate status on
+        hk[f&#34;G{SITE.ID}_OGSE_LDLS_INTERLOCK&#34;] = ogse_status[
+                                                    &#34;interlock&#34;] == &#34;ON&#34;  # LDLS power interlock on
+        hk[f&#34;G{SITE.ID}_OGSE_LDLS_POWER&#34;] = ogse_status[&#34;power&#34;] == &#34;ON&#34;  # LDLS power on
+        hk[f&#34;G{SITE.ID}_OGSE_LDLS_PSU&#34;] = ogse_status[&#34;psu&#34;] == &#34;ON&#34;  # PSU on`
+        hk[f&#34;G{SITE.ID}_OGSE_PM_CH1_TEMP&#34;] = ogse_status[
+            &#34;temp1&#34;]  # Powermeter channel 1 temperature
+        hk[f&#34;G{SITE.ID}_OGSE_PM_CH2_TEMP&#34;] = ogse_status[
+            &#34;temp2&#34;]  # Powermeter channel 2 temperature
+        hk[
+            f&#34;G{SITE.ID}_OGSE_LDLS_LAMP_FAULT&#34;] = self.device.get_lamp_fault() == &#34;lamp-fault: NO-ERROR&#34;  # LDLS lap fault
+        hk[
+            f&#34;G{SITE.ID}_OGSE_LDLS_CTRL_FAULT&#34;] = self.device.get_controller_fault() == &#34;controller-fault: NO-ERROR&#34;  # LDLS controller fault
+        hk[
+            f&#34;G{SITE.ID}_OGSE_LDLS_OPERATE&#34;] = self.device.get_operate() == &#34;operate: ON&#34;  # LDLS operate status on
 
         pm_status = self.device.pm_status()
 
-        hk[f&#34;G{SITE.ID}_OGSE_PM_CH1_STATUS&#34;] = pm_status[&#34;pm1&#34;] == &#34;OK&#34;           # Powermeter channel 1 on
-        hk[f&#34;G{SITE.ID}_OGSE_PM_CH2_STATUS&#34;] = pm_status[&#34;pm2&#34;] == &#34;OK&#34;           # Powermeter channel 2 on
+        hk[f&#34;G{SITE.ID}_OGSE_PM_CH1_STATUS&#34;] = pm_status[&#34;pm1&#34;] == &#34;OK&#34;  # Powermeter channel 1 on
+        hk[f&#34;G{SITE.ID}_OGSE_PM_CH2_STATUS&#34;] = pm_status[&#34;pm2&#34;] == &#34;OK&#34;  # Powermeter channel 2 on
 
         return hk</code></pre>
 </details>
@@ -148,33 +168,49 @@ update of its state by calling the <code>update_connection_state()</code> method
 
         ogse_status = self.device.status()
 
-        hk[f&#34;G{SITE.ID}_OGSE_LDLS_LAMP&#34;] = ogse_status[&#34;lamp&#34;] == &#34;ON&#34;                 # LDLS lamp on
-        hk[f&#34;G{SITE.ID}_OGSE_LDLS_LASER&#34;] = self.device.get_laser() == &#34;laser: ON&#34;     # LDLS laser on
-        hk[f&#34;G{SITE.ID}_OGSE_PM_CH1_PWR&#34;] = ogse_status[&#34;power1&#34;]                      # Powermeter channel 1 power
-        hk[f&#34;G{SITE.ID}_OGSE_PM_CH2_PWR&#34;] = ogse_status[&#34;power2&#34;]                      # Powermeter channel 2 power
-        hk[f&#34;G{SITE.ID}_OGSE_REL_INTENSITY&#34;] = ogse_status[&#34;att_factor&#34;]                           # Relative intensity (0..1)
-        hk[f&#34;G{SITE.ID}_OGSE_FWC_FRACTION&#34;] = ogse_status[&#34;att_factor&#34;] / self.fwc_calibration     # FWC fraction
+        if isinstance(ogse_status, Failure):
+            MODULE_LOGGER.info(
+                &#34;Failure detected while requesting the status of the OGSE. &#34;
+                &#34;No housekeeping generated. Check the log file for more information on the cause.&#34;
+            )
+            MODULE_LOGGER.error(f&#34;Failure: {ogse_status}&#34;, exc_info=False)
+            return hk
+
+        hk[f&#34;G{SITE.ID}_OGSE_LDLS_LAMP&#34;] = ogse_status[&#34;lamp&#34;] == &#34;ON&#34;  # LDLS lamp on
+        hk[f&#34;G{SITE.ID}_OGSE_LDLS_LASER&#34;] = self.device.get_laser() == &#34;laser: ON&#34;  # LDLS laser on
+        hk[f&#34;G{SITE.ID}_OGSE_PM_CH1_PWR&#34;] = ogse_status[&#34;power1&#34;]  # Powermeter channel 1 power
+        hk[f&#34;G{SITE.ID}_OGSE_PM_CH2_PWR&#34;] = ogse_status[&#34;power2&#34;]  # Powermeter channel 2 power
+        hk[f&#34;G{SITE.ID}_OGSE_REL_INTENSITY&#34;] = ogse_status[
+            &#34;att_factor&#34;]  # Relative intensity (0..1)
+        hk[f&#34;G{SITE.ID}_OGSE_FWC_FRACTION&#34;] = ogse_status[
+                                                  &#34;att_factor&#34;] / self.fwc_calibration  # FWC fraction
 
         # Send the HK acquired so far to the Synoptics Manager
         hk_for_synoptics = hk.copy()
         # The GOGSE_SHUTTER_OPEN parameter is not in the CSL OGSE HK but is included in the synoptics
-        if SITE.ID == &#34;CSL&#34;:
+        if &#34;CSL&#34; in SITE.ID:
             hk_for_synoptics[f&#34;G{SITE.ID}_OGSE_SHUTTER_OPEN&#34;] = True
         self.synoptics.store_th_synoptics(hk_for_synoptics)
 
-        hk[f&#34;G{SITE.ID}_OGSE_LDLS_INTERLOCK&#34;] = ogse_status[&#34;interlock&#34;] == &#34;ON&#34;  # LDLS power interlock on
-        hk[f&#34;G{SITE.ID}_OGSE_LDLS_POWER&#34;] = ogse_status[&#34;power&#34;] == &#34;ON&#34;          # LDLS power on
-        hk[f&#34;G{SITE.ID}_OGSE_LDLS_PSU&#34;] = ogse_status[&#34;psu&#34;] == &#34;ON&#34;              # PSU on`
-        hk[f&#34;G{SITE.ID}_OGSE_PM_CH1_TEMP&#34;] = ogse_status[&#34;temp1&#34;]                 # Powermeter channel 1 temperature
-        hk[f&#34;G{SITE.ID}_OGSE_PM_CH2_TEMP&#34;] = ogse_status[&#34;temp2&#34;]                 # Powermeter channel 2 temperature
-        hk[f&#34;G{SITE.ID}_OGSE_LDLS_LAMP_FAULT&#34;] = self.device.get_lamp_fault() == &#34;lamp-fault: NO-ERROR&#34;   # LDLS lap fault
-        hk[f&#34;G{SITE.ID}_OGSE_LDLS_CTRL_FAULT&#34;] = self.device.get_controller_fault() == &#34;controller-fault: NO-ERROR&#34;  # LDLS controller fault
-        hk[f&#34;G{SITE.ID}_OGSE_LDLS_OPERATE&#34;] = self.device.get_operate() == &#34;operate: ON&#34;  # LDLS operate status on
+        hk[f&#34;G{SITE.ID}_OGSE_LDLS_INTERLOCK&#34;] = ogse_status[
+                                                    &#34;interlock&#34;] == &#34;ON&#34;  # LDLS power interlock on
+        hk[f&#34;G{SITE.ID}_OGSE_LDLS_POWER&#34;] = ogse_status[&#34;power&#34;] == &#34;ON&#34;  # LDLS power on
+        hk[f&#34;G{SITE.ID}_OGSE_LDLS_PSU&#34;] = ogse_status[&#34;psu&#34;] == &#34;ON&#34;  # PSU on`
+        hk[f&#34;G{SITE.ID}_OGSE_PM_CH1_TEMP&#34;] = ogse_status[
+            &#34;temp1&#34;]  # Powermeter channel 1 temperature
+        hk[f&#34;G{SITE.ID}_OGSE_PM_CH2_TEMP&#34;] = ogse_status[
+            &#34;temp2&#34;]  # Powermeter channel 2 temperature
+        hk[
+            f&#34;G{SITE.ID}_OGSE_LDLS_LAMP_FAULT&#34;] = self.device.get_lamp_fault() == &#34;lamp-fault: NO-ERROR&#34;  # LDLS lap fault
+        hk[
+            f&#34;G{SITE.ID}_OGSE_LDLS_CTRL_FAULT&#34;] = self.device.get_controller_fault() == &#34;controller-fault: NO-ERROR&#34;  # LDLS controller fault
+        hk[
+            f&#34;G{SITE.ID}_OGSE_LDLS_OPERATE&#34;] = self.device.get_operate() == &#34;operate: ON&#34;  # LDLS operate status on
 
         pm_status = self.device.pm_status()
 
-        hk[f&#34;G{SITE.ID}_OGSE_PM_CH1_STATUS&#34;] = pm_status[&#34;pm1&#34;] == &#34;OK&#34;           # Powermeter channel 1 on
-        hk[f&#34;G{SITE.ID}_OGSE_PM_CH2_STATUS&#34;] = pm_status[&#34;pm2&#34;] == &#34;OK&#34;           # Powermeter channel 2 on
+        hk[f&#34;G{SITE.ID}_OGSE_PM_CH1_STATUS&#34;] = pm_status[&#34;pm1&#34;] == &#34;OK&#34;  # Powermeter channel 1 on
+        hk[f&#34;G{SITE.ID}_OGSE_PM_CH2_STATUS&#34;] = pm_status[&#34;pm2&#34;] == &#34;OK&#34;  # Powermeter channel 2 on
 
         return hk</code></pre>
 </details>
@@ -210,6 +246,7 @@ update of its state by calling the <code>update_connection_state()</code> method
 <li><code><a title="egse.protocol.DynamicCommandProtocol.get_status" href="../../protocol.html#egse.protocol.BaseCommandProtocol.get_status">get_status</a></code></li>
 <li><code><a title="egse.protocol.DynamicCommandProtocol.handle_device_method" href="../../protocol.html#egse.protocol.DynamicCommandProtocol.handle_device_method">handle_device_method</a></code></li>
 <li><code><a title="egse.protocol.DynamicCommandProtocol.is_alive" href="../../protocol.html#egse.protocol.BaseCommandProtocol.is_alive">is_alive</a></code></li>
+<li><code><a title="egse.protocol.DynamicCommandProtocol.quit" href="../../protocol.html#egse.protocol.BaseCommandProtocol.quit">quit</a></code></li>
 <li><code><a title="egse.protocol.DynamicCommandProtocol.receive" href="../../protocol.html#egse.protocol.BaseCommandProtocol.receive">receive</a></code></li>
 <li><code><a title="egse.protocol.DynamicCommandProtocol.send" href="../../protocol.html#egse.protocol.BaseCommandProtocol.send">send</a></code></li>
 <li><code><a title="egse.protocol.DynamicCommandProtocol.state" href="../../device.html#egse.device.DeviceConnectionObserver.state">state</a></code></li>

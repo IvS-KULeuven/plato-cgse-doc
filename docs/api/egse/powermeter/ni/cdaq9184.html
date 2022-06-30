@@ -75,14 +75,14 @@ class cdaq9184Interface(DeviceInterface):
     @dynamic_interface
     def read_values(self):
         &#34;&#34;&#34;
-        Reads the signals of the  channels of the CDAQ9181. Adds timestamp and returns a list
+        Reads the signals of the  channels of the CDAQ9181. Adds timestamp and returns a list.
         Channels read are:
         Photodiode_1 (V) from the integrating sphere, read as ch0 from NI9239
         Photodiode_2 (V) from the integrating sphere, read as ch1 from NI9239
 
-        collimator_1_temp (C) from the OGSE collimator, read as ch0 from NI9226
-        collimator_2_temp (C) from the OGSE collimator, read as ch1 from NI9226
-        sphere_temp (C) from the integrating sphere, read as ch2 from NI9226
+        collimator_1_temp (°C) from the OGSE collimator, read as ch0 from NI9226
+        collimator_2_temp (°C) from the OGSE collimator, read as ch1 from NI9226
+        sphere_temp (°C) from the integrating sphere, read as ch2 from NI9226
 
         the returned values are mean and dev from 5 samples acquired at 100Hz.
         The values are sent by a Labview application installed in the Keynes working station
@@ -104,7 +104,7 @@ class cdaq9184Interface(DeviceInterface):
     def read_temperatures(self):
         &#34;&#34;&#34;
 
-        Returns: echo values from read_values method, timestamp and temperature values in C
+        Returns: echo values from read_values method, timestamp and temperature values in °C
 
         &#34;&#34;&#34;
         raise NotImplementedError
@@ -207,12 +207,27 @@ class cdaq9184Controller(cdaq9184Interface):
     def info(self):
         pass
 
-    def read_values(self):
-        #fixme: I don&#39;t know why now the code returns a first empty element
-        values = self.cdaq.trans(&#34;get_value&#34;)
-        # so I remove first element:
-        values = values[1:]
-        return values
+    def read_values(self) -&gt; list:
+        data = self.cdaq.trans(&#34;get_value&#34;)
+
+        # The 3 last elements of data are expected not to be a number but the position of the filter wheel
+        # (wheel 1 and 2) and the position of the shutter.
+        # As we don&#39;t need these info, I delete them.
+        # But to avoid to delete a relevant value I check if the element is a number or not before deleting.
+        b = True
+        while b:
+            b = False
+            try:
+                float(data[-1])
+            except ValueError:
+                del data[-1]
+                b = True
+
+        # The 2 first elements of data are date as str type. I leave them as str type. I convert the other elements of
+        # data (which are relevant values) from str to float.
+        data = data[:2] + [float(value) for value in data[2:]]
+
+        return data
 
 
 class cdaq9184Proxy(Proxy, cdaq9184Interface):
@@ -316,12 +331,27 @@ class cdaq9184Proxy(Proxy, cdaq9184Interface):
     def info(self):
         pass
 
-    def read_values(self):
-        #fixme: I don&#39;t know why now the code returns a first empty element
-        values = self.cdaq.trans(&#34;get_value&#34;)
-        # so I remove first element:
-        values = values[1:]
-        return values</code></pre>
+    def read_values(self) -&gt; list:
+        data = self.cdaq.trans(&#34;get_value&#34;)
+
+        # The 3 last elements of data are expected not to be a number but the position of the filter wheel
+        # (wheel 1 and 2) and the position of the shutter.
+        # As we don&#39;t need these info, I delete them.
+        # But to avoid to delete a relevant value I check if the element is a number or not before deleting.
+        b = True
+        while b:
+            b = False
+            try:
+                float(data[-1])
+            except ValueError:
+                del data[-1]
+                b = True
+
+        # The 2 first elements of data are date as str type. I leave them as str type. I convert the other elements of
+        # data (which are relevant values) from str to float.
+        data = data[:2] + [float(value) for value in data[2:]]
+
+        return data</code></pre>
 </details>
 <h3>Ancestors</h3>
 <ul class="hlist">
@@ -436,14 +466,14 @@ class cdaq9184Proxy(Proxy, cdaq9184Interface):
     @dynamic_interface
     def read_values(self):
         &#34;&#34;&#34;
-        Reads the signals of the  channels of the CDAQ9181. Adds timestamp and returns a list
+        Reads the signals of the  channels of the CDAQ9181. Adds timestamp and returns a list.
         Channels read are:
         Photodiode_1 (V) from the integrating sphere, read as ch0 from NI9239
         Photodiode_2 (V) from the integrating sphere, read as ch1 from NI9239
 
-        collimator_1_temp (C) from the OGSE collimator, read as ch0 from NI9226
-        collimator_2_temp (C) from the OGSE collimator, read as ch1 from NI9226
-        sphere_temp (C) from the integrating sphere, read as ch2 from NI9226
+        collimator_1_temp (°C) from the OGSE collimator, read as ch0 from NI9226
+        collimator_2_temp (°C) from the OGSE collimator, read as ch1 from NI9226
+        sphere_temp (°C) from the integrating sphere, read as ch2 from NI9226
 
         the returned values are mean and dev from 5 samples acquired at 100Hz.
         The values are sent by a Labview application installed in the Keynes working station
@@ -465,7 +495,7 @@ class cdaq9184Proxy(Proxy, cdaq9184Interface):
     def read_temperatures(self):
         &#34;&#34;&#34;
 
-        Returns: echo values from read_values method, timestamp and temperature values in C
+        Returns: echo values from read_values method, timestamp and temperature values in °C
 
         &#34;&#34;&#34;
         raise NotImplementedError</code></pre>
@@ -534,7 +564,7 @@ def read_photodiodes(self):
 <span>def <span class="ident">read_temperatures</span></span>(<span>self)</span>
 </code></dt>
 <dd>
-<div class="desc"><p>Returns: echo values from read_values method, timestamp and temperature values in C</p></div>
+<div class="desc"><p>Returns: echo values from read_values method, timestamp and temperature values in °C</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
@@ -543,7 +573,7 @@ def read_photodiodes(self):
 def read_temperatures(self):
     &#34;&#34;&#34;
 
-    Returns: echo values from read_values method, timestamp and temperature values in C
+    Returns: echo values from read_values method, timestamp and temperature values in °C
 
     &#34;&#34;&#34;
     raise NotImplementedError</code></pre>
@@ -554,13 +584,13 @@ def read_temperatures(self):
 </code></dt>
 <dd>
 <div class="desc"><p>Reads the signals of the
-channels of the CDAQ9181. Adds timestamp and returns a list
+channels of the CDAQ9181. Adds timestamp and returns a list.
 Channels read are:
 Photodiode_1 (V) from the integrating sphere, read as ch0 from NI9239
 Photodiode_2 (V) from the integrating sphere, read as ch1 from NI9239</p>
-<p>collimator_1_temp (C) from the OGSE collimator, read as ch0 from NI9226
-collimator_2_temp (C) from the OGSE collimator, read as ch1 from NI9226
-sphere_temp (C) from the integrating sphere, read as ch2 from NI9226</p>
+<p>collimator_1_temp (°C) from the OGSE collimator, read as ch0 from NI9226
+collimator_2_temp (°C) from the OGSE collimator, read as ch1 from NI9226
+sphere_temp (°C) from the integrating sphere, read as ch2 from NI9226</p>
 <p>the returned values are mean and dev from 5 samples acquired at 100Hz.
 The values are sent by a Labview application installed in the Keynes working station</p></div>
 <details class="source">
@@ -570,14 +600,14 @@ The values are sent by a Labview application installed in the Keynes working sta
 <pre><code class="python">@dynamic_interface
 def read_values(self):
     &#34;&#34;&#34;
-    Reads the signals of the  channels of the CDAQ9181. Adds timestamp and returns a list
+    Reads the signals of the  channels of the CDAQ9181. Adds timestamp and returns a list.
     Channels read are:
     Photodiode_1 (V) from the integrating sphere, read as ch0 from NI9239
     Photodiode_2 (V) from the integrating sphere, read as ch1 from NI9239
 
-    collimator_1_temp (C) from the OGSE collimator, read as ch0 from NI9226
-    collimator_2_temp (C) from the OGSE collimator, read as ch1 from NI9226
-    sphere_temp (C) from the integrating sphere, read as ch2 from NI9226
+    collimator_1_temp (°C) from the OGSE collimator, read as ch0 from NI9226
+    collimator_2_temp (°C) from the OGSE collimator, read as ch1 from NI9226
+    sphere_temp (°C) from the integrating sphere, read as ch2 from NI9226
 
     the returned values are mean and dev from 5 samples acquired at 100Hz.
     The values are sent by a Labview application installed in the Keynes working station

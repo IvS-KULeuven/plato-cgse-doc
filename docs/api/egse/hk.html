@@ -88,7 +88,8 @@ class HKError(Exception):
     pass
 
 
-def get_housekeeping(hk_name: str, obsid: Union[ObservationIdentifier, str, int] = None, od: str = None, time_window: int = None):
+def get_housekeeping(hk_name: str, obsid: Union[ObservationIdentifier, str, int] = None, od: str = None,
+                     time_window: int = None, data_dir=None):
     &#34;&#34;&#34; Return the timestamp(s) and housekeeping value(s) for the housekeeping parameter with the given name.
 
     It is possible to indicate for which obsid or which OD the housekeeping is to be returned.  If neither of them is
@@ -111,7 +112,7 @@ def get_housekeeping(hk_name: str, obsid: Union[ObservationIdentifier, str, int]
         - od: Identifier for the OD (yyyymmdd); optional.
         - time_window: Length of the time window over which to retrieve the housekeeping [s].  The time window ends at
                        the moment this method is called.  If not given, the latest housekeeping value is returned.
-
+        - data_dir: Folder (with sub-folders /daily and /obs) in which the HK files are stored.
     &#34;&#34;&#34;
 
     # Either specify the obsid or the OD (or neither of them) but not both
@@ -122,10 +123,12 @@ def get_housekeeping(hk_name: str, obsid: Union[ObservationIdentifier, str, int]
 
     # Specified obsid (as integer or as string)
 
+    data_dir = data_dir or os.environ.get(&#39;PLATO_DATA_STORAGE_LOCATION&#39;)
+
     if obsid:
 
         try:
-            return _get_housekeeping_obsid(hk_name, obsid=obsid, time_window=time_window)
+            return _get_housekeeping_obsid(hk_name, data_dir, obsid=obsid, time_window=time_window)
         except (ValueError, StopIteration, FileNotFoundError) as exc:
             raise HKError(f&#34;No HK found for {hk_name} for obsid {obsid} at {SITE_ID}&#34;) from exc
 
@@ -134,14 +137,14 @@ def get_housekeeping(hk_name: str, obsid: Union[ObservationIdentifier, str, int]
     if od:
 
         try:
-            return _get_housekeeping_od(hk_name, od=od, time_window=time_window)
+            return _get_housekeeping_od(hk_name, data_dir, od=od, time_window=time_window)
         except (ValueError, StopIteration, FileNotFoundError) as exc:
             raise HKError(f&#34;No HK found for {hk_name} for OD {od} at {SITE_ID}&#34;) from exc
 
     # Didn&#39;t specify neither the obsid nor the OD
 
     try:
-        return _get_housekeeping_daily(hk_name, time_window=time_window)
+        return _get_housekeeping_daily(hk_name, data_dir, time_window=time_window)
     except (ValueError, StopIteration, FileNotFoundError) as exc:
         raise HKError(f&#34;No HK found for {hk_name} for today at {SITE_ID}&#34;) from exc
 
@@ -240,7 +243,7 @@ def _get_housekeeping(hk_name: str, timestamp_name: str, hk_dir: str, files, tim
         return timestamp_array, hk_array
 
 
-def _get_housekeeping_od(hk_name: str, od: str, time_window: int = None):
+def _get_housekeeping_od(hk_name: str, data_dir, od: str, time_window: int = None):
     &#34;&#34;&#34; Return the timestamp(s) and HK value(s) for the HK parameter with the given name, for the given OD.
 
     When the time window has not been specified, the last timestamp and HK value will be returned for the given OD.
@@ -255,6 +258,7 @@ def _get_housekeeping_od(hk_name: str, od: str, time_window: int = None):
 
     Args:
         - hk_name: Name of the housekeeping parameter.
+        - data_dir: Folder (with sub-folders /daily and /obs) in which the HK files are stored.
         - od: Identifier for the OD (yyyymmdd).
         - time_window: Length of the time window over which to retrieve the housekeeping [s].  The time window ends at
                        the moment this method is called.  If not given, the latest HK-value is returned.
@@ -265,7 +269,7 @@ def _get_housekeeping_od(hk_name: str, od: str, time_window: int = None):
               specified time window.
     &#34;&#34;&#34;
 
-    hk_dir = os.environ[&#34;PLATO_DATA_STORAGE_LOCATION&#34;] + &#34;/daily/&#34;  # Where the HK is stored
+    hk_dir = f&#34;{data_dir}/daily/&#34;  # Where the HK is stored
 
     try:
 
@@ -281,7 +285,8 @@ def _get_housekeeping_od(hk_name: str, od: str, time_window: int = None):
     return _get_housekeeping(hk_name, timestamp_name, hk_dir, hk_files, time_window=time_window)
 
 
-def _get_housekeeping_obsid(hk_name: str, obsid: Union[ObservationIdentifier, str, int], time_window: int = None):
+def _get_housekeeping_obsid(hk_name: str, data_dir, obsid: Union[ObservationIdentifier, str, int],
+                            time_window: int = None):
     &#34;&#34;&#34; Return the timestamp(s) and HK value(s) for the HK parameter with the given name, for the given obsid.
 
     When the time window has not been specified, the last timestamp and HK value will be returned for the given obsid.
@@ -296,18 +301,19 @@ def _get_housekeeping_obsid(hk_name: str, obsid: Union[ObservationIdentifier, st
 
     Args:
         - hk_name: Name of the housekeeping parameter.
+        - data_dir: Folder (with sub-folders /daily and /obs) in which the HK files are stored.
         - obsid: Observation identifier.  This can be an ObservationIdentifier object, a string in format TEST_LAB or
                  TEST_LAB_SETUP, or an integer representing the test ID.
         - time_window: Length of the time window over which to retrieve the housekeeping [s].  The time window ends at
                        the moment this method is called.  If not given, the latest HK-value is returned.
 
-        Returns:
-            - If the time window has not been specified: the most recent timestamp and HK value.
-            - If the time window has been specified: an array of timestamps and an array of HK values, belonging to the
-              specified time window.
-        &#34;&#34;&#34;
+    Returns:
+        - If the time window has not been specified: the most recent timestamp and HK value.
+        - If the time window has been specified: an array of timestamps and an array of HK values, belonging to the
+          specified time window.
+    &#34;&#34;&#34;
 
-    hk_dir = os.environ[&#34;PLATO_DATA_STORAGE_LOCATION&#34;] + &#34;/obs/&#34;  # Where the HK is stored
+    hk_dir = f&#34;{data_dir}/obs/&#34;  # Where the HK is stored
 
     try:
 
@@ -317,10 +323,10 @@ def _get_housekeeping_obsid(hk_name: str, obsid: Union[ObservationIdentifier, st
 
         raise HKError(f&#34;Cannot determine which EGSE component generated HK parameter {hk_name}&#34;)
 
-    obsid = obsid_from_storage(obsid)     # Convert the obsid to the correct format
+    obsid = obsid_from_storage(obsid, data_dir=data_dir)     # Convert the obsid to the correct format
 
     hk_dir += f&#34;{obsid}/&#34;
-    pattern = f&#34;{obsid:05d}_{SITE_ID}_{origin}_*.csv&#34;
+    pattern = f&#34;{obsid}_{origin}_*.csv&#34;
     hk_files = sorted(find_files(pattern=pattern, root=hk_dir))
 
     if len(hk_files) == 0:
@@ -332,7 +338,7 @@ def _get_housekeeping_obsid(hk_name: str, obsid: Union[ObservationIdentifier, st
     return _get_housekeeping(hk_name, timestamp_name, hk_dir, hk_files, time_window=time_window)
 
 
-def _get_housekeeping_daily(hk_name: str, time_window: int = None):
+def _get_housekeeping_daily(hk_name: str, data_dir, time_window: int = None):
     &#34;&#34;&#34; Return the timestamp(s) and HK value(s) for the HK parameter with the given name.
 
     When the time window has not been specified, the last timestamp and HK value will be returned.  It is possible that
@@ -356,6 +362,7 @@ def _get_housekeeping_daily(hk_name: str, time_window: int = None):
 
     Args:
         - hk_name: Name of the housekeeping parameter.
+        - data_dir: Folder (with sub-folders /daily and /obs) in which the HK files are stored.
         - time_window: Length of the time window over which to retrieve the housekeeping [s].  The time window ends at
           the moment this method is called.  If not given, the latest HK-value is returned.
 
@@ -365,7 +372,7 @@ def _get_housekeeping_daily(hk_name: str, time_window: int = None):
           specified time window.
     &#34;&#34;&#34;
 
-    hk_dir = os.environ[&#34;PLATO_DATA_STORAGE_LOCATION&#34;] + &#34;/daily/&#34;  # Where the HK is stored
+    hk_dir = f&#34;{data_dir}/daily/&#34;  # Where the HK is stored
 
     try:
 
@@ -477,10 +484,6 @@ def _get_housekeeping_daily(hk_name: str, time_window: int = None):
                 logger.warning(f&#34;No HK available for {origin} on {day.day}/{day.month}/{day.year}&#34;)
 
             day += datetime.timedelta(days=1)
-
-        delta = (str_to_datetime(timestamp_array[-1]) - str_to_datetime(timestamp_array[0])).total_seconds()
-
-        logger.info(f&#34;Retrieved HK data for {hk_name} over a time range of {humanize_seconds(delta)}&#34;)
 
         for index in range(len(timestamp_array)):
 
@@ -722,7 +725,57 @@ def get_hk_info(hk_name: str):
     try:
         return storage_mnemonic[selection][0], timestamp_col[selection][0]
     except IndexError:
-        raise HKError(f&#34;HK parameter {hk_name} unknown&#34;)</code></pre>
+        raise HKError(f&#34;HK parameter {hk_name} unknown&#34;)
+
+
+def get_storage_mnemonics():
+    &#34;&#34;&#34; Return the list of the storage mnemonics from the TM dictionary.
+
+    Returns: List of the storage mnemonics from the TM dictionary.
+    &#34;&#34;&#34;
+
+    filename = get_resource(f&#34;:/data/tm-dictionary.csv&#34;)
+
+    hk_info_table = pandas.read_csv(filename, sep=&#34;;&#34;)
+    storage_mnemonics = hk_info_table[TmDictionaryColumns.STORAGE_MNEMONIC].values
+    return np.unique(storage_mnemonics)
+
+
+def get_housekeeping_names(name_filter=None, device_filter=None):
+    &#34;&#34;&#34; Return HK names, storage mnemonic, and description.
+
+    The TM dictionary is read into a Pandas DataFrame.  If a device filter is given, only the rows pertaining to the
+    given storage mnemonic are kept.  If a name filter is given, only the rows for which the HK parameter name contains
+    the given name filter are kept.
+
+    The result is returned as a Pandas DataFrame with the following columns:
+        - &#34;CAM EGSE mnemonic&#34;: Name of the HK parameter;
+        - &#34;Storage mnemonic&#34;: Storage mnemonic of the device producing the HK;
+        - &#34;Description&#34;: Description of the HK parameter.
+
+    Synopsis: get_housekeeping_names(name_filter=&#34;RAW&#34;, device_filter=&#34;N-FEE-HK&#34;)
+
+    Args:
+        - name_filter: Filter the HK dataframe, based on (a part of) the name of the HK parameter(s)
+        - device: Filter the HK dataframe, based on the given storage mmenmonic
+
+    Returns: Pandas DataFrame with the HK name, storage mnemonic, and description of the HK parameters that pass the
+             given filter.
+    &#34;&#34;&#34;
+
+    filename = get_resource(f&#34;:/data/tm-dictionary.csv&#34;)
+
+    hk_info_table = pandas.read_csv(filename, sep=&#34;;&#34;)
+    hk_info_table.dropna(subset=[TmDictionaryColumns.CORRECT_HK_NAMES], inplace=True)
+
+    if device_filter:
+        hk_info_table = hk_info_table.loc[hk_info_table[TmDictionaryColumns.STORAGE_MNEMONIC] == device_filter]
+
+    if name_filter:
+        hk_info_table = hk_info_table.query(f&#39;`{TmDictionaryColumns.CORRECT_HK_NAMES}`.str.contains(&#34;{name_filter}&#34;)&#39;)
+
+    return hk_info_table[[TmDictionaryColumns.CORRECT_HK_NAMES, TmDictionaryColumns.STORAGE_MNEMONIC,
+                          TmDictionaryColumns.DESCRIPTION]]</code></pre>
 </details>
 </section>
 <section>
@@ -833,7 +886,7 @@ Returns: Dictionary of HK parameters with the corrected HK names.</li>
 </details>
 </dd>
 <dt id="egse.hk.get_housekeeping"><code class="name flex">
-<span>def <span class="ident">get_housekeeping</span></span>(<span>hk_name: str, obsid: Union[<a title="egse.obsid.ObservationIdentifier" href="obsid.html#egse.obsid.ObservationIdentifier">ObservationIdentifier</a>, str, int] = None, od: str = None, time_window: int = None)</span>
+<span>def <span class="ident">get_housekeeping</span></span>(<span>hk_name: str, obsid: Union[<a title="egse.obsid.ObservationIdentifier" href="obsid.html#egse.obsid.ObservationIdentifier">ObservationIdentifier</a>, str, int] = None, od: str = None, time_window: int = None, data_dir=None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Return the timestamp(s) and housekeeping value(s) for the housekeeping parameter with the given name.</p>
@@ -860,12 +913,14 @@ TEST_LAB_SETUP, or an integer representing the test ID; optional.</li>
 The time window ends at
 the moment this method is called.
 If not given, the latest housekeeping value is returned.</li>
+<li>data_dir: Folder (with sub-folders /daily and /obs) in which the HK files are stored.</li>
 </ul></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def get_housekeeping(hk_name: str, obsid: Union[ObservationIdentifier, str, int] = None, od: str = None, time_window: int = None):
+<pre><code class="python">def get_housekeeping(hk_name: str, obsid: Union[ObservationIdentifier, str, int] = None, od: str = None,
+                     time_window: int = None, data_dir=None):
     &#34;&#34;&#34; Return the timestamp(s) and housekeeping value(s) for the housekeeping parameter with the given name.
 
     It is possible to indicate for which obsid or which OD the housekeeping is to be returned.  If neither of them is
@@ -888,7 +943,7 @@ If not given, the latest housekeeping value is returned.</li>
         - od: Identifier for the OD (yyyymmdd); optional.
         - time_window: Length of the time window over which to retrieve the housekeeping [s].  The time window ends at
                        the moment this method is called.  If not given, the latest housekeeping value is returned.
-
+        - data_dir: Folder (with sub-folders /daily and /obs) in which the HK files are stored.
     &#34;&#34;&#34;
 
     # Either specify the obsid or the OD (or neither of them) but not both
@@ -899,10 +954,12 @@ If not given, the latest housekeeping value is returned.</li>
 
     # Specified obsid (as integer or as string)
 
+    data_dir = data_dir or os.environ.get(&#39;PLATO_DATA_STORAGE_LOCATION&#39;)
+
     if obsid:
 
         try:
-            return _get_housekeeping_obsid(hk_name, obsid=obsid, time_window=time_window)
+            return _get_housekeeping_obsid(hk_name, data_dir, obsid=obsid, time_window=time_window)
         except (ValueError, StopIteration, FileNotFoundError) as exc:
             raise HKError(f&#34;No HK found for {hk_name} for obsid {obsid} at {SITE_ID}&#34;) from exc
 
@@ -911,16 +968,79 @@ If not given, the latest housekeeping value is returned.</li>
     if od:
 
         try:
-            return _get_housekeeping_od(hk_name, od=od, time_window=time_window)
+            return _get_housekeeping_od(hk_name, data_dir, od=od, time_window=time_window)
         except (ValueError, StopIteration, FileNotFoundError) as exc:
             raise HKError(f&#34;No HK found for {hk_name} for OD {od} at {SITE_ID}&#34;) from exc
 
     # Didn&#39;t specify neither the obsid nor the OD
 
     try:
-        return _get_housekeeping_daily(hk_name, time_window=time_window)
+        return _get_housekeeping_daily(hk_name, data_dir, time_window=time_window)
     except (ValueError, StopIteration, FileNotFoundError) as exc:
         raise HKError(f&#34;No HK found for {hk_name} for today at {SITE_ID}&#34;) from exc</code></pre>
+</details>
+</dd>
+<dt id="egse.hk.get_housekeeping_names"><code class="name flex">
+<span>def <span class="ident">get_housekeeping_names</span></span>(<span>name_filter=None, device_filter=None)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Return HK names, storage mnemonic, and description.</p>
+<p>The TM dictionary is read into a Pandas DataFrame.
+If a device filter is given, only the rows pertaining to the
+given storage mnemonic are kept.
+If a name filter is given, only the rows for which the HK parameter name contains
+the given name filter are kept.</p>
+<p>The result is returned as a Pandas DataFrame with the following columns:
+- "CAM EGSE mnemonic": Name of the HK parameter;
+- "Storage mnemonic": Storage mnemonic of the device producing the HK;
+- "Description": Description of the HK parameter.</p>
+<p>Synopsis: get_housekeeping_names(name_filter="RAW", device_filter="N-FEE-HK")</p>
+<h2 id="args">Args</h2>
+<ul>
+<li>name_filter: Filter the HK dataframe, based on (a part of) the name of the HK parameter(s)</li>
+<li>device: Filter the HK dataframe, based on the given storage mmenmonic
+Returns: Pandas DataFrame with the HK name, storage mnemonic, and description of the HK parameters that pass the
+given filter.</li>
+</ul></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_housekeeping_names(name_filter=None, device_filter=None):
+    &#34;&#34;&#34; Return HK names, storage mnemonic, and description.
+
+    The TM dictionary is read into a Pandas DataFrame.  If a device filter is given, only the rows pertaining to the
+    given storage mnemonic are kept.  If a name filter is given, only the rows for which the HK parameter name contains
+    the given name filter are kept.
+
+    The result is returned as a Pandas DataFrame with the following columns:
+        - &#34;CAM EGSE mnemonic&#34;: Name of the HK parameter;
+        - &#34;Storage mnemonic&#34;: Storage mnemonic of the device producing the HK;
+        - &#34;Description&#34;: Description of the HK parameter.
+
+    Synopsis: get_housekeeping_names(name_filter=&#34;RAW&#34;, device_filter=&#34;N-FEE-HK&#34;)
+
+    Args:
+        - name_filter: Filter the HK dataframe, based on (a part of) the name of the HK parameter(s)
+        - device: Filter the HK dataframe, based on the given storage mmenmonic
+
+    Returns: Pandas DataFrame with the HK name, storage mnemonic, and description of the HK parameters that pass the
+             given filter.
+    &#34;&#34;&#34;
+
+    filename = get_resource(f&#34;:/data/tm-dictionary.csv&#34;)
+
+    hk_info_table = pandas.read_csv(filename, sep=&#34;;&#34;)
+    hk_info_table.dropna(subset=[TmDictionaryColumns.CORRECT_HK_NAMES], inplace=True)
+
+    if device_filter:
+        hk_info_table = hk_info_table.loc[hk_info_table[TmDictionaryColumns.STORAGE_MNEMONIC] == device_filter]
+
+    if name_filter:
+        hk_info_table = hk_info_table.query(f&#39;`{TmDictionaryColumns.CORRECT_HK_NAMES}`.str.contains(&#34;{name_filter}&#34;)&#39;)
+
+    return hk_info_table[[TmDictionaryColumns.CORRECT_HK_NAMES, TmDictionaryColumns.STORAGE_MNEMONIC,
+                          TmDictionaryColumns.DESCRIPTION]]</code></pre>
 </details>
 </dd>
 <dt id="egse.hk.get_indices"><code class="name flex">
@@ -1103,6 +1223,29 @@ Returns: Sampling rate for the HK file with the given name [s].</li>
     # Calculate the sampling rate [s]
 
     return (last_timestamp - penultimate_timestamp).total_seconds()</code></pre>
+</details>
+</dd>
+<dt id="egse.hk.get_storage_mnemonics"><code class="name flex">
+<span>def <span class="ident">get_storage_mnemonics</span></span>(<span>)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Return the list of the storage mnemonics from the TM dictionary.</p>
+<p>Returns: List of the storage mnemonics from the TM dictionary.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_storage_mnemonics():
+    &#34;&#34;&#34; Return the list of the storage mnemonics from the TM dictionary.
+
+    Returns: List of the storage mnemonics from the TM dictionary.
+    &#34;&#34;&#34;
+
+    filename = get_resource(f&#34;:/data/tm-dictionary.csv&#34;)
+
+    hk_info_table = pandas.read_csv(filename, sep=&#34;;&#34;)
+    storage_mnemonics = hk_info_table[TmDictionaryColumns.STORAGE_MNEMONIC].values
+    return np.unique(storage_mnemonics)</code></pre>
 </details>
 </dd>
 <dt id="egse.hk.read_conversion_dict"><code class="name flex">
@@ -1329,9 +1472,11 @@ Returns: Dictionary with the original HK names as keys and the converted HK name
 <li><code><a title="egse.hk.convert_hk_names" href="#egse.hk.convert_hk_names">convert_hk_names</a></code></li>
 <li><code><a title="egse.hk.get_hk_info" href="#egse.hk.get_hk_info">get_hk_info</a></code></li>
 <li><code><a title="egse.hk.get_housekeeping" href="#egse.hk.get_housekeeping">get_housekeeping</a></code></li>
+<li><code><a title="egse.hk.get_housekeeping_names" href="#egse.hk.get_housekeeping_names">get_housekeeping_names</a></code></li>
 <li><code><a title="egse.hk.get_indices" href="#egse.hk.get_indices">get_indices</a></code></li>
 <li><code><a title="egse.hk.get_last_non_empty" href="#egse.hk.get_last_non_empty">get_last_non_empty</a></code></li>
 <li><code><a title="egse.hk.get_sampling_rate" href="#egse.hk.get_sampling_rate">get_sampling_rate</a></code></li>
+<li><code><a title="egse.hk.get_storage_mnemonics" href="#egse.hk.get_storage_mnemonics">get_storage_mnemonics</a></code></li>
 <li><code><a title="egse.hk.read_conversion_dict" href="#egse.hk.read_conversion_dict">read_conversion_dict</a></code></li>
 </ul>
 </li>

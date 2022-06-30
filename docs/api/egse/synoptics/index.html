@@ -350,7 +350,7 @@ class SynopticsManagerProxy(Proxy, SynopticsManagerInterface):
         super().__init__(connect_address(protocol, hostname, port))
 
 
-def get_synoptics_table(obsid: str):
+def get_synoptics_table(obsid: str, data_dir=None):
     &#34;&#34;&#34; Read and return the synoptics table for the given obsid as a pandas DataFrame.
 
     Args:
@@ -359,8 +359,10 @@ def get_synoptics_table(obsid: str):
     Returns: Synoptics table for the given obsid as a pandas DataFrame.
     &#34;&#34;&#34;
 
-    obsid = obsid_from_storage(obsid)
-    obs_dir = f&#34;{os.environ[&#39;PLATO_DATA_STORAGE_LOCATION&#39;]}/obs/{obsid}&#34;  # Where the synoptics file is stored
+    data_dir = data_dir or os.environ[&#39;PLATO_DATA_STORAGE_LOCATION&#39;]
+
+    obsid = obsid_from_storage(obsid, data_dir=data_dir)
+    obs_dir = f&#34;{data_dir}/obs/{obsid}&#34;  # Where the synoptics file is stored
 
     # Read the synoptics for the given obsid
 
@@ -391,7 +393,7 @@ def get_synoptics_table(obsid: str):
 <h2 class="section-title" id="header-functions">Functions</h2>
 <dl>
 <dt id="egse.synoptics.get_synoptics_table"><code class="name flex">
-<span>def <span class="ident">get_synoptics_table</span></span>(<span>obsid: str)</span>
+<span>def <span class="ident">get_synoptics_table</span></span>(<span>obsid: str, data_dir=None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Read and return the synoptics table for the given obsid as a pandas DataFrame.</p>
@@ -404,7 +406,7 @@ Returns: Synoptics table for the given obsid as a pandas DataFrame.</li>
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def get_synoptics_table(obsid: str):
+<pre><code class="python">def get_synoptics_table(obsid: str, data_dir=None):
     &#34;&#34;&#34; Read and return the synoptics table for the given obsid as a pandas DataFrame.
 
     Args:
@@ -413,8 +415,10 @@ Returns: Synoptics table for the given obsid as a pandas DataFrame.</li>
     Returns: Synoptics table for the given obsid as a pandas DataFrame.
     &#34;&#34;&#34;
 
-    obsid = obsid_from_storage(obsid)
-    obs_dir = f&#34;{os.environ[&#39;PLATO_DATA_STORAGE_LOCATION&#39;]}/obs/{obsid}&#34;  # Where the synoptics file is stored
+    data_dir = data_dir or os.environ[&#39;PLATO_DATA_STORAGE_LOCATION&#39;]
+
+    obsid = obsid_from_storage(obsid, data_dir=data_dir)
+    obs_dir = f&#34;{data_dir}/obs/{obsid}&#34;  # Where the synoptics file is stored
 
     # Read the synoptics for the given obsid
 

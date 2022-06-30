@@ -95,7 +95,7 @@ import rich
 from egse.exceptions import Abort
 
 
-def reload_module(module: typing.Union[types.ModuleType, str]):
+def reload_module(module: typing.Union[types.ModuleType, str], walk: bool = True):
     &#34;&#34;&#34;
     Reloads the given module and all its parent modules. The modules will be reloaded starting
     from their top-level module. Reloading the &#39;egse.hexapod.symetry.puna&#39; module will reload
@@ -113,11 +113,15 @@ def reload_module(module: typing.Union[types.ModuleType, str]):
 
     Args:
         module: The module that needs to be reloaded
+        walk: walk up the module hierarchy and import all modules [default=True]
 
     &#34;&#34;&#34;
     full_module_name = module.__name__ if isinstance(module, types.ModuleType) else module
 
-    for module_name in itertools.accumulate(full_module_name.split(&#39;.&#39;), lambda x, y: f&#34;{x}.{y}&#34;):
+    module_names = itertools.accumulate(full_module_name.split(&#39;.&#39;),
+                                        lambda x, y: f&#34;{x}.{y}&#34;) if walk else [full_module_name]
+
+    for module_name in module_names:
         try:
             module = importlib.import_module(module_name)
             importlib.reload(module)
@@ -255,7 +259,7 @@ in the <strong>main</strong> module.</p></div>
 </details>
 </dd>
 <dt id="egse.reload.reload_module"><code class="name flex">
-<span>def <span class="ident">reload_module</span></span>(<span>module: Union[module, str])</span>
+<span>def <span class="ident">reload_module</span></span>(<span>module: Union[module, str], walk: bool = True)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Reloads the given module and all its parent modules. The modules will be reloaded starting
@@ -274,12 +278,14 @@ or
 <dl>
 <dt><strong><code>module</code></strong></dt>
 <dd>The module that needs to be reloaded</dd>
+<dt><strong><code>walk</code></strong></dt>
+<dd>walk up the module hierarchy and import all modules [default=True]</dd>
 </dl></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def reload_module(module: typing.Union[types.ModuleType, str]):
+<pre><code class="python">def reload_module(module: typing.Union[types.ModuleType, str], walk: bool = True):
     &#34;&#34;&#34;
     Reloads the given module and all its parent modules. The modules will be reloaded starting
     from their top-level module. Reloading the &#39;egse.hexapod.symetry.puna&#39; module will reload
@@ -297,11 +303,15 @@ or
 
     Args:
         module: The module that needs to be reloaded
+        walk: walk up the module hierarchy and import all modules [default=True]
 
     &#34;&#34;&#34;
     full_module_name = module.__name__ if isinstance(module, types.ModuleType) else module
 
-    for module_name in itertools.accumulate(full_module_name.split(&#39;.&#39;), lambda x, y: f&#34;{x}.{y}&#34;):
+    module_names = itertools.accumulate(full_module_name.split(&#39;.&#39;),
+                                        lambda x, y: f&#34;{x}.{y}&#34;) if walk else [full_module_name]
+
+    for module_name in module_names:
         try:
             module = importlib.import_module(module_name)
             importlib.reload(module)

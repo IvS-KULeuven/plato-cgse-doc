@@ -36,7 +36,7 @@ import invoke
 import rich
 import sys
 import zmq
-from math import sin, cos, tan, acos, atan, radians, degrees, pi
+from math import sin, cos, tan, acos, asin, atan, radians, degrees, pi, sqrt
 from numpy import sign
 from prometheus_client import start_http_server
 
@@ -110,6 +110,8 @@ def start():
 
     sitehash = {
         &#34;CSL&#34;: _csl_start,
+        &#34;CSL1&#34;: _csl_start,
+        &#34;CSL2&#34;: _csl_start,
         &#34;IAS&#34;: _ias_start,
         &#34;INTA&#34;: _inta_start,
         &#34;SRON&#34;: _sron_start,
@@ -208,11 +210,6 @@ class CslFovHk(FovHk):
 
                     pickle_string = self.monitoring_socket.recv()
                     monitoring_info = pickle.loads(pickle_string)
-
-                    # Update the timeout, to be more in line with the monitoring frequency of the CS (i.e. the delay).
-                    # Take 0.5s extra to be on the safe side.
-
-                    monitoring_timeout = monitoring_info[&#34;delay&#34;] / 1000.0 + 0.5  # [s]
 
                     # Retrieve the position of the small and the big rotation stage
 
@@ -356,7 +353,14 @@ class IasFovHk(FovHk):
 
         # Create a socket and connect to the monitoring port
 
-        # TODO Read the settings of the CS you need + connect socket
+        settings = Settings.load(&#34;Hexapod ZONDA Control Server&#34;)
+        self.cmd_endpoint = connect_address(settings.PROTOCOL, settings.HOSTNAME, settings.COMMANDING_PORT)
+
+        monitoring_address = connect_address(settings.PROTOCOL, settings.HOSTNAME, settings.MONITORING_PORT)
+        self.monitoring_socket = zmq.Context().socket(zmq.SUB)
+        self.monitoring_socket.connect(monitoring_address)
+        self.monitoring_socket.setsockopt_string(zmq.SUBSCRIBE, &#34;&#34;)
+        self.monitoring_timeout = 1.0
 
         self.start_fov_hk_acquisition()
 
@@ -364,13 +368,37 @@ class IasFovHk(FovHk):
 
         while self.keep_acquiring_fov_hk:
 
-            # TODO  Listen to the necessary monitoring ports + convert the info to field angles
-            pass
+            try:
+
+                socket_list, _, _ = zmq.select([self.monitoring_socket], [], [], timeout=self.monitoring_timeout)
+
+                # Monitoring information was received (before timeout)
+
+                if self.monitoring_socket in socket_list:
+
+                    pickle_string = self.monitoring_socket.recv()
+                    monitoring_info = pickle.loads(pickle_string)
+
+                    # Retrieve the rotation angles around the y- and z-axis
+                    # (the rotation angle around the x-axis and the translation are not needed here)
+
+                    hexapod_rot_y = radians(monitoring_info[&#34;user_r_y&#34;])    # Rotation angle around the x-axis [degrees]
+                    hexapod_rot_z = radians(monitoring_info[&#34;user_r_z&#34;])    # Rotation angle around the y-axis [degrees]
+
+                    theta = degrees(acos(cos(hexapod_rot_y) * cos(hexapod_rot_z)))
+                    phi = degrees(-asin(sin(hexapod_rot_z) / sqrt(1 - pow(cos(hexapod_rot_y) * cos(hexapod_rot_z), 2))))
+
+                    store_actual_fov_position(theta, phi)
+
+                elif is_control_server_active(self.cmd_endpoint):
+                    self.monitoring_timeout += 0.5
+
+            except zmq.ZMQError:
+                pass
 
     def close_sockets(self):
 
-        # TODO Close all monitoring sockets
-        pass
+        self.monitoring_socket.close()
 
 
 def _ias_start(commander, poller):
@@ -388,8 +416,6 @@ def _ias_start(commander, poller):
 
     # Calculate the field angles (theta, phi), based on the current configuration of the relevant mechanisms
     # Call store_actual_fov_position to save them to the appropriate HK file
-
-    raise NotImplementedError(&#34;fov_hk start not implemented for IAS&#34;)
 
     ias_fov_hk = IasFovHk()
     ias_fov_hk.run(commander, poller)
@@ -653,11 +679,6 @@ Returns: Response to the request.</li>
                     pickle_string = self.monitoring_socket.recv()
                     monitoring_info = pickle.loads(pickle_string)
 
-                    # Update the timeout, to be more in line with the monitoring frequency of the CS (i.e. the delay).
-                    # Take 0.5s extra to be on the safe side.
-
-                    monitoring_timeout = monitoring_info[&#34;delay&#34;] / 1000.0 + 0.5  # [s]
-
                     # Retrieve the position of the small and the big rotation stage
 
                     position_big_rotation_stage = monitoring_info[&#34;big_rotation_stage_position&#34;]
@@ -709,11 +730,6 @@ Returns: Response to the request.</li>
 
                 pickle_string = self.monitoring_socket.recv()
                 monitoring_info = pickle.loads(pickle_string)
-
-                # Update the timeout, to be more in line with the monitoring frequency of the CS (i.e. the delay).
-                # Take 0.5s extra to be on the safe side.
-
-                monitoring_timeout = monitoring_info[&#34;delay&#34;] / 1000.0 + 0.5  # [s]
 
                 # Retrieve the position of the small and the big rotation stage
 
@@ -904,7 +920,14 @@ Returns: Response to the request.</li>
 
         # Create a socket and connect to the monitoring port
 
-        # TODO Read the settings of the CS you need + connect socket
+        settings = Settings.load(&#34;Hexapod ZONDA Control Server&#34;)
+        self.cmd_endpoint = connect_address(settings.PROTOCOL, settings.HOSTNAME, settings.COMMANDING_PORT)
+
+        monitoring_address = connect_address(settings.PROTOCOL, settings.HOSTNAME, settings.MONITORING_PORT)
+        self.monitoring_socket = zmq.Context().socket(zmq.SUB)
+        self.monitoring_socket.connect(monitoring_address)
+        self.monitoring_socket.setsockopt_string(zmq.SUBSCRIBE, &#34;&#34;)
+        self.monitoring_timeout = 1.0
 
         self.start_fov_hk_acquisition()
 
@@ -912,13 +935,37 @@ Returns: Response to the request.</li>
 
         while self.keep_acquiring_fov_hk:
 
-            # TODO  Listen to the necessary monitoring ports + convert the info to field angles
-            pass
+            try:
+
+                socket_list, _, _ = zmq.select([self.monitoring_socket], [], [], timeout=self.monitoring_timeout)
+
+                # Monitoring information was received (before timeout)
+
+                if self.monitoring_socket in socket_list:
+
+                    pickle_string = self.monitoring_socket.recv()
+                    monitoring_info = pickle.loads(pickle_string)
+
+                    # Retrieve the rotation angles around the y- and z-axis
+                    # (the rotation angle around the x-axis and the translation are not needed here)
+
+                    hexapod_rot_y = radians(monitoring_info[&#34;user_r_y&#34;])    # Rotation angle around the x-axis [degrees]
+                    hexapod_rot_z = radians(monitoring_info[&#34;user_r_z&#34;])    # Rotation angle around the y-axis [degrees]
+
+                    theta = degrees(acos(cos(hexapod_rot_y) * cos(hexapod_rot_z)))
+                    phi = degrees(-asin(sin(hexapod_rot_z) / sqrt(1 - pow(cos(hexapod_rot_y) * cos(hexapod_rot_z), 2))))
+
+                    store_actual_fov_position(theta, phi)
+
+                elif is_control_server_active(self.cmd_endpoint):
+                    self.monitoring_timeout += 0.5
+
+            except zmq.ZMQError:
+                pass
 
     def close_sockets(self):
 
-        # TODO Close all monitoring sockets
-        pass</code></pre>
+        self.monitoring_socket.close()</code></pre>
 </details>
 <h3>Ancestors</h3>
 <ul class="hlist">
@@ -939,8 +986,33 @@ Returns: Response to the request.</li>
 
     while self.keep_acquiring_fov_hk:
 
-        # TODO  Listen to the necessary monitoring ports + convert the info to field angles
-        pass</code></pre>
+        try:
+
+            socket_list, _, _ = zmq.select([self.monitoring_socket], [], [], timeout=self.monitoring_timeout)
+
+            # Monitoring information was received (before timeout)
+
+            if self.monitoring_socket in socket_list:
+
+                pickle_string = self.monitoring_socket.recv()
+                monitoring_info = pickle.loads(pickle_string)
+
+                # Retrieve the rotation angles around the y- and z-axis
+                # (the rotation angle around the x-axis and the translation are not needed here)
+
+                hexapod_rot_y = radians(monitoring_info[&#34;user_r_y&#34;])    # Rotation angle around the x-axis [degrees]
+                hexapod_rot_z = radians(monitoring_info[&#34;user_r_z&#34;])    # Rotation angle around the y-axis [degrees]
+
+                theta = degrees(acos(cos(hexapod_rot_y) * cos(hexapod_rot_z)))
+                phi = degrees(-asin(sin(hexapod_rot_z) / sqrt(1 - pow(cos(hexapod_rot_y) * cos(hexapod_rot_z), 2))))
+
+                store_actual_fov_position(theta, phi)
+
+            elif is_control_server_active(self.cmd_endpoint):
+                self.monitoring_timeout += 0.5
+
+        except zmq.ZMQError:
+            pass</code></pre>
 </details>
 </dd>
 <dt id="egse.fov.fov_hk.IasFovHk.close_sockets"><code class="name flex">
@@ -954,8 +1026,7 @@ Returns: Response to the request.</li>
 </summary>
 <pre><code class="python">def close_sockets(self):
 
-    # TODO Close all monitoring sockets
-    pass</code></pre>
+    self.monitoring_socket.close()</code></pre>
 </details>
 </dd>
 </dl>

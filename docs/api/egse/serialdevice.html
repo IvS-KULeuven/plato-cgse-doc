@@ -49,10 +49,12 @@ class SerialDevice(DeviceConnectionInterface):
     &#34;&#34;&#34;
 
 
-    def __init__(self, port=None, baudrate=9600, terminator=&#39;\r&#39;, timeout=5):
+    def __init__(self, port=None, baudrate=9600, terminator=&#39;\r&#39;, timeout=5, encoding=&#39;ascii&#39;, errors=&#39;strict&#39;):
         self._port       = port
         self._baudrate   = baudrate
         self._terminator = terminator
+        self._encoding   = encoding
+        self._errors     = errors
         self._timeout    = timeout
         self._serial     = None
         self._connected  = False
@@ -146,7 +148,6 @@ class SerialDevice(DeviceConnectionInterface):
 
         return True
 
-
     def send_command(self, command: str):
         &#34;&#34;&#34;
         Send a single command to the device controller without waiting for a response.
@@ -163,7 +164,7 @@ class SerialDevice(DeviceConnectionInterface):
 
         try:
             with self._lock:
-                self._serial.write(command.encode())
+                self._serial.write(command.encode(encoding=self._encoding, errors=self._errors))
 
         except SerialTimeoutException as e_timeout:
             raise ConnectionError(&#34;Serial timeout error&#34;) from e_timeout
@@ -186,10 +187,10 @@ class SerialDevice(DeviceConnectionInterface):
             with self._lock:
                 # Read the response
                 # NOTE: the serial module reads until it encounters the \n termination character
-                return_string = self._serial.read_until(self._terminator.encode(), size=1024)
+                return_string = self._serial.read_until(self._terminator.encode(encoding=self._encoding, errors=self._errors), size=1024)
                 # print(f&#34;recv: &#34;, repr(return_string))
 
-            return return_string.decode()
+            return return_string.decode(encoding=self._encoding, errors=self._errors)
 
         except SerialTimeoutException as e_timeout:
             raise ConnectionError(&#34;Serial timeout during query&#34;) from e_timeout
@@ -229,7 +230,7 @@ class SerialDevice(DeviceConnectionInterface):
 <dl>
 <dt id="egse.serialdevice.SerialDevice"><code class="flex name class">
 <span>class <span class="ident">SerialDevice</span></span>
-<span>(</span><span>port=None, baudrate=9600, terminator='\r', timeout=5)</span>
+<span>(</span><span>port=None, baudrate=9600, terminator='\r', timeout=5, encoding='ascii', errors='strict')</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Generic base class for serial based device interface classes.</p>
@@ -245,10 +246,12 @@ class SerialDevice(DeviceConnectionInterface):
     &#34;&#34;&#34;
 
 
-    def __init__(self, port=None, baudrate=9600, terminator=&#39;\r&#39;, timeout=5):
+    def __init__(self, port=None, baudrate=9600, terminator=&#39;\r&#39;, timeout=5, encoding=&#39;ascii&#39;, errors=&#39;strict&#39;):
         self._port       = port
         self._baudrate   = baudrate
         self._terminator = terminator
+        self._encoding   = encoding
+        self._errors     = errors
         self._timeout    = timeout
         self._serial     = None
         self._connected  = False
@@ -342,7 +345,6 @@ class SerialDevice(DeviceConnectionInterface):
 
         return True
 
-
     def send_command(self, command: str):
         &#34;&#34;&#34;
         Send a single command to the device controller without waiting for a response.
@@ -359,7 +361,7 @@ class SerialDevice(DeviceConnectionInterface):
 
         try:
             with self._lock:
-                self._serial.write(command.encode())
+                self._serial.write(command.encode(encoding=self._encoding, errors=self._errors))
 
         except SerialTimeoutException as e_timeout:
             raise ConnectionError(&#34;Serial timeout error&#34;) from e_timeout
@@ -382,10 +384,10 @@ class SerialDevice(DeviceConnectionInterface):
             with self._lock:
                 # Read the response
                 # NOTE: the serial module reads until it encounters the \n termination character
-                return_string = self._serial.read_until(self._terminator.encode(), size=1024)
+                return_string = self._serial.read_until(self._terminator.encode(encoding=self._encoding, errors=self._errors), size=1024)
                 # print(f&#34;recv: &#34;, repr(return_string))
 
-            return return_string.decode()
+            return return_string.decode(encoding=self._encoding, errors=self._errors)
 
         except SerialTimeoutException as e_timeout:
             raise ConnectionError(&#34;Serial timeout during query&#34;) from e_timeout
@@ -639,10 +641,10 @@ controller.</p></div>
         with self._lock:
             # Read the response
             # NOTE: the serial module reads until it encounters the \n termination character
-            return_string = self._serial.read_until(self._terminator.encode(), size=1024)
+            return_string = self._serial.read_until(self._terminator.encode(encoding=self._encoding, errors=self._errors), size=1024)
             # print(f&#34;recv: &#34;, repr(return_string))
 
-        return return_string.decode()
+        return return_string.decode(encoding=self._encoding, errors=self._errors)
 
     except SerialTimeoutException as e_timeout:
         raise ConnectionError(&#34;Serial timeout during query&#34;) from e_timeout</code></pre>
@@ -700,7 +702,7 @@ problem.</p></div>
 
     try:
         with self._lock:
-            self._serial.write(command.encode())
+            self._serial.write(command.encode(encoding=self._encoding, errors=self._errors))
 
     except SerialTimeoutException as e_timeout:
         raise ConnectionError(&#34;Serial timeout error&#34;) from e_timeout</code></pre>

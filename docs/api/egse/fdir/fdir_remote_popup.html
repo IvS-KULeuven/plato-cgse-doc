@@ -34,9 +34,13 @@ from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog, QLabel, QVBoxLay
 from PyQt5.QtGui import QFont
 
 
-logger = logging.getLogger(__name__)
-
+# This function can be used generates a pop-up window when an FDIR situation was triggered.
+# This is put into a separate module to avoid having to run the QT thread in the control server
+# (where the popup is generated). There are probably better ways to do this but this works.
 def main():
+
+    logger = logging.getLogger(__name__)
+
     parser = ArgumentParser()
     parser.add_argument(&#39;code&#39;, type=str, help=&#39;FDIR code string&#39;)
     parser.add_argument(&#39;success&#39;, type=str, help=&#39;recovery script success&#39;)
@@ -65,7 +69,7 @@ def main():
     app.exec_()
 
 
-if __name__ == &#34;__main__&#34;:
+if __name__ == &#39;__main__&#39;:
     main()</code></pre>
 </details>
 </section>
@@ -86,6 +90,9 @@ if __name__ == &#34;__main__&#34;:
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def main():
+
+    logger = logging.getLogger(__name__)
+
     parser = ArgumentParser()
     parser.add_argument(&#39;code&#39;, type=str, help=&#39;FDIR code string&#39;)
     parser.add_argument(&#39;success&#39;, type=str, help=&#39;recovery script success&#39;)

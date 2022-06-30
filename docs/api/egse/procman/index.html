@@ -360,16 +360,9 @@ class ProcessManagerController(ProcessManagerInterface):
         Bother the Configuration Manager and the Storage manager should be running.
         &#34;&#34;&#34;
 
-        # Configuration Manager must be active
+        # Keep track of the Configuration Manager
 
-        if is_configuration_manager_active():
-
-            self._configuration = ConfigurationManagerProxy()
-
-        else:
-
-            self._configuration = None
-            LOGGER.error(&#34;No Configuration Manager available!!!!&#34;)
+        self._configuration = ConfigurationManagerProxy()
 
         # Storage Manager must be active
 
@@ -378,8 +371,8 @@ class ProcessManagerController(ProcessManagerInterface):
             LOGGER.error(&#34;No Storage Manager available!!!!&#34;)
 
     def quit(self):
-        if self._configuration:
-            self._configuration.disconnect_cs()
+
+        self._configuration.disconnect_cs()
 
     def get_cm_proxy(self):
         &#34;&#34;&#34;
@@ -388,6 +381,9 @@ class ProcessManagerController(ProcessManagerInterface):
         Returns:
             - Proxy for Configuration Management.
         &#34;&#34;&#34;
+
+        if not self._configuration.has_commands():
+            self._configuration.load_commands()
 
         return self._configuration
 
@@ -977,16 +973,9 @@ inactive (and False will be returned).</p>
         Bother the Configuration Manager and the Storage manager should be running.
         &#34;&#34;&#34;
 
-        # Configuration Manager must be active
+        # Keep track of the Configuration Manager
 
-        if is_configuration_manager_active():
-
-            self._configuration = ConfigurationManagerProxy()
-
-        else:
-
-            self._configuration = None
-            LOGGER.error(&#34;No Configuration Manager available!!!!&#34;)
+        self._configuration = ConfigurationManagerProxy()
 
         # Storage Manager must be active
 
@@ -995,8 +984,8 @@ inactive (and False will be returned).</p>
             LOGGER.error(&#34;No Storage Manager available!!!!&#34;)
 
     def quit(self):
-        if self._configuration:
-            self._configuration.disconnect_cs()
+
+        self._configuration.disconnect_cs()
 
     def get_cm_proxy(self):
         &#34;&#34;&#34;
@@ -1005,6 +994,9 @@ inactive (and False will be returned).</p>
         Returns:
             - Proxy for Configuration Management.
         &#34;&#34;&#34;
+
+        if not self._configuration.has_commands():
+            self._configuration.load_commands()
 
         return self._configuration
 
@@ -1529,8 +1521,8 @@ from the "device" entries in the setup file (and should be Proxy classes).</p>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def quit(self):
-    if self._configuration:
-        self._configuration.disconnect_cs()</code></pre>
+
+    self._configuration.disconnect_cs()</code></pre>
 </details>
 </dd>
 <dt id="egse.procman.ProcessManagerController.shut_down_cs"><code class="name flex">

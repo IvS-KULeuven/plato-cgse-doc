@@ -316,7 +316,7 @@ def command_get_mode(transport: SpaceWireInterface, register_map: RegisterMap):
     return register_map.get_value(&#34;reg_21_config&#34;, &#34;ccd_mode_config&#34;)
 
 
-def prio_command_is_dump_mode(n_fee_state: NFEEState.StateTuple) -&gt; bool:
+def prio_command_is_dump_mode(n_fee_state: NFEEState.StateTuple, dpu_internals: &#34;DPUInternals&#34;) -&gt; bool:
     MODULE_LOGGER.info(&#34;Request N-FEE if in DUMP mode (prio).&#34;)
 
     # This is a prio command which means it will be executed as soon as possible and return quickly.
@@ -329,7 +329,7 @@ def prio_command_is_dump_mode(n_fee_state: NFEEState.StateTuple) -&gt; bool:
     )
 
 
-def prio_command_get_mode(n_fee_state: NFEEState.StateTuple):
+def prio_command_get_mode(n_fee_state: NFEEState.StateTuple, dpu_internals: &#34;DPUInternals&#34;):
     MODULE_LOGGER.info(&#34;Request mode from N-FEE (prio).&#34;)
 
     # This is a prio command which means it will be executed as soon as possible and return quickly.
@@ -337,6 +337,28 @@ def prio_command_get_mode(n_fee_state: NFEEState.StateTuple):
     # the N-FEE State instead of the RegisterMap.
 
     return n_fee_state.ccd_mode_config
+
+
+def prio_command_set_slicing(n_fee_state: namedtuple, dpu_internals: &#34;DPUInternals&#34;, num_cycles: int):
+    MODULE_LOGGER.info(f&#34;Set slicing parameter: {num_cycles = } (prio)&#34;)
+
+    # This is a prio command which means it will be executed as soon as possible and return quickly.
+    # Mode change in the N-FEE happens only on long (400ms) pulses, therefore prio commands act on
+    # the N-FEE State instead of the RegisterMap.
+
+    dpu_internals.slicing_num_cycles = num_cycles
+
+    return num_cycles
+
+
+def prio_command_get_slicing(n_fee_state: namedtuple, dpu_internals: &#34;DPUInternals&#34;) -&gt; int:
+    MODULE_LOGGER.info(&#34;Request slicing parameter (prio)&#34;)
+
+    # This is a prio command which means it will be executed as soon as possible and return quickly.
+    # Mode change in the N-FEE happens only on long (400ms) pulses, therefore prio commands act on
+    # the N-FEE State instead of the RegisterMap.
+
+    return dpu_internals.slicing_num_cycles
 
 
 def command_set_immediate_on_mode(transport: SpaceWireInterface, register_map: RegisterMap):
@@ -1324,7 +1346,7 @@ but this is not checked by this function (it is an assumption that the caller ha
 </details>
 </dd>
 <dt id="egse.dpu.dpu.prio_command_get_mode"><code class="name flex">
-<span>def <span class="ident">prio_command_get_mode</span></span>(<span>n_fee_state: egse.dpu.dpu.StateTuple)</span>
+<span>def <span class="ident">prio_command_get_mode</span></span>(<span>n_fee_state: egse.dpu.dpu.StateTuple, dpu_internals: DPUInternals)</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -1332,7 +1354,7 @@ but this is not checked by this function (it is an assumption that the caller ha
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def prio_command_get_mode(n_fee_state: NFEEState.StateTuple):
+<pre><code class="python">def prio_command_get_mode(n_fee_state: NFEEState.StateTuple, dpu_internals: &#34;DPUInternals&#34;):
     MODULE_LOGGER.info(&#34;Request mode from N-FEE (prio).&#34;)
 
     # This is a prio command which means it will be executed as soon as possible and return quickly.
@@ -1342,8 +1364,8 @@ but this is not checked by this function (it is an assumption that the caller ha
     return n_fee_state.ccd_mode_config</code></pre>
 </details>
 </dd>
-<dt id="egse.dpu.dpu.prio_command_is_dump_mode"><code class="name flex">
-<span>def <span class="ident">prio_command_is_dump_mode</span></span>(<span>n_fee_state: egse.dpu.dpu.StateTuple) ‑> bool</span>
+<dt id="egse.dpu.dpu.prio_command_get_slicing"><code class="name flex">
+<span>def <span class="ident">prio_command_get_slicing</span></span>(<span>n_fee_state: <function namedtuple at 0x7fabc005af70>, dpu_internals: DPUInternals) ‑> int</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -1351,7 +1373,26 @@ but this is not checked by this function (it is an assumption that the caller ha
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def prio_command_is_dump_mode(n_fee_state: NFEEState.StateTuple) -&gt; bool:
+<pre><code class="python">def prio_command_get_slicing(n_fee_state: namedtuple, dpu_internals: &#34;DPUInternals&#34;) -&gt; int:
+    MODULE_LOGGER.info(&#34;Request slicing parameter (prio)&#34;)
+
+    # This is a prio command which means it will be executed as soon as possible and return quickly.
+    # Mode change in the N-FEE happens only on long (400ms) pulses, therefore prio commands act on
+    # the N-FEE State instead of the RegisterMap.
+
+    return dpu_internals.slicing_num_cycles</code></pre>
+</details>
+</dd>
+<dt id="egse.dpu.dpu.prio_command_is_dump_mode"><code class="name flex">
+<span>def <span class="ident">prio_command_is_dump_mode</span></span>(<span>n_fee_state: egse.dpu.dpu.StateTuple, dpu_internals: DPUInternals) ‑> bool</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def prio_command_is_dump_mode(n_fee_state: NFEEState.StateTuple, dpu_internals: &#34;DPUInternals&#34;) -&gt; bool:
     MODULE_LOGGER.info(&#34;Request N-FEE if in DUMP mode (prio).&#34;)
 
     # This is a prio command which means it will be executed as soon as possible and return quickly.
@@ -1362,6 +1403,27 @@ but this is not checked by this function (it is an assumption that the caller ha
         not n_fee_state.digitise_en and n_fee_state.DG_en and
         n_fee_state.ccd_mode_config == n_fee_mode.FULL_IMAGE_MODE
     )</code></pre>
+</details>
+</dd>
+<dt id="egse.dpu.dpu.prio_command_set_slicing"><code class="name flex">
+<span>def <span class="ident">prio_command_set_slicing</span></span>(<span>n_fee_state: <function namedtuple at 0x7fabc005af70>, dpu_internals: DPUInternals, num_cycles: int)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def prio_command_set_slicing(n_fee_state: namedtuple, dpu_internals: &#34;DPUInternals&#34;, num_cycles: int):
+    MODULE_LOGGER.info(f&#34;Set slicing parameter: {num_cycles = } (prio)&#34;)
+
+    # This is a prio command which means it will be executed as soon as possible and return quickly.
+    # Mode change in the N-FEE happens only on long (400ms) pulses, therefore prio commands act on
+    # the N-FEE State instead of the RegisterMap.
+
+    dpu_internals.slicing_num_cycles = num_cycles
+
+    return num_cycles</code></pre>
 </details>
 </dd>
 <dt id="egse.dpu.dpu.read_register_from_n_fee"><code class="name flex">
@@ -1974,7 +2036,9 @@ frame number is the housekeeping packet is zero, frame_number==0.</p>
 <li><code><a title="egse.dpu.dpu.command_set_standby_mode" href="#egse.dpu.dpu.command_set_standby_mode">command_set_standby_mode</a></code></li>
 <li><code><a title="egse.dpu.dpu.command_set_vgd" href="#egse.dpu.dpu.command_set_vgd">command_set_vgd</a></code></li>
 <li><code><a title="egse.dpu.dpu.prio_command_get_mode" href="#egse.dpu.dpu.prio_command_get_mode">prio_command_get_mode</a></code></li>
+<li><code><a title="egse.dpu.dpu.prio_command_get_slicing" href="#egse.dpu.dpu.prio_command_get_slicing">prio_command_get_slicing</a></code></li>
 <li><code><a title="egse.dpu.dpu.prio_command_is_dump_mode" href="#egse.dpu.dpu.prio_command_is_dump_mode">prio_command_is_dump_mode</a></code></li>
+<li><code><a title="egse.dpu.dpu.prio_command_set_slicing" href="#egse.dpu.dpu.prio_command_set_slicing">prio_command_set_slicing</a></code></li>
 <li><code><a title="egse.dpu.dpu.read_register_from_n_fee" href="#egse.dpu.dpu.read_register_from_n_fee">read_register_from_n_fee</a></code></li>
 <li><code><a title="egse.dpu.dpu.write_register_on_n_fee" href="#egse.dpu.dpu.write_register_on_n_fee">write_register_on_n_fee</a></code></li>
 </ul>
