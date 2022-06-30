@@ -163,7 +163,7 @@ class FilenamesMonitoringWorker(QObject):
 
                         self.filenames_signal.emit(monitoring_info)
 
-                    current_fitsgen_status = (FitsgenStatus.PROCESSING if monitoring_info.get(&#34;hdf5&#34;)
+                    current_fitsgen_status = (FitsgenStatus.PROCESSING if current_hdf5_filename
                                               else FitsgenStatus.IDLE)
 
                     if self.fitsgen_status != current_fitsgen_status:
@@ -173,6 +173,7 @@ class FilenamesMonitoringWorker(QObject):
                 # Timeout occurred
 
                 else:
+                    self.fitsgen_status = FitsgenStatus.DOWN
                     self.status_signal.emit(FitsgenStatus.DOWN)
 
             except zmq.ZMQError:
@@ -535,7 +536,7 @@ if __name__ == &#39;__main__&#39;:
 
                         self.filenames_signal.emit(monitoring_info)
 
-                    current_fitsgen_status = (FitsgenStatus.PROCESSING if monitoring_info.get(&#34;hdf5&#34;)
+                    current_fitsgen_status = (FitsgenStatus.PROCESSING if current_hdf5_filename
                                               else FitsgenStatus.IDLE)
 
                     if self.fitsgen_status != current_fitsgen_status:
@@ -545,6 +546,7 @@ if __name__ == &#39;__main__&#39;:
                 # Timeout occurred
 
                 else:
+                    self.fitsgen_status = FitsgenStatus.DOWN
                     self.status_signal.emit(FitsgenStatus.DOWN)
 
             except zmq.ZMQError:
@@ -639,7 +641,7 @@ def run(self):
 
                     self.filenames_signal.emit(monitoring_info)
 
-                current_fitsgen_status = (FitsgenStatus.PROCESSING if monitoring_info.get(&#34;hdf5&#34;)
+                current_fitsgen_status = (FitsgenStatus.PROCESSING if current_hdf5_filename
                                           else FitsgenStatus.IDLE)
 
                 if self.fitsgen_status != current_fitsgen_status:
@@ -649,6 +651,7 @@ def run(self):
             # Timeout occurred
 
             else:
+                self.fitsgen_status = FitsgenStatus.DOWN
                 self.status_signal.emit(FitsgenStatus.DOWN)
 
         except zmq.ZMQError:
@@ -987,7 +990,8 @@ def run(self):
     &#34;&#34;&#34; Create the status bar.&#34;&#34;&#34;
 
     self.statusBar().setStyleSheet(&#34;border: 0; background-color: #FFF8DC;&#34;)
-    self.statusBar().setStyleSheet(&#34;QStatusBar::item {border: none;}&#34;)</code></pre>
+    self.statusBar().setStyleSheet(&#34;QStatusBar::item {border: none;}&#34;)
+    # self.statusBar().addPermanentWidget(VLine())</code></pre>
 </details>
 </dd>
 <dt id="egse.dpu.fitsgen_ui.FitsgenUIView.create_toolbar"><code class="name flex">

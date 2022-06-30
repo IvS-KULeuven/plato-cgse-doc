@@ -278,6 +278,15 @@ class BaseCommandProtocol(DeviceConnectionObserver):
             logger.warning(f&#34;Invalid command received: {cmd_name}&#34;)
             self.send(Failure(f&#34;Invalid command: {cmd_name}&#34;))
 
+    def quit(self):
+        &#34;&#34;&#34;
+        This method can be overridden by a sub-class to cleanup and stop threads that it
+        started.
+        &#34;&#34;&#34;
+
+        logger.info(&#34;quit() method called on Protocol base class.&#34;)
+
+
 
 class DynamicCommandProtocol(BaseCommandProtocol, metaclass=abc.ABCMeta):
     def __init__(self, control_server: ControlServer):
@@ -915,7 +924,15 @@ update of its state by calling the <code>update_connection_state()</code> method
         else:
             COMMAND_REQUESTS.labels(target=&#34;invalid&#34;).inc()
             logger.warning(f&#34;Invalid command received: {cmd_name}&#34;)
-            self.send(Failure(f&#34;Invalid command: {cmd_name}&#34;))</code></pre>
+            self.send(Failure(f&#34;Invalid command: {cmd_name}&#34;))
+
+    def quit(self):
+        &#34;&#34;&#34;
+        This method can be overridden by a sub-class to cleanup and stop threads that it
+        started.
+        &#34;&#34;&#34;
+
+        logger.info(&#34;quit() method called on Protocol base class.&#34;)</code></pre>
 </details>
 <h3>Ancestors</h3>
 <ul class="hlist">
@@ -1151,6 +1168,25 @@ that was started is still alive.</p></div>
     that was started is still alive.
     &#34;&#34;&#34;
     return True</code></pre>
+</details>
+</dd>
+<dt id="egse.protocol.BaseCommandProtocol.quit"><code class="name flex">
+<span>def <span class="ident">quit</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>This method can be overridden by a sub-class to cleanup and stop threads that it
+started.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def quit(self):
+    &#34;&#34;&#34;
+    This method can be overridden by a sub-class to cleanup and stop threads that it
+    started.
+    &#34;&#34;&#34;
+
+    logger.info(&#34;quit() method called on Protocol base class.&#34;)</code></pre>
 </details>
 </dd>
 <dt id="egse.protocol.BaseCommandProtocol.receive"><code class="name flex">
@@ -1532,12 +1568,13 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
 <h3>Subclasses</h3>
 <ul class="hlist">
 <li><a title="egse.aeu.aeu_protocol.AEUProtocol" href="aeu/aeu_protocol.html#egse.aeu.aeu_protocol.AEUProtocol">AEUProtocol</a></li>
+<li><a title="egse.alert.alert_manager.AlertManagerProtocol" href="alert/alert_manager.html#egse.alert.alert_manager.AlertManagerProtocol">AlertManagerProtocol</a></li>
+<li><a title="egse.alert.gsm.beaglebone_protocol.BeagleboneProtocol" href="alert/gsm/beaglebone_protocol.html#egse.alert.gsm.beaglebone_protocol.BeagleboneProtocol">BeagleboneProtocol</a></li>
 <li><a title="egse.confman.ConfigurationManagerProtocol" href="confman/index.html#egse.confman.ConfigurationManagerProtocol">ConfigurationManagerProtocol</a></li>
 <li><a title="egse.dpu.DPUProtocol" href="dpu/index.html#egse.dpu.DPUProtocol">DPUProtocol</a></li>
 <li><a title="egse.dummy.DummyProtocol" href="dummy.html#egse.dummy.DummyProtocol">DummyProtocol</a></li>
 <li><a title="egse.fdir.fdir_manager.FdirManagerProtocol" href="fdir/fdir_manager.html#egse.fdir.fdir_manager.FdirManagerProtocol">FdirManagerProtocol</a></li>
 <li><a title="egse.fdir.fdir_remote.FdirRemoteProtocol" href="fdir/fdir_remote.html#egse.fdir.fdir_remote.FdirRemoteProtocol">FdirRemoteProtocol</a></li>
-<li><a title="egse.fdir.gsm.beaglebone_protocol.BeagleboneProtocol" href="fdir/gsm/beaglebone_protocol.html#egse.fdir.gsm.beaglebone_protocol.BeagleboneProtocol">BeagleboneProtocol</a></li>
 <li><a title="egse.filterwheel.eksma.fw8smc4_protocol.FilterWheel8SMC4Protocol" href="filterwheel/eksma/fw8smc4_protocol.html#egse.filterwheel.eksma.fw8smc4_protocol.FilterWheel8SMC4Protocol">FilterWheel8SMC4Protocol</a></li>
 <li><a title="egse.filterwheel.eksma.fw8smc5.Fw8Smc5Protocol" href="filterwheel/eksma/fw8smc5.html#egse.filterwheel.eksma.fw8smc5.Fw8Smc5Protocol">Fw8Smc5Protocol</a></li>
 <li><a title="egse.hexapod.symetrie.puna_protocol.PunaProtocol" href="hexapod/symetrie/puna_protocol.html#egse.hexapod.symetrie.puna_protocol.PunaProtocol">PunaProtocol</a></li>
@@ -1553,7 +1590,6 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
 <li><a title="egse.shutter.thorlabs.sc10.Sc10Protocol" href="shutter/thorlabs/sc10.html#egse.shutter.thorlabs.sc10.Sc10Protocol">Sc10Protocol</a></li>
 <li><a title="egse.stages.aerotech.ensemble.EnsembleProtocol" href="stages/aerotech/ensemble.html#egse.stages.aerotech.ensemble.EnsembleProtocol">EnsembleProtocol</a></li>
 <li><a title="egse.stages.arun.smd3.Smd3Protocol" href="stages/arun/smd3.html#egse.stages.arun.smd3.Smd3Protocol">Smd3Protocol</a></li>
-<li><a title="egse.stages.huber.smc9300_protocol.HuberSMC9300Protocol" href="stages/huber/smc9300_protocol.html#egse.stages.huber.smc9300_protocol.HuberSMC9300Protocol">HuberSMC9300Protocol</a></li>
 <li><a title="egse.storage.StorageProtocol" href="storage/index.html#egse.storage.StorageProtocol">StorageProtocol</a></li>
 <li><a title="egse.synoptics.SynopticsManagerProtocol" href="synoptics/index.html#egse.synoptics.SynopticsManagerProtocol">SynopticsManagerProtocol</a></li>
 <li><a title="egse.tempcontrol.agilent.agilent34970_protocol.Agilent34970Protocol" href="tempcontrol/agilent/agilent34970_protocol.html#egse.tempcontrol.agilent.agilent34970_protocol.Agilent34970Protocol">Agilent34970Protocol</a></li>
@@ -1566,9 +1602,11 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
 <li><a title="egse.ups.apc.apc_protocol.APCProtocol" href="ups/apc/apc_protocol.html#egse.ups.apc.apc_protocol.APCProtocol">APCProtocol</a></li>
 <li><a title="egse.vacuum.beaglebone.beaglebone_protocol.BeagleboneProtocol" href="vacuum/beaglebone/beaglebone_protocol.html#egse.vacuum.beaglebone.beaglebone_protocol.BeagleboneProtocol">BeagleboneProtocol</a></li>
 <li><a title="egse.vacuum.instrutech.igm402.Igm402Protocol" href="vacuum/instrutech/igm402.html#egse.vacuum.instrutech.igm402.Igm402Protocol">Igm402Protocol</a></li>
+<li><a title="egse.vacuum.keller.leo3.Leo3Protocol" href="vacuum/keller/leo3.html#egse.vacuum.keller.leo3.Leo3Protocol">Leo3Protocol</a></li>
 <li><a title="egse.vacuum.mks.vacscan.VacscanProtocol" href="vacuum/mks/vacscan.html#egse.vacuum.mks.vacscan.VacscanProtocol">VacscanProtocol</a></li>
 <li><a title="egse.vacuum.pfeiffer.acp40.Acp40Protocol" href="vacuum/pfeiffer/acp40.html#egse.vacuum.pfeiffer.acp40.Acp40Protocol">Acp40Protocol</a></li>
 <li><a title="egse.vacuum.pfeiffer.tc400.Tc400Protocol" href="vacuum/pfeiffer/tc400.html#egse.vacuum.pfeiffer.tc400.Tc400Protocol">Tc400Protocol</a></li>
+<li><a title="egse.vacuum.pfeiffer.tpg261.Tpg261Protocol" href="vacuum/pfeiffer/tpg261.html#egse.vacuum.pfeiffer.tpg261.Tpg261Protocol">Tpg261Protocol</a></li>
 </ul>
 <h3>Methods</h3>
 <dl>
@@ -2108,6 +2146,7 @@ update of its state by calling the <code>update_connection_state()</code> method
 <h3>Subclasses</h3>
 <ul class="hlist">
 <li><a title="egse.collimator.fcul.ogse_protocol.OGSEProtocol" href="collimator/fcul/ogse_protocol.html#egse.collimator.fcul.ogse_protocol.OGSEProtocol">OGSEProtocol</a></li>
+<li><a title="egse.stages.huber.smc9300_protocol.HuberSMC9300Protocol" href="stages/huber/smc9300_protocol.html#egse.stages.huber.smc9300_protocol.HuberSMC9300Protocol">HuberSMC9300Protocol</a></li>
 <li><a title="egse.tcs.tcs_protocol.TCSProtocol" href="tcs/tcs_protocol.html#egse.tcs.tcs_protocol.TCSProtocol">TCSProtocol</a></li>
 </ul>
 <h3>Methods</h3>
@@ -2178,6 +2217,7 @@ update of its state by calling the <code>update_connection_state()</code> method
 <li><code><a title="egse.protocol.BaseCommandProtocol.get_housekeeping" href="#egse.protocol.BaseCommandProtocol.get_housekeeping">get_housekeeping</a></code></li>
 <li><code><a title="egse.protocol.BaseCommandProtocol.get_status" href="#egse.protocol.BaseCommandProtocol.get_status">get_status</a></code></li>
 <li><code><a title="egse.protocol.BaseCommandProtocol.is_alive" href="#egse.protocol.BaseCommandProtocol.is_alive">is_alive</a></code></li>
+<li><code><a title="egse.protocol.BaseCommandProtocol.quit" href="#egse.protocol.BaseCommandProtocol.quit">quit</a></code></li>
 <li><code><a title="egse.protocol.BaseCommandProtocol.receive" href="#egse.protocol.BaseCommandProtocol.receive">receive</a></code></li>
 <li><code><a title="egse.protocol.BaseCommandProtocol.send" href="#egse.protocol.BaseCommandProtocol.send">send</a></code></li>
 <li><code><a title="egse.protocol.BaseCommandProtocol.state" href="device.html#egse.device.DeviceConnectionObserver.state">state</a></code></li>
@@ -2219,6 +2259,7 @@ update of its state by calling the <code>update_connection_state()</code> method
 <li><code><a title="egse.protocol.BaseCommandProtocol.get_housekeeping" href="#egse.protocol.BaseCommandProtocol.get_housekeeping">get_housekeeping</a></code></li>
 <li><code><a title="egse.protocol.BaseCommandProtocol.get_status" href="#egse.protocol.BaseCommandProtocol.get_status">get_status</a></code></li>
 <li><code><a title="egse.protocol.BaseCommandProtocol.is_alive" href="#egse.protocol.BaseCommandProtocol.is_alive">is_alive</a></code></li>
+<li><code><a title="egse.protocol.BaseCommandProtocol.quit" href="#egse.protocol.BaseCommandProtocol.quit">quit</a></code></li>
 <li><code><a title="egse.protocol.BaseCommandProtocol.receive" href="#egse.protocol.BaseCommandProtocol.receive">receive</a></code></li>
 <li><code><a title="egse.protocol.BaseCommandProtocol.send" href="#egse.protocol.BaseCommandProtocol.send">send</a></code></li>
 </ul>

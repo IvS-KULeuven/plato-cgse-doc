@@ -957,6 +957,7 @@ class ConfigurationManagerController(ConfigurationManagerInterface):
 
         if replace:
             self._setup = setup
+            self._setup_id = setup_id
 
         return setup
 
@@ -1045,7 +1046,7 @@ class ConfigurationManagerProtocol(CommandProtocol):
 
         try:
             self.git_version = subprocess.check_output(
-                [&#34;git&#34;, &#34;describe&#34;, &#34;--always&#34;], stderr=subprocess.STDOUT)
+                [&#34;git&#34;, &#34;describe&#34;, &#34;--tags&#34;, &#34;--long&#34;], stderr=subprocess.STDOUT)
             self.git_version = self.git_version.strip().decode(&#34;ascii&#34;)
         except subprocess.CalledProcessError as exc:
             LOGGER.debug(
@@ -1079,12 +1080,12 @@ class ConfigurationManagerProtocol(CommandProtocol):
 
         return {
             &#34;timestamp&#34;: format_datetime(),
-            &#34;site_id&#34;: site_id,
-            &#34;setup_id&#34;: setup_id,
-            &#34;test_id&#34;: test_id,
-            &#34;obsid&#34;: obsid,
-            &#34;cgse_version&#34;: self.cgse_version,
-            &#34;git_version&#34;: self.git_version,
+            &#34;CM_SITE_ID&#34;: site_id,
+            &#34;CM_SETUP_ID&#34;: setup_id,
+            &#34;CM_TEST_ID&#34;: test_id,
+            &#34;CM_OBSID&#34;: obsid,
+            &#34;CM_CGSE_VERSION&#34;: self.cgse_version,
+            &#34;CM_GIT_VERSION&#34;: self.git_version,
         }
 
     def quit(self):
@@ -1641,6 +1642,7 @@ Arguments can be positional or keyword arguments, not both.</p></div>
 
         if replace:
             self._setup = setup
+            self._setup_id = setup_id
 
         return setup
 
@@ -2044,6 +2046,7 @@ tuples with the following content: setup_id, site_id, description, cam_id.</p>
 
     if replace:
         self._setup = setup
+        self._setup_id = setup_id
 
     return setup</code></pre>
 </details>
@@ -2424,7 +2427,7 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
 
         try:
             self.git_version = subprocess.check_output(
-                [&#34;git&#34;, &#34;describe&#34;, &#34;--always&#34;], stderr=subprocess.STDOUT)
+                [&#34;git&#34;, &#34;describe&#34;, &#34;--tags&#34;, &#34;--long&#34;], stderr=subprocess.STDOUT)
             self.git_version = self.git_version.strip().decode(&#34;ascii&#34;)
         except subprocess.CalledProcessError as exc:
             LOGGER.debug(
@@ -2458,12 +2461,12 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
 
         return {
             &#34;timestamp&#34;: format_datetime(),
-            &#34;site_id&#34;: site_id,
-            &#34;setup_id&#34;: setup_id,
-            &#34;test_id&#34;: test_id,
-            &#34;obsid&#34;: obsid,
-            &#34;cgse_version&#34;: self.cgse_version,
-            &#34;git_version&#34;: self.git_version,
+            &#34;CM_SITE_ID&#34;: site_id,
+            &#34;CM_SETUP_ID&#34;: setup_id,
+            &#34;CM_TEST_ID&#34;: test_id,
+            &#34;CM_OBSID&#34;: obsid,
+            &#34;CM_CGSE_VERSION&#34;: self.cgse_version,
+            &#34;CM_GIT_VERSION&#34;: self.git_version,
         }
 
     def quit(self):

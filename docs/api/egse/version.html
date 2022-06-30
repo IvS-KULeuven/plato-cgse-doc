@@ -29,7 +29,6 @@ number is then available as:</p>
 <pre><code>import egse.version
 
 print(f"version = {egse.version.VERSION}")
-print(f"release = {egse.version.RELEASE}")
 </code></pre>
 <p>The actual numbers are updated for each release in the <code>settings.yaml</code> configuration file.</p>
 <details class="source">
@@ -44,53 +43,47 @@ number is then available as:
     import egse.version
 
     print(f&#34;version = {egse.version.VERSION}&#34;)
-    print(f&#34;release = {egse.version.RELEASE}&#34;)
 
 The actual numbers are updated for each release in the `settings.yaml` configuration file.
 
 &#34;&#34;&#34;
+import subprocess
+from pathlib import Path
 
 try:
     from egse.settings import Settings
 
     settings = Settings.load(&#34;Common-EGSE&#34;)
     VERSION = settings.VERSION
-    RELEASE = settings.RELEASE
 except ModuleNotFoundError:
-
-    VERSION = &#34;unknown&#34;
-    RELEASE = &#34;unknown&#34;
-
-    # Fall back solution to read the YAML file directly
-
-    import os
-
-    basedir = os.path.dirname(__file__)
-
-    with open(os.path.join(basedir, &#34;settings.yaml&#34;), mode=&#34;r&#34;) as yaml_fd:
-        line = yaml_fd.readline()
-        if not line.startswith(&#34;Common-EGSE&#34;):
-            raise RuntimeError(
-                &#34;Incompatible format for the settings.yaml file, should start with &#39;Common-EGSE&#39;&#34;
-            )
-
-        line = yaml_fd.readline().lstrip()
-        if not line.startswith(&#34;VERSION&#34;):
-            raise RuntimeError(&#34;Incompatible format for the settings.yaml file, no VERSION found.&#34;)
-        _, version = line.split(&#34;:&#34;)
-        VERSION = version.strip()
-
-        line = yaml_fd.readline().lstrip()
-        if not line.startswith(&#34;RELEASE&#34;):
-            raise RuntimeError(&#34;Incompatible format for the settings.yaml file, no RELEASE found.&#34;)
-        _, release = line.split(&#34;:&#34;)
-        RELEASE = release.strip()
+    VERSION = &#34;unknown version&#34;
 
 
 if __name__ == &#34;__main__&#34;:
 
-    print(&#34;version:&#34;, VERSION)
-    print(&#34;release:&#34;, RELEASE)</code></pre>
+    import rich
+
+    from egse.system import chdir
+
+    with chdir(Path(__file__).parent):
+        try:
+            std_out = subprocess.check_output(
+                [&#34;git&#34;, &#34;describe&#34;, &#34;--tags&#34;, &#34;--long&#34;], stderr=subprocess.PIPE)
+            git_version = std_out.strip().decode(&#34;ascii&#34;)
+        except subprocess.CalledProcessError as exc:
+            git_version = None
+        try:
+            from importlib.metadata import version, PackageNotFoundError
+            installed_version = version(&#34;Common-EGSE&#34;)
+        except PackageNotFoundError as exc:
+            installed_version = None
+
+    if VERSION and VERSION != installed_version:
+        rich.print(f&#34;CGSE version in Settings: [bold default]{VERSION}[/]&#34;)
+    if git_version:
+        rich.print(f&#34;CGSE git version = [bold default]{git_version}[/]&#34;)
+    if installed_version:
+        rich.print(f&#34;CGSE installed version = [bold default]{installed_version}[/]&#34;)</code></pre>
 </details>
 </section>
 <section>

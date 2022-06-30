@@ -62,7 +62,7 @@ from egse.hk import read_conversion_dict
 from egse.metrics import define_metrics
 from egse.resource import get_resource
 from egse.settings import Settings
-from egse.setup import NavigableDict
+from egse.setup import NavigableDict, SetupError
 from egse.setup import load_setup
 from egse.storage import StorageProxy
 from egse.storage import register_to_storage_manager
@@ -528,9 +528,12 @@ def get_calibrated_tou_temperatures(current_data, sensor_calibration) -&gt; dict
         hk_name = cal_name + &#34;_RAW&#34;
 
         if current_data[hk_name] is not None:
-
-            resistance = current_data[hk_name] * float(cal.counts_to_voltage) * cal.voltage_to_resistance
-            temperature = np.polyval(cal.von_dusen_coefficients, resistance)
+            try:
+                resistance = current_data[hk_name] * float(cal.counts_to_voltage) * cal.voltage_to_resistance
+                temperature = np.polyval(cal.von_dusen_coefficients, resistance)
+            except AttributeError as exc:
+                raise SetupError(&#34;Not all TOU TRP PT1000 calibration information is available in the setup under &#34;
+                                 &#34;setup.camera.fee.calibration.&#34;, {exc})
 
             temperatures[cal_name] = temperature
 
@@ -562,13 +565,22 @@ def get_calibrated_ccd_temperatures(current_data, sensor_calibration) -&gt; dict
         hk_name = cal_name + &#34;_RAW&#34;
 
         if current_data[hk_name] is not None:
-
-            resistance = current_data[hk_name] * cal.counts_to_voltage * cal.voltage_to_resistance
-            temperature = np.polyval(cal.von_dusen_coefficients, resistance)
+            try:
+                resistance = current_data[hk_name] * cal.counts_to_voltage * cal.voltage_to_resistance \
+                             - cal.series_resistance[int(cal_name[-1])]
+                temperature = np.polyval(cal.von_dusen_coefficients, resistance)
+            except AttributeError as exc:
+                raise SetupError(&#34;Not all CCD PT100 calibration information is available in the setup under &#34;
+                                 &#34;setup.camera.fee.calibration.&#34;, {exc})
 
             temperatures[cal_name] = temperature
 
     return temperatures
+
+    try:
+        cal.series_res
+    except AttributeError as exc:
+        print(exc)
 
 
 def get_calibrated_board_temperatures(current_data, sensor_calibration) -&gt; dict:
@@ -598,9 +610,12 @@ def get_calibrated_board_temperatures(current_data, sensor_calibration) -&gt; di
         hk_name = cal_name + &#34;_RAW&#34;
 
         if current_data[hk_name] is not None:
-
-            resistance = current_data[hk_name] * cal.counts_to_voltage * cal.voltage_to_resistance
-            temperature = np.polyval(cal.von_dusen_coefficients, resistance)
+            try:
+                resistance = current_data[hk_name] * cal.counts_to_voltage * cal.voltage_to_resistance
+                temperature = np.polyval(cal.von_dusen_coefficients, resistance)
+            except AttributeError as exc:
+                raise SetupError(&#34;Not all BOARD PT1000 calibration information is available in the setup under &#34;
+                                 &#34;setup.camera.fee.calibration.&#34;, {exc})
 
             temperatures[cal_name] = temperature
 
@@ -613,8 +628,12 @@ def get_calibrated_board_temperatures(current_data, sensor_calibration) -&gt; di
         hk_name = cal_name + &#34;_RAW&#34;
 
         if current_data[hk_name] is not None:
+            try:
+                temperature = cal.slope * current_data[hk_name] + cal.offset
+            except AttributeError as exc:
+                raise SetupError(&#34;Not all BOARD ISL71590 calibration information is available in the setup under &#34;
+                                 &#34;setup.camera.fee.calibration.&#34;, {exc})
 
-            temperature = cal.slope * current_data[hk_name] + cal.offset
             temperatures[cal_name] = temperature
 
     return temperatures
@@ -801,9 +820,12 @@ if __name__ == &#39;__main__&#39;:
         hk_name = cal_name + &#34;_RAW&#34;
 
         if current_data[hk_name] is not None:
-
-            resistance = current_data[hk_name] * cal.counts_to_voltage * cal.voltage_to_resistance
-            temperature = np.polyval(cal.von_dusen_coefficients, resistance)
+            try:
+                resistance = current_data[hk_name] * cal.counts_to_voltage * cal.voltage_to_resistance
+                temperature = np.polyval(cal.von_dusen_coefficients, resistance)
+            except AttributeError as exc:
+                raise SetupError(&#34;Not all BOARD PT1000 calibration information is available in the setup under &#34;
+                                 &#34;setup.camera.fee.calibration.&#34;, {exc})
 
             temperatures[cal_name] = temperature
 
@@ -816,8 +838,12 @@ if __name__ == &#39;__main__&#39;:
         hk_name = cal_name + &#34;_RAW&#34;
 
         if current_data[hk_name] is not None:
+            try:
+                temperature = cal.slope * current_data[hk_name] + cal.offset
+            except AttributeError as exc:
+                raise SetupError(&#34;Not all BOARD ISL71590 calibration information is available in the setup under &#34;
+                                 &#34;setup.camera.fee.calibration.&#34;, {exc})
 
-            temperature = cal.slope * current_data[hk_name] + cal.offset
             temperatures[cal_name] = temperature
 
     return temperatures</code></pre>
@@ -864,13 +890,22 @@ if __name__ == &#39;__main__&#39;:
         hk_name = cal_name + &#34;_RAW&#34;
 
         if current_data[hk_name] is not None:
-
-            resistance = current_data[hk_name] * cal.counts_to_voltage * cal.voltage_to_resistance
-            temperature = np.polyval(cal.von_dusen_coefficients, resistance)
+            try:
+                resistance = current_data[hk_name] * cal.counts_to_voltage * cal.voltage_to_resistance \
+                             - cal.series_resistance[int(cal_name[-1])]
+                temperature = np.polyval(cal.von_dusen_coefficients, resistance)
+            except AttributeError as exc:
+                raise SetupError(&#34;Not all CCD PT100 calibration information is available in the setup under &#34;
+                                 &#34;setup.camera.fee.calibration.&#34;, {exc})
 
             temperatures[cal_name] = temperature
 
-    return temperatures</code></pre>
+    return temperatures
+
+    try:
+        cal.series_res
+    except AttributeError as exc:
+        print(exc)</code></pre>
 </details>
 </dd>
 <dt id="egse.fee.n_fee_hk.get_calibrated_nfee_supply_voltages"><code class="name flex">
@@ -1001,9 +1036,12 @@ if __name__ == &#39;__main__&#39;:
         hk_name = cal_name + &#34;_RAW&#34;
 
         if current_data[hk_name] is not None:
-
-            resistance = current_data[hk_name] * float(cal.counts_to_voltage) * cal.voltage_to_resistance
-            temperature = np.polyval(cal.von_dusen_coefficients, resistance)
+            try:
+                resistance = current_data[hk_name] * float(cal.counts_to_voltage) * cal.voltage_to_resistance
+                temperature = np.polyval(cal.von_dusen_coefficients, resistance)
+            except AttributeError as exc:
+                raise SetupError(&#34;Not all TOU TRP PT1000 calibration information is available in the setup under &#34;
+                                 &#34;setup.camera.fee.calibration.&#34;, {exc})
 
             temperatures[cal_name] = temperature
 

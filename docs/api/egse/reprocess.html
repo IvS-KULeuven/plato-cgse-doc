@@ -28,19 +28,23 @@
 </summary>
 <pre><code class="python">import glob
 import logging
-import os
 from pathlib import Path
+from typing import Union
 
 import numpy as np
 import pandas as pd
+from pandas._libs.parsers import EmptyDataError
+from pandas.errors import ParserError
 
 from egse import h5
 from egse.config import find_file
+from egse.dpu.fitsgen import get_hdf5_filenames_for_obsid, get_od
 from egse.fee.n_fee_hk import ORIGIN as N_FEE_ORIGIN
 from egse.fee.n_fee_hk import get_calibrated_nfee_supply_voltages, get_calibrated_temperatures
 from egse.fee.n_fee_hk import read_hk_info as read_n_fee_hk_info
 from egse.fee.nfee import HousekeepingData
 from egse.fov import ORIGIN as FOV_ORIGIN
+from egse.obsid import ObservationIdentifier, obsid_from_storage
 from egse.settings import Settings
 from egse.setup import NavigableDict
 from egse.spw import SpaceWirePacket
@@ -52,57 +56,95 @@ from egse.tcs.tcs import ORIGIN as TCS_ORIGIN
 
 LOGGER = logging.getLogger(__name__)
 
+# sensor_cal_filename = &#34;/Users/sara/work/Instrumentation/Plato/softwareDevelopment/plato-cgse-conf/data/nfee_sensor_calibration_em_v3.yaml&#34;
+# sensor_cal = NavigableDict(Settings.load(filename=sensor_cal_filename))#, add_local_settings=False))
+# data_dir = &#34;/STER/platodata/SRON/plato-data&#34;
+# site = &#34;SRON&#34;
 
-# def reprocess_campaign(od_start: str, od_end: str, data_dir: str = None):
+
+# def reprocess_campaign(od_start: str, od_end: str, sensor_cal: NavigableDict, archive_dir: str, fixed_archive_dir: str,
+#                        reprocessed_archive_dir: str):
+#     &#34;&#34;&#34; Re-process the daily data in the given timespan.
 #
-#     data_dir = data_dir or os.environ.get(&#39;PLATO_DATA_STORAGE_LOCATION&#39;)
+#     Args:
+#         - od_start:
+#         - od_end
+#         - archive_dir: Folder (with sub-folders /daily and /obs) in which the HK files are stored.
+#         - fixed_archive_dir: Folder (with sub-folders /daily and /obs) in which the fixed HK files are stored.
+#         - reprocessed_archive_dir: Folder (with sub-folders /daily and /obs) in which the re-processed files will be
+#                                    stored.
+#     &#34;&#34;&#34;
 #
 #     delta = timedelta(days=1)
-#     date = datetime.strptime(od_start, &#34;%Y%m%d&#34;)
-#     date_end = datetime.strptime(od_end, &#34;%Y-%m-%d&#34;)
+#     date_end = datetime.strptime(od_end, &#34;%Y%m%d&#34;)  # The last OD to re-process [YYYYMMDD]
+#     date = datetime.strptime(od_start, &#34;%Y%m%d&#34;)    # The first OD to re-process [YYYYMMDD]
 #
-#     # Re-process the daily N-FEE HK + synoptics
+#     # Re-process the daily N-FEE HK (from the HDF5 files) + synoptics
+#
 #     while date &lt;= date_end:
 #
-#         od = date.strftime(&#34;%Y%m%d&#34;)
-#         reprocess_od(od, data_dir=data_dir)
+#         od = date.strftime(&#34;%Y%m%d&#34;)    # Current OD [YYYYMMDD]
+#         # day_dir = Path(f&#34;{archive_dir}/daily/{od}&#34;)  # Sub-folder with the data for the given OD
+#
+#         reprocess_od(od, sensor_cal, archive_dir, fixed_archive_dir, reprocessed_archive_dir)
 #
 #         date += delta
-#
-#
-#     # Re-process the N-FEE-HK + synoptics for all observations
-#
-#     # Re-generate the FITS files for all observations
 
 
-def reprocess_od(od: str, site: str, sensor_cal: NavigableDict, data_dir: str = None):
-    &#34;&#34;&#34; Re-generate the N-FEE HK and synoptics for the given OD.
+def reprocess_od(od: str, site: str, sensor_cal: NavigableDict, archive_dir: str, fixed_archive_dir: str,
+                 reprocessed_archive_dir: str):
+    &#34;&#34;&#34; Re-processing for the given OD.
+
+    This re-processing consists of the following steps:
+        - Re-processing the N-FEE HK from the HDF5 files;
+        - Re-processing the synoptics from the contributing (and potentially fixed) HK files.
 
     Args:
         - od: Observation day in the format YYYYMMDD.
-        - site: Site ID (CSL/SRON/IAS/INTA).
+        - site: Site ID (CSL/CSL1/CSL2/SRON/IAS/INTA).
         - sensor_cal: Calibration data for the N-FEE HK.
-        - data_dir: Folder (with /daily and /obs sub-folders) in which all data is stored. If not specified,
-                    the `PLATO_DATA_STORAGE_LOCATION` environment variable will be read out.
+        - archive_dir: Folder (with sub-folders /daily and /obs) in which the HK files are stored.
+        - fixed_archive_dir: Folder (with sub-folders /daily and /obs) in which the fixed HK files are stored.
+        - reprocessed_archive_dir: Folder (with sub-folders /daily and /obs) in which the re-processed synoptics file
+                                   will be stored.
     &#34;&#34;&#34;
 
-    data_dir = data_dir or os.environ.get(&#39;PLATO_DATA_STORAGE_LOCATION&#39;)
-    day_dir = Path(f&#34;{data_dir}/daily/{od}&#34;)  # Sub-folder with the data for the given OD
-
-    reprocess_daily_n_fee_hk(od, site, sensor_cal, day_dir)    # N-FEE HK
-    reprocess_daily_synoptics(od, site, data_dir=data_dir)     # Synoptics
+    reprocess_daily_n_fee_hk(od, site, sensor_cal, archive_dir, reprocessed_archive_dir)            # N-FEE HK
+    reprocess_daily_synoptics(od, site, archive_dir, fixed_archive_dir, reprocessed_archive_dir)    # Synoptics
 
 
-def reprocess_daily_n_fee_hk(od: str, site: str, sensor_cal: NavigableDict, day_dir: Path):
-    &#34;&#34;&#34; Re-generate the N-FEE HK for the given OD.
+def reprocess_obsid(obsid: Union[str, int, ObservationIdentifier], site: str, sensor_cal: NavigableDict,
+                    archive_dir: str, fixed_archive_dir: str, reprocessed_archive_dir: str):
+    &#34;&#34;&#34; Re-processing for the given obsid.
+
+    This re-processing consists of the following steps:
+        - Re-processing the N-FEE HK from the HDF5 files;
+        - Re-processing the synoptics from the contributing (and potentially fixed HK files);
+        - Re-processing the FITS files from the HDF5 files and (re-processed) synoptics.
+
+    Args:
+        - obsid: Observation identifier.
+        - site: Site ID (CSL/CSL1/CSL2/SRON/IAS/INTA).
+        - sensor_cal: Calibration data for the N-FEE HK.
+        - archive_dir: Folder (with sub-folders /daily and /obs) in which the HK files are stored.
+        - fixed_archive_dir: Folder (with sub-folders /daily and /obs) in which the fixed HK files are stored.
+        - reprocessed_archive_dir: Folder (with sub-folders /daily and /obs) in which the re-processed synoptics file
+                                   will be stored.
+    &#34;&#34;&#34;
+
+    reprocess_obs_n_fee_hk(obsid, sensor_cal, archive_dir, reprocessed_archive_dir)                 # N-FEE HK
+    reprocess_obs_synoptics(obsid, site, archive_dir, fixed_archive_dir, reprocessed_archive_dir)   # Synoptics
+
+
+def reprocess_daily_n_fee_hk(od: str, site: str, sensor_cal: NavigableDict, archive_dir: str,
+                             reprocessed_archive_dir: str):
+    &#34;&#34;&#34; Re-processing the N-FEE HK for the given OD.
 
     The procedure is as follows:
         - Read the N-FEE HK information from the TM dictionary.  This comprises the name conversion from the original
           name (used by the N-FEE itself and in the HDF5 files) to the conventional name starting with &#34;NFEE&#34;, and the
           calibration information for the supply voltages and temperatures.
-        - Determine the filename for the N-FEE HK for the given OD. This will be used to throw away the old N-FEE HK
-          and to store the new N-FEE HK.
-        - Throw away the existing N-FEE HK file.
+        - Determine the filename for the N-FEE HK for the given OD.
         - Determine the list of HDF5 filenames acquired during the given OD.
         - Determine the column names to use in the new N-FEE HK file and create a new N-FEE HK file with these.
         - Loop over all these HDF5 files.  For each of them, read the uncalibrated values and apply the calibration,
@@ -111,280 +153,524 @@ def reprocess_daily_n_fee_hk(od: str, site: str, sensor_cal: NavigableDict, day_
 
     Args:
         - od: Observation day in the format YYYYMMDD.
-        - site: Site ID (CSL/SRON/IAS/INTA).
+        - site: Site ID (CSL/CSL1/CSL2/SRON/IAS/INTA).
         - sensor_cal: Calibration data for the N-FEE HK.
-        - day_dir: Folder within the /daily directory in which the HK files are stored written for the given OD.
+        - archive_dir: Folder (with sub-folders /daily and /obs) in which the HDF5 files are stored.
+        - reprocessed_archive_dir: Folder (with sub-folders /daily and /obs) in which the re-processed N-FEE HK files
+                                   will be stored.
     &#34;&#34;&#34;
 
-    name_conversion, nfee_supply_voltage_cal = read_n_fee_hk_info()
+    archive_od_dir = f&#34;{archive_dir}/daily/{od}&#34;
+    reprocessed_archive_od_dir = f&#34;{reprocessed_archive_dir}/daily/{od}&#34;
 
-    # Throw away the existing N-FEE HK
-    # (Further on we will create a new N-FEE HK file with the same name)
+    # Compose the list of HDF5 filenames for the given OD
+    # If there are no HDF5 files, exit with a proper log message
 
-    n_fee_hk_filename = str(find_file(f&#34;{od}_{site}_{N_FEE_ORIGIN}.csv&#34;, root=day_dir))     # TODO
-    # os.remove(n_fee_hk_filename)     # TODO
+    hdf5_filenames = glob.glob(f&#34;{archive_od_dir}/*.{HDF5.extension}&#34;)
+    if len(hdf5_filenames) == 0:
+        LOGGER.info(f&#34;No HDF5 files found in {archive_od_dir}&#34;)
+        return
 
-    # Loop over all HDF5 files and extract the HK
+    # Use the same filename for the N-FEE HK as before, but store it in the re-processed archive now
+    # (don&#39;t touch the old N-FEE HK file)
 
-    hdf5_filenames = glob.glob(str(day_dir / f&#34;*.{HDF5.extension}&#34;))
+    n_fee_hk_filename = f&#34;{reprocessed_archive_od_dir}/{od}_{site}_{N_FEE_ORIGIN}.{CSV.extension}&#34;
 
+    _reprocess_n_fee_hk(hdf5_filenames, n_fee_hk_filename, sensor_cal, reprocessed_archive_od_dir)
+
+
+def reprocess_obs_n_fee_hk(obsid: Union[str, int, ObservationIdentifier], sensor_cal: NavigableDict,
+                           archive_dir: str, reprocessed_archive_dir: str):
+    &#34;&#34;&#34; Re-processing the synoptics for the given obsid.
+
+    The procedure is as follows:
+        - Read the N-FEE HK information from the TM dictionary.  This comprises the name conversion from the original
+          name (used by the N-FEE itself and in the HDF5 files) to the conventional name starting with &#34;NFEE&#34;, and the
+          calibration information for the supply voltages and temperatures.
+        - Determine the filename for the N-FEE HK for the given obsid.
+        - Determine the list of HDF5 filenames acquired during the given obsid.
+        - Determine the column names to use in the new N-FEE HK file and create a new N-FEE HK file with these.
+        - Loop over all these HDF5 files.  For each of them, read the uncalibrated values and apply the calibration,
+          according to the given calibration information.  Then append the raw and calibrated values to the N-FEE HK
+          file.
+
+    Args:
+        - obsid: Observation identifier.
+        - site: Site ID (CSL/CSL1/CSL2/SRON/IAS/INTA).
+        - sensor_cal: Calibration data for the N-FEE HK.
+        - archive_dir: Folder (with sub-folders /daily and /obs) in which the HDF5 files are stored.
+        - reprocessed_archive_dir: Folder (with sub-folders /daily and /obs) in which the re-processed N-FEE HK files
+                                   will be stored.
+    &#34;&#34;&#34;
+
+    obsid = obsid_from_storage(obsid, archive_dir)
+
+    archive_obsid_dir = f&#34;{archive_dir}/obs/{obsid}&#34;
+    reprocessed_archive_obsid_dir = f&#34;{reprocessed_archive_dir}/obs/{obsid}&#34;
+
+    # Compose the list of HDF5 filenames for the given obsid
+    # If there are no HDF5 files, exit with a proper log message
+
+    hdf5_filenames = get_hdf5_filenames_for_obsid(obsid, data_dir=archive_dir)
+    if len(hdf5_filenames) == 0:
+        LOGGER.info(f&#34;No HDF5 files found for obsid {obsid}&#34;)
+        return
+
+    # Use the same filename for the N-FEE HK as before, but store it in the re-processed archive now
+    # (don&#39;t touch the old N-FEE HK file)
+
+    pattern = f&#34;{obsid}_{N_FEE_ORIGIN}_*_*.csv&#34;
+    n_fee_hk_filename = find_file(pattern, root=archive_obsid_dir)
+    if n_fee_hk_filename is None:
+        od = get_od(obsid, archive_dir)[0]
+        n_fee_hk_filename = f&#34;{reprocessed_archive_obsid_dir}/{obsid}_{N_FEE_ORIGIN}_{od}.{CSV.extension}&#34;
+    else:
+        n_fee_hk_filename = f&#34;{reprocessed_archive_obsid_dir}/{n_fee_hk_filename.stem}.{CSV.extension}&#34;
+
+    _reprocess_n_fee_hk(hdf5_filenames, n_fee_hk_filename, sensor_cal, reprocessed_archive_obsid_dir)
+
+
+def _reprocess_n_fee_hk(hdf5_filenames, n_fee_hk_filename: str, sensor_cal: NavigableDict):
+    &#34;&#34;&#34; Re-processing the N-FEE HK.
+
+    The procedure is as follows for the &#34;hk&#34; dataset in all groups of the given list of HDF5 files:
+        - Extract the raw values from the SpW packets;
+        - Re-name the extracted parameters to the corresponding synoptical name;
+        - Apply the calibration for the supply voltages and temperatures;
+        - Append a row to the N-FEE HK file with the raw and calibrated values.
+
+    Args:
+        - hdf5_filenames: Filenames of the HDF5 files containing the raw N-FEE HK.
+        - n_fee_hk_filename: Filename for the re-processed N-FEE HK file.
+    &#34;&#34;&#34;
+
+    name_conversion, n_fee_supply_voltage_cal = read_n_fee_hk_info()
     column_names = [&#34;timestamp&#34;, *list(name_conversion.values())]
+
     with CSV(filename=n_fee_hk_filename, prep={&#34;column_names&#34;: column_names, &#34;mode&#34;: &#39;w&#39;}) as csv:
 
         for hdf5_filename in hdf5_filenames:
 
             with h5.get_file(hdf5_filename, mode=&#34;r&#34;) as hdf5_file:
 
-                for group in h5.groups(hdf5_file):
+                try:
 
-                    # Read the HK from the HDF5 groups and rename them
+                    for group in h5.groups(hdf5_file):
 
-                    if &#34;hk&#34; in group:
+                        # Read the HK from the HDF5 groups and rename them
 
-                        # Create a dictionary in which we will gather all the raw and calibrated data for the timestamp
-                        # in the current group of the current HDF5 file
+                        if &#34;hk&#34; in group:
 
-                        values = {&#34;timestamp&#34;: group[&#34;timecode&#34;].attrs[&#34;timestamp&#34;]}
+                            # Create a dictionary in which we will gather all the raw and calibrated data for the
+                            # timestamp in the current group of the current HDF5 file
 
-                        hk_packet = SpaceWirePacket.create_packet(h5.get_data(group[&#34;hk&#34;])) # Fix for CCD numbering is incorporated here
-                        hk_data = HousekeepingData(hk_packet.data)
+                            values = {&#34;timestamp&#34;: group[&#34;timecode&#34;].attrs[&#34;timestamp&#34;]}
 
-                        for orig_name in hk_data:
-                            try:
-                                new_name = name_conversion[orig_name]
-                                values[new_name] = hk_data[orig_name]
-                            except KeyError:
-                                print(orig_name)
+                            hk_packet = SpaceWirePacket.create_packet(h5.get_data(group[&#34;hk&#34;]))
+                            hk_data = HousekeepingData(hk_packet.data)
 
-                        # Apply the correct calibration
+                            for orig_name in hk_data:
+                                try:
+                                    new_name = name_conversion[orig_name]
+                                    values[new_name] = hk_data[orig_name]
+                                except KeyError:
+                                    pass
 
-                        calibrated_supply_voltages = get_calibrated_nfee_supply_voltages(values, nfee_supply_voltage_cal)
-                        values.update(calibrated_supply_voltages)
-                        calibrated_temperatures = get_calibrated_temperatures(values, sensor_cal)
-                        values.update(calibrated_temperatures)
+                            # Apply the correct calibration
 
-                        # Store the new N-FEE HK
+                            calibrated_supply_voltages = get_calibrated_nfee_supply_voltages(values,
+                                                                                             n_fee_supply_voltage_cal)
+                            values.update(calibrated_supply_voltages)
+                            calibrated_temperatures = get_calibrated_temperatures(values, sensor_cal)
+                            values.update(calibrated_temperatures)
 
-                        csv.create(values)
+                            # Store the new N-FEE HK
+
+                            csv.create(values)
+                except RuntimeError as exc:
+                    LOGGER.warning(f&#34;Problem occurred when reading HK from {hdf5_filename} ({exc}).  Skipping...&#34;)
 
 
-def reprocess_daily_synoptics(od: str, site: str, day_dir: Path):
-    &#34;&#34;&#34; Re-generate the synoptics for the given OD.
+def reprocess_daily_synoptics(od: str, site: str, archive_dir: str, fixed_archive_dir: str,
+                              reprocessed_archive_dir: str):
+    &#34;&#34;&#34; Re-processing the N-FEE HK for the given OD.
 
     The procedure is as follows:
-        - Read the synoptics information from the TM dictionary.  This comprises the name conversion from the original
-          name (used by the contributing components) to the conventional name starting with &#34;GSYN&#34;.
-        - Determine the filename for the synoptics for the given OD. This will be used to throw away the old synoptics
-          and to store the new synoptics.
-        - Throw away the existing synoptics file.
-        - Determine from which HK files we need to fetch information (this is TH-specific).
-        - Concatenate the HK from all these files, sorted according to the timestamp, and fill the gaps (the last real
-          value before a gap is used);
+        - Compose a list of HK files contributing to the synoptics.
+        - Read those files one by one and concatenate them.
+        - Sort the concatenated tables in order of ascending timestamp.
+        - Store only the relevant columns in the synoptics file.
 
     Args:
         - od: Observation day in the format YYYYMMDD.
-        - site: Site ID (CSL/SRON/IAS/INTA).
-        - day_dir: Folder within the /daily directory in which the HK files are stored written for the given OD.
+        - site: Site ID (CSL/CSL1/CSL2/SRON/IAS/INTA).
+        - archive_dir: Folder (with sub-folders /daily and /obs) in which the HDF5 files are stored.
+        - fixed_archive_dir: Folder (with sub-folders /daily and /obs) in which the fixed HK files are stored.
+        - reprocessed_archive_dir: Folder (with sub-folders /daily and /obs) in which the re-processed N-FEE HK files
+                                   will be stored.
+    &#34;&#34;&#34;
+
+    archive_day_dir = f&#34;{archive_dir}/daily/{od}&#34;
+    fixed_archive_day_dir = f&#34;{fixed_archive_dir}/daily/{od}&#34;
+    reprocessed_archive_day_dir = f&#34;{reprocessed_archive_dir}/daily/{od}&#34;
+
+    # Determine the filename for the HK that contribute to the synoptics
+    #       - At this point, the N-FEE HK is re-processed already
+    #       - Most of the other HK will be stored in the original archive, but some of it may be fixed (for some reason)
+
+    syn_input_filenames = get_syn_input_filenames_od(od, site, archive_day_dir, fixed_archive_day_dir,
+                                                     reprocessed_archive_day_dir)
+
+    if len(syn_input_filenames) == 0:
+        LOGGER.info(f&#34;No HK files contributing the synoptics found in {archive_day_dir} nor {fixed_archive_day_dir}&#34;)
+        return
+
+    synoptics_filename = f&#34;{reprocessed_archive_day_dir}/{od}_{site}_{SYN_ORIGIN}.{CSV.extension}&#34;
+    _reprocess_synoptics(syn_input_filenames, synoptics_filename)
+
+
+def reprocess_obs_synoptics(obsid: Union[str, int, ObservationIdentifier], site: str, archive_dir: str,
+                            fixed_archive_dir: str, reprocessed_archive_dir: str):
+    &#34;&#34;&#34; Re-processing the N-FEE HK for the given obsid.
+
+    The procedure is as follows:
+        - Compose a list of HK files contributing to the synoptics.
+        - Read those files one by one and concatenate them.
+        - Sort the concatenated tables in order of ascending timestamp.
+        - Store only the relevant columns in the synoptics file.
+
+    Args:
+        - obsid: Observation identifier.
+        - site: Site ID (CSL/CSL1/CSL2/SRON/IAS/INTA).
+        - archive_dir: Folder (with sub-folders /daily and /obs) in which the HDF5 files are stored.
+        - fixed_archive_dir: Folder (with sub-folders /daily and /obs) in which the fixed HK files are stored.
+        - reprocessed_archive_dir: Folder (with sub-folders /daily and /obs) in which the re-processed N-FEE HK files
+                                   will be stored.
+        &#34;&#34;&#34;
+
+    obsid = obsid_from_storage(obsid, archive_dir)
+
+    archive_obs_dir = f&#34;{archive_dir}/obs/{obsid}&#34;
+    fixed_archive_obs_dir = f&#34;{fixed_archive_dir}/obs/{obsid}&#34;
+    reprocessed_archive_obs_dir = f&#34;{reprocessed_archive_dir}/obs/{obsid}&#34;
+
+    # Determine the filename for the HK that contribute to the synoptics
+    #       - At this point, the N-FEE HK is re-processed already
+    #       - Most of the other HK will be stored in the original archive, but some of it may be fixed (for some reason)
+
+    syn_input_filenames = get_syn_input_filename_obs(obsid, site, archive_obs_dir, fixed_archive_obs_dir,
+                                                     reprocessed_archive_obs_dir)
+
+    if len(syn_input_filenames) == 0:
+        LOGGER.info(f&#34;No HK files contributing the synoptics found in {archive_obs_dir} nor {fixed_archive_obs_dir}&#34;)
+        return
+
+    pattern = f&#34;{obsid}_{SYN_ORIGIN}_*_*.csv&#34;
+    synoptics_filename = find_file(pattern, root=archive_obs_dir)
+    if synoptics_filename is None:
+        od = get_od(obsid, archive_dir)[0]
+        synoptics_filename = f&#34;{reprocessed_archive_obs_dir}/{obsid}_{SYN_ORIGIN}_{od}.{CSV.extension}&#34;
+    else:
+        synoptics_filename = f&#34;{reprocessed_archive_obs_dir}/{synoptics_filename.stem}.{CSV.extension}&#34;
+
+    _reprocess_synoptics(syn_input_filenames, synoptics_filename)
+
+
+def _reprocess_synoptics(syn_input_filenames, synoptics_filename: str):
+    &#34;&#34;&#34; Re-processing the synoptics.
+
+    The procedure is as follows:
+        - Compose a list of HK files contributing to the synoptics.
+        - Read those files one by one and concatenate them.
+        - Sort the concatenated tables in order of ascending timestamp.
+        - Store only the relevant columns in the synoptics file.
+
+    Args:
+        - syn_input_filenames: Filenames of the HK files contributing to the synoptics.
+        - synoptics_filename: Filename for the re-processed synoptics file.
     &#34;&#34;&#34;
 
     syn_names, original_name_egse, original_name_th = read_syn_info()
 
-    # Throw away the existing synoptics
-    # (Further on we will create a synoptics file with the same name)
+    # Concatenate the content of all contributing HK files
 
-    synoptics_filename = str(find_file(f&#34;{od}_{site}_{SYN_ORIGIN}.csv&#34;, root=day_dir))     # TODO
-    # os.remove(synoptics_filename)     # TODO
+    concatenated_hk = pd.DataFrame()
 
-    syn_input_filenames = get_syn_input_filenames(od, site, day_dir)
-
-    if len(syn_input_filenames) &gt; 0:
-
-        # Concatenate the content of all contributing HK files
-
-        concatenated_hk = pd.read_csv(syn_input_filenames[0])
-        for syn_input_filename in syn_input_filenames[1:]:
+    for syn_input_filename in syn_input_filenames:
+        try:
             syn_input_file = pd.read_csv(syn_input_filename)
+
             concatenated_hk = concatenated_hk.append(syn_input_file)
+        except (ParserError, EmptyDataError) as exc:
+            LOGGER.warning(f&#34;Problem with the content of {syn_input_file} ({exc}).  &#34;
+                           f&#34;The file is either empty or poorly formatted.  Skipping...&#34;)
 
-        # Sort according to ascending timestamp
+    # Sort according to ascending timestamp
 
-        concatenated_hk = concatenated_hk.sort_values(by=[&#39;timestamp&#39;])
+    concatenated_hk = concatenated_hk.sort_values(by=[&#39;timestamp&#39;])
 
-        # Convert the HK names to synoptical names (starting with &#34;GSYN&#34;)
+    # Convert the HK names to synoptical names (starting with &#34;GSYN_&#34;)
 
-        concatenated_hk = concatenated_hk.rename(columns=original_name_egse)
-        concatenated_hk = concatenated_hk.rename(columns=original_name_th)
+    concatenated_hk = concatenated_hk.rename(columns=original_name_egse)
+    concatenated_hk = concatenated_hk.rename(columns=original_name_th)
 
-        # Fill NaNs
+    # # Fill NaNs
+    #
+    # concatenated_hk = concatenated_hk.fillna(method=&#34;ffill&#34;)
+    # # concatenated_hk = concatenated_hk.fillna(method=&#34;bfill&#34;)    # This is only relevant for the first few seconds
 
-        concatenated_hk = concatenated_hk.fillna(method=&#34;ffill&#34;)
-        # concatenated_hk = concatenated_hk.fillna(method=&#34;bfill&#34;)    # This is only relevant for the first few seconds
+    available_syn_names = np.delete(syn_names, np.where(syn_names == &#34;timestamp&#34;))
+    missing_syn_names = np.array([])
 
-        available_syn_names = np.delete(syn_names, np.where(syn_names == &#34;timestamp&#34;))
-        missing_syn_names = np.array([])
+    for syn_name in available_syn_names:
+        if syn_name not in concatenated_hk:
+            available_syn_names = np.delete(available_syn_names, np.where(available_syn_names == syn_name))
+            missing_syn_names = np.append(missing_syn_names, syn_name)
 
-        for syn_name in available_syn_names:
-            if syn_name not in concatenated_hk:
-                available_syn_names = np.delete(available_syn_names, np.where(available_syn_names == syn_name))
-                missing_syn_names = np.append(missing_syn_names, syn_name)
+    # For numerical columns, use the mean; for boolean columns, use any (unless they are all NaN)
 
-        # For numerical columns, use the mean; for boolean columns, use any (unless they are all NaN)
+    # agg_dict = {syn_name: np.mean for syn_name in available_syn_names}
+    #
+    # def any_func(arr):
+    #     if arr.isnull().values.all():
+    #         return float(&#39;nan&#39;)
+    #     return any(arr)
+    #
+    # def mean_func(arr):
+    #     if arr.isnull().values.all():
+    #         return float(&#39;nan&#39;)
+    #     return np.nanmean(arr)
+    #
+    # agg_dict = {syn_name: mean_func for syn_name in available_syn_names}
+    #
+    # agg_dict[&#34;GSYN_OGSE_LAMP_ON&#34;] = any_func
+    # agg_dict[&#34;GSYN_OGSE_LASER_ON&#34;] = any_func
+    # agg_dict[&#34;GSYN_OGSE_SHUTTER_OPEN&#34;] = any_func
+    #
+    # concatenated_hk = concatenated_hk.groupby(&#34;timestamp&#34;).agg(agg_dict)
 
-        agg_dict = {syn_name: np.mean for syn_name in available_syn_names}
+    num_rows = len(concatenated_hk.index)
+    for missing_syn_name in missing_syn_names:
+        concatenated_hk[missing_syn_name] = [float(&#39;nan&#39;)] * num_rows
 
-        def any_func(arr):
-            if arr.isnull().values.all():
-                return float(&#39;nan&#39;)
-            return any(arr)
-
-        agg_dict[&#34;GSYN_OGSE_LAMP_ON&#34;] = any_func
-        agg_dict[&#34;GSYN_OGSE_LASER_ON&#34;] = any_func
-        agg_dict[&#34;GSYN_OGSE_SHUTTER_OPEN&#34;] = any_func
-
-        concatenated_hk = concatenated_hk.groupby(&#34;timestamp&#34;).agg(agg_dict)
-
-        num_rows = len(concatenated_hk.index)
-        for missing_syn_name in missing_syn_names:
-            concatenated_hk[missing_syn_name] = [float(&#39;nan&#39;)] * num_rows
-
-        syn_names_wo_timestamp = np.delete(syn_names, np.where(syn_names == &#34;timestamp&#34;))
-        concatenated_hk.to_csv(synoptics_filename, columns=syn_names_wo_timestamp)
+    concatenated_hk.to_csv(synoptics_filename, columns=syn_names, index=False)
 
 
-def get_syn_input_filenames(od: str, site: str, day_dir: Path):
-    &#34;&#34;&#34; Return list of HK files contributing to the synoptics for the given OD at the given site.
+def get_syn_input_filenames_od(od: str, site: str, archive_day_dir: str, fixed_archive_day_dir: str,
+                               reprocessed_archive_day_dir: str):
+    &#34;&#34;&#34; Return list of filenames for the HK files contributing to the synoptics of the given TH for the given OD.
+
+    Returns: List of filenames for the HK files contributing to the synoptics of the given TH.
 
     Args:
         - od: Observation day in the format YYYYMMDD.
-        - site: Site ID (CSL/SRON/IAS/INTA).
-        - day_dir: Folder within the /daily directory in which the HK files are stored written for the given OD.
+        - site: Site ID (CSL/CSL1/CSL2/SRON/IAS/INTA).
+        - archive_day_dir: Folder in which the HK files are stored for the given OD.
+        - fixed_archive_day_dir: Folder in which the fixed HK files are stored for the given OD.
+        - reprocessed_archive_day_dir: Folder in which the re-processed synoptics file will be stored for the given OD.
     &#34;&#34;&#34;
 
-    common_syn_input_filenames = [str(day_dir / f&#34;{od}_SRON_{N_FEE_ORIGIN}.{CSV.extension}&#34;),
-                                  str(day_dir / f&#34;{od}_SRON_{FOV_ORIGIN}.{CSV.extension}&#34;),
-                                  str(day_dir / f&#34;{od}_SRON_{TCS_ORIGIN}.{CSV.extension}&#34;)
-                                  ]
+    syn_input_origins = get_syn_input_origins(site)
+    return get_syn_input_filenames_from_origins_od(syn_input_origins, od, site, archive_day_dir, fixed_archive_day_dir,
+                                                   reprocessed_archive_day_dir)
+
+
+def get_syn_input_filename_obs(obsid: str, site: str, archive_obs_dir: str, fixed_archive_obs_dir: str,
+                               reprocessed_archive_obs_dir: str):
+    &#34;&#34;&#34; Return list of filenames for the HK files contributing to the synoptics of the given TH for the given obsid.
+
+    Returns: List of filenames for the HK files contributing to the synoptics of the given TH.
+
+    Args:
+        - obsid: Observation identifier.
+        - site: Site ID (CSL/CSL1/CSL2/SRON/IAS/INTA).
+        - archive_obs_dir: Folder in which the HK files are stored for the given obsid.
+        - fixed_archive_obs_dir: Folder in which the fixed HK files are stored for the given obsid.
+        - reprocessed_archive_obs_dir: Folder in which the re-processed synoptics file will be stored for the given
+                                       obsid.
+    &#34;&#34;&#34;
+
+    syn_input_origins = get_syn_input_origins(site)
+    return get_syn_input_filenames_from_origins_obs(syn_input_origins, obsid, archive_obs_dir,
+                                                    fixed_archive_obs_dir, reprocessed_archive_obs_dir)
+
+
+def get_syn_input_origins(site: str):
+    &#34;&#34;&#34; Return list of storage mnemonics for the HK files contributing to the synoptics at the given TH.
+
+    Returns: List of storage mnemonics for the HK files contributing to the synoptics at the given TH.
+    &#34;&#34;&#34;
+
+    # Non-TH-specific HK files:
+    #   - N-FEE HK (already re-processed)
+    #   - FOV HK
+    #   - TCS HK
+
+    common_syn_input_origins = [N_FEE_ORIGIN, FOV_ORIGIN, TCS_ORIGIN]
+
+    # TH-specific HK files
 
     sitehash = {
-        &#34;CSL&#34;:  csl_get_syn_input_filenames,
-        &#34;IAS&#34;:  ias_get_syn_input_filenames,
-        &#34;INTA&#34;: inta_get_syn_input_filenames,
-        &#34;SRON&#34;: sron_get_syn_input_filenames,
+        &#34;CSL&#34;: csl_get_syn_input_origins,
+        &#34;CSL1&#34;: csl_get_syn_input_origins,
+        &#34;CSL2&#34;: csl_get_syn_input_origins,
+        &#34;IAS&#34;: ias_get_syn_input_origins,
+        &#34;INTA&#34;: inta_get_syn_input_origins,
+        &#34;SRON&#34;: sron_get_syn_input_origins,
     }
 
-    th_syn_input_filenames = sitehash[site](od, day_dir)
+    th_syn_input_origins = sitehash[site]()
 
-    return [*common_syn_input_filenames, *th_syn_input_filenames]
+    return [*common_syn_input_origins, *th_syn_input_origins]
 
 
-def csl_get_syn_input_filenames(od: str, day_dir: Path):
-    &#34;&#34;&#34; Return list of HK files contributing to the synoptics for the given OD at CSL.
+def csl_get_syn_input_origins():
+    &#34;&#34;&#34; Return list of storage mnemonics for the HK files contributing to the synoptics specifically for CSL.
 
-    Args:
-        - od: Observation day in the format YYYYMMDD.
-        - day_dir: Folder within the /daily directory in which the HK files are stored written for the given OD.
+    Returns: List of storage mnemonics for the HK files contributing to the synoptics specifically for CSL.
+    &#34;&#34;&#34;
+
+    return []
+
+
+def sron_get_syn_input_origins():
+    &#34;&#34;&#34; Return list of storage mnemonics for the HK files contributing to the synoptics specifically for SRON.
+
+    Returns: List of storage mnemonics for the HK files contributing to the synoptics specifically for SRON.
+    &#34;&#34;&#34;
+
+    return [Settings.load(&#34;BeagleBone Lamp Control Server&#34;).STORAGE_MNEMONIC,
+            Settings.load(&#34;Thorlabs PM100 Control Server&#34;).STORAGE_MNEMONIC,
+            Settings.load(&#34;Standa 8SMC5 Control Server&#34;).STORAGE_MNEMONIC,
+            Settings.load(&#34;Thorlabs SC10 Control Server&#34;).STORAGE_MNEMONIC,
+            Settings.load(&#34;Agilent 34970 Control Server&#34;).DAQ0[&#34;STORAGE_MNEMONIC&#34;],
+            Settings.load(&#34;Agilent 34970 Control Server&#34;).DAQ1[&#34;STORAGE_MNEMONIC&#34;],
+            Settings.load(&#34;Agilent 34972 Control Server&#34;).DAQ0[&#34;STORAGE_MNEMONIC&#34;],
+            Settings.load(&#34;Agilent 34972 Control Server&#34;).DAQ1[&#34;STORAGE_MNEMONIC&#34;]]
+
+
+def ias_get_syn_input_origins():
+    &#34;&#34;&#34; Return list of storage mnemonics for the HK files contributing to the synoptics specifically for IAS.
+
+    Returns: List of storage mnemonics for the HK files contributing to the synoptics specifically for IAS.
     &#34;&#34;&#34;
 
     raise NotImplementedError
 
 
-def sron_get_syn_input_filenames(od: str, day_dir: Path):
-    &#34;&#34;&#34; Return list of HK files contributing to the synoptics for the given OD at SRON.
+def inta_get_syn_input_origins():
+    &#34;&#34;&#34; Return list of storage mnemonics for the HK files contributing to the synoptics specifically for INTA.
 
-    Args:
-        - od: Observation day in the format YYYYMMDD.
-        - day_dir: Folder within the /daily directory in which the HK files are stored written for the given OD.
-    &#34;&#34;&#34;
-
-    lampcontrol_origin = Settings.load(&#34;BeagleBone Lamp Control Server&#34;).STORAGE_MNEMONIC
-    powermeter_origin = Settings.load(&#34;Thorlabs PM100 Control Server&#34;).STORAGE_MNEMONIC
-    filterwheel_origin = Settings.load(&#34;Standa 8SMC5 Control Server&#34;).STORAGE_MNEMONIC
-    shutter_origin = Settings.load(&#34;Thorlabs SC10 Control Server&#34;).STORAGE_MNEMONIC
-    ag0_daq0_origin = Settings.load(&#34;Agilent 34970 Control Server&#34;).DAQ0[&#34;STORAGE_MNEMONIC&#34;]
-    ag0_daq1_origin = Settings.load(&#34;Agilent 34970 Control Server&#34;).DAQ1[&#34;STORAGE_MNEMONIC&#34;]
-    ag2_daq0_origin = Settings.load(&#34;Agilent 34972 Control Server&#34;).DAQ0[&#34;STORAGE_MNEMONIC&#34;]
-    ag2_daq1_origin = Settings.load(&#34;Agilent 34972 Control Server&#34;).DAQ1[&#34;STORAGE_MNEMONIC&#34;]
-
-    # For SRON: Fix the header for the Agilent HK (see #1856)
-    repaired_dir = day_dir / &#34;..&#34; / &#34;..&#34; / &#34;..&#34; / &#34;plato-archive/plato-data-temp-corrected/daily&#34; / od
-
-    return [str(day_dir / f&#34;{od}_SRON_{lampcontrol_origin}.{CSV.extension}&#34;),
-            str(day_dir / f&#34;{od}_SRON_{powermeter_origin}.{CSV.extension}&#34;),
-            str(day_dir / f&#34;{od}_SRON_{filterwheel_origin}.{CSV.extension}&#34;),
-            str(day_dir / f&#34;{od}_SRON_{shutter_origin}.{CSV.extension}&#34;),
-            str(day_dir / f&#34;{od}_SRON_{ag0_daq0_origin}.{CSV.extension}&#34;),
-            str(day_dir / f&#34;{od}_SRON_{ag0_daq1_origin}.{CSV.extension}&#34;),
-            str(repaired_dir / f&#34;{od}_SRON_{ag2_daq0_origin}.{CSV.extension}&#34;),
-            str(repaired_dir / f&#34;{od}_SRON_{ag2_daq1_origin}.{CSV.extension}&#34;),
-            ]
-
-
-def ias_get_syn_input_filenames(od: str, day_dir: Path):
-    &#34;&#34;&#34; Return list of HK files contributing to the synoptics for the given OD at IAS.
-
-    Args:
-        - od: Observation day in the format YYYYMMDD.
-        - day_dir: Folder within the /daily directory in which the HK files are stored written for the given OD.
+    Returns: List of storage mnemonics for the HK files contributing to the synoptics specifically for INTA.
     &#34;&#34;&#34;
 
     raise NotImplementedError
 
 
-def inta_get_syn_input_filenames(od: str, day_dir: Path):
-    &#34;&#34;&#34; Return list of HK files contributing to the synoptics for the given OD at INTA.
+def get_syn_input_filenames_from_origins_od(origins: list, od: str, site: str, archive_day_dir: str,
+                                            fixed_archive_day_dir: str, reprocessed_archive_day_dir: str):
+    &#34;&#34;&#34;
+    Return list of filenames for the given OD for the given list of origins.
+
+    Returns: List of filenames for the given OD for the given list of origins.
 
     Args:
+        - origins: List of storage mnemonics for the HK files contributing to the synoptics at the given TH.
         - od: Observation day in the format YYYYMMDD.
-        - day_dir: Folder within the /daily directory in which the HK files are stored written for the given OD.
+        - site: Site ID (CSL/CSL1/CSL2/SRON/IAS/INTA).
+        - archive_day_dir: Folder in which the HK files are stored for the given OD.
+        - fixed_archive_day_dir: Folder in which the fixed HK files are stored for the given OD.
+        - reprocessed_archive_day_dir: Folder in which the re-processed synoptics file will be stored for the given OD.
     &#34;&#34;&#34;
 
-    raise NotImplementedError
+    filenames = []
+
+    for origin in origins:
+
+        filename = f&#34;{od}_{site}_{origin}.{CSV.extension}&#34;
+
+        # The N-FEE HK must be re-processed already
+
+        if origin == N_FEE_ORIGIN:
+            if Path(f&#34;{reprocessed_archive_day_dir}/{filename}&#34;).is_file():
+                filenames.append(f&#34;{reprocessed_archive_day_dir}/{filename}&#34;)
+            else:
+                LOGGER.debug(f&#34;No re-processed N-FEE HK available in {reprocessed_archive_day_dir}&#34;)
+
+        # For all other HK: first check whether there is a fixed version.  If there is one, use that; otherwise, use
+        # the original version from the archive (if that is available).
+
+        else:
+
+            if Path(f&#34;{fixed_archive_day_dir}/{filename}&#34;).is_file():
+                filenames.append(f&#34;{fixed_archive_day_dir}/{filename}&#34;)
+                LOGGER.debug(f&#34;Using the fixed HK for {origin}&#34;)
+            elif Path(f&#34;{archive_day_dir}/{filename}&#34;).is_file():
+                filenames.append(f&#34;{archive_day_dir}/{filename}&#34;)
+                LOGGER.debug(f&#34;Using the originally archived HK for {origin}&#34;)
+            else:
+                LOGGER.debug(f&#34;No HK file available for {origin}, neither in {fixed_archive_day_dir} nor &#34;
+                             f&#34;{archive_day_dir}&#34;)
+
+    return filenames
 
 
-# def reprocess_obs(obsid: Union[str, int, ObservationIdentifier]):
-#
-#     # Determine where the files are supposed to be/go
-#     # (we need to determine whether we used the TEST_LAB or TEST_LAB_SETUP naming convention)
-#
-#     obsid = obsid_from_storage(obsid)
-#     data_dir = os.environ[&#34;PLATO_DATE_STORAGE_LOCATION&#34;]
-#     obs_dir = f&#34;{data_dir}/obs/{obsid}&#34;
-#
-#     # Re-process N-FEE HK (temperature calibration)
-#
-#     n_fee_hk = str(find_file(f&#34;{obsid}_N-FEE-HK_*.csv&#34;, root=obs_dir))
-#     reprocess_nfee_hk(n_fee_hk)
-#
-#     # Re-process synoptics HK
-#
-#     syn_hk = str(find_file(f&#34;{obsid}_SYN-HK_*.csv&#34;, root=obs_dir))
-#     reprocess_synoptics(syn_hk)
-#
-#     # Re-process FITS files
-#     # (delete existing FITS files first)
-#
-#     delete_fits_files(obsid)
-#     reprocess_ccd_data(obsid, obs_dir)
-#
-# def get_timespan(obsid: str, obs_dir: str):
-#
-#     # TODO
-#
-# def delete_fits_files(obs_dir: str):
-#
-#     # Loop over all FITS files in the folder for the given obsid and remove them
-#
-#     fits_filenames = glob.glob(f&#34;{obs_dir}/*.fits&#34;)
-#     for fits_filename in fits_filenames:
-#         try:
-#             os.remove(fits_filename)
-#         except:
-#             LOGGER.warning(f&#34;Error while deleting file {fits_filename}&#34;)
-#
-#
+def get_syn_input_filenames_from_origins_obs(origins: list, obsid: str, archive_obs_dir: str,
+                                             fixed_archive_obs_dir: str, reprocessed_archive_obs_dir: str):
+    &#34;&#34;&#34; Return list of filenames for the given obsid for the given list of origins.
+
+    Returns: List of filenames for the given obsid for the given list of origins.
+
+    Args:
+        - origins: List of storage mnemonics for the HK files contributing to the synoptics at the given TH.
+        - obsid: Observation identifier.
+        - archive_obs_dir: Folder in which the HK files are stored for the given obsid.
+        - fixed_archive_obs_dir: Folder in which the fixed HK files are stored for the given obsid.
+        - reprocessed_archive_obs_dir: Folder in which the re-processed synoptics file will be stored for the given
+                                       obsid.
+    &#34;&#34;&#34;
+
+    filenames = []
+
+    for origin in origins:
+
+        pattern = f&#34;{obsid}_{origin}_*_*.{CSV.extension}&#34;
+
+        # The N-FEE HK must be re-processed already
+
+        if origin == N_FEE_ORIGIN:
+            filename = find_file(pattern, root=reprocessed_archive_obs_dir)
+
+            if filename is None:
+                LOGGER.debug(f&#34;No re-processed N-FEE HK available in {reprocessed_archive_obs_dir}&#34;)
+            else:
+                filenames.append(f&#34;{reprocessed_archive_obs_dir}/{filename.stem}.{CSV.extension}&#34;)
+
+        # For all other HK: first check whether there is a fixed version.  If there is one, use that; otherwise, use
+        # the original version from the archive (if that is available).
+
+        else:
+
+            filename = find_file(pattern, root=fixed_archive_obs_dir)
+
+            if filename is None:
+                filename = find_file(pattern, root=archive_obs_dir)
+
+                if filename is None:
+                    LOGGER.debug(f&#34;No HK file available for {origin}, neither in {fixed_archive_obs_dir} nor &#34;
+                                 f&#34;{archive_obs_dir}&#34;)
+                else:
+                    filenames.append(f&#34;{archive_obs_dir}/{filename}&#34;)
+                    LOGGER.debug(f&#34;Using the originally archived HK for {origin}&#34;)
+            else:
+                filenames.append(f&#34;{fixed_archive_obs_dir}/{filename.stem}.{CSV.extension}&#34;)
+                LOGGER.debug(f&#34;Using the fixed HK for {origin}&#34;)
+
+    return filenames
+
+
 # def reprocess_ccd_data(obsid: str, obs_dir: str):
 #
-#     delete_fits_files(obsid)
 #
 #     fg = SubProcess(&#34;MyApp&#34;, [sys.executable, &#34;-m&#34;, &#34;egse.dpu.fitsgen&#34;, &#34;for-obsid&#34;, obsid])
 #     fg.execute(detach_from_parent=True)</code></pre>
@@ -397,135 +683,329 @@ def inta_get_syn_input_filenames(od: str, day_dir: Path):
 <section>
 <h2 class="section-title" id="header-functions">Functions</h2>
 <dl>
-<dt id="egse.reprocess.csl_get_syn_input_filenames"><code class="name flex">
-<span>def <span class="ident">csl_get_syn_input_filenames</span></span>(<span>od: str, day_dir: pathlib.Path)</span>
+<dt id="egse.reprocess.csl_get_syn_input_origins"><code class="name flex">
+<span>def <span class="ident">csl_get_syn_input_origins</span></span>(<span>)</span>
 </code></dt>
 <dd>
-<div class="desc"><p>Return list of HK files contributing to the synoptics for the given OD at CSL.</p>
-<h2 id="args">Args</h2>
-<ul>
-<li>od: Observation day in the format YYYYMMDD.</li>
-<li>day_dir: Folder within the /daily directory in which the HK files are stored written for the given OD.</li>
-</ul></div>
+<div class="desc"><p>Return list of storage mnemonics for the HK files contributing to the synoptics specifically for CSL.</p>
+<p>Returns: List of storage mnemonics for the HK files contributing to the synoptics specifically for CSL.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def csl_get_syn_input_filenames(od: str, day_dir: Path):
-    &#34;&#34;&#34; Return list of HK files contributing to the synoptics for the given OD at CSL.
+<pre><code class="python">def csl_get_syn_input_origins():
+    &#34;&#34;&#34; Return list of storage mnemonics for the HK files contributing to the synoptics specifically for CSL.
 
-    Args:
-        - od: Observation day in the format YYYYMMDD.
-        - day_dir: Folder within the /daily directory in which the HK files are stored written for the given OD.
+    Returns: List of storage mnemonics for the HK files contributing to the synoptics specifically for CSL.
     &#34;&#34;&#34;
 
-    raise NotImplementedError</code></pre>
+    return []</code></pre>
 </details>
 </dd>
-<dt id="egse.reprocess.get_syn_input_filenames"><code class="name flex">
-<span>def <span class="ident">get_syn_input_filenames</span></span>(<span>od: str, site: str, day_dir: pathlib.Path)</span>
+<dt id="egse.reprocess.get_syn_input_filename_obs"><code class="name flex">
+<span>def <span class="ident">get_syn_input_filename_obs</span></span>(<span>obsid: str, site: str, archive_obs_dir: str, fixed_archive_obs_dir: str, reprocessed_archive_obs_dir: str)</span>
 </code></dt>
 <dd>
-<div class="desc"><p>Return list of HK files contributing to the synoptics for the given OD at the given site.</p>
+<div class="desc"><p>Return list of filenames for the HK files contributing to the synoptics of the given TH for the given obsid.</p>
+<p>Returns: List of filenames for the HK files contributing to the synoptics of the given TH.</p>
 <h2 id="args">Args</h2>
 <ul>
-<li>od: Observation day in the format YYYYMMDD.</li>
-<li>site: Site ID (CSL/SRON/IAS/INTA).</li>
-<li>day_dir: Folder within the /daily directory in which the HK files are stored written for the given OD.</li>
+<li>obsid: Observation identifier.</li>
+<li>site: Site ID (CSL/CSL1/CSL2/SRON/IAS/INTA).</li>
+<li>archive_obs_dir: Folder in which the HK files are stored for the given obsid.</li>
+<li>fixed_archive_obs_dir: Folder in which the fixed HK files are stored for the given obsid.</li>
+<li>reprocessed_archive_obs_dir: Folder in which the re-processed synoptics file will be stored for the given
+obsid.</li>
 </ul></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def get_syn_input_filenames(od: str, site: str, day_dir: Path):
-    &#34;&#34;&#34; Return list of HK files contributing to the synoptics for the given OD at the given site.
+<pre><code class="python">def get_syn_input_filename_obs(obsid: str, site: str, archive_obs_dir: str, fixed_archive_obs_dir: str,
+                               reprocessed_archive_obs_dir: str):
+    &#34;&#34;&#34; Return list of filenames for the HK files contributing to the synoptics of the given TH for the given obsid.
+
+    Returns: List of filenames for the HK files contributing to the synoptics of the given TH.
+
+    Args:
+        - obsid: Observation identifier.
+        - site: Site ID (CSL/CSL1/CSL2/SRON/IAS/INTA).
+        - archive_obs_dir: Folder in which the HK files are stored for the given obsid.
+        - fixed_archive_obs_dir: Folder in which the fixed HK files are stored for the given obsid.
+        - reprocessed_archive_obs_dir: Folder in which the re-processed synoptics file will be stored for the given
+                                       obsid.
+    &#34;&#34;&#34;
+
+    syn_input_origins = get_syn_input_origins(site)
+    return get_syn_input_filenames_from_origins_obs(syn_input_origins, obsid, archive_obs_dir,
+                                                    fixed_archive_obs_dir, reprocessed_archive_obs_dir)</code></pre>
+</details>
+</dd>
+<dt id="egse.reprocess.get_syn_input_filenames_from_origins_obs"><code class="name flex">
+<span>def <span class="ident">get_syn_input_filenames_from_origins_obs</span></span>(<span>origins: list, obsid: str, archive_obs_dir: str, fixed_archive_obs_dir: str, reprocessed_archive_obs_dir: str)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Return list of filenames for the given obsid for the given list of origins.</p>
+<p>Returns: List of filenames for the given obsid for the given list of origins.</p>
+<h2 id="args">Args</h2>
+<ul>
+<li>origins: List of storage mnemonics for the HK files contributing to the synoptics at the given TH.</li>
+<li>obsid: Observation identifier.</li>
+<li>archive_obs_dir: Folder in which the HK files are stored for the given obsid.</li>
+<li>fixed_archive_obs_dir: Folder in which the fixed HK files are stored for the given obsid.</li>
+<li>reprocessed_archive_obs_dir: Folder in which the re-processed synoptics file will be stored for the given
+obsid.</li>
+</ul></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_syn_input_filenames_from_origins_obs(origins: list, obsid: str, archive_obs_dir: str,
+                                             fixed_archive_obs_dir: str, reprocessed_archive_obs_dir: str):
+    &#34;&#34;&#34; Return list of filenames for the given obsid for the given list of origins.
+
+    Returns: List of filenames for the given obsid for the given list of origins.
+
+    Args:
+        - origins: List of storage mnemonics for the HK files contributing to the synoptics at the given TH.
+        - obsid: Observation identifier.
+        - archive_obs_dir: Folder in which the HK files are stored for the given obsid.
+        - fixed_archive_obs_dir: Folder in which the fixed HK files are stored for the given obsid.
+        - reprocessed_archive_obs_dir: Folder in which the re-processed synoptics file will be stored for the given
+                                       obsid.
+    &#34;&#34;&#34;
+
+    filenames = []
+
+    for origin in origins:
+
+        pattern = f&#34;{obsid}_{origin}_*_*.{CSV.extension}&#34;
+
+        # The N-FEE HK must be re-processed already
+
+        if origin == N_FEE_ORIGIN:
+            filename = find_file(pattern, root=reprocessed_archive_obs_dir)
+
+            if filename is None:
+                LOGGER.debug(f&#34;No re-processed N-FEE HK available in {reprocessed_archive_obs_dir}&#34;)
+            else:
+                filenames.append(f&#34;{reprocessed_archive_obs_dir}/{filename.stem}.{CSV.extension}&#34;)
+
+        # For all other HK: first check whether there is a fixed version.  If there is one, use that; otherwise, use
+        # the original version from the archive (if that is available).
+
+        else:
+
+            filename = find_file(pattern, root=fixed_archive_obs_dir)
+
+            if filename is None:
+                filename = find_file(pattern, root=archive_obs_dir)
+
+                if filename is None:
+                    LOGGER.debug(f&#34;No HK file available for {origin}, neither in {fixed_archive_obs_dir} nor &#34;
+                                 f&#34;{archive_obs_dir}&#34;)
+                else:
+                    filenames.append(f&#34;{archive_obs_dir}/{filename}&#34;)
+                    LOGGER.debug(f&#34;Using the originally archived HK for {origin}&#34;)
+            else:
+                filenames.append(f&#34;{fixed_archive_obs_dir}/{filename.stem}.{CSV.extension}&#34;)
+                LOGGER.debug(f&#34;Using the fixed HK for {origin}&#34;)
+
+    return filenames</code></pre>
+</details>
+</dd>
+<dt id="egse.reprocess.get_syn_input_filenames_from_origins_od"><code class="name flex">
+<span>def <span class="ident">get_syn_input_filenames_from_origins_od</span></span>(<span>origins: list, od: str, site: str, archive_day_dir: str, fixed_archive_day_dir: str, reprocessed_archive_day_dir: str)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Return list of filenames for the given OD for the given list of origins.</p>
+<p>Returns: List of filenames for the given OD for the given list of origins.</p>
+<h2 id="args">Args</h2>
+<ul>
+<li>origins: List of storage mnemonics for the HK files contributing to the synoptics at the given TH.</li>
+<li>od: Observation day in the format YYYYMMDD.</li>
+<li>site: Site ID (CSL/CSL1/CSL2/SRON/IAS/INTA).</li>
+<li>archive_day_dir: Folder in which the HK files are stored for the given OD.</li>
+<li>fixed_archive_day_dir: Folder in which the fixed HK files are stored for the given OD.</li>
+<li>reprocessed_archive_day_dir: Folder in which the re-processed synoptics file will be stored for the given OD.</li>
+</ul></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_syn_input_filenames_from_origins_od(origins: list, od: str, site: str, archive_day_dir: str,
+                                            fixed_archive_day_dir: str, reprocessed_archive_day_dir: str):
+    &#34;&#34;&#34;
+    Return list of filenames for the given OD for the given list of origins.
+
+    Returns: List of filenames for the given OD for the given list of origins.
+
+    Args:
+        - origins: List of storage mnemonics for the HK files contributing to the synoptics at the given TH.
+        - od: Observation day in the format YYYYMMDD.
+        - site: Site ID (CSL/CSL1/CSL2/SRON/IAS/INTA).
+        - archive_day_dir: Folder in which the HK files are stored for the given OD.
+        - fixed_archive_day_dir: Folder in which the fixed HK files are stored for the given OD.
+        - reprocessed_archive_day_dir: Folder in which the re-processed synoptics file will be stored for the given OD.
+    &#34;&#34;&#34;
+
+    filenames = []
+
+    for origin in origins:
+
+        filename = f&#34;{od}_{site}_{origin}.{CSV.extension}&#34;
+
+        # The N-FEE HK must be re-processed already
+
+        if origin == N_FEE_ORIGIN:
+            if Path(f&#34;{reprocessed_archive_day_dir}/{filename}&#34;).is_file():
+                filenames.append(f&#34;{reprocessed_archive_day_dir}/{filename}&#34;)
+            else:
+                LOGGER.debug(f&#34;No re-processed N-FEE HK available in {reprocessed_archive_day_dir}&#34;)
+
+        # For all other HK: first check whether there is a fixed version.  If there is one, use that; otherwise, use
+        # the original version from the archive (if that is available).
+
+        else:
+
+            if Path(f&#34;{fixed_archive_day_dir}/{filename}&#34;).is_file():
+                filenames.append(f&#34;{fixed_archive_day_dir}/{filename}&#34;)
+                LOGGER.debug(f&#34;Using the fixed HK for {origin}&#34;)
+            elif Path(f&#34;{archive_day_dir}/{filename}&#34;).is_file():
+                filenames.append(f&#34;{archive_day_dir}/{filename}&#34;)
+                LOGGER.debug(f&#34;Using the originally archived HK for {origin}&#34;)
+            else:
+                LOGGER.debug(f&#34;No HK file available for {origin}, neither in {fixed_archive_day_dir} nor &#34;
+                             f&#34;{archive_day_dir}&#34;)
+
+    return filenames</code></pre>
+</details>
+</dd>
+<dt id="egse.reprocess.get_syn_input_filenames_od"><code class="name flex">
+<span>def <span class="ident">get_syn_input_filenames_od</span></span>(<span>od: str, site: str, archive_day_dir: str, fixed_archive_day_dir: str, reprocessed_archive_day_dir: str)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Return list of filenames for the HK files contributing to the synoptics of the given TH for the given OD.</p>
+<p>Returns: List of filenames for the HK files contributing to the synoptics of the given TH.</p>
+<h2 id="args">Args</h2>
+<ul>
+<li>od: Observation day in the format YYYYMMDD.</li>
+<li>site: Site ID (CSL/CSL1/CSL2/SRON/IAS/INTA).</li>
+<li>archive_day_dir: Folder in which the HK files are stored for the given OD.</li>
+<li>fixed_archive_day_dir: Folder in which the fixed HK files are stored for the given OD.</li>
+<li>reprocessed_archive_day_dir: Folder in which the re-processed synoptics file will be stored for the given OD.</li>
+</ul></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_syn_input_filenames_od(od: str, site: str, archive_day_dir: str, fixed_archive_day_dir: str,
+                               reprocessed_archive_day_dir: str):
+    &#34;&#34;&#34; Return list of filenames for the HK files contributing to the synoptics of the given TH for the given OD.
+
+    Returns: List of filenames for the HK files contributing to the synoptics of the given TH.
 
     Args:
         - od: Observation day in the format YYYYMMDD.
-        - site: Site ID (CSL/SRON/IAS/INTA).
-        - day_dir: Folder within the /daily directory in which the HK files are stored written for the given OD.
+        - site: Site ID (CSL/CSL1/CSL2/SRON/IAS/INTA).
+        - archive_day_dir: Folder in which the HK files are stored for the given OD.
+        - fixed_archive_day_dir: Folder in which the fixed HK files are stored for the given OD.
+        - reprocessed_archive_day_dir: Folder in which the re-processed synoptics file will be stored for the given OD.
     &#34;&#34;&#34;
 
-    common_syn_input_filenames = [str(day_dir / f&#34;{od}_SRON_{N_FEE_ORIGIN}.{CSV.extension}&#34;),
-                                  str(day_dir / f&#34;{od}_SRON_{FOV_ORIGIN}.{CSV.extension}&#34;),
-                                  str(day_dir / f&#34;{od}_SRON_{TCS_ORIGIN}.{CSV.extension}&#34;)
-                                  ]
+    syn_input_origins = get_syn_input_origins(site)
+    return get_syn_input_filenames_from_origins_od(syn_input_origins, od, site, archive_day_dir, fixed_archive_day_dir,
+                                                   reprocessed_archive_day_dir)</code></pre>
+</details>
+</dd>
+<dt id="egse.reprocess.get_syn_input_origins"><code class="name flex">
+<span>def <span class="ident">get_syn_input_origins</span></span>(<span>site: str)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Return list of storage mnemonics for the HK files contributing to the synoptics at the given TH.</p>
+<p>Returns: List of storage mnemonics for the HK files contributing to the synoptics at the given TH.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_syn_input_origins(site: str):
+    &#34;&#34;&#34; Return list of storage mnemonics for the HK files contributing to the synoptics at the given TH.
+
+    Returns: List of storage mnemonics for the HK files contributing to the synoptics at the given TH.
+    &#34;&#34;&#34;
+
+    # Non-TH-specific HK files:
+    #   - N-FEE HK (already re-processed)
+    #   - FOV HK
+    #   - TCS HK
+
+    common_syn_input_origins = [N_FEE_ORIGIN, FOV_ORIGIN, TCS_ORIGIN]
+
+    # TH-specific HK files
 
     sitehash = {
-        &#34;CSL&#34;:  csl_get_syn_input_filenames,
-        &#34;IAS&#34;:  ias_get_syn_input_filenames,
-        &#34;INTA&#34;: inta_get_syn_input_filenames,
-        &#34;SRON&#34;: sron_get_syn_input_filenames,
+        &#34;CSL&#34;: csl_get_syn_input_origins,
+        &#34;CSL1&#34;: csl_get_syn_input_origins,
+        &#34;CSL2&#34;: csl_get_syn_input_origins,
+        &#34;IAS&#34;: ias_get_syn_input_origins,
+        &#34;INTA&#34;: inta_get_syn_input_origins,
+        &#34;SRON&#34;: sron_get_syn_input_origins,
     }
 
-    th_syn_input_filenames = sitehash[site](od, day_dir)
+    th_syn_input_origins = sitehash[site]()
 
-    return [*common_syn_input_filenames, *th_syn_input_filenames]</code></pre>
+    return [*common_syn_input_origins, *th_syn_input_origins]</code></pre>
 </details>
 </dd>
-<dt id="egse.reprocess.ias_get_syn_input_filenames"><code class="name flex">
-<span>def <span class="ident">ias_get_syn_input_filenames</span></span>(<span>od: str, day_dir: pathlib.Path)</span>
+<dt id="egse.reprocess.ias_get_syn_input_origins"><code class="name flex">
+<span>def <span class="ident">ias_get_syn_input_origins</span></span>(<span>)</span>
 </code></dt>
 <dd>
-<div class="desc"><p>Return list of HK files contributing to the synoptics for the given OD at IAS.</p>
-<h2 id="args">Args</h2>
-<ul>
-<li>od: Observation day in the format YYYYMMDD.</li>
-<li>day_dir: Folder within the /daily directory in which the HK files are stored written for the given OD.</li>
-</ul></div>
+<div class="desc"><p>Return list of storage mnemonics for the HK files contributing to the synoptics specifically for IAS.</p>
+<p>Returns: List of storage mnemonics for the HK files contributing to the synoptics specifically for IAS.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def ias_get_syn_input_filenames(od: str, day_dir: Path):
-    &#34;&#34;&#34; Return list of HK files contributing to the synoptics for the given OD at IAS.
+<pre><code class="python">def ias_get_syn_input_origins():
+    &#34;&#34;&#34; Return list of storage mnemonics for the HK files contributing to the synoptics specifically for IAS.
 
-    Args:
-        - od: Observation day in the format YYYYMMDD.
-        - day_dir: Folder within the /daily directory in which the HK files are stored written for the given OD.
+    Returns: List of storage mnemonics for the HK files contributing to the synoptics specifically for IAS.
     &#34;&#34;&#34;
 
     raise NotImplementedError</code></pre>
 </details>
 </dd>
-<dt id="egse.reprocess.inta_get_syn_input_filenames"><code class="name flex">
-<span>def <span class="ident">inta_get_syn_input_filenames</span></span>(<span>od: str, day_dir: pathlib.Path)</span>
+<dt id="egse.reprocess.inta_get_syn_input_origins"><code class="name flex">
+<span>def <span class="ident">inta_get_syn_input_origins</span></span>(<span>)</span>
 </code></dt>
 <dd>
-<div class="desc"><p>Return list of HK files contributing to the synoptics for the given OD at INTA.</p>
-<h2 id="args">Args</h2>
-<ul>
-<li>od: Observation day in the format YYYYMMDD.</li>
-<li>day_dir: Folder within the /daily directory in which the HK files are stored written for the given OD.</li>
-</ul></div>
+<div class="desc"><p>Return list of storage mnemonics for the HK files contributing to the synoptics specifically for INTA.</p>
+<p>Returns: List of storage mnemonics for the HK files contributing to the synoptics specifically for INTA.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def inta_get_syn_input_filenames(od: str, day_dir: Path):
-    &#34;&#34;&#34; Return list of HK files contributing to the synoptics for the given OD at INTA.
+<pre><code class="python">def inta_get_syn_input_origins():
+    &#34;&#34;&#34; Return list of storage mnemonics for the HK files contributing to the synoptics specifically for INTA.
 
-    Args:
-        - od: Observation day in the format YYYYMMDD.
-        - day_dir: Folder within the /daily directory in which the HK files are stored written for the given OD.
+    Returns: List of storage mnemonics for the HK files contributing to the synoptics specifically for INTA.
     &#34;&#34;&#34;
 
     raise NotImplementedError</code></pre>
 </details>
 </dd>
 <dt id="egse.reprocess.reprocess_daily_n_fee_hk"><code class="name flex">
-<span>def <span class="ident">reprocess_daily_n_fee_hk</span></span>(<span>od: str, site: str, sensor_cal: egse.setup.NavigableDict, day_dir: pathlib.Path)</span>
+<span>def <span class="ident">reprocess_daily_n_fee_hk</span></span>(<span>od: str, site: str, sensor_cal: egse.setup.NavigableDict, archive_dir: str, reprocessed_archive_dir: str)</span>
 </code></dt>
 <dd>
-<div class="desc"><p>Re-generate the N-FEE HK for the given OD.</p>
+<div class="desc"><p>Re-processing the N-FEE HK for the given OD.</p>
 <p>The procedure is as follows:
 - Read the N-FEE HK information from the TM dictionary.
 This comprises the name conversion from the original
 name (used by the N-FEE itself and in the HDF5 files) to the conventional name starting with "NFEE", and the
 calibration information for the supply voltages and temperatures.
-- Determine the filename for the N-FEE HK for the given OD. This will be used to throw away the old N-FEE HK
-and to store the new N-FEE HK.
-- Throw away the existing N-FEE HK file.
+- Determine the filename for the N-FEE HK for the given OD.
 - Determine the list of HDF5 filenames acquired during the given OD.
 - Determine the column names to use in the new N-FEE HK file and create a new N-FEE HK file with these.
 - Loop over all these HDF5 files.
@@ -536,24 +1016,25 @@ file.</p>
 <h2 id="args">Args</h2>
 <ul>
 <li>od: Observation day in the format YYYYMMDD.</li>
-<li>site: Site ID (CSL/SRON/IAS/INTA).</li>
+<li>site: Site ID (CSL/CSL1/CSL2/SRON/IAS/INTA).</li>
 <li>sensor_cal: Calibration data for the N-FEE HK.</li>
-<li>day_dir: Folder within the /daily directory in which the HK files are stored written for the given OD.</li>
+<li>archive_dir: Folder (with sub-folders /daily and /obs) in which the HDF5 files are stored.</li>
+<li>reprocessed_archive_dir: Folder (with sub-folders /daily and /obs) in which the re-processed N-FEE HK files
+will be stored.</li>
 </ul></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def reprocess_daily_n_fee_hk(od: str, site: str, sensor_cal: NavigableDict, day_dir: Path):
-    &#34;&#34;&#34; Re-generate the N-FEE HK for the given OD.
+<pre><code class="python">def reprocess_daily_n_fee_hk(od: str, site: str, sensor_cal: NavigableDict, archive_dir: str,
+                             reprocessed_archive_dir: str):
+    &#34;&#34;&#34; Re-processing the N-FEE HK for the given OD.
 
     The procedure is as follows:
         - Read the N-FEE HK information from the TM dictionary.  This comprises the name conversion from the original
           name (used by the N-FEE itself and in the HDF5 files) to the conventional name starting with &#34;NFEE&#34;, and the
           calibration information for the supply voltages and temperatures.
-        - Determine the filename for the N-FEE HK for the given OD. This will be used to throw away the old N-FEE HK
-          and to store the new N-FEE HK.
-        - Throw away the existing N-FEE HK file.
+        - Determine the filename for the N-FEE HK for the given OD.
         - Determine the list of HDF5 filenames acquired during the given OD.
         - Determine the column names to use in the new N-FEE HK file and create a new N-FEE HK file with these.
         - Loop over all these HDF5 files.  For each of them, read the uncalibrated values and apply the calibration,
@@ -562,249 +1043,359 @@ file.</p>
 
     Args:
         - od: Observation day in the format YYYYMMDD.
-        - site: Site ID (CSL/SRON/IAS/INTA).
+        - site: Site ID (CSL/CSL1/CSL2/SRON/IAS/INTA).
         - sensor_cal: Calibration data for the N-FEE HK.
-        - day_dir: Folder within the /daily directory in which the HK files are stored written for the given OD.
+        - archive_dir: Folder (with sub-folders /daily and /obs) in which the HDF5 files are stored.
+        - reprocessed_archive_dir: Folder (with sub-folders /daily and /obs) in which the re-processed N-FEE HK files
+                                   will be stored.
     &#34;&#34;&#34;
 
-    name_conversion, nfee_supply_voltage_cal = read_n_fee_hk_info()
+    archive_od_dir = f&#34;{archive_dir}/daily/{od}&#34;
+    reprocessed_archive_od_dir = f&#34;{reprocessed_archive_dir}/daily/{od}&#34;
 
-    # Throw away the existing N-FEE HK
-    # (Further on we will create a new N-FEE HK file with the same name)
+    # Compose the list of HDF5 filenames for the given OD
+    # If there are no HDF5 files, exit with a proper log message
 
-    n_fee_hk_filename = str(find_file(f&#34;{od}_{site}_{N_FEE_ORIGIN}.csv&#34;, root=day_dir))     # TODO
-    # os.remove(n_fee_hk_filename)     # TODO
+    hdf5_filenames = glob.glob(f&#34;{archive_od_dir}/*.{HDF5.extension}&#34;)
+    if len(hdf5_filenames) == 0:
+        LOGGER.info(f&#34;No HDF5 files found in {archive_od_dir}&#34;)
+        return
 
-    # Loop over all HDF5 files and extract the HK
+    # Use the same filename for the N-FEE HK as before, but store it in the re-processed archive now
+    # (don&#39;t touch the old N-FEE HK file)
 
-    hdf5_filenames = glob.glob(str(day_dir / f&#34;*.{HDF5.extension}&#34;))
+    n_fee_hk_filename = f&#34;{reprocessed_archive_od_dir}/{od}_{site}_{N_FEE_ORIGIN}.{CSV.extension}&#34;
 
-    column_names = [&#34;timestamp&#34;, *list(name_conversion.values())]
-    with CSV(filename=n_fee_hk_filename, prep={&#34;column_names&#34;: column_names, &#34;mode&#34;: &#39;w&#39;}) as csv:
-
-        for hdf5_filename in hdf5_filenames:
-
-            with h5.get_file(hdf5_filename, mode=&#34;r&#34;) as hdf5_file:
-
-                for group in h5.groups(hdf5_file):
-
-                    # Read the HK from the HDF5 groups and rename them
-
-                    if &#34;hk&#34; in group:
-
-                        # Create a dictionary in which we will gather all the raw and calibrated data for the timestamp
-                        # in the current group of the current HDF5 file
-
-                        values = {&#34;timestamp&#34;: group[&#34;timecode&#34;].attrs[&#34;timestamp&#34;]}
-
-                        hk_packet = SpaceWirePacket.create_packet(h5.get_data(group[&#34;hk&#34;])) # Fix for CCD numbering is incorporated here
-                        hk_data = HousekeepingData(hk_packet.data)
-
-                        for orig_name in hk_data:
-                            try:
-                                new_name = name_conversion[orig_name]
-                                values[new_name] = hk_data[orig_name]
-                            except KeyError:
-                                print(orig_name)
-
-                        # Apply the correct calibration
-
-                        calibrated_supply_voltages = get_calibrated_nfee_supply_voltages(values, nfee_supply_voltage_cal)
-                        values.update(calibrated_supply_voltages)
-                        calibrated_temperatures = get_calibrated_temperatures(values, sensor_cal)
-                        values.update(calibrated_temperatures)
-
-                        # Store the new N-FEE HK
-
-                        csv.create(values)</code></pre>
+    _reprocess_n_fee_hk(hdf5_filenames, n_fee_hk_filename, sensor_cal, reprocessed_archive_od_dir)</code></pre>
 </details>
 </dd>
 <dt id="egse.reprocess.reprocess_daily_synoptics"><code class="name flex">
-<span>def <span class="ident">reprocess_daily_synoptics</span></span>(<span>od: str, site: str, day_dir: pathlib.Path)</span>
+<span>def <span class="ident">reprocess_daily_synoptics</span></span>(<span>od: str, site: str, archive_dir: str, fixed_archive_dir: str, reprocessed_archive_dir: str)</span>
 </code></dt>
 <dd>
-<div class="desc"><p>Re-generate the synoptics for the given OD.</p>
+<div class="desc"><p>Re-processing the N-FEE HK for the given OD.</p>
 <p>The procedure is as follows:
-- Read the synoptics information from the TM dictionary.
-This comprises the name conversion from the original
-name (used by the contributing components) to the conventional name starting with "GSYN".
-- Determine the filename for the synoptics for the given OD. This will be used to throw away the old synoptics
-and to store the new synoptics.
-- Throw away the existing synoptics file.
-- Determine from which HK files we need to fetch information (this is TH-specific).
-- Concatenate the HK from all these files, sorted according to the timestamp, and fill the gaps (the last real
-value before a gap is used);</p>
+- Compose a list of HK files contributing to the synoptics.
+- Read those files one by one and concatenate them.
+- Sort the concatenated tables in order of ascending timestamp.
+- Store only the relevant columns in the synoptics file.</p>
 <h2 id="args">Args</h2>
 <ul>
 <li>od: Observation day in the format YYYYMMDD.</li>
-<li>site: Site ID (CSL/SRON/IAS/INTA).</li>
-<li>day_dir: Folder within the /daily directory in which the HK files are stored written for the given OD.</li>
+<li>site: Site ID (CSL/CSL1/CSL2/SRON/IAS/INTA).</li>
+<li>archive_dir: Folder (with sub-folders /daily and /obs) in which the HDF5 files are stored.</li>
+<li>fixed_archive_dir: Folder (with sub-folders /daily and /obs) in which the fixed HK files are stored.</li>
+<li>reprocessed_archive_dir: Folder (with sub-folders /daily and /obs) in which the re-processed N-FEE HK files
+will be stored.</li>
 </ul></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def reprocess_daily_synoptics(od: str, site: str, day_dir: Path):
-    &#34;&#34;&#34; Re-generate the synoptics for the given OD.
+<pre><code class="python">def reprocess_daily_synoptics(od: str, site: str, archive_dir: str, fixed_archive_dir: str,
+                              reprocessed_archive_dir: str):
+    &#34;&#34;&#34; Re-processing the N-FEE HK for the given OD.
 
     The procedure is as follows:
-        - Read the synoptics information from the TM dictionary.  This comprises the name conversion from the original
-          name (used by the contributing components) to the conventional name starting with &#34;GSYN&#34;.
-        - Determine the filename for the synoptics for the given OD. This will be used to throw away the old synoptics
-          and to store the new synoptics.
-        - Throw away the existing synoptics file.
-        - Determine from which HK files we need to fetch information (this is TH-specific).
-        - Concatenate the HK from all these files, sorted according to the timestamp, and fill the gaps (the last real
-          value before a gap is used);
+        - Compose a list of HK files contributing to the synoptics.
+        - Read those files one by one and concatenate them.
+        - Sort the concatenated tables in order of ascending timestamp.
+        - Store only the relevant columns in the synoptics file.
 
     Args:
         - od: Observation day in the format YYYYMMDD.
-        - site: Site ID (CSL/SRON/IAS/INTA).
-        - day_dir: Folder within the /daily directory in which the HK files are stored written for the given OD.
+        - site: Site ID (CSL/CSL1/CSL2/SRON/IAS/INTA).
+        - archive_dir: Folder (with sub-folders /daily and /obs) in which the HDF5 files are stored.
+        - fixed_archive_dir: Folder (with sub-folders /daily and /obs) in which the fixed HK files are stored.
+        - reprocessed_archive_dir: Folder (with sub-folders /daily and /obs) in which the re-processed N-FEE HK files
+                                   will be stored.
     &#34;&#34;&#34;
 
-    syn_names, original_name_egse, original_name_th = read_syn_info()
+    archive_day_dir = f&#34;{archive_dir}/daily/{od}&#34;
+    fixed_archive_day_dir = f&#34;{fixed_archive_dir}/daily/{od}&#34;
+    reprocessed_archive_day_dir = f&#34;{reprocessed_archive_dir}/daily/{od}&#34;
 
-    # Throw away the existing synoptics
-    # (Further on we will create a synoptics file with the same name)
+    # Determine the filename for the HK that contribute to the synoptics
+    #       - At this point, the N-FEE HK is re-processed already
+    #       - Most of the other HK will be stored in the original archive, but some of it may be fixed (for some reason)
 
-    synoptics_filename = str(find_file(f&#34;{od}_{site}_{SYN_ORIGIN}.csv&#34;, root=day_dir))     # TODO
-    # os.remove(synoptics_filename)     # TODO
+    syn_input_filenames = get_syn_input_filenames_od(od, site, archive_day_dir, fixed_archive_day_dir,
+                                                     reprocessed_archive_day_dir)
 
-    syn_input_filenames = get_syn_input_filenames(od, site, day_dir)
+    if len(syn_input_filenames) == 0:
+        LOGGER.info(f&#34;No HK files contributing the synoptics found in {archive_day_dir} nor {fixed_archive_day_dir}&#34;)
+        return
 
-    if len(syn_input_filenames) &gt; 0:
+    synoptics_filename = f&#34;{reprocessed_archive_day_dir}/{od}_{site}_{SYN_ORIGIN}.{CSV.extension}&#34;
+    _reprocess_synoptics(syn_input_filenames, synoptics_filename)</code></pre>
+</details>
+</dd>
+<dt id="egse.reprocess.reprocess_obs_n_fee_hk"><code class="name flex">
+<span>def <span class="ident">reprocess_obs_n_fee_hk</span></span>(<span>obsid: Union[<a title="egse.obsid.ObservationIdentifier" href="obsid.html#egse.obsid.ObservationIdentifier">ObservationIdentifier</a>, str, int], sensor_cal: egse.setup.NavigableDict, archive_dir: str, reprocessed_archive_dir: str)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Re-processing the synoptics for the given obsid.</p>
+<p>The procedure is as follows:
+- Read the N-FEE HK information from the TM dictionary.
+This comprises the name conversion from the original
+name (used by the N-FEE itself and in the HDF5 files) to the conventional name starting with "NFEE", and the
+calibration information for the supply voltages and temperatures.
+- Determine the filename for the N-FEE HK for the given obsid.
+- Determine the list of HDF5 filenames acquired during the given obsid.
+- Determine the column names to use in the new N-FEE HK file and create a new N-FEE HK file with these.
+- Loop over all these HDF5 files.
+For each of them, read the uncalibrated values and apply the calibration,
+according to the given calibration information.
+Then append the raw and calibrated values to the N-FEE HK
+file.</p>
+<h2 id="args">Args</h2>
+<ul>
+<li>obsid: Observation identifier.</li>
+<li>site: Site ID (CSL/CSL1/CSL2/SRON/IAS/INTA).</li>
+<li>sensor_cal: Calibration data for the N-FEE HK.</li>
+<li>archive_dir: Folder (with sub-folders /daily and /obs) in which the HDF5 files are stored.</li>
+<li>reprocessed_archive_dir: Folder (with sub-folders /daily and /obs) in which the re-processed N-FEE HK files
+will be stored.</li>
+</ul></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def reprocess_obs_n_fee_hk(obsid: Union[str, int, ObservationIdentifier], sensor_cal: NavigableDict,
+                           archive_dir: str, reprocessed_archive_dir: str):
+    &#34;&#34;&#34; Re-processing the synoptics for the given obsid.
 
-        # Concatenate the content of all contributing HK files
+    The procedure is as follows:
+        - Read the N-FEE HK information from the TM dictionary.  This comprises the name conversion from the original
+          name (used by the N-FEE itself and in the HDF5 files) to the conventional name starting with &#34;NFEE&#34;, and the
+          calibration information for the supply voltages and temperatures.
+        - Determine the filename for the N-FEE HK for the given obsid.
+        - Determine the list of HDF5 filenames acquired during the given obsid.
+        - Determine the column names to use in the new N-FEE HK file and create a new N-FEE HK file with these.
+        - Loop over all these HDF5 files.  For each of them, read the uncalibrated values and apply the calibration,
+          according to the given calibration information.  Then append the raw and calibrated values to the N-FEE HK
+          file.
 
-        concatenated_hk = pd.read_csv(syn_input_filenames[0])
-        for syn_input_filename in syn_input_filenames[1:]:
-            syn_input_file = pd.read_csv(syn_input_filename)
-            concatenated_hk = concatenated_hk.append(syn_input_file)
+    Args:
+        - obsid: Observation identifier.
+        - site: Site ID (CSL/CSL1/CSL2/SRON/IAS/INTA).
+        - sensor_cal: Calibration data for the N-FEE HK.
+        - archive_dir: Folder (with sub-folders /daily and /obs) in which the HDF5 files are stored.
+        - reprocessed_archive_dir: Folder (with sub-folders /daily and /obs) in which the re-processed N-FEE HK files
+                                   will be stored.
+    &#34;&#34;&#34;
 
-        # Sort according to ascending timestamp
+    obsid = obsid_from_storage(obsid, archive_dir)
 
-        concatenated_hk = concatenated_hk.sort_values(by=[&#39;timestamp&#39;])
+    archive_obsid_dir = f&#34;{archive_dir}/obs/{obsid}&#34;
+    reprocessed_archive_obsid_dir = f&#34;{reprocessed_archive_dir}/obs/{obsid}&#34;
 
-        # Convert the HK names to synoptical names (starting with &#34;GSYN&#34;)
+    # Compose the list of HDF5 filenames for the given obsid
+    # If there are no HDF5 files, exit with a proper log message
 
-        concatenated_hk = concatenated_hk.rename(columns=original_name_egse)
-        concatenated_hk = concatenated_hk.rename(columns=original_name_th)
+    hdf5_filenames = get_hdf5_filenames_for_obsid(obsid, data_dir=archive_dir)
+    if len(hdf5_filenames) == 0:
+        LOGGER.info(f&#34;No HDF5 files found for obsid {obsid}&#34;)
+        return
 
-        # Fill NaNs
+    # Use the same filename for the N-FEE HK as before, but store it in the re-processed archive now
+    # (don&#39;t touch the old N-FEE HK file)
 
-        concatenated_hk = concatenated_hk.fillna(method=&#34;ffill&#34;)
-        # concatenated_hk = concatenated_hk.fillna(method=&#34;bfill&#34;)    # This is only relevant for the first few seconds
+    pattern = f&#34;{obsid}_{N_FEE_ORIGIN}_*_*.csv&#34;
+    n_fee_hk_filename = find_file(pattern, root=archive_obsid_dir)
+    if n_fee_hk_filename is None:
+        od = get_od(obsid, archive_dir)[0]
+        n_fee_hk_filename = f&#34;{reprocessed_archive_obsid_dir}/{obsid}_{N_FEE_ORIGIN}_{od}.{CSV.extension}&#34;
+    else:
+        n_fee_hk_filename = f&#34;{reprocessed_archive_obsid_dir}/{n_fee_hk_filename.stem}.{CSV.extension}&#34;
 
-        available_syn_names = np.delete(syn_names, np.where(syn_names == &#34;timestamp&#34;))
-        missing_syn_names = np.array([])
+    _reprocess_n_fee_hk(hdf5_filenames, n_fee_hk_filename, sensor_cal, reprocessed_archive_obsid_dir)</code></pre>
+</details>
+</dd>
+<dt id="egse.reprocess.reprocess_obs_synoptics"><code class="name flex">
+<span>def <span class="ident">reprocess_obs_synoptics</span></span>(<span>obsid: Union[<a title="egse.obsid.ObservationIdentifier" href="obsid.html#egse.obsid.ObservationIdentifier">ObservationIdentifier</a>, str, int], site: str, archive_dir: str, fixed_archive_dir: str, reprocessed_archive_dir: str)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Re-processing the N-FEE HK for the given obsid.</p>
+<p>The procedure is as follows:
+- Compose a list of HK files contributing to the synoptics.
+- Read those files one by one and concatenate them.
+- Sort the concatenated tables in order of ascending timestamp.
+- Store only the relevant columns in the synoptics file.</p>
+<h2 id="args">Args</h2>
+<ul>
+<li>obsid: Observation identifier.</li>
+<li>site: Site ID (CSL/CSL1/CSL2/SRON/IAS/INTA).</li>
+<li>archive_dir: Folder (with sub-folders /daily and /obs) in which the HDF5 files are stored.</li>
+<li>fixed_archive_dir: Folder (with sub-folders /daily and /obs) in which the fixed HK files are stored.</li>
+<li>reprocessed_archive_dir: Folder (with sub-folders /daily and /obs) in which the re-processed N-FEE HK files
+will be stored.</li>
+</ul></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def reprocess_obs_synoptics(obsid: Union[str, int, ObservationIdentifier], site: str, archive_dir: str,
+                            fixed_archive_dir: str, reprocessed_archive_dir: str):
+    &#34;&#34;&#34; Re-processing the N-FEE HK for the given obsid.
 
-        for syn_name in available_syn_names:
-            if syn_name not in concatenated_hk:
-                available_syn_names = np.delete(available_syn_names, np.where(available_syn_names == syn_name))
-                missing_syn_names = np.append(missing_syn_names, syn_name)
+    The procedure is as follows:
+        - Compose a list of HK files contributing to the synoptics.
+        - Read those files one by one and concatenate them.
+        - Sort the concatenated tables in order of ascending timestamp.
+        - Store only the relevant columns in the synoptics file.
 
-        # For numerical columns, use the mean; for boolean columns, use any (unless they are all NaN)
+    Args:
+        - obsid: Observation identifier.
+        - site: Site ID (CSL/CSL1/CSL2/SRON/IAS/INTA).
+        - archive_dir: Folder (with sub-folders /daily and /obs) in which the HDF5 files are stored.
+        - fixed_archive_dir: Folder (with sub-folders /daily and /obs) in which the fixed HK files are stored.
+        - reprocessed_archive_dir: Folder (with sub-folders /daily and /obs) in which the re-processed N-FEE HK files
+                                   will be stored.
+        &#34;&#34;&#34;
 
-        agg_dict = {syn_name: np.mean for syn_name in available_syn_names}
+    obsid = obsid_from_storage(obsid, archive_dir)
 
-        def any_func(arr):
-            if arr.isnull().values.all():
-                return float(&#39;nan&#39;)
-            return any(arr)
+    archive_obs_dir = f&#34;{archive_dir}/obs/{obsid}&#34;
+    fixed_archive_obs_dir = f&#34;{fixed_archive_dir}/obs/{obsid}&#34;
+    reprocessed_archive_obs_dir = f&#34;{reprocessed_archive_dir}/obs/{obsid}&#34;
 
-        agg_dict[&#34;GSYN_OGSE_LAMP_ON&#34;] = any_func
-        agg_dict[&#34;GSYN_OGSE_LASER_ON&#34;] = any_func
-        agg_dict[&#34;GSYN_OGSE_SHUTTER_OPEN&#34;] = any_func
+    # Determine the filename for the HK that contribute to the synoptics
+    #       - At this point, the N-FEE HK is re-processed already
+    #       - Most of the other HK will be stored in the original archive, but some of it may be fixed (for some reason)
 
-        concatenated_hk = concatenated_hk.groupby(&#34;timestamp&#34;).agg(agg_dict)
+    syn_input_filenames = get_syn_input_filename_obs(obsid, site, archive_obs_dir, fixed_archive_obs_dir,
+                                                     reprocessed_archive_obs_dir)
 
-        num_rows = len(concatenated_hk.index)
-        for missing_syn_name in missing_syn_names:
-            concatenated_hk[missing_syn_name] = [float(&#39;nan&#39;)] * num_rows
+    if len(syn_input_filenames) == 0:
+        LOGGER.info(f&#34;No HK files contributing the synoptics found in {archive_obs_dir} nor {fixed_archive_obs_dir}&#34;)
+        return
 
-        syn_names_wo_timestamp = np.delete(syn_names, np.where(syn_names == &#34;timestamp&#34;))
-        concatenated_hk.to_csv(synoptics_filename, columns=syn_names_wo_timestamp)</code></pre>
+    pattern = f&#34;{obsid}_{SYN_ORIGIN}_*_*.csv&#34;
+    synoptics_filename = find_file(pattern, root=archive_obs_dir)
+    if synoptics_filename is None:
+        od = get_od(obsid, archive_dir)[0]
+        synoptics_filename = f&#34;{reprocessed_archive_obs_dir}/{obsid}_{SYN_ORIGIN}_{od}.{CSV.extension}&#34;
+    else:
+        synoptics_filename = f&#34;{reprocessed_archive_obs_dir}/{synoptics_filename.stem}.{CSV.extension}&#34;
+
+    _reprocess_synoptics(syn_input_filenames, synoptics_filename)</code></pre>
+</details>
+</dd>
+<dt id="egse.reprocess.reprocess_obsid"><code class="name flex">
+<span>def <span class="ident">reprocess_obsid</span></span>(<span>obsid: Union[<a title="egse.obsid.ObservationIdentifier" href="obsid.html#egse.obsid.ObservationIdentifier">ObservationIdentifier</a>, str, int], site: str, sensor_cal: egse.setup.NavigableDict, archive_dir: str, fixed_archive_dir: str, reprocessed_archive_dir: str)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Re-processing for the given obsid.</p>
+<p>This re-processing consists of the following steps:
+- Re-processing the N-FEE HK from the HDF5 files;
+- Re-processing the synoptics from the contributing (and potentially fixed HK files);
+- Re-processing the FITS files from the HDF5 files and (re-processed) synoptics.</p>
+<h2 id="args">Args</h2>
+<ul>
+<li>obsid: Observation identifier.</li>
+<li>site: Site ID (CSL/CSL1/CSL2/SRON/IAS/INTA).</li>
+<li>sensor_cal: Calibration data for the N-FEE HK.</li>
+<li>archive_dir: Folder (with sub-folders /daily and /obs) in which the HK files are stored.</li>
+<li>fixed_archive_dir: Folder (with sub-folders /daily and /obs) in which the fixed HK files are stored.</li>
+<li>reprocessed_archive_dir: Folder (with sub-folders /daily and /obs) in which the re-processed synoptics file
+will be stored.</li>
+</ul></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def reprocess_obsid(obsid: Union[str, int, ObservationIdentifier], site: str, sensor_cal: NavigableDict,
+                    archive_dir: str, fixed_archive_dir: str, reprocessed_archive_dir: str):
+    &#34;&#34;&#34; Re-processing for the given obsid.
+
+    This re-processing consists of the following steps:
+        - Re-processing the N-FEE HK from the HDF5 files;
+        - Re-processing the synoptics from the contributing (and potentially fixed HK files);
+        - Re-processing the FITS files from the HDF5 files and (re-processed) synoptics.
+
+    Args:
+        - obsid: Observation identifier.
+        - site: Site ID (CSL/CSL1/CSL2/SRON/IAS/INTA).
+        - sensor_cal: Calibration data for the N-FEE HK.
+        - archive_dir: Folder (with sub-folders /daily and /obs) in which the HK files are stored.
+        - fixed_archive_dir: Folder (with sub-folders /daily and /obs) in which the fixed HK files are stored.
+        - reprocessed_archive_dir: Folder (with sub-folders /daily and /obs) in which the re-processed synoptics file
+                                   will be stored.
+    &#34;&#34;&#34;
+
+    reprocess_obs_n_fee_hk(obsid, sensor_cal, archive_dir, reprocessed_archive_dir)                 # N-FEE HK
+    reprocess_obs_synoptics(obsid, site, archive_dir, fixed_archive_dir, reprocessed_archive_dir)   # Synoptics</code></pre>
 </details>
 </dd>
 <dt id="egse.reprocess.reprocess_od"><code class="name flex">
-<span>def <span class="ident">reprocess_od</span></span>(<span>od: str, site: str, sensor_cal: egse.setup.NavigableDict, data_dir: str = None)</span>
+<span>def <span class="ident">reprocess_od</span></span>(<span>od: str, site: str, sensor_cal: egse.setup.NavigableDict, archive_dir: str, fixed_archive_dir: str, reprocessed_archive_dir: str)</span>
 </code></dt>
 <dd>
-<div class="desc"><p>Re-generate the N-FEE HK and synoptics for the given OD.</p>
+<div class="desc"><p>Re-processing for the given OD.</p>
+<p>This re-processing consists of the following steps:
+- Re-processing the N-FEE HK from the HDF5 files;
+- Re-processing the synoptics from the contributing (and potentially fixed) HK files.</p>
 <h2 id="args">Args</h2>
 <ul>
 <li>od: Observation day in the format YYYYMMDD.</li>
-<li>site: Site ID (CSL/SRON/IAS/INTA).</li>
+<li>site: Site ID (CSL/CSL1/CSL2/SRON/IAS/INTA).</li>
 <li>sensor_cal: Calibration data for the N-FEE HK.</li>
-<li>data_dir: Folder (with /daily and /obs sub-folders) in which all data is stored. If not specified,
-the <code>PLATO_DATA_STORAGE_LOCATION</code> environment variable will be read out.</li>
+<li>archive_dir: Folder (with sub-folders /daily and /obs) in which the HK files are stored.</li>
+<li>fixed_archive_dir: Folder (with sub-folders /daily and /obs) in which the fixed HK files are stored.</li>
+<li>reprocessed_archive_dir: Folder (with sub-folders /daily and /obs) in which the re-processed synoptics file
+will be stored.</li>
 </ul></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def reprocess_od(od: str, site: str, sensor_cal: NavigableDict, data_dir: str = None):
-    &#34;&#34;&#34; Re-generate the N-FEE HK and synoptics for the given OD.
+<pre><code class="python">def reprocess_od(od: str, site: str, sensor_cal: NavigableDict, archive_dir: str, fixed_archive_dir: str,
+                 reprocessed_archive_dir: str):
+    &#34;&#34;&#34; Re-processing for the given OD.
+
+    This re-processing consists of the following steps:
+        - Re-processing the N-FEE HK from the HDF5 files;
+        - Re-processing the synoptics from the contributing (and potentially fixed) HK files.
 
     Args:
         - od: Observation day in the format YYYYMMDD.
-        - site: Site ID (CSL/SRON/IAS/INTA).
+        - site: Site ID (CSL/CSL1/CSL2/SRON/IAS/INTA).
         - sensor_cal: Calibration data for the N-FEE HK.
-        - data_dir: Folder (with /daily and /obs sub-folders) in which all data is stored. If not specified,
-                    the `PLATO_DATA_STORAGE_LOCATION` environment variable will be read out.
+        - archive_dir: Folder (with sub-folders /daily and /obs) in which the HK files are stored.
+        - fixed_archive_dir: Folder (with sub-folders /daily and /obs) in which the fixed HK files are stored.
+        - reprocessed_archive_dir: Folder (with sub-folders /daily and /obs) in which the re-processed synoptics file
+                                   will be stored.
     &#34;&#34;&#34;
 
-    data_dir = data_dir or os.environ.get(&#39;PLATO_DATA_STORAGE_LOCATION&#39;)
-    day_dir = Path(f&#34;{data_dir}/daily/{od}&#34;)  # Sub-folder with the data for the given OD
-
-    reprocess_daily_n_fee_hk(od, site, sensor_cal, day_dir)    # N-FEE HK
-    reprocess_daily_synoptics(od, site, data_dir=data_dir)     # Synoptics</code></pre>
+    reprocess_daily_n_fee_hk(od, site, sensor_cal, archive_dir, reprocessed_archive_dir)            # N-FEE HK
+    reprocess_daily_synoptics(od, site, archive_dir, fixed_archive_dir, reprocessed_archive_dir)    # Synoptics</code></pre>
 </details>
 </dd>
-<dt id="egse.reprocess.sron_get_syn_input_filenames"><code class="name flex">
-<span>def <span class="ident">sron_get_syn_input_filenames</span></span>(<span>od: str, day_dir: pathlib.Path)</span>
+<dt id="egse.reprocess.sron_get_syn_input_origins"><code class="name flex">
+<span>def <span class="ident">sron_get_syn_input_origins</span></span>(<span>)</span>
 </code></dt>
 <dd>
-<div class="desc"><p>Return list of HK files contributing to the synoptics for the given OD at SRON.</p>
-<h2 id="args">Args</h2>
-<ul>
-<li>od: Observation day in the format YYYYMMDD.</li>
-<li>day_dir: Folder within the /daily directory in which the HK files are stored written for the given OD.</li>
-</ul></div>
+<div class="desc"><p>Return list of storage mnemonics for the HK files contributing to the synoptics specifically for SRON.</p>
+<p>Returns: List of storage mnemonics for the HK files contributing to the synoptics specifically for SRON.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def sron_get_syn_input_filenames(od: str, day_dir: Path):
-    &#34;&#34;&#34; Return list of HK files contributing to the synoptics for the given OD at SRON.
+<pre><code class="python">def sron_get_syn_input_origins():
+    &#34;&#34;&#34; Return list of storage mnemonics for the HK files contributing to the synoptics specifically for SRON.
 
-    Args:
-        - od: Observation day in the format YYYYMMDD.
-        - day_dir: Folder within the /daily directory in which the HK files are stored written for the given OD.
+    Returns: List of storage mnemonics for the HK files contributing to the synoptics specifically for SRON.
     &#34;&#34;&#34;
 
-    lampcontrol_origin = Settings.load(&#34;BeagleBone Lamp Control Server&#34;).STORAGE_MNEMONIC
-    powermeter_origin = Settings.load(&#34;Thorlabs PM100 Control Server&#34;).STORAGE_MNEMONIC
-    filterwheel_origin = Settings.load(&#34;Standa 8SMC5 Control Server&#34;).STORAGE_MNEMONIC
-    shutter_origin = Settings.load(&#34;Thorlabs SC10 Control Server&#34;).STORAGE_MNEMONIC
-    ag0_daq0_origin = Settings.load(&#34;Agilent 34970 Control Server&#34;).DAQ0[&#34;STORAGE_MNEMONIC&#34;]
-    ag0_daq1_origin = Settings.load(&#34;Agilent 34970 Control Server&#34;).DAQ1[&#34;STORAGE_MNEMONIC&#34;]
-    ag2_daq0_origin = Settings.load(&#34;Agilent 34972 Control Server&#34;).DAQ0[&#34;STORAGE_MNEMONIC&#34;]
-    ag2_daq1_origin = Settings.load(&#34;Agilent 34972 Control Server&#34;).DAQ1[&#34;STORAGE_MNEMONIC&#34;]
-
-    # For SRON: Fix the header for the Agilent HK (see #1856)
-    repaired_dir = day_dir / &#34;..&#34; / &#34;..&#34; / &#34;..&#34; / &#34;plato-archive/plato-data-temp-corrected/daily&#34; / od
-
-    return [str(day_dir / f&#34;{od}_SRON_{lampcontrol_origin}.{CSV.extension}&#34;),
-            str(day_dir / f&#34;{od}_SRON_{powermeter_origin}.{CSV.extension}&#34;),
-            str(day_dir / f&#34;{od}_SRON_{filterwheel_origin}.{CSV.extension}&#34;),
-            str(day_dir / f&#34;{od}_SRON_{shutter_origin}.{CSV.extension}&#34;),
-            str(day_dir / f&#34;{od}_SRON_{ag0_daq0_origin}.{CSV.extension}&#34;),
-            str(day_dir / f&#34;{od}_SRON_{ag0_daq1_origin}.{CSV.extension}&#34;),
-            str(repaired_dir / f&#34;{od}_SRON_{ag2_daq0_origin}.{CSV.extension}&#34;),
-            str(repaired_dir / f&#34;{od}_SRON_{ag2_daq1_origin}.{CSV.extension}&#34;),
-            ]</code></pre>
+    return [Settings.load(&#34;BeagleBone Lamp Control Server&#34;).STORAGE_MNEMONIC,
+            Settings.load(&#34;Thorlabs PM100 Control Server&#34;).STORAGE_MNEMONIC,
+            Settings.load(&#34;Standa 8SMC5 Control Server&#34;).STORAGE_MNEMONIC,
+            Settings.load(&#34;Thorlabs SC10 Control Server&#34;).STORAGE_MNEMONIC,
+            Settings.load(&#34;Agilent 34970 Control Server&#34;).DAQ0[&#34;STORAGE_MNEMONIC&#34;],
+            Settings.load(&#34;Agilent 34970 Control Server&#34;).DAQ1[&#34;STORAGE_MNEMONIC&#34;],
+            Settings.load(&#34;Agilent 34972 Control Server&#34;).DAQ0[&#34;STORAGE_MNEMONIC&#34;],
+            Settings.load(&#34;Agilent 34972 Control Server&#34;).DAQ1[&#34;STORAGE_MNEMONIC&#34;]]</code></pre>
 </details>
 </dd>
 </dl>
@@ -825,14 +1416,21 @@ the <code>PLATO_DATA_STORAGE_LOCATION</code> environment variable will be read o
 </li>
 <li><h3><a href="#header-functions">Functions</a></h3>
 <ul class="">
-<li><code><a title="egse.reprocess.csl_get_syn_input_filenames" href="#egse.reprocess.csl_get_syn_input_filenames">csl_get_syn_input_filenames</a></code></li>
-<li><code><a title="egse.reprocess.get_syn_input_filenames" href="#egse.reprocess.get_syn_input_filenames">get_syn_input_filenames</a></code></li>
-<li><code><a title="egse.reprocess.ias_get_syn_input_filenames" href="#egse.reprocess.ias_get_syn_input_filenames">ias_get_syn_input_filenames</a></code></li>
-<li><code><a title="egse.reprocess.inta_get_syn_input_filenames" href="#egse.reprocess.inta_get_syn_input_filenames">inta_get_syn_input_filenames</a></code></li>
+<li><code><a title="egse.reprocess.csl_get_syn_input_origins" href="#egse.reprocess.csl_get_syn_input_origins">csl_get_syn_input_origins</a></code></li>
+<li><code><a title="egse.reprocess.get_syn_input_filename_obs" href="#egse.reprocess.get_syn_input_filename_obs">get_syn_input_filename_obs</a></code></li>
+<li><code><a title="egse.reprocess.get_syn_input_filenames_from_origins_obs" href="#egse.reprocess.get_syn_input_filenames_from_origins_obs">get_syn_input_filenames_from_origins_obs</a></code></li>
+<li><code><a title="egse.reprocess.get_syn_input_filenames_from_origins_od" href="#egse.reprocess.get_syn_input_filenames_from_origins_od">get_syn_input_filenames_from_origins_od</a></code></li>
+<li><code><a title="egse.reprocess.get_syn_input_filenames_od" href="#egse.reprocess.get_syn_input_filenames_od">get_syn_input_filenames_od</a></code></li>
+<li><code><a title="egse.reprocess.get_syn_input_origins" href="#egse.reprocess.get_syn_input_origins">get_syn_input_origins</a></code></li>
+<li><code><a title="egse.reprocess.ias_get_syn_input_origins" href="#egse.reprocess.ias_get_syn_input_origins">ias_get_syn_input_origins</a></code></li>
+<li><code><a title="egse.reprocess.inta_get_syn_input_origins" href="#egse.reprocess.inta_get_syn_input_origins">inta_get_syn_input_origins</a></code></li>
 <li><code><a title="egse.reprocess.reprocess_daily_n_fee_hk" href="#egse.reprocess.reprocess_daily_n_fee_hk">reprocess_daily_n_fee_hk</a></code></li>
 <li><code><a title="egse.reprocess.reprocess_daily_synoptics" href="#egse.reprocess.reprocess_daily_synoptics">reprocess_daily_synoptics</a></code></li>
+<li><code><a title="egse.reprocess.reprocess_obs_n_fee_hk" href="#egse.reprocess.reprocess_obs_n_fee_hk">reprocess_obs_n_fee_hk</a></code></li>
+<li><code><a title="egse.reprocess.reprocess_obs_synoptics" href="#egse.reprocess.reprocess_obs_synoptics">reprocess_obs_synoptics</a></code></li>
+<li><code><a title="egse.reprocess.reprocess_obsid" href="#egse.reprocess.reprocess_obsid">reprocess_obsid</a></code></li>
 <li><code><a title="egse.reprocess.reprocess_od" href="#egse.reprocess.reprocess_od">reprocess_od</a></code></li>
-<li><code><a title="egse.reprocess.sron_get_syn_input_filenames" href="#egse.reprocess.sron_get_syn_input_filenames">sron_get_syn_input_filenames</a></code></li>
+<li><code><a title="egse.reprocess.sron_get_syn_input_origins" href="#egse.reprocess.sron_get_syn_input_origins">sron_get_syn_input_origins</a></code></li>
 </ul>
 </li>
 </ul>

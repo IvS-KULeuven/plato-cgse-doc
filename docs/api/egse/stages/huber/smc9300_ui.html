@@ -47,9 +47,12 @@ import argparse
 import logging
 import multiprocessing
 import sys
+import textwrap
 import threading
 from typing import Callable
 from typing import Optional
+
+from egse.stages.huber.smc9300 import HuberSMC9300Interface
 
 multiprocessing.current_process().name = &#34;smc9300_ui&#34;
 
@@ -250,10 +253,9 @@ class Stage(QFrame, Observable):
     def axis_settings(self):
         MODULE_LOGGER.info(f&#34;Handle settings for axis {self._stage_nr}.&#34;)
         settings = SettingsDialog(self._stage_nr, self.slew_speed_label.text(), parent=self)
-        rc = settings.exec()
-        if rc:
+        if rc := settings.exec():
             slew_speed = int(settings.speed_box.text())
-            MODULE_LOGGER.info(f&#34;{rc=}, {slew_speed=}&#34;)
+            MODULE_LOGGER.debug(f&#34;{rc=}, {slew_speed=}&#34;)
             self.actionObservers({&#34;set_speed&#34;: (self._stage_nr, slew_speed)})
 
     def goto_position(self):
@@ -358,6 +360,13 @@ class HuberUIView(QMainWindow, Observable):
         self.reconnect_action = None
         self.toolbar = None
 
+        self.homing = None
+        self.clear_errors = None
+        self.cs_connection = None
+        self.device_connection = None
+        self.stop_action = None
+        self.help_action = None
+
         # Switch to using white background and black foreground for pyqtgraph stripcharts
         # This must be done before the pyqtgraphs are created.
 
@@ -433,7 +442,7 @@ class HuberUIView(QMainWindow, Observable):
         # in the caller because it might be a device connection loss that causes this state
         # or a control server, or both...
 
-        MODULE_LOGGER.info(f&#34;{state=}&#34;)
+        MODULE_LOGGER.debug(f&#34;{state=}&#34;)
 
         if state == &#34;connected&#34;:
             self.homing.enable()
@@ -555,8 +564,8 @@ class HuberUIView(QMainWindow, Observable):
 
         sender = self.sender()
 
-        MODULE_LOGGER.log(5, f&#34;sender.text() = {sender.text()}&#34;)
-        MODULE_LOGGER.log(5, f&#34;sender.isChecked() = {sender.isChecked()}&#34;)
+        # MODULE_LOGGER.debug(f&#34;sender.text() = {sender.text()}&#34;)
+        # MODULE_LOGGER.debug(f&#34;sender.isChecked() = {sender.isChecked()}&#34;)
 
         self.notifyObservers(sender)
 
@@ -571,9 +580,9 @@ class SettingsDialog(QDialog):
 
         self.setWindowTitle(f&#34;Settings for {AXIS_NAMES[axis]}&#34;)
 
-        QBtn = QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        self.buttons = QDialogButtonBox.Ok | QDialogButtonBox.Cancel
 
-        self.buttonBox = QDialogButtonBox(QBtn)
+        self.buttonBox = QDialogButtonBox(self.buttons)
         self.buttonBox.accepted.connect(self.accept)
         self.buttonBox.rejected.connect(self.reject)
 
@@ -589,10 +598,37 @@ class SettingsDialog(QDialog):
         self.setLayout(self.layout)
 
 
+class CustomErrorDialog(QDialog):
+    def __init__(self, exc: Exception, parent=None):
+        super().__init__(parent)
+
+        self.exc = exc
+
+        self.title = f&#34;{exc.__class__.__name__}&#34;
+        self.setWindowTitle(self.title)
+
+        self.button_box = QDialogButtonBox(QDialogButtonBox.Ok)
+        self.button_box.accepted.connect(self.accept)
+
+        self.layout = QVBoxLayout()
+        message = QLabel(
+            textwrap.dedent(
+                f&#34;&#34;&#34;\
+            We caught a {self.exc.__class__.__name__}: 
+
+               {self.exc.args[0]}
+
+            &#34;&#34;&#34;
+            ))
+        self.layout.addWidget(message)
+        self.layout.addWidget(self.button_box)
+        self.setLayout(self.layout)
+
+
 class HuberUIController(Observer):
     def __init__(self, model, view):
         self.model = model
-        self.view = view
+        self.view: HuberUIView = view
         self.view.addObserver(self)
 
         self.help_window = HelpWindow(topic_url=HELP_TOPICS[&#34;smc9300_ui&#34;])
@@ -602,8 +638,10 @@ class HuberUIController(Observer):
                                       &#39;Time spent updating the values in the GUI&#39;, [&#34;type&#34;]),
         }
 
-        self.states_capture_timer_interval = 1000
-        self.stripchart_timer_interval = 200
+        self.states_capture_timer = None
+        self.states_capture_timer_interval = GUI_SETTINGS.STATES_TIMER_INTERVAL
+        self.stripchart_timer = None
+        self.stripchart_timer_interval = GUI_SETTINGS.STRIPCHART_TIMER_INTERVAL
         self.create_timer()
 
         try:
@@ -618,7 +656,7 @@ class HuberUIController(Observer):
             else:
                 self.view.uncheck_cs_action()
 
-            MODULE_LOGGER.info(f&#34;{self.model.is_device_connected()=}, {self.model.is_cs_connected()=}&#34;)
+            MODULE_LOGGER.debug(f&#34;{self.model.is_device_connected()=}, {self.model.is_cs_connected()=}&#34;)
 
             if model.connection_type in [&#34;direct&#34;, &#34;simulator&#34;]:
                 view.disable_cs_action()
@@ -772,7 +810,11 @@ class HuberUIController(Observer):
             if action == &#34;move_absolute&#34;:
                 axis, position = value
                 MODULE_LOGGER.info(f&#34;do: goto({axis}, {position})&#34;)
-                self.model.goto(axis, position)
+                try:
+                    self.model.goto(axis, position)
+                except ValueError as exc:
+                    dialog = CustomErrorDialog(exc, parent=self.view)
+                    dialog.exec_()
             elif action == &#34;move_relative&#34;:
                 axis, distance = value
                 MODULE_LOGGER.info(f&#34;do: move({axis}, {distance})&#34;)
@@ -786,6 +828,8 @@ class HuberUIController(Observer):
 class HuberUIModel:
     def __init__(self, type_):
         self.connection_type = type_
+
+        self.huber: HuberSMC9300Interface
 
         if self.connection_type == &#34;proxy&#34;:
             self.huber = HuberSMC9300Proxy()
@@ -1085,6 +1129,52 @@ if __name__ == &#34;__main__&#34;:
 <li><a title="egse.observer.Observable" href="../../observer.html#egse.observer.Observable">Observable</a></li>
 </ul>
 </dd>
+<dt id="egse.stages.huber.smc9300_ui.CustomErrorDialog"><code class="flex name class">
+<span>class <span class="ident">CustomErrorDialog</span></span>
+<span>(</span><span>exc: Exception, parent=None)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>QDialog(parent: QWidget = None, flags: Union[Qt.WindowFlags, Qt.WindowType] = Qt.WindowFlags())</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class CustomErrorDialog(QDialog):
+    def __init__(self, exc: Exception, parent=None):
+        super().__init__(parent)
+
+        self.exc = exc
+
+        self.title = f&#34;{exc.__class__.__name__}&#34;
+        self.setWindowTitle(self.title)
+
+        self.button_box = QDialogButtonBox(QDialogButtonBox.Ok)
+        self.button_box.accepted.connect(self.accept)
+
+        self.layout = QVBoxLayout()
+        message = QLabel(
+            textwrap.dedent(
+                f&#34;&#34;&#34;\
+            We caught a {self.exc.__class__.__name__}: 
+
+               {self.exc.args[0]}
+
+            &#34;&#34;&#34;
+            ))
+        self.layout.addWidget(message)
+        self.layout.addWidget(self.button_box)
+        self.setLayout(self.layout)</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>PyQt5.QtWidgets.QDialog</li>
+<li>PyQt5.QtWidgets.QWidget</li>
+<li>PyQt5.QtCore.QObject</li>
+<li>sip.wrapper</li>
+<li>PyQt5.QtGui.QPaintDevice</li>
+<li>sip.simplewrapper</li>
+</ul>
+</dd>
 <dt id="egse.stages.huber.smc9300_ui.HuberUIController"><code class="flex name class">
 <span>class <span class="ident">HuberUIController</span></span>
 <span>(</span><span>model, view)</span>
@@ -1099,7 +1189,7 @@ inheritance.</p></div>
 <pre><code class="python">class HuberUIController(Observer):
     def __init__(self, model, view):
         self.model = model
-        self.view = view
+        self.view: HuberUIView = view
         self.view.addObserver(self)
 
         self.help_window = HelpWindow(topic_url=HELP_TOPICS[&#34;smc9300_ui&#34;])
@@ -1109,8 +1199,10 @@ inheritance.</p></div>
                                       &#39;Time spent updating the values in the GUI&#39;, [&#34;type&#34;]),
         }
 
-        self.states_capture_timer_interval = 1000
-        self.stripchart_timer_interval = 200
+        self.states_capture_timer = None
+        self.states_capture_timer_interval = GUI_SETTINGS.STATES_TIMER_INTERVAL
+        self.stripchart_timer = None
+        self.stripchart_timer_interval = GUI_SETTINGS.STRIPCHART_TIMER_INTERVAL
         self.create_timer()
 
         try:
@@ -1125,7 +1217,7 @@ inheritance.</p></div>
             else:
                 self.view.uncheck_cs_action()
 
-            MODULE_LOGGER.info(f&#34;{self.model.is_device_connected()=}, {self.model.is_cs_connected()=}&#34;)
+            MODULE_LOGGER.debug(f&#34;{self.model.is_device_connected()=}, {self.model.is_cs_connected()=}&#34;)
 
             if model.connection_type in [&#34;direct&#34;, &#34;simulator&#34;]:
                 view.disable_cs_action()
@@ -1279,7 +1371,11 @@ inheritance.</p></div>
             if action == &#34;move_absolute&#34;:
                 axis, position = value
                 MODULE_LOGGER.info(f&#34;do: goto({axis}, {position})&#34;)
-                self.model.goto(axis, position)
+                try:
+                    self.model.goto(axis, position)
+                except ValueError as exc:
+                    dialog = CustomErrorDialog(exc, parent=self.view)
+                    dialog.exec_()
             elif action == &#34;move_relative&#34;:
                 axis, distance = value
                 MODULE_LOGGER.info(f&#34;do: move({axis}, {distance})&#34;)
@@ -1335,7 +1431,11 @@ inheritance.</p></div>
         if action == &#34;move_absolute&#34;:
             axis, position = value
             MODULE_LOGGER.info(f&#34;do: goto({axis}, {position})&#34;)
-            self.model.goto(axis, position)
+            try:
+                self.model.goto(axis, position)
+            except ValueError as exc:
+                dialog = CustomErrorDialog(exc, parent=self.view)
+                dialog.exec_()
         elif action == &#34;move_relative&#34;:
             axis, distance = value
             MODULE_LOGGER.info(f&#34;do: move({axis}, {distance})&#34;)
@@ -1537,6 +1637,8 @@ the device or to a simulator.</p></div>
 <pre><code class="python">class HuberUIModel:
     def __init__(self, type_):
         self.connection_type = type_
+
+        self.huber: HuberSMC9300Interface
 
         if self.connection_type == &#34;proxy&#34;:
             self.huber = HuberSMC9300Proxy()
@@ -1937,6 +2039,13 @@ def reconnect(self):
         self.reconnect_action = None
         self.toolbar = None
 
+        self.homing = None
+        self.clear_errors = None
+        self.cs_connection = None
+        self.device_connection = None
+        self.stop_action = None
+        self.help_action = None
+
         # Switch to using white background and black foreground for pyqtgraph stripcharts
         # This must be done before the pyqtgraphs are created.
 
@@ -2012,7 +2121,7 @@ def reconnect(self):
         # in the caller because it might be a device connection loss that causes this state
         # or a control server, or both...
 
-        MODULE_LOGGER.info(f&#34;{state=}&#34;)
+        MODULE_LOGGER.debug(f&#34;{state=}&#34;)
 
         if state == &#34;connected&#34;:
             self.homing.enable()
@@ -2134,8 +2243,8 @@ def reconnect(self):
 
         sender = self.sender()
 
-        MODULE_LOGGER.log(5, f&#34;sender.text() = {sender.text()}&#34;)
-        MODULE_LOGGER.log(5, f&#34;sender.isChecked() = {sender.isChecked()}&#34;)
+        # MODULE_LOGGER.debug(f&#34;sender.text() = {sender.text()}&#34;)
+        # MODULE_LOGGER.debug(f&#34;sender.isChecked() = {sender.isChecked()}&#34;)
 
         self.notifyObservers(sender)</code></pre>
 </details>
@@ -2348,8 +2457,8 @@ def reconnect(self):
 
     sender = self.sender()
 
-    MODULE_LOGGER.log(5, f&#34;sender.text() = {sender.text()}&#34;)
-    MODULE_LOGGER.log(5, f&#34;sender.isChecked() = {sender.isChecked()}&#34;)
+    # MODULE_LOGGER.debug(f&#34;sender.text() = {sender.text()}&#34;)
+    # MODULE_LOGGER.debug(f&#34;sender.isChecked() = {sender.isChecked()}&#34;)
 
     self.notifyObservers(sender)</code></pre>
 </details>
@@ -2369,7 +2478,7 @@ def reconnect(self):
     # in the caller because it might be a device connection loss that causes this state
     # or a control server, or both...
 
-    MODULE_LOGGER.info(f&#34;{state=}&#34;)
+    MODULE_LOGGER.debug(f&#34;{state=}&#34;)
 
     if state == &#34;connected&#34;:
         self.homing.enable()
@@ -2503,9 +2612,9 @@ def reconnect(self):
 
         self.setWindowTitle(f&#34;Settings for {AXIS_NAMES[axis]}&#34;)
 
-        QBtn = QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        self.buttons = QDialogButtonBox.Ok | QDialogButtonBox.Cancel
 
-        self.buttonBox = QDialogButtonBox(QBtn)
+        self.buttonBox = QDialogButtonBox(self.buttons)
         self.buttonBox.accepted.connect(self.accept)
         self.buttonBox.rejected.connect(self.reject)
 
@@ -2721,10 +2830,9 @@ def reconnect(self):
     def axis_settings(self):
         MODULE_LOGGER.info(f&#34;Handle settings for axis {self._stage_nr}.&#34;)
         settings = SettingsDialog(self._stage_nr, self.slew_speed_label.text(), parent=self)
-        rc = settings.exec()
-        if rc:
+        if rc := settings.exec():
             slew_speed = int(settings.speed_box.text())
-            MODULE_LOGGER.info(f&#34;{rc=}, {slew_speed=}&#34;)
+            MODULE_LOGGER.debug(f&#34;{rc=}, {slew_speed=}&#34;)
             self.actionObservers({&#34;set_speed&#34;: (self._stage_nr, slew_speed)})
 
     def goto_position(self):
@@ -2786,10 +2894,9 @@ def reconnect(self):
 <pre><code class="python">def axis_settings(self):
     MODULE_LOGGER.info(f&#34;Handle settings for axis {self._stage_nr}.&#34;)
     settings = SettingsDialog(self._stage_nr, self.slew_speed_label.text(), parent=self)
-    rc = settings.exec()
-    if rc:
+    if rc := settings.exec():
         slew_speed = int(settings.speed_box.text())
-        MODULE_LOGGER.info(f&#34;{rc=}, {slew_speed=}&#34;)
+        MODULE_LOGGER.debug(f&#34;{rc=}, {slew_speed=}&#34;)
         self.actionObservers({&#34;set_speed&#34;: (self._stage_nr, slew_speed)})</code></pre>
 </details>
 </dd>
@@ -3109,6 +3216,9 @@ def reconnect(self):
 <ul>
 <li>
 <h4><code><a title="egse.stages.huber.smc9300_ui.BigRotationStage" href="#egse.stages.huber.smc9300_ui.BigRotationStage">BigRotationStage</a></code></h4>
+</li>
+<li>
+<h4><code><a title="egse.stages.huber.smc9300_ui.CustomErrorDialog" href="#egse.stages.huber.smc9300_ui.CustomErrorDialog">CustomErrorDialog</a></code></h4>
 </li>
 <li>
 <h4><code><a title="egse.stages.huber.smc9300_ui.HuberUIController" href="#egse.stages.huber.smc9300_ui.HuberUIController">HuberUIController</a></code></h4>

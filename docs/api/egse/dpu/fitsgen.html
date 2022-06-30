@@ -60,7 +60,7 @@ from egse.exceptions import Abort
 from egse.fee import convert_ccd_order_value
 from egse.fee import n_fee_mode, fee_side
 from egse.fee.nfee import HousekeepingData
-from egse.hk import get_housekeeping
+from egse.hk import get_housekeeping, HKError
 from egse.obsid import ObservationIdentifier, LAB_SETUP_TEST, TEST_LAB, TEST_LAB_SETUP, obsid_from_storage
 from egse.reg import RegisterMap
 from egse.settings import Settings
@@ -84,7 +84,7 @@ DPU_SETTINGS = Settings.load(&#34;DPU&#34;)
 TIMEOUT_RECV = 1.0  # seconds
 
 
-def get_cycle_time(n_fee_state: Mapping, obsid=None):
+def get_cycle_time(n_fee_state: Mapping, obsid=None, data_dir=None):
     &#34;&#34;&#34; Return the image cycle time.
 
     In the given N-FEE state parameters or register map, we check whether we are in internal or external sync:
@@ -96,8 +96,7 @@ def get_cycle_time(n_fee_state: Mapping, obsid=None):
 
     Args:
         - n_fee_state: N-FEE state parameters or register map.
-        - obsid: In case of off-line FITS generation, the image cycle time is read from the AEU housekeeping for this
-                 obsid.
+        - obsid: Observation identifier for which the image cycle time is read from the AEU housekeeping.
 
     Returns: Image cycle time [s].
     &#34;&#34;&#34;
@@ -110,7 +109,28 @@ def get_cycle_time(n_fee_state: Mapping, obsid=None):
     # External sync -&gt; use AEU sync pulses
 
     else:
-        return None if obsid is None else float(get_housekeeping(&#34;GAEU_EXT_CYCLE_TIME&#34;, obsid=obsid)[1])
+        if obsid:
+            try:
+                return float(get_housekeeping(&#34;GAEU_EXT_CYCLE_TIME&#34;, obsid=obsid, data_dir=data_dir)[1])
+            except HKError as exc:  # See GitHub issue #2025
+                LOGGER.warning(&#34;No HK available for AWG2 (using default cycle time of 25s)&#34;, exc)
+                return 25.0
+        else:
+            return None
+
+
+def get_cgse_version(obsid=None, data_dir=None):
+    &#34;&#34;&#34; Returns the version of the Common EGSE with which the FITS file was created.
+
+    Args:
+        - obsid: Observation identifier for which the version of the Common EGSE is read from the Configuration
+                 Manager housekeeping.
+    &#34;&#34;&#34;
+
+    try:
+        return None if obsid is None else get_housekeeping(&#34;CM_CGSE_VERSION&#34;, obsid=obsid, data_dir=data_dir)[1]
+    except HKError:
+        return None
 
 
 class FITSGenerator:
@@ -151,10 +171,12 @@ class FITSGenerator:
         self.rows_final_dump = None
         self.setup = load_setup()
 
+        self.config_slicing_num_cycles = 0   # Configured slicing parameter
+        self.processed_num_cycles = 0           # HDF5 files with image data processed for current FITS file
+
         self.zcontext = zmq.Context.instance()
         self.monitoring_socket = self.zcontext.socket(zmq.PUB)
         self.monitoring_socket.bind(bind_address(CTRL_SETTINGS.PROTOCOL, CTRL_SETTINGS.MONITORING_PORT,))
-
 
         # self._quit_event = multiprocessing.Event()
 
@@ -193,6 +215,7 @@ class FITSGenerator:
                     # (in the future, we want to replace this with something like dpu_monitoring_reconnect())
 
                     except TimeoutError:
+                        LOGGER.warning(&#34;DPU monitoring timeout&#34;)
                         break
 
     def run(self, commander, poller):
@@ -255,14 +278,31 @@ class FITSGenerator:
                     hdf5_filename = self.hdf5_filename_queue.get()[0]
                     self.hdf5_filename = hdf5_filename
 
-                    with h5.get_file(hdf5_filename, mode=&#34;r&#34;) as hdf5_file:
+                    LOGGER.info(f&#34;Processing file {hdf5_filename}&#34;)
 
-                        LOGGER.info(f&#34;Processing file {hdf5_file}&#34;)
+                    with h5.get_file(hdf5_filename, mode=&#34;r&#34;, locking=False) as hdf5_file:
+
+                        LOGGER.info(f&#34;Opened file {hdf5_filename}&#34;)
 
                         # Check whether there is data in the HDF5
                         # (if there is no data in the HDF5 file, nothing has to be done and you can go to the next file)
 
                         try:
+
+                            # Slicing
+
+                            try:
+                                slicing_num_cycles = hdf5_file[&#34;dpu&#34;].attrs[&#34;slicing_num_cycles&#34;]
+                                if slicing_num_cycles != self.config_slicing_num_cycles:
+                                    LOGGER.debug(f&#34;Slicing parameter changed: {self.config_slicing_num_cycles} &#34;
+                                                 f&#34;-&gt; {slicing_num_cycles}&#34;)
+                                    self.close_fits()
+                                    self.config_slicing_num_cycles = slicing_num_cycles
+                            except KeyError:
+                                self.config_slicing_num_cycles = 0
+                                LOGGER.debug(&#34;No slicing&#34;)
+
+                            # Obsid
 
                             try:
                                 obsid = hdf5_file[&#34;obsid&#34;][()].decode()
@@ -310,6 +350,7 @@ class FITSGenerator:
                                                 &#34;expected_last_packet_flags&#34;: get_expected_last_packet_flags(n_fee_state),
                                                 &#34;obsid&#34;: str(obsid),
                                                 &#34;cycle_time&#34;: get_cycle_time(n_fee_state, obsid=obsid),
+                                                &#34;cgse_version&#34;: get_cgse_version(obsid=obsid),
                                                 &#34;setup&#34;: self.setup
                                             }
 
@@ -334,7 +375,14 @@ class FITSGenerator:
                                             spw_packet = SpaceWirePacket.create_packet(h5.get_data(dataset))
                                             persistence.create({f&#34;SpW packet {identifier}&#34;: spw_packet})
 
-                            if not has_data:
+                            if has_data:
+                                self.processed_num_cycles += 1
+
+                                if self.config_slicing_num_cycles != 0 and \
+                                        self.processed_num_cycles == self.config_slicing_num_cycles:
+                                    self.close_fits()
+
+                            else:
 
                                 self.close_fits()
                                 self.clear_crucial_parameters()
@@ -376,6 +424,10 @@ class FITSGenerator:
             # Stop writing to the current FITS file
 
             self.fits_images_filename = None
+
+            # Reset the number of HDF5 files with image data processed for current FITS file
+
+            self.processed_num_cycles = 0
 
     def crucial_parameter_change(self, n_fee_state: AttributeManager):
         &#34;&#34;&#34; Check for a change in crucial parameters.
@@ -804,14 +856,14 @@ def construct_images_filename(hdf5_filename: PosixPath, obsid: ObservationIdenti
 
     else:
 
-        timestamp = str.split(str(hdf5_filename).split(&#34;/&#34;)[-1], &#34;_&#34;)[0]
-        location += &#34;/obs/&#34;
-
         # Make sure that the FITS file ends up in the correct sub-folder
         #   - oldest data: TEST_LAB_SETUP
         #   - more recent data: TEST_LAB
 
-        obsid = obsid_from_storage(obsid)
+        obsid = obsid_from_storage(obsid, data_dir=location)
+
+        timestamp = str.split(str(hdf5_filename).split(&#34;/&#34;)[-1], &#34;_&#34;)[0]
+        location += &#34;/obs/&#34;
 
         if not os.path.isdir(f&#34;{location}/{obsid}&#34;):
             os.makedirs(f&#34;{location}/{obsid}&#34;)
@@ -905,11 +957,11 @@ def create_fits_from_hdf5(files: List, location: str = None, setup: Setup = None
 
         filename = Path(filename)
 
-        if filename.suffix == &#39;.hdf5&#39;:
+        if filename.suffix == f&#34;.{HDF5.extension}&#34;:
 
             try:
 
-                with h5.get_file(filename, mode=&#34;r&#34;) as hdf5_file:
+                with h5.get_file(filename, mode=&#34;r&#34;, locking=False) as hdf5_file:
 
                     # It happens that some of the HDF5 files are incomplete.  These should not be considered to determine
                     # whether the register map (original format version) or the N-FEE state (format version &gt;= 2.0) to
@@ -989,7 +1041,7 @@ def create_fits_from_hdf5_register_map(files: List, location: str = None, setup:
 
             try:
 
-                with h5.get_file(filename, mode=&#34;r&#34;) as hdf5_file:
+                with h5.get_file(filename, mode=&#34;r&#34;, locking=False) as hdf5_file:
 
                     # if is_corrupt(hdf5_file):
                     #     LOGGER.warning(f&#34;Skipping {filename} (corrupt)&#34;)
@@ -1050,7 +1102,8 @@ def create_fits_from_hdf5_register_map(files: List, location: str = None, setup:
                                         &#34;ccd_readout_order&#34;: ccd_readout_order,  # CCD numbering [1-4]
                                         &#34;expected_last_packet_flags&#34;: get_expected_last_packet_flags(register_map),
                                         &#34;obsid&#34;: str(obsid) if obsid is not None else None,
-                                        &#34;cycle_time&#34;: get_cycle_time(register_map, obsid=obsid),
+                                        &#34;cycle_time&#34;: get_cycle_time(register_map, obsid=obsid, data_dir=location),
+                                        &#34;cgse_version&#34;: get_cgse_version(obsid=obsid, data_dir=location),
                                         &#34;setup&#34;: setup
                                     }
 
@@ -1125,6 +1178,9 @@ def create_fits_from_hdf5_nfee_state(files: List, location: str = None, setup: S
 
     location = location or os.environ.get(&#39;PLATO_DATA_STORAGE_LOCATION&#39;)
 
+    config_slicing_num_cycles = 0    # Configured slicing parameter
+    processed_num_cycles = 0            # HDF5 files with image data processed for current FITS file
+
     prep = {}
     fits_filename = None
 
@@ -1138,7 +1194,20 @@ def create_fits_from_hdf5_nfee_state(files: List, location: str = None, setup: S
 
             try:
 
-                with h5.get_file(filename, mode=&#34;r&#34;) as hdf5_file:
+                with h5.get_file(filename, mode=&#34;r&#34;, locking=False) as hdf5_file:
+
+                    # Slicing
+
+                    try:
+                        slicing_num_cycles = hdf5_file[&#34;dpu&#34;].attrs[&#34;slicing_num_cycles&#34;]
+                        if slicing_num_cycles != config_slicing_num_cycles:
+                            if fits_filename:
+                                convert_to_cubes(fits_filename)
+                                fits_filename = None
+                            processed_num_cycles = 0
+                            config_slicing_num_cycles = slicing_num_cycles
+                    except KeyError:
+                        config_slicing_num_cycles = 0
 
                     # if is_corrupt(hdf5_file):
                     #     LOGGER.warning(f&#34;Skipping {filename} (corrupt)&#34;)
@@ -1164,6 +1233,7 @@ def create_fits_from_hdf5_nfee_state(files: List, location: str = None, setup: S
                                     LOGGER.info(f&#34;Creating a FITS CUBE file ...&#34;)
                                     convert_to_cubes(fits_filename)
                                     fits_filename = None
+                                    processed_num_cycles = 0
 
                             if in_data_acquisition_mode(n_fee_state):
 
@@ -1195,7 +1265,8 @@ def create_fits_from_hdf5_nfee_state(files: List, location: str = None, setup: S
                                         &#34;ccd_readout_order&#34;: ccd_readout_order,  # CCD numbering [1-4]
                                         &#34;expected_last_packet_flags&#34;: get_expected_last_packet_flags(n_fee_state),
                                         &#34;obsid&#34;: str(obsid) if obsid is not None else None,
-                                        &#34;cycle_time&#34;: get_cycle_time(n_fee_state, obsid=obsid),
+                                        &#34;cycle_time&#34;: get_cycle_time(n_fee_state, obsid=obsid, data_dir=location),
+                                        &#34;cgse_version&#34;: get_cgse_version(obsid=obsid, data_dir=location),
                                         &#34;setup&#34;: setup
                                     }
 
@@ -1220,13 +1291,21 @@ def create_fits_from_hdf5_nfee_state(files: List, location: str = None, setup: S
                                     # LOGGER.debug(f&#34;{spw_packet.type = !s}&#34;)
                                     persistence.create({f&#34;SpW packet {identifier}&#34;: spw_packet})
 
-                    if not has_data:
+                    if has_data:
+                        processed_num_cycles += 1
+
+                        if fits_filename and config_slicing_num_cycles != 0 \
+                                and processed_num_cycles == config_slicing_num_cycles:
+                            convert_to_cubes(fits_filename)
+                            fits_filename = None
+                            processed_num_cycles = 0
+                    else:
 
                         if fits_filename:
-
                             LOGGER.info(f&#34;Creating a FITS CUBE file ...&#34;)
                             convert_to_cubes(fits_filename)
                             fits_filename = None
+                            processed_num_cycles = 0
 
                         prep = clear_crucial_parameters(prep)
 
@@ -1354,7 +1433,7 @@ class SynopticsLeaveGaps(tuple, Enum):
     OGSHTTR = (&#34;GSYN_OGSE_SHUTTER_OPEN&#34;, &#34;Is the shutter open?&#34;)
 
 
-def get_fits_synoptics(obsid: str) -&gt; dict:
+def get_fits_synoptics(obsid: str, data_dir=None) -&gt; dict:
     &#34;&#34;&#34; Retrieve the synoptics that need to be included in the FITS files for the given observation.
 
     The synoptics that need be be included in the FITS files are represented by the following enumerations:
@@ -1370,7 +1449,7 @@ def get_fits_synoptics(obsid: str) -&gt; dict:
     Returns: Dictionary with the synoptics that should go into the FITS files for the given observation.
     &#34;&#34;&#34;
 
-    synoptics_table = get_synoptics_table(obsid)
+    synoptics_table = get_synoptics_table(obsid, data_dir=data_dir)
 
     # We keep the original timestamps (when filling the gaps)
 
@@ -1420,7 +1499,7 @@ def get_fits_synoptics(obsid: str) -&gt; dict:
     return synoptics
 
 
-def add_synoptics(obsid: str):
+def add_synoptics(obsid: str, data_dir=None):
     &#34;&#34;&#34; Add synoptics to the FITS headers for the given observation.
 
     When all FITS files have been produced for the given obsid, synoptics is added to the headers.  This is done in the
@@ -1439,10 +1518,12 @@ def add_synoptics(obsid: str):
         - obsid: Observation identifier [TEST_LAB or TEST_LAB_SETUP].
     &#34;&#34;&#34;
 
-    obsid = obsid_from_storage(obsid)
-    obs_dir = f&#34;{os.environ[&#39;PLATO_DATA_STORAGE_LOCATION&#39;]}/obs/{obsid}&#34;  # Where the HK and FITS files are stored
+    data_dir = data_dir or os.environ.get(&#39;PLATO_DATA_STORAGE_LOCATION&#39;)
 
-    synoptics = get_fits_synoptics(obsid)
+    obsid = obsid_from_storage(obsid, data_dir=data_dir)
+    obs_dir = f&#34;{data_dir}/obs/{obsid}&#34;  # Where the HK and FITS files are stored
+
+    synoptics = get_fits_synoptics(obsid, data_dir=data_dir)
     timestamps = synoptics[&#34;timestamps&#34;]    # Timestamps of the synoptics -&gt; compare with absolute time in FITS file
 
     # Compose the list of FITS files for the given obsid
@@ -1453,6 +1534,8 @@ def add_synoptics(obsid: str):
     # Loop over all FITS files (cubes) for the given obsid
 
     for fits_filename in fits_filenames:
+
+        syn_info = {}
 
         # Loop over all image cubes
 
@@ -1508,7 +1591,7 @@ def add_synoptics(obsid: str):
                             start_current_readout = absolute_time[index]
 
                             selection = np.where(timestamps &gt;= start_previous_readout) \
-                                and np.where(timestamps &lt;= start_current_readout)[0]
+                                        and np.where(timestamps &lt;= start_current_readout)[0]
 
                             # Average (skipping NaNs)
 
@@ -1554,10 +1637,12 @@ def add_synoptics(obsid: str):
                             # merged_columns = wcs_table.columns + syn_table.columns
                             # merged_table = fits.BinTableHDU.from_columns(merged_columns)
 
-                            fits.append(fits_filename, syn_table.data, syn_table.header)
+                            syn_info[syn_table.header[&#34;EXTNAME&#34;]] = (syn_table.data, syn_table.header)
                     except KeyError:
                         pass
 
+        for data in syn_info.values():
+            fits.append(str(fits_filename), data[0], data[1])
 
 @click.group()
 def cli():
@@ -1745,10 +1830,10 @@ def for_obsid(obsid, location=None):
     &#34;&#34;&#34;
 
     hdf5_filenames = get_hdf5_filenames_for_obsid(obsid, data_dir=location)
-    setup = get_setup_for_obsid(obsid)
+    setup = get_setup_for_obsid(obsid, data_dir=location)
 
     create_fits_from_hdf5(hdf5_filenames, location=location, setup=setup)
-    add_synoptics(obsid)
+    add_synoptics(obsid, data_dir=location)
 
 
 def get_hdf5_filenames_for_obsid(obsid: str, data_dir: str = None) -&gt; List:
@@ -1786,7 +1871,7 @@ def get_hdf5_filenames_for_obsid(obsid: str, data_dir: str = None) -&gt; List:
         for hdf5_filename in sorted(daily_hdf5_filenames):
 
             try:
-                with h5.get_file(hdf5_filename, mode=&#34;r&#34;) as hdf5_file:
+                with h5.get_file(hdf5_filename, mode=&#34;r&#34;, locking=False) as hdf5_file:
 
                     if &#34;/obsid&#34; in hdf5_file:
 
@@ -1825,7 +1910,7 @@ def get_setup_for_obsid(obsid: str, data_dir: str = None) -&gt; Setup:
     &#34;&#34;&#34;
 
     data_dir = data_dir or os.environ[&#34;PLATO_DATA_STORAGE_LOCATION&#34;]
-    obsid = obsid_from_storage(obsid, data_dir)     # Convert the obsid to the correct format
+    obsid = obsid_from_storage(obsid, data_dir=data_dir)     # Convert the obsid to the correct format
     obs_dir = f&#34;{data_dir}/obs/{obsid}&#34;
 
     try:
@@ -1858,7 +1943,7 @@ def get_od(obsid: str, data_dir: str = None):
     &#34;&#34;&#34;
 
     data_dir = data_dir or os.environ[&#34;PLATO_DATA_STORAGE_LOCATION&#34;]
-    obsid = obsid_from_storage(obsid, data_dir)     # Convert the obsid to the correct format
+    obsid = obsid_from_storage(obsid, data_dir=data_dir)     # Convert the obsid to the correct format
     obs_dir = f&#34;{data_dir}/obs/{obsid}&#34;
 
     try:
@@ -1898,7 +1983,7 @@ def get_obsid(od: str, index: int, day_dir: str) -&gt; int:
     else:
         hdf5_filename = f&#34;{day_dir}/{od}_{SITE.ID}_{N_FEE_SETTINGS.ORIGIN_SPW_DATA}_{index:05d}.hdf5&#34;
 
-    with h5.get_file(hdf5_filename, mode=&#34;r&#34;) as hdf5_file:
+    with h5.get_file(hdf5_filename, mode=&#34;r&#34;, locking=False) as hdf5_file:
         try:
             return int(hdf5_file[&#34;obsid&#34;][()].decode().split(&#34;_&#34;)[-1])
         except:
@@ -1918,7 +2003,7 @@ if __name__ == &#34;__main__&#34;:
 <h2 class="section-title" id="header-functions">Functions</h2>
 <dl>
 <dt id="egse.dpu.fitsgen.add_synoptics"><code class="name flex">
-<span>def <span class="ident">add_synoptics</span></span>(<span>obsid: str)</span>
+<span>def <span class="ident">add_synoptics</span></span>(<span>obsid: str, data_dir=None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Add synoptics to the FITS headers for the given observation.</p>
@@ -1942,7 +2027,7 @@ the average and add this to the header of the cube;
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def add_synoptics(obsid: str):
+<pre><code class="python">def add_synoptics(obsid: str, data_dir=None):
     &#34;&#34;&#34; Add synoptics to the FITS headers for the given observation.
 
     When all FITS files have been produced for the given obsid, synoptics is added to the headers.  This is done in the
@@ -1961,10 +2046,12 @@ the average and add this to the header of the cube;
         - obsid: Observation identifier [TEST_LAB or TEST_LAB_SETUP].
     &#34;&#34;&#34;
 
-    obsid = obsid_from_storage(obsid)
-    obs_dir = f&#34;{os.environ[&#39;PLATO_DATA_STORAGE_LOCATION&#39;]}/obs/{obsid}&#34;  # Where the HK and FITS files are stored
+    data_dir = data_dir or os.environ.get(&#39;PLATO_DATA_STORAGE_LOCATION&#39;)
 
-    synoptics = get_fits_synoptics(obsid)
+    obsid = obsid_from_storage(obsid, data_dir=data_dir)
+    obs_dir = f&#34;{data_dir}/obs/{obsid}&#34;  # Where the HK and FITS files are stored
+
+    synoptics = get_fits_synoptics(obsid, data_dir=data_dir)
     timestamps = synoptics[&#34;timestamps&#34;]    # Timestamps of the synoptics -&gt; compare with absolute time in FITS file
 
     # Compose the list of FITS files for the given obsid
@@ -1975,6 +2062,8 @@ the average and add this to the header of the cube;
     # Loop over all FITS files (cubes) for the given obsid
 
     for fits_filename in fits_filenames:
+
+        syn_info = {}
 
         # Loop over all image cubes
 
@@ -2030,7 +2119,7 @@ the average and add this to the header of the cube;
                             start_current_readout = absolute_time[index]
 
                             selection = np.where(timestamps &gt;= start_previous_readout) \
-                                and np.where(timestamps &lt;= start_current_readout)[0]
+                                        and np.where(timestamps &lt;= start_current_readout)[0]
 
                             # Average (skipping NaNs)
 
@@ -2076,9 +2165,12 @@ the average and add this to the header of the cube;
                             # merged_columns = wcs_table.columns + syn_table.columns
                             # merged_table = fits.BinTableHDU.from_columns(merged_columns)
 
-                            fits.append(fits_filename, syn_table.data, syn_table.header)
+                            syn_info[syn_table.header[&#34;EXTNAME&#34;]] = (syn_table.data, syn_table.header)
                     except KeyError:
-                        pass</code></pre>
+                        pass
+
+        for data in syn_info.values():
+            fits.append(str(fits_filename), data[0], data[1])</code></pre>
 </details>
 </dd>
 <dt id="egse.dpu.fitsgen.any_crucial_parameters_changed"><code class="name flex">
@@ -2258,14 +2350,14 @@ Returns: Full path to the file as a <code>PurePath</code>.</li>
 
     else:
 
-        timestamp = str.split(str(hdf5_filename).split(&#34;/&#34;)[-1], &#34;_&#34;)[0]
-        location += &#34;/obs/&#34;
-
         # Make sure that the FITS file ends up in the correct sub-folder
         #   - oldest data: TEST_LAB_SETUP
         #   - more recent data: TEST_LAB
 
-        obsid = obsid_from_storage(obsid)
+        obsid = obsid_from_storage(obsid, data_dir=location)
+
+        timestamp = str.split(str(hdf5_filename).split(&#34;/&#34;)[-1], &#34;_&#34;)[0]
+        location += &#34;/obs/&#34;
 
         if not os.path.isdir(f&#34;{location}/{obsid}&#34;):
             os.makedirs(f&#34;{location}/{obsid}&#34;)
@@ -2574,11 +2666,11 @@ environment variable will be read out.</li>
 
         filename = Path(filename)
 
-        if filename.suffix == &#39;.hdf5&#39;:
+        if filename.suffix == f&#34;.{HDF5.extension}&#34;:
 
             try:
 
-                with h5.get_file(filename, mode=&#34;r&#34;) as hdf5_file:
+                with h5.get_file(filename, mode=&#34;r&#34;, locking=False) as hdf5_file:
 
                     # It happens that some of the HDF5 files are incomplete.  These should not be considered to determine
                     # whether the register map (original format version) or the N-FEE state (format version &gt;= 2.0) to
@@ -2668,6 +2760,9 @@ environment variable will be read out.</li>
 
     location = location or os.environ.get(&#39;PLATO_DATA_STORAGE_LOCATION&#39;)
 
+    config_slicing_num_cycles = 0    # Configured slicing parameter
+    processed_num_cycles = 0            # HDF5 files with image data processed for current FITS file
+
     prep = {}
     fits_filename = None
 
@@ -2681,7 +2776,20 @@ environment variable will be read out.</li>
 
             try:
 
-                with h5.get_file(filename, mode=&#34;r&#34;) as hdf5_file:
+                with h5.get_file(filename, mode=&#34;r&#34;, locking=False) as hdf5_file:
+
+                    # Slicing
+
+                    try:
+                        slicing_num_cycles = hdf5_file[&#34;dpu&#34;].attrs[&#34;slicing_num_cycles&#34;]
+                        if slicing_num_cycles != config_slicing_num_cycles:
+                            if fits_filename:
+                                convert_to_cubes(fits_filename)
+                                fits_filename = None
+                            processed_num_cycles = 0
+                            config_slicing_num_cycles = slicing_num_cycles
+                    except KeyError:
+                        config_slicing_num_cycles = 0
 
                     # if is_corrupt(hdf5_file):
                     #     LOGGER.warning(f&#34;Skipping {filename} (corrupt)&#34;)
@@ -2707,6 +2815,7 @@ environment variable will be read out.</li>
                                     LOGGER.info(f&#34;Creating a FITS CUBE file ...&#34;)
                                     convert_to_cubes(fits_filename)
                                     fits_filename = None
+                                    processed_num_cycles = 0
 
                             if in_data_acquisition_mode(n_fee_state):
 
@@ -2738,7 +2847,8 @@ environment variable will be read out.</li>
                                         &#34;ccd_readout_order&#34;: ccd_readout_order,  # CCD numbering [1-4]
                                         &#34;expected_last_packet_flags&#34;: get_expected_last_packet_flags(n_fee_state),
                                         &#34;obsid&#34;: str(obsid) if obsid is not None else None,
-                                        &#34;cycle_time&#34;: get_cycle_time(n_fee_state, obsid=obsid),
+                                        &#34;cycle_time&#34;: get_cycle_time(n_fee_state, obsid=obsid, data_dir=location),
+                                        &#34;cgse_version&#34;: get_cgse_version(obsid=obsid, data_dir=location),
                                         &#34;setup&#34;: setup
                                     }
 
@@ -2763,13 +2873,21 @@ environment variable will be read out.</li>
                                     # LOGGER.debug(f&#34;{spw_packet.type = !s}&#34;)
                                     persistence.create({f&#34;SpW packet {identifier}&#34;: spw_packet})
 
-                    if not has_data:
+                    if has_data:
+                        processed_num_cycles += 1
+
+                        if fits_filename and config_slicing_num_cycles != 0 \
+                                and processed_num_cycles == config_slicing_num_cycles:
+                            convert_to_cubes(fits_filename)
+                            fits_filename = None
+                            processed_num_cycles = 0
+                    else:
 
                         if fits_filename:
-
                             LOGGER.info(f&#34;Creating a FITS CUBE file ...&#34;)
                             convert_to_cubes(fits_filename)
                             fits_filename = None
+                            processed_num_cycles = 0
 
                         prep = clear_crucial_parameters(prep)
 
@@ -2860,7 +2978,7 @@ environment variable will be read out.</li>
 
             try:
 
-                with h5.get_file(filename, mode=&#34;r&#34;) as hdf5_file:
+                with h5.get_file(filename, mode=&#34;r&#34;, locking=False) as hdf5_file:
 
                     # if is_corrupt(hdf5_file):
                     #     LOGGER.warning(f&#34;Skipping {filename} (corrupt)&#34;)
@@ -2921,7 +3039,8 @@ environment variable will be read out.</li>
                                         &#34;ccd_readout_order&#34;: ccd_readout_order,  # CCD numbering [1-4]
                                         &#34;expected_last_packet_flags&#34;: get_expected_last_packet_flags(register_map),
                                         &#34;obsid&#34;: str(obsid) if obsid is not None else None,
-                                        &#34;cycle_time&#34;: get_cycle_time(register_map, obsid=obsid),
+                                        &#34;cycle_time&#34;: get_cycle_time(register_map, obsid=obsid, data_dir=location),
+                                        &#34;cgse_version&#34;: get_cgse_version(obsid=obsid, data_dir=location),
                                         &#34;setup&#34;: setup
                                     }
 
@@ -2971,8 +3090,36 @@ environment variable will be read out.</li>
         pass</code></pre>
 </details>
 </dd>
+<dt id="egse.dpu.fitsgen.get_cgse_version"><code class="name flex">
+<span>def <span class="ident">get_cgse_version</span></span>(<span>obsid=None, data_dir=None)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Returns the version of the Common EGSE with which the FITS file was created.</p>
+<h2 id="args">Args</h2>
+<ul>
+<li>obsid: Observation identifier for which the version of the Common EGSE is read from the Configuration
+Manager housekeeping.</li>
+</ul></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_cgse_version(obsid=None, data_dir=None):
+    &#34;&#34;&#34; Returns the version of the Common EGSE with which the FITS file was created.
+
+    Args:
+        - obsid: Observation identifier for which the version of the Common EGSE is read from the Configuration
+                 Manager housekeeping.
+    &#34;&#34;&#34;
+
+    try:
+        return None if obsid is None else get_housekeeping(&#34;CM_CGSE_VERSION&#34;, obsid=obsid, data_dir=data_dir)[1]
+    except HKError:
+        return None</code></pre>
+</details>
+</dd>
 <dt id="egse.dpu.fitsgen.get_cycle_time"><code class="name flex">
-<span>def <span class="ident">get_cycle_time</span></span>(<span>n_fee_state: Mapping[~KT, +VT_co], obsid=None)</span>
+<span>def <span class="ident">get_cycle_time</span></span>(<span>n_fee_state: Mapping[~KT, +VT_co], obsid=None, data_dir=None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Return the image cycle time.</p>
@@ -2985,15 +3132,14 @@ environment variable will be read out.</li>
 <h2 id="args">Args</h2>
 <ul>
 <li>n_fee_state: N-FEE state parameters or register map.</li>
-<li>obsid: In case of off-line FITS generation, the image cycle time is read from the AEU housekeeping for this
-obsid.
+<li>obsid: Observation identifier for which the image cycle time is read from the AEU housekeeping.
 Returns: Image cycle time [s].</li>
 </ul></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def get_cycle_time(n_fee_state: Mapping, obsid=None):
+<pre><code class="python">def get_cycle_time(n_fee_state: Mapping, obsid=None, data_dir=None):
     &#34;&#34;&#34; Return the image cycle time.
 
     In the given N-FEE state parameters or register map, we check whether we are in internal or external sync:
@@ -3005,8 +3151,7 @@ Returns: Image cycle time [s].</li>
 
     Args:
         - n_fee_state: N-FEE state parameters or register map.
-        - obsid: In case of off-line FITS generation, the image cycle time is read from the AEU housekeeping for this
-                 obsid.
+        - obsid: Observation identifier for which the image cycle time is read from the AEU housekeeping.
 
     Returns: Image cycle time [s].
     &#34;&#34;&#34;
@@ -3019,7 +3164,14 @@ Returns: Image cycle time [s].</li>
     # External sync -&gt; use AEU sync pulses
 
     else:
-        return None if obsid is None else float(get_housekeeping(&#34;GAEU_EXT_CYCLE_TIME&#34;, obsid=obsid)[1])</code></pre>
+        if obsid:
+            try:
+                return float(get_housekeeping(&#34;GAEU_EXT_CYCLE_TIME&#34;, obsid=obsid, data_dir=data_dir)[1])
+            except HKError as exc:  # See GitHub issue #2025
+                LOGGER.warning(&#34;No HK available for AWG2 (using default cycle time of 25s)&#34;, exc)
+                return 25.0
+        else:
+            return None</code></pre>
 </details>
 </dd>
 <dt id="egse.dpu.fitsgen.get_fits_counter"><code class="name flex">
@@ -3081,7 +3233,7 @@ Returns: Value of the next counter; 1 if no previous files were found or if an e
 </details>
 </dd>
 <dt id="egse.dpu.fitsgen.get_fits_synoptics"><code class="name flex">
-<span>def <span class="ident">get_fits_synoptics</span></span>(<span>obsid: str) ‑> dict</span>
+<span>def <span class="ident">get_fits_synoptics</span></span>(<span>obsid: str, data_dir=None) ‑> dict</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Retrieve the synoptics that need to be included in the FITS files for the given observation.</p>
@@ -3100,7 +3252,7 @@ Returns: Dictionary with the synoptics that should go into the FITS files for th
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def get_fits_synoptics(obsid: str) -&gt; dict:
+<pre><code class="python">def get_fits_synoptics(obsid: str, data_dir=None) -&gt; dict:
     &#34;&#34;&#34; Retrieve the synoptics that need to be included in the FITS files for the given observation.
 
     The synoptics that need be be included in the FITS files are represented by the following enumerations:
@@ -3116,7 +3268,7 @@ Returns: Dictionary with the synoptics that should go into the FITS files for th
     Returns: Dictionary with the synoptics that should go into the FITS files for the given observation.
     &#34;&#34;&#34;
 
-    synoptics_table = get_synoptics_table(obsid)
+    synoptics_table = get_synoptics_table(obsid, data_dir=data_dir)
 
     # We keep the original timestamps (when filling the gaps)
 
@@ -3228,7 +3380,7 @@ in which the HDF5 files are stored.</li>
         for hdf5_filename in sorted(daily_hdf5_filenames):
 
             try:
-                with h5.get_file(hdf5_filename, mode=&#34;r&#34;) as hdf5_file:
+                with h5.get_file(hdf5_filename, mode=&#34;r&#34;, locking=False) as hdf5_file:
 
                     if &#34;/obsid&#34; in hdf5_file:
 
@@ -3281,7 +3433,7 @@ Returns: Obsid as stored in the HDF5 file for the given OD and the given index (
     else:
         hdf5_filename = f&#34;{day_dir}/{od}_{SITE.ID}_{N_FEE_SETTINGS.ORIGIN_SPW_DATA}_{index:05d}.hdf5&#34;
 
-    with h5.get_file(hdf5_filename, mode=&#34;r&#34;) as hdf5_file:
+    with h5.get_file(hdf5_filename, mode=&#34;r&#34;, locking=False) as hdf5_file:
         try:
             return int(hdf5_file[&#34;obsid&#34;][()].decode().split(&#34;_&#34;)[-1])
         except:
@@ -3333,7 +3485,7 @@ Returns: List of observation day [yyyymmdd].</li>
     &#34;&#34;&#34;
 
     data_dir = data_dir or os.environ[&#34;PLATO_DATA_STORAGE_LOCATION&#34;]
-    obsid = obsid_from_storage(obsid, data_dir)     # Convert the obsid to the correct format
+    obsid = obsid_from_storage(obsid, data_dir=data_dir)     # Convert the obsid to the correct format
     obs_dir = f&#34;{data_dir}/obs/{obsid}&#34;
 
     try:
@@ -3399,7 +3551,7 @@ Returns: Setup for the given obsid.</li>
     &#34;&#34;&#34;
 
     data_dir = data_dir or os.environ[&#34;PLATO_DATA_STORAGE_LOCATION&#34;]
-    obsid = obsid_from_storage(obsid, data_dir)     # Convert the obsid to the correct format
+    obsid = obsid_from_storage(obsid, data_dir=data_dir)     # Convert the obsid to the correct format
     obs_dir = f&#34;{data_dir}/obs/{obsid}&#34;
 
     try:
@@ -3613,10 +3765,12 @@ be created as soon as data packet start coming in (when the N-FEE is in full-ima
         self.rows_final_dump = None
         self.setup = load_setup()
 
+        self.config_slicing_num_cycles = 0   # Configured slicing parameter
+        self.processed_num_cycles = 0           # HDF5 files with image data processed for current FITS file
+
         self.zcontext = zmq.Context.instance()
         self.monitoring_socket = self.zcontext.socket(zmq.PUB)
         self.monitoring_socket.bind(bind_address(CTRL_SETTINGS.PROTOCOL, CTRL_SETTINGS.MONITORING_PORT,))
-
 
         # self._quit_event = multiprocessing.Event()
 
@@ -3655,6 +3809,7 @@ be created as soon as data packet start coming in (when the N-FEE is in full-ima
                     # (in the future, we want to replace this with something like dpu_monitoring_reconnect())
 
                     except TimeoutError:
+                        LOGGER.warning(&#34;DPU monitoring timeout&#34;)
                         break
 
     def run(self, commander, poller):
@@ -3717,14 +3872,31 @@ be created as soon as data packet start coming in (when the N-FEE is in full-ima
                     hdf5_filename = self.hdf5_filename_queue.get()[0]
                     self.hdf5_filename = hdf5_filename
 
-                    with h5.get_file(hdf5_filename, mode=&#34;r&#34;) as hdf5_file:
+                    LOGGER.info(f&#34;Processing file {hdf5_filename}&#34;)
 
-                        LOGGER.info(f&#34;Processing file {hdf5_file}&#34;)
+                    with h5.get_file(hdf5_filename, mode=&#34;r&#34;, locking=False) as hdf5_file:
+
+                        LOGGER.info(f&#34;Opened file {hdf5_filename}&#34;)
 
                         # Check whether there is data in the HDF5
                         # (if there is no data in the HDF5 file, nothing has to be done and you can go to the next file)
 
                         try:
+
+                            # Slicing
+
+                            try:
+                                slicing_num_cycles = hdf5_file[&#34;dpu&#34;].attrs[&#34;slicing_num_cycles&#34;]
+                                if slicing_num_cycles != self.config_slicing_num_cycles:
+                                    LOGGER.debug(f&#34;Slicing parameter changed: {self.config_slicing_num_cycles} &#34;
+                                                 f&#34;-&gt; {slicing_num_cycles}&#34;)
+                                    self.close_fits()
+                                    self.config_slicing_num_cycles = slicing_num_cycles
+                            except KeyError:
+                                self.config_slicing_num_cycles = 0
+                                LOGGER.debug(&#34;No slicing&#34;)
+
+                            # Obsid
 
                             try:
                                 obsid = hdf5_file[&#34;obsid&#34;][()].decode()
@@ -3772,6 +3944,7 @@ be created as soon as data packet start coming in (when the N-FEE is in full-ima
                                                 &#34;expected_last_packet_flags&#34;: get_expected_last_packet_flags(n_fee_state),
                                                 &#34;obsid&#34;: str(obsid),
                                                 &#34;cycle_time&#34;: get_cycle_time(n_fee_state, obsid=obsid),
+                                                &#34;cgse_version&#34;: get_cgse_version(obsid=obsid),
                                                 &#34;setup&#34;: self.setup
                                             }
 
@@ -3796,7 +3969,14 @@ be created as soon as data packet start coming in (when the N-FEE is in full-ima
                                             spw_packet = SpaceWirePacket.create_packet(h5.get_data(dataset))
                                             persistence.create({f&#34;SpW packet {identifier}&#34;: spw_packet})
 
-                            if not has_data:
+                            if has_data:
+                                self.processed_num_cycles += 1
+
+                                if self.config_slicing_num_cycles != 0 and \
+                                        self.processed_num_cycles == self.config_slicing_num_cycles:
+                                    self.close_fits()
+
+                            else:
 
                                 self.close_fits()
                                 self.clear_crucial_parameters()
@@ -3838,6 +4018,10 @@ be created as soon as data packet start coming in (when the N-FEE is in full-ima
             # Stop writing to the current FITS file
 
             self.fits_images_filename = None
+
+            # Reset the number of HDF5 files with image data processed for current FITS file
+
+            self.processed_num_cycles = 0
 
     def crucial_parameter_change(self, n_fee_state: AttributeManager):
         &#34;&#34;&#34; Check for a change in crucial parameters.
@@ -3950,7 +4134,11 @@ be created as soon as data packet start coming in (when the N-FEE is in full-ima
 
         # Stop writing to the current FITS file
 
-        self.fits_images_filename = None</code></pre>
+        self.fits_images_filename = None
+
+        # Reset the number of HDF5 files with image data processed for current FITS file
+
+        self.processed_num_cycles = 0</code></pre>
 </details>
 </dd>
 <dt id="egse.dpu.fitsgen.FITSGenerator.crucial_parameter_change"><code class="name flex">
@@ -4077,6 +4265,7 @@ queue.</p></div>
                 # (in the future, we want to replace this with something like dpu_monitoring_reconnect())
 
                 except TimeoutError:
+                    LOGGER.warning(&#34;DPU monitoring timeout&#34;)
                     break</code></pre>
 </details>
 </dd>
@@ -4106,14 +4295,31 @@ queue.</p></div>
                 hdf5_filename = self.hdf5_filename_queue.get()[0]
                 self.hdf5_filename = hdf5_filename
 
-                with h5.get_file(hdf5_filename, mode=&#34;r&#34;) as hdf5_file:
+                LOGGER.info(f&#34;Processing file {hdf5_filename}&#34;)
 
-                    LOGGER.info(f&#34;Processing file {hdf5_file}&#34;)
+                with h5.get_file(hdf5_filename, mode=&#34;r&#34;, locking=False) as hdf5_file:
+
+                    LOGGER.info(f&#34;Opened file {hdf5_filename}&#34;)
 
                     # Check whether there is data in the HDF5
                     # (if there is no data in the HDF5 file, nothing has to be done and you can go to the next file)
 
                     try:
+
+                        # Slicing
+
+                        try:
+                            slicing_num_cycles = hdf5_file[&#34;dpu&#34;].attrs[&#34;slicing_num_cycles&#34;]
+                            if slicing_num_cycles != self.config_slicing_num_cycles:
+                                LOGGER.debug(f&#34;Slicing parameter changed: {self.config_slicing_num_cycles} &#34;
+                                             f&#34;-&gt; {slicing_num_cycles}&#34;)
+                                self.close_fits()
+                                self.config_slicing_num_cycles = slicing_num_cycles
+                        except KeyError:
+                            self.config_slicing_num_cycles = 0
+                            LOGGER.debug(&#34;No slicing&#34;)
+
+                        # Obsid
 
                         try:
                             obsid = hdf5_file[&#34;obsid&#34;][()].decode()
@@ -4161,6 +4367,7 @@ queue.</p></div>
                                             &#34;expected_last_packet_flags&#34;: get_expected_last_packet_flags(n_fee_state),
                                             &#34;obsid&#34;: str(obsid),
                                             &#34;cycle_time&#34;: get_cycle_time(n_fee_state, obsid=obsid),
+                                            &#34;cgse_version&#34;: get_cgse_version(obsid=obsid),
                                             &#34;setup&#34;: self.setup
                                         }
 
@@ -4185,7 +4392,14 @@ queue.</p></div>
                                         spw_packet = SpaceWirePacket.create_packet(h5.get_data(dataset))
                                         persistence.create({f&#34;SpW packet {identifier}&#34;: spw_packet})
 
-                        if not has_data:
+                        if has_data:
+                            self.processed_num_cycles += 1
+
+                            if self.config_slicing_num_cycles != 0 and \
+                                    self.processed_num_cycles == self.config_slicing_num_cycles:
+                                self.close_fits()
+
+                        else:
 
                             self.close_fits()
                             self.clear_crucial_parameters()
@@ -4262,7 +4476,8 @@ queue.</p></div>
     # self.dpu_monitoring_thread.join()
     # self.process_queue_thread.join()
 
-    self.monitoring_socket.close()</code></pre>
+    self.monitoring_socket.close()
+    # self.zcontext.term()</code></pre>
 </details>
 </dd>
 </dl>
@@ -4582,6 +4797,7 @@ indicate that the shutter is always open there.</p></div>
 <li><code><a title="egse.dpu.fitsgen.create_fits_from_hdf5" href="#egse.dpu.fitsgen.create_fits_from_hdf5">create_fits_from_hdf5</a></code></li>
 <li><code><a title="egse.dpu.fitsgen.create_fits_from_hdf5_nfee_state" href="#egse.dpu.fitsgen.create_fits_from_hdf5_nfee_state">create_fits_from_hdf5_nfee_state</a></code></li>
 <li><code><a title="egse.dpu.fitsgen.create_fits_from_hdf5_register_map" href="#egse.dpu.fitsgen.create_fits_from_hdf5_register_map">create_fits_from_hdf5_register_map</a></code></li>
+<li><code><a title="egse.dpu.fitsgen.get_cgse_version" href="#egse.dpu.fitsgen.get_cgse_version">get_cgse_version</a></code></li>
 <li><code><a title="egse.dpu.fitsgen.get_cycle_time" href="#egse.dpu.fitsgen.get_cycle_time">get_cycle_time</a></code></li>
 <li><code><a title="egse.dpu.fitsgen.get_fits_counter" href="#egse.dpu.fitsgen.get_fits_counter">get_fits_counter</a></code></li>
 <li><code><a title="egse.dpu.fitsgen.get_fits_synoptics" href="#egse.dpu.fitsgen.get_fits_synoptics">get_fits_synoptics</a></code></li>

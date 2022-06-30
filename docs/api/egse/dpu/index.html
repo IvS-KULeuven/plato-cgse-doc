@@ -74,7 +74,9 @@ from egse.dpu.dpu import command_set_reverse_clocking
 from egse.dpu.dpu import command_set_standby_mode
 from egse.dpu.dpu import command_set_vgd
 from egse.dpu.dpu import prio_command_get_mode
+from egse.dpu.dpu import prio_command_get_slicing
 from egse.dpu.dpu import prio_command_is_dump_mode
+from egse.dpu.dpu import prio_command_set_slicing
 from egse.dsi.esl import is_timecode
 from egse.exceptions import Abort
 from egse.fee import DEFAULT_CCD_READOUT_ORDER
@@ -167,10 +169,20 @@ class DPUInterface:
 
     The interface should be implemented by the `DPUController` and the `DPUProxy` (and possibly
     a `DPUSimulator` should we need that e.g. for testing purposes).
+
+    The command shall also be added to the `dpu.yaml` command definitions file.
     &#34;&#34;&#34;
 
     @dynamic_interface
     def marker(self, mark: str):
+        raise NotImplementedError
+
+    @dynamic_interface
+    def get_slicing(self) -&gt; int:
+        raise NotImplementedError
+
+    @dynamic_interface
+    def set_slicing(self, num_cycles: int):
         raise NotImplementedError
 
     @dynamic_interface
@@ -437,6 +449,22 @@ class DPUController(DPUInterface):
 
     def marker(self, mark: str):
         LOGGER.info(f&#34;{mark = }&#34;)
+
+    def get_slicing(self) -&gt; int:
+        self._priority_q.put((prio_command_get_slicing, []))
+        LOGGER.debug(&#34;Controller.get_slicing: Put prio_command_get_slicing on the Queue.&#34;)
+        (cmd, response) = self._response_q.get()
+        LOGGER.debug(f&#34;Controller.get_slicing returned: ({cmd.__name__}, {response}).&#34;)
+        return response
+
+    def set_slicing(self, num_cycles: int):
+        self._priority_q.put((prio_command_set_slicing, [num_cycles]))
+        LOGGER.debug(
+            &#34;Controller.set_slicing: Put prio_command_set_slicing on the Queue.&#34;
+        )
+        (cmd, response) = self._response_q.get()
+        LOGGER.debug(f&#34;Controller.set_slicing returned: ({cmd.__name__}, {response}).&#34;)
+        return response
 
     def is_simulator(self):
         return True
@@ -1158,6 +1186,10 @@ class DPUInternals:
     # The clear_error_flags shall be executed on every readout, i.e. every 200ms and 400ms pulse.
     clear_error_flags = False
 
+    # The number of cycles that will be used for slicing the FITS files. This parameter is
+    # saved in the HDF5 file upon reception.
+    slicing_num_cycles = 0
+
     def is_start_of_cycle(self):
         &#34;&#34;&#34;
         Returns True if in the first readout in this cycle, i.e. frame number is 0.
@@ -1358,7 +1390,8 @@ class DPUProcessor(multiprocessing.Process):
                                           self._dpu_internals.frame_number, mon_sock, dist_sock)
 
                         process_high_priority_commands(self._priority_q, self._response_q,
-                                                       self._n_fee_state.get_state())
+                                                       self._n_fee_state.get_state(),
+                                                       self._dpu_internals)
 
                         # On any new readout cycle (400ms pulse), update the state and the internals
 
@@ -1385,6 +1418,8 @@ class DPUProcessor(multiprocessing.Process):
                             LOGGER.debug(
                                 f&#34;FEE mode in register map: {n_fee_mode(self.register_map[&#39;ccd_mode_config&#39;]).name}&#34;
                             )
+
+                            save_slicing_parameter(storage, origin_spw_data, self._dpu_internals.slicing_num_cycles)
 
                         if self._dpu_internals.is_end_of_cycle():
 
@@ -1428,7 +1463,8 @@ class DPUProcessor(multiprocessing.Process):
                     except TimecodeTimeoutError as exc:
                         # LOGGER.debug(&#34;Waiting for the next timecode.&#34;)
                         process_high_priority_commands(
-                            self._priority_q, self._response_q, self._n_fee_state.get_state())
+                            self._priority_q, self._response_q,
+                            self._n_fee_state.get_state(), self._dpu_internals)
                         continue
                     except TimeExceededError as exc:
                         LOGGER.warning(
@@ -1453,7 +1489,8 @@ class DPUProcessor(multiprocessing.Process):
                     # Process high priority commands
 
                     process_high_priority_commands(
-                        self._priority_q, self._response_q, self._n_fee_state.get_state())
+                        self._priority_q, self._response_q,
+                        self._n_fee_state.get_state(), self._dpu_internals)
 
                     # Then, we might want to send some RMAP commands -------------------------------
 
@@ -1662,9 +1699,10 @@ def save_format_version(proxy: StorageProxy, origin: str):
     # 2.1 - Added obsid as a dataset to the HDF5 file
     # 2.2 - Multiple commands can now be saved under the same frame number
     # 2.3 - introduced /dpu/num_cycles attribute
+    # 2.4 - introduced /dpu/slicing_num_cycles attribute
 
     major_version = 2
-    minor_version = 3
+    minor_version = 4
 
     item_data = {
         &#34;/versions/format_version/&#34;: &#34;format version of HDF5 file&#34;,
@@ -1714,6 +1752,22 @@ def save_num_cycles(proxy: StorageProxy, origin: str, num_cycles: int):
     }
     response = proxy.save(item)
     LOGGER.debug(f&#34;Response from saving NUM_CYCLES: {response}&#34;)
+
+
+def save_slicing_parameter(proxy: StorageProxy, origin: str, slicing_num_cycles: int):
+    &#34;&#34;&#34;Save the number of cycles to use for slicing to the storage.&#34;&#34;&#34;
+
+    item_data = {
+        &#34;/dpu/:ATTRS&#34;: [
+            (&#34;slicing_num_cycles&#34;, slicing_num_cycles),
+        ]
+    }
+    item = {
+        &#34;origin&#34;: origin,
+        &#34;data&#34;: item_data,
+    }
+    response = proxy.save(item)
+    LOGGER.debug(f&#34;Response from saving SLICING_NUM_CYCLES: {response}&#34;)
 
 
 def update_data_attributes(attr: dict, n_fee_state: NFEEState.StateTuple) -&gt; Dict[str, Any]:
@@ -2090,19 +2144,24 @@ def send_commands_to_n_fee(
 def process_high_priority_commands(
         priority_q: multiprocessing.Queue,
         response_q: multiprocessing.Queue,
-        n_fee_state: tuple):
+        n_fee_state: tuple, dpu_internals: DPUInternals):
     &#34;&#34;&#34;
+    Execute high priority commands from the DPU Control Server /  Controller. The `n_fee_state` and
+    the `dpu_internals` tuples are passed to the high priority commands before any other arguments
+    that were passed on the command queue.
 
     Args:
         priority_q: the command queue with priority
         response_q: the response queue
         n_fee_state: a namedtuple containing the current state of the N-FEE
+        dpu_internals: the internal settings of the DPU might be requested or set
+            by a high priority command
     &#34;&#34;&#34;
 
     command = response = None
     try:
         (command, args) = priority_q.get_nowait()
-        response = command(n_fee_state, *args)
+        response = command(n_fee_state, dpu_internals, *args)
         LOGGER.debug(f&#34;Command executed: {command.__name__}, {args=}, {response=}&#34;)
     except queue.Empty:
         pass
@@ -2612,10 +2671,14 @@ housekeeping=2]</dd>
 </details>
 </dd>
 <dt id="egse.dpu.process_high_priority_commands"><code class="name flex">
-<span>def <span class="ident">process_high_priority_commands</span></span>(<span>priority_q: <bound method BaseContext.Queue of <multiprocessing.context.DefaultContext object at 0x7fbd385207c0>>, response_q: <bound method BaseContext.Queue of <multiprocessing.context.DefaultContext object at 0x7fbd385207c0>>, n_fee_state: tuple)</span>
+<span>def <span class="ident">process_high_priority_commands</span></span>(<span>priority_q: <bound method BaseContext.Queue of <multiprocessing.context.DefaultContext object at 0x7fabc01f3400>>, response_q: <bound method BaseContext.Queue of <multiprocessing.context.DefaultContext object at 0x7fabc01f3400>>, n_fee_state: tuple, dpu_internals: <a title="egse.dpu.DPUInternals" href="#egse.dpu.DPUInternals">DPUInternals</a>)</span>
 </code></dt>
 <dd>
-<div class="desc"><h2 id="args">Args</h2>
+<div class="desc"><p>Execute high priority commands from the DPU Control Server /
+Controller. The <code>n_fee_state</code> and
+the <code>dpu_internals</code> tuples are passed to the high priority commands before any other arguments
+that were passed on the command queue.</p>
+<h2 id="args">Args</h2>
 <dl>
 <dt><strong><code>priority_q</code></strong></dt>
 <dd>the command queue with priority</dd>
@@ -2623,6 +2686,9 @@ housekeeping=2]</dd>
 <dd>the response queue</dd>
 <dt><strong><code>n_fee_state</code></strong></dt>
 <dd>a namedtuple containing the current state of the N-FEE</dd>
+<dt><strong><code>dpu_internals</code></strong></dt>
+<dd>the internal settings of the DPU might be requested or set
+by a high priority command</dd>
 </dl></div>
 <details class="source">
 <summary>
@@ -2631,19 +2697,24 @@ housekeeping=2]</dd>
 <pre><code class="python">def process_high_priority_commands(
         priority_q: multiprocessing.Queue,
         response_q: multiprocessing.Queue,
-        n_fee_state: tuple):
+        n_fee_state: tuple, dpu_internals: DPUInternals):
     &#34;&#34;&#34;
+    Execute high priority commands from the DPU Control Server /  Controller. The `n_fee_state` and
+    the `dpu_internals` tuples are passed to the high priority commands before any other arguments
+    that were passed on the command queue.
 
     Args:
         priority_q: the command queue with priority
         response_q: the response queue
         n_fee_state: a namedtuple containing the current state of the N-FEE
+        dpu_internals: the internal settings of the DPU might be requested or set
+            by a high priority command
     &#34;&#34;&#34;
 
     command = response = None
     try:
         (command, args) = priority_q.get_nowait()
-        response = command(n_fee_state, *args)
+        response = command(n_fee_state, dpu_internals, *args)
         LOGGER.debug(f&#34;Command executed: {command.__name__}, {args=}, {response=}&#34;)
     except queue.Empty:
         pass
@@ -3077,9 +3148,10 @@ the packet and a timestamp is sent to the Storage manager.</p>
     # 2.1 - Added obsid as a dataset to the HDF5 file
     # 2.2 - Multiple commands can now be saved under the same frame number
     # 2.3 - introduced /dpu/num_cycles attribute
+    # 2.4 - introduced /dpu/slicing_num_cycles attribute
 
     major_version = 2
-    minor_version = 3
+    minor_version = 4
 
     item_data = {
         &#34;/versions/format_version/&#34;: &#34;format version of HDF5 file&#34;,
@@ -3181,8 +3253,33 @@ the packet and a timestamp is sent to the Storage manager.</p>
     dist_socket.send_multipart([msg_id, pickle_string])</code></pre>
 </details>
 </dd>
+<dt id="egse.dpu.save_slicing_parameter"><code class="name flex">
+<span>def <span class="ident">save_slicing_parameter</span></span>(<span>proxy: <a title="egse.storage.StorageProxy" href="../storage/index.html#egse.storage.StorageProxy">StorageProxy</a>, origin: str, slicing_num_cycles: int)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Save the number of cycles to use for slicing to the storage.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def save_slicing_parameter(proxy: StorageProxy, origin: str, slicing_num_cycles: int):
+    &#34;&#34;&#34;Save the number of cycles to use for slicing to the storage.&#34;&#34;&#34;
+
+    item_data = {
+        &#34;/dpu/:ATTRS&#34;: [
+            (&#34;slicing_num_cycles&#34;, slicing_num_cycles),
+        ]
+    }
+    item = {
+        &#34;origin&#34;: origin,
+        &#34;data&#34;: item_data,
+    }
+    response = proxy.save(item)
+    LOGGER.debug(f&#34;Response from saving SLICING_NUM_CYCLES: {response}&#34;)</code></pre>
+</details>
+</dd>
 <dt id="egse.dpu.send_commands_to_n_fee"><code class="name flex">
-<span>def <span class="ident">send_commands_to_n_fee</span></span>(<span>transport: <a title="egse.spw.SpaceWireInterface" href="../spw.html#egse.spw.SpaceWireInterface">SpaceWireInterface</a>, storage: <a title="egse.storage.StorageProxy" href="../storage/index.html#egse.storage.StorageProxy">StorageProxy</a>, origin: str, register_map: <a title="egse.reg.RegisterMap" href="../reg.html#egse.reg.RegisterMap">RegisterMap</a>, command_q: <bound method BaseContext.Queue of <multiprocessing.context.DefaultContext object at 0x7fbd385207c0>>, response_q: <bound method BaseContext.Queue of <multiprocessing.context.DefaultContext object at 0x7fbd385207c0>>, internals: <a title="egse.dpu.DPUInternals" href="#egse.dpu.DPUInternals">DPUInternals</a>)</span>
+<span>def <span class="ident">send_commands_to_n_fee</span></span>(<span>transport: <a title="egse.spw.SpaceWireInterface" href="../spw.html#egse.spw.SpaceWireInterface">SpaceWireInterface</a>, storage: <a title="egse.storage.StorageProxy" href="../storage/index.html#egse.storage.StorageProxy">StorageProxy</a>, origin: str, register_map: <a title="egse.reg.RegisterMap" href="../reg.html#egse.reg.RegisterMap">RegisterMap</a>, command_q: <bound method BaseContext.Queue of <multiprocessing.context.DefaultContext object at 0x7fabc01f3400>>, response_q: <bound method BaseContext.Queue of <multiprocessing.context.DefaultContext object at 0x7fabc01f3400>>, internals: <a title="egse.dpu.DPUInternals" href="#egse.dpu.DPUInternals">DPUInternals</a>)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Send RMAP commands to the N-FEE. The commands are read from the command queue that is shared
@@ -3390,7 +3487,7 @@ Arguments can be positional or keyword arguments, not both.</p></div>
 </dd>
 <dt id="egse.dpu.DPUController"><code class="flex name class">
 <span>class <span class="ident">DPUController</span></span>
-<span>(</span><span>priority_queue: <bound method BaseContext.Queue of <multiprocessing.context.DefaultContext object at 0x7fbd385207c0>>, command_queue: <bound method BaseContext.Queue of <multiprocessing.context.DefaultContext object at 0x7fbd385207c0>>, response_queue: <bound method BaseContext.Queue of <multiprocessing.context.DefaultContext object at 0x7fbd385207c0>>)</span>
+<span>(</span><span>priority_queue: <bound method BaseContext.Queue of <multiprocessing.context.DefaultContext object at 0x7fabc01f3400>>, command_queue: <bound method BaseContext.Queue of <multiprocessing.context.DefaultContext object at 0x7fabc01f3400>>, response_queue: <bound method BaseContext.Queue of <multiprocessing.context.DefaultContext object at 0x7fabc01f3400>>)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>The DPU Controller puts commands on the command queue for processing by the DPU Processor.
@@ -3419,6 +3516,22 @@ DPU Command Protocol.</p></div>
 
     def marker(self, mark: str):
         LOGGER.info(f&#34;{mark = }&#34;)
+
+    def get_slicing(self) -&gt; int:
+        self._priority_q.put((prio_command_get_slicing, []))
+        LOGGER.debug(&#34;Controller.get_slicing: Put prio_command_get_slicing on the Queue.&#34;)
+        (cmd, response) = self._response_q.get()
+        LOGGER.debug(f&#34;Controller.get_slicing returned: ({cmd.__name__}, {response}).&#34;)
+        return response
+
+    def set_slicing(self, num_cycles: int):
+        self._priority_q.put((prio_command_set_slicing, [num_cycles]))
+        LOGGER.debug(
+            &#34;Controller.set_slicing: Put prio_command_set_slicing on the Queue.&#34;
+        )
+        (cmd, response) = self._response_q.get()
+        LOGGER.debug(f&#34;Controller.set_slicing returned: ({cmd.__name__}, {response}).&#34;)
+        return response
 
     def is_simulator(self):
         return True
@@ -3706,6 +3819,23 @@ DPU Command Protocol.</p></div>
 </ul>
 <h3>Methods</h3>
 <dl>
+<dt id="egse.dpu.DPUController.get_slicing"><code class="name flex">
+<span>def <span class="ident">get_slicing</span></span>(<span>self) ‑> int</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_slicing(self) -&gt; int:
+    self._priority_q.put((prio_command_get_slicing, []))
+    LOGGER.debug(&#34;Controller.get_slicing: Put prio_command_get_slicing on the Queue.&#34;)
+    (cmd, response) = self._response_q.get()
+    LOGGER.debug(f&#34;Controller.get_slicing returned: ({cmd.__name__}, {response}).&#34;)
+    return response</code></pre>
+</details>
+</dd>
 <dt id="egse.dpu.DPUController.is_simulator"><code class="name flex">
 <span>def <span class="ident">is_simulator</span></span>(<span>self)</span>
 </code></dt>
@@ -3825,6 +3955,25 @@ DPU Command Protocol.</p></div>
     return response</code></pre>
 </details>
 </dd>
+<dt id="egse.dpu.DPUController.set_slicing"><code class="name flex">
+<span>def <span class="ident">set_slicing</span></span>(<span>self, num_cycles: int)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def set_slicing(self, num_cycles: int):
+    self._priority_q.put((prio_command_set_slicing, [num_cycles]))
+    LOGGER.debug(
+        &#34;Controller.set_slicing: Put prio_command_set_slicing on the Queue.&#34;
+    )
+    (cmd, response) = self._response_q.get()
+    LOGGER.debug(f&#34;Controller.set_slicing returned: ({cmd.__name__}, {response}).&#34;)
+    return response</code></pre>
+</details>
+</dd>
 </dl>
 <h3>Inherited members</h3>
 <ul class="hlist">
@@ -3858,7 +4007,8 @@ DPU Command Protocol.</p></div>
 <div class="desc"><p>This interface is for sending commands to the DPU Control Server. The commands are user
 oriented and will be translated by the DPU Controller in proper FEE commands.</p>
 <p>The interface should be implemented by the <code><a title="egse.dpu.DPUController" href="#egse.dpu.DPUController">DPUController</a></code> and the <code><a title="egse.dpu.DPUProxy" href="#egse.dpu.DPUProxy">DPUProxy</a></code> (and possibly
-a <code><a title="egse.dpu.DPUSimulator" href="#egse.dpu.DPUSimulator">DPUSimulator</a></code> should we need that e.g. for testing purposes).</p></div>
+a <code><a title="egse.dpu.DPUSimulator" href="#egse.dpu.DPUSimulator">DPUSimulator</a></code> should we need that e.g. for testing purposes).</p>
+<p>The command shall also be added to the <code>dpu.yaml</code> command definitions file.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
@@ -3870,10 +4020,20 @@ a <code><a title="egse.dpu.DPUSimulator" href="#egse.dpu.DPUSimulator">DPUSimula
 
     The interface should be implemented by the `DPUController` and the `DPUProxy` (and possibly
     a `DPUSimulator` should we need that e.g. for testing purposes).
+
+    The command shall also be added to the `dpu.yaml` command definitions file.
     &#34;&#34;&#34;
 
     @dynamic_interface
     def marker(self, mark: str):
+        raise NotImplementedError
+
+    @dynamic_interface
+    def get_slicing(self) -&gt; int:
+        raise NotImplementedError
+
+    @dynamic_interface
+    def set_slicing(self, num_cycles: int):
         raise NotImplementedError
 
     @dynamic_interface
@@ -4086,6 +4246,20 @@ a <code><a title="egse.dpu.DPUSimulator" href="#egse.dpu.DPUSimulator">DPUSimula
 </ul>
 <h3>Methods</h3>
 <dl>
+<dt id="egse.dpu.DPUInterface.get_slicing"><code class="name flex">
+<span>def <span class="ident">get_slicing</span></span>(<span>self) ‑> int</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@dynamic_interface
+def get_slicing(self) -&gt; int:
+    raise NotImplementedError</code></pre>
+</details>
+</dd>
 <dt id="egse.dpu.DPUInterface.is_simulator"><code class="name flex">
 <span>def <span class="ident">is_simulator</span></span>(<span>self)</span>
 </code></dt>
@@ -4596,6 +4770,20 @@ def n_fee_set_vgd(self, n_fee_parameters: dict):
     raise NotImplementedError</code></pre>
 </details>
 </dd>
+<dt id="egse.dpu.DPUInterface.set_slicing"><code class="name flex">
+<span>def <span class="ident">set_slicing</span></span>(<span>self, num_cycles: int)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@dynamic_interface
+def set_slicing(self, num_cycles: int):
+    raise NotImplementedError</code></pre>
+</details>
+</dd>
 </dl>
 </dd>
 <dt id="egse.dpu.DPUInternals"><code class="flex name class">
@@ -4637,6 +4825,10 @@ def n_fee_set_vgd(self, n_fee_parameters: dict):
 
     # The clear_error_flags shall be executed on every readout, i.e. every 200ms and 400ms pulse.
     clear_error_flags = False
+
+    # The number of cycles that will be used for slicing the FITS files. This parameter is
+    # saved in the HDF5 file upon reception.
+    slicing_num_cycles = 0
 
     def is_start_of_cycle(self):
         &#34;&#34;&#34;
@@ -4693,6 +4885,10 @@ def n_fee_set_vgd(self, n_fee_parameters: dict):
 <div class="desc"></div>
 </dd>
 <dt id="egse.dpu.DPUInternals.num_cycles"><code class="name">var <span class="ident">num_cycles</span> : int</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="egse.dpu.DPUInternals.slicing_num_cycles"><code class="name">var <span class="ident">slicing_num_cycles</span></code></dt>
 <dd>
 <div class="desc"></div>
 </dd>
@@ -5107,7 +5303,11 @@ timecode or a housekeeping packet from the N-FEE.</p>
 </summary>
 <pre><code class="python">def connect(self):
     self._socket = self._context.socket(zmq.SUB)
-    self._socket.connect(self._endpoint)</code></pre>
+    self._socket.connect(self._endpoint)
+
+    # subscribe_string = b&#39;&#39;
+    # self._socket.subscribe(subscribe_string)
+    # self._subscriptions.add(subscribe_string)</code></pre>
 </details>
 </dd>
 <dt id="egse.dpu.DPUMonitoring.disconnect"><code class="name flex">
@@ -5525,7 +5725,7 @@ DPU Processor on every 400ms pulse.</p>
 </dd>
 <dt id="egse.dpu.DPUProcessor"><code class="flex name class">
 <span>class <span class="ident">DPUProcessor</span></span>
-<span>(</span><span>transport: <a title="egse.spw.SpaceWireInterface" href="../spw.html#egse.spw.SpaceWireInterface">SpaceWireInterface</a>, priority_queue: <bound method BaseContext.Queue of <multiprocessing.context.DefaultContext object at 0x7fbd385207c0>>, command_queue: <bound method BaseContext.Queue of <multiprocessing.context.DefaultContext object at 0x7fbd385207c0>>, response_queue: <bound method BaseContext.Queue of <multiprocessing.context.DefaultContext object at 0x7fbd385207c0>>)</span>
+<span>(</span><span>transport: <a title="egse.spw.SpaceWireInterface" href="../spw.html#egse.spw.SpaceWireInterface">SpaceWireInterface</a>, priority_queue: <bound method BaseContext.Queue of <multiprocessing.context.DefaultContext object at 0x7fabc01f3400>>, command_queue: <bound method BaseContext.Queue of <multiprocessing.context.DefaultContext object at 0x7fabc01f3400>>, response_queue: <bound method BaseContext.Queue of <multiprocessing.context.DefaultContext object at 0x7fabc01f3400>>)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>The DPU Processor handles all interactions with the FEE. It reads the packets from the FEE
@@ -5712,7 +5912,8 @@ communication with the FEE Simulator.</p></div>
                                           self._dpu_internals.frame_number, mon_sock, dist_sock)
 
                         process_high_priority_commands(self._priority_q, self._response_q,
-                                                       self._n_fee_state.get_state())
+                                                       self._n_fee_state.get_state(),
+                                                       self._dpu_internals)
 
                         # On any new readout cycle (400ms pulse), update the state and the internals
 
@@ -5739,6 +5940,8 @@ communication with the FEE Simulator.</p></div>
                             LOGGER.debug(
                                 f&#34;FEE mode in register map: {n_fee_mode(self.register_map[&#39;ccd_mode_config&#39;]).name}&#34;
                             )
+
+                            save_slicing_parameter(storage, origin_spw_data, self._dpu_internals.slicing_num_cycles)
 
                         if self._dpu_internals.is_end_of_cycle():
 
@@ -5782,7 +5985,8 @@ communication with the FEE Simulator.</p></div>
                     except TimecodeTimeoutError as exc:
                         # LOGGER.debug(&#34;Waiting for the next timecode.&#34;)
                         process_high_priority_commands(
-                            self._priority_q, self._response_q, self._n_fee_state.get_state())
+                            self._priority_q, self._response_q,
+                            self._n_fee_state.get_state(), self._dpu_internals)
                         continue
                     except TimeExceededError as exc:
                         LOGGER.warning(
@@ -5807,7 +6011,8 @@ communication with the FEE Simulator.</p></div>
                     # Process high priority commands
 
                     process_high_priority_commands(
-                        self._priority_q, self._response_q, self._n_fee_state.get_state())
+                        self._priority_q, self._response_q,
+                        self._n_fee_state.get_state(), self._dpu_internals)
 
                     # Then, we might want to send some RMAP commands -------------------------------
 
@@ -6122,7 +6327,8 @@ communication with the FEE Simulator.</p></div>
                                       self._dpu_internals.frame_number, mon_sock, dist_sock)
 
                     process_high_priority_commands(self._priority_q, self._response_q,
-                                                   self._n_fee_state.get_state())
+                                                   self._n_fee_state.get_state(),
+                                                   self._dpu_internals)
 
                     # On any new readout cycle (400ms pulse), update the state and the internals
 
@@ -6149,6 +6355,8 @@ communication with the FEE Simulator.</p></div>
                         LOGGER.debug(
                             f&#34;FEE mode in register map: {n_fee_mode(self.register_map[&#39;ccd_mode_config&#39;]).name}&#34;
                         )
+
+                        save_slicing_parameter(storage, origin_spw_data, self._dpu_internals.slicing_num_cycles)
 
                     if self._dpu_internals.is_end_of_cycle():
 
@@ -6192,7 +6400,8 @@ communication with the FEE Simulator.</p></div>
                 except TimecodeTimeoutError as exc:
                     # LOGGER.debug(&#34;Waiting for the next timecode.&#34;)
                     process_high_priority_commands(
-                        self._priority_q, self._response_q, self._n_fee_state.get_state())
+                        self._priority_q, self._response_q,
+                        self._n_fee_state.get_state(), self._dpu_internals)
                     continue
                 except TimeExceededError as exc:
                     LOGGER.warning(
@@ -6217,7 +6426,8 @@ communication with the FEE Simulator.</p></div>
                 # Process high priority commands
 
                 process_high_priority_commands(
-                    self._priority_q, self._response_q, self._n_fee_state.get_state())
+                    self._priority_q, self._response_q,
+                    self._n_fee_state.get_state(), self._dpu_internals)
 
                 # Then, we might want to send some RMAP commands -------------------------------
 
@@ -6264,7 +6474,8 @@ communication with the FEE Simulator.</p></div>
             unregister_from_storage_manager(storage, origin_spw_data)
 
     mon_sock.close(linger=0)
-    dist_sock.close(linger=0)</code></pre>
+    dist_sock.close(linger=0)
+    # ctx.destroy()</code></pre>
 </details>
 </dd>
 </dl>
@@ -6492,7 +6703,8 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
 <div class="desc"><p>This interface is for sending commands to the DPU Control Server. The commands are user
 oriented and will be translated by the DPU Controller in proper FEE commands.</p>
 <p>The interface should be implemented by the <code><a title="egse.dpu.DPUController" href="#egse.dpu.DPUController">DPUController</a></code> and the <code><a title="egse.dpu.DPUProxy" href="#egse.dpu.DPUProxy">DPUProxy</a></code> (and possibly
-a <code><a title="egse.dpu.DPUSimulator" href="#egse.dpu.DPUSimulator">DPUSimulator</a></code> should we need that e.g. for testing purposes).</p></div>
+a <code><a title="egse.dpu.DPUSimulator" href="#egse.dpu.DPUSimulator">DPUSimulator</a></code> should we need that e.g. for testing purposes).</p>
+<p>The command shall also be added to the <code>dpu.yaml</code> command definitions file.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
@@ -6754,6 +6966,7 @@ a <code><a title="egse.dpu.DPUSimulator" href="#egse.dpu.DPUSimulator">DPUSimula
 <li><code><a title="egse.dpu.save_num_cycles" href="#egse.dpu.save_num_cycles">save_num_cycles</a></code></li>
 <li><code><a title="egse.dpu.save_obsid" href="#egse.dpu.save_obsid">save_obsid</a></code></li>
 <li><code><a title="egse.dpu.save_register_map" href="#egse.dpu.save_register_map">save_register_map</a></code></li>
+<li><code><a title="egse.dpu.save_slicing_parameter" href="#egse.dpu.save_slicing_parameter">save_slicing_parameter</a></code></li>
 <li><code><a title="egse.dpu.send_commands_to_n_fee" href="#egse.dpu.send_commands_to_n_fee">send_commands_to_n_fee</a></code></li>
 <li><code><a title="egse.dpu.unregister_from_storage_manager" href="#egse.dpu.unregister_from_storage_manager">unregister_from_storage_manager</a></code></li>
 <li><code><a title="egse.dpu.update_data_attributes" href="#egse.dpu.update_data_attributes">update_data_attributes</a></code></li>
@@ -6767,16 +6980,19 @@ a <code><a title="egse.dpu.DPUSimulator" href="#egse.dpu.DPUSimulator">DPUSimula
 <li>
 <h4><code><a title="egse.dpu.DPUController" href="#egse.dpu.DPUController">DPUController</a></code></h4>
 <ul class="">
+<li><code><a title="egse.dpu.DPUController.get_slicing" href="#egse.dpu.DPUController.get_slicing">get_slicing</a></code></li>
 <li><code><a title="egse.dpu.DPUController.is_simulator" href="#egse.dpu.DPUController.is_simulator">is_simulator</a></code></li>
 <li><code><a title="egse.dpu.DPUController.marker" href="#egse.dpu.DPUController.marker">marker</a></code></li>
 <li><code><a title="egse.dpu.DPUController.n_fee_set_charge_injection" href="#egse.dpu.DPUController.n_fee_set_charge_injection">n_fee_set_charge_injection</a></code></li>
 <li><code><a title="egse.dpu.DPUController.n_fee_set_reverse_clocking" href="#egse.dpu.DPUController.n_fee_set_reverse_clocking">n_fee_set_reverse_clocking</a></code></li>
 <li><code><a title="egse.dpu.DPUController.n_fee_set_vgd" href="#egse.dpu.DPUController.n_fee_set_vgd">n_fee_set_vgd</a></code></li>
+<li><code><a title="egse.dpu.DPUController.set_slicing" href="#egse.dpu.DPUController.set_slicing">set_slicing</a></code></li>
 </ul>
 </li>
 <li>
 <h4><code><a title="egse.dpu.DPUInterface" href="#egse.dpu.DPUInterface">DPUInterface</a></code></h4>
 <ul class="">
+<li><code><a title="egse.dpu.DPUInterface.get_slicing" href="#egse.dpu.DPUInterface.get_slicing">get_slicing</a></code></li>
 <li><code><a title="egse.dpu.DPUInterface.is_simulator" href="#egse.dpu.DPUInterface.is_simulator">is_simulator</a></code></li>
 <li><code><a title="egse.dpu.DPUInterface.marker" href="#egse.dpu.DPUInterface.marker">marker</a></code></li>
 <li><code><a title="egse.dpu.DPUInterface.n_fee_get_full_register" href="#egse.dpu.DPUInterface.n_fee_get_full_register">n_fee_get_full_register</a></code></li>
@@ -6799,6 +7015,7 @@ a <code><a title="egse.dpu.DPUSimulator" href="#egse.dpu.DPUSimulator">DPUSimula
 <li><code><a title="egse.dpu.DPUInterface.n_fee_set_reverse_clocking" href="#egse.dpu.DPUInterface.n_fee_set_reverse_clocking">n_fee_set_reverse_clocking</a></code></li>
 <li><code><a title="egse.dpu.DPUInterface.n_fee_set_standby_mode" href="#egse.dpu.DPUInterface.n_fee_set_standby_mode">n_fee_set_standby_mode</a></code></li>
 <li><code><a title="egse.dpu.DPUInterface.n_fee_set_vgd" href="#egse.dpu.DPUInterface.n_fee_set_vgd">n_fee_set_vgd</a></code></li>
+<li><code><a title="egse.dpu.DPUInterface.set_slicing" href="#egse.dpu.DPUInterface.set_slicing">set_slicing</a></code></li>
 </ul>
 </li>
 <li>
@@ -6815,6 +7032,7 @@ a <code><a title="egse.dpu.DPUSimulator" href="#egse.dpu.DPUSimulator">DPUSimula
 <li><code><a title="egse.dpu.DPUInternals.is_end_of_cycle" href="#egse.dpu.DPUInternals.is_end_of_cycle">is_end_of_cycle</a></code></li>
 <li><code><a title="egse.dpu.DPUInternals.is_start_of_cycle" href="#egse.dpu.DPUInternals.is_start_of_cycle">is_start_of_cycle</a></code></li>
 <li><code><a title="egse.dpu.DPUInternals.num_cycles" href="#egse.dpu.DPUInternals.num_cycles">num_cycles</a></code></li>
+<li><code><a title="egse.dpu.DPUInternals.slicing_num_cycles" href="#egse.dpu.DPUInternals.slicing_num_cycles">slicing_num_cycles</a></code></li>
 <li><code><a title="egse.dpu.DPUInternals.update" href="#egse.dpu.DPUInternals.update">update</a></code></li>
 </ul>
 </li>

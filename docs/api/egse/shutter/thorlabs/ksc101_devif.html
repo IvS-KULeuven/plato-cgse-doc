@@ -554,7 +554,13 @@ Arguments can be positional or keyword arguments, not both.</p></div>
             self._shutter.close()
             self._is_connected = False
     except Exception as e_exc:
-        raise ShutterKSC101Error(f&#34;Could not close {self.device_id}&#34;) from e_exc</code></pre>
+        raise ShutterKSC101Error(f&#34;Could not close {self.device_id}&#34;) from e_exc
+
+    # if not self._shutter.closed:
+    #     self._shutter.close()
+    # else:
+    #     pass
+    # self.is_connected = False</code></pre>
 </details>
 </dd>
 <dt id="egse.shutter.thorlabs.ksc101_devif.ShutterKSC101USBInterface.get_cycle"><code class="name flex">
@@ -641,7 +647,8 @@ Arguments can be positional or keyword arguments, not both.</p></div>
         mode = _mode[3]
     else:
         mode = None
-    return mode</code></pre>
+    return mode
+    #FIXME: put a case in which _mode is empty to prevent errors</code></pre>
 </details>
 </dd>
 <dt id="egse.shutter.thorlabs.ksc101_devif.ShutterKSC101USBInterface.get_response"><code class="name flex">
@@ -738,7 +745,8 @@ Arguments can be positional or keyword arguments, not both.</p></div>
     if not state:
         parameter = 0x02        # Closed
     tx = struct.pack(&#39;HBBBB&#39;, 0x04CB, 0x01, parameter, 0x50, 0x01)
-    self._shutter.write(tx)</code></pre>
+    self._shutter.write(tx)
+    #TODO: write else condition to avoid wrong parameter value</code></pre>
 </details>
 </dd>
 <dt id="egse.shutter.thorlabs.ksc101_devif.ShutterKSC101USBInterface.set_mode"><code class="name flex">
@@ -755,7 +763,8 @@ Arguments can be positional or keyword arguments, not both.</p></div>
         tx = struct.pack(&#39;HBBBB&#39;, 0x04C0, 0x01, self._modes[mode], 0x50, 0x01)
         self._shutter.write(tx)
     else:
-        print(&#34;Error, command not executed&#34;)</code></pre>
+        print(&#34;Error, command not executed&#34;)
+    #TODO:ask Rik how to handle this error</code></pre>
 </details>
 </dd>
 </dl>

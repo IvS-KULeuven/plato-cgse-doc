@@ -78,19 +78,6 @@ class BeagleboneDeviceInterface:
         hal_client.requestHal()
 
         self._dev_gpio = Device(&#39;gpio_gsm&#39;, config, hal)
-        
-        self._export_gpio()
-        self._direction_gpio()
-
-    def _direction_gpio(self):
-        gpio_pins = [LAMP,  EX_INTERLOCK]
-        for gpio_pin in gpio_pins:
-            self._dev_gpio.setMultiple([(&#39;GPIO_PIN&#39;, gpio_pin), (&#39;GPIO_DIRECTION&#39;, True)])
-
-    def _export_gpio(self):
-        gpio_pins = [LAMP, EX_INTERLOCK, LAMP_ON, LASER_ON, LAMP_MODULE_FAULT, CONTROLLER_FAULT]
-        for gpio_pin in gpio_pins:
-            self._dev_gpio.setMultiple([(&#39;GPIO_PIN&#39;, gpio_pin), (&#39;GPIO_EXPORT&#39;, True), (&#39;GPIO_EXPORT&#39;, True), (&#39;GPIO_DIRECTION&#39;, False)])
 
     def connect(self):
         self._is_connected = True
@@ -202,7 +189,19 @@ if __name__ == &#39;__main__&#39;:
     print(f&#34;Lamp state: {bbb.get_lamp_on()}\n&#34;\
           f&#34;Laster state: {bbb.get_laser_on()}\n&#34;\
           f&#34;Module fault: {bbb.get_lamp_module_fault()}\n&#34;\
-          f&#34;Controller fault: {bbb.get_controller_fault()}\n&#34;)</code></pre>
+          f&#34;Controller fault: {bbb.get_controller_fault()}\n&#34;)
+    # bbb.set_lamp(True)
+    
+    # while not bbb.get_lamp_on():
+    #     pass
+    
+    # while not bbb.get_laser_on():
+    #     pass
+    
+    # print(f&#34;Lamp state: {bbb.get_lamp_on()}\n&#34;\
+    #       f&#34;Laster state: {bbb.get_laser_on()}\n&#34;\
+    #       f&#34;Module fault: {bbb.get_lamp_module_fault()}\n&#34;\
+    #       f&#34;Controller fault: {bbb.get_controller_fault()}&#34;)</code></pre>
 </details>
 </dd>
 </dl>
@@ -294,19 +293,6 @@ Arguments can be positional or keyword arguments, not both.</p></div>
         hal_client.requestHal()
 
         self._dev_gpio = Device(&#39;gpio_gsm&#39;, config, hal)
-        
-        self._export_gpio()
-        self._direction_gpio()
-
-    def _direction_gpio(self):
-        gpio_pins = [LAMP,  EX_INTERLOCK]
-        for gpio_pin in gpio_pins:
-            self._dev_gpio.setMultiple([(&#39;GPIO_PIN&#39;, gpio_pin), (&#39;GPIO_DIRECTION&#39;, True)])
-
-    def _export_gpio(self):
-        gpio_pins = [LAMP, EX_INTERLOCK, LAMP_ON, LASER_ON, LAMP_MODULE_FAULT, CONTROLLER_FAULT]
-        for gpio_pin in gpio_pins:
-            self._dev_gpio.setMultiple([(&#39;GPIO_PIN&#39;, gpio_pin), (&#39;GPIO_EXPORT&#39;, True), (&#39;GPIO_EXPORT&#39;, True), (&#39;GPIO_DIRECTION&#39;, False)])
 
     def connect(self):
         self._is_connected = True

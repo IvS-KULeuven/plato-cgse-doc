@@ -30,6 +30,7 @@
 <pre><code class="python">&#34;&#34;&#34;
 This module defines the device classes to be used to connect to and control the OGSE.
 &#34;&#34;&#34;
+from __future__ import annotations
 import logging
 import math
 import random
@@ -144,7 +145,7 @@ def decode_pm_status_response(response: bytes):
     }
 
 
-def decode_read_command(response: bytes):
+def decode_read_command(response: bytes) -&gt; dict | Failure:
     &#34;&#34;&#34;
     Decode the response from the OGSE &#39;read&#39; command.
 
@@ -196,7 +197,7 @@ def decode_read_command(response: bytes):
     }
 
 
-def decode_status_command(response: bytes):
+def decode_status_command(response: bytes) -&gt; dict | Failure:
     &#34;&#34;&#34;
     Decode the response from the OGSE &#39;status&#39; command.
 
@@ -207,28 +208,29 @@ def decode_status_command(response: bytes):
 
     In the case the attenuator is still moving, an asterisk &#39;*&#39; will appear after &#39;att:&#39; as in:
 
-        b&#39;power: OFF, lamp: OFF, interlock: OFF, psu: OFF, att: * 280E-3 #39, power-ch1: -6.378473e-11 W,
-         power-ch2: +2.190483e-07 W, temp-ch1: +21.5 \xc2\xbaC, temp-ch2: +22.6 \xc2\xbaC\n&#39;
+        b&#39;power: OFF, lamp: OFF, interlock: OFF, psu: OFF, att: * 280E-3 #39,
+          power-ch1: -6.378473e-11 W, power-ch2: +2.190483e-07 W,
+          temp-ch1: +21.5 \xc2\xbaC, temp-ch2: +22.6 \xc2\xbaC\n&#39;
 
-    After processing, the function returns a tuple with the following eleven (11) values:
+    After processing, the function returns a dictionary with the following eleven (11) values:
 
-    * The status of the power
-    * The status of the lamp
-    * The status of the interlock
-    * The status of the PSU
-    * The status of the attenuator: True=Moving, False=Not Moving
-    * The attenuation factor as a float
-    * The attenuation index as an int
-    * The power measure for power meter 1 in Watt
-    * The temperature of the power meter 1 in degrees Celsius
-    * The power measure for power meter 2 in Watt
-    * The temperature of the power meter 2 in degrees Celsius
+    * &#39;power&#39;: The status of the power
+    * &#39;lamp&#39;: The status of the lamp
+    * &#39;interlock&#39;: The status of the interlock
+    * &#39;psu&#39;: The status of the PSU
+    * &#39;att_moving&#39;:The status of the attenuator: True=Moving, False=Not Moving
+    * &#39;att_factor&#39;: The attenuation factor as a float
+    * &#39;att_index&#39;: The attenuation index as an int
+    * &#39;power1&#39;: The power measure for power meter 1 in Watt
+    * &#39;temp1&#39;: The temperature of the power meter 1 in degrees Celsius
+    * &#39;power2&#39;: The power measure for power meter 2 in Watt
+    * &#39;temp2&#39;: The temperature of the power meter 2 in degrees Celsius
 
     Args:
         response: the unprocessed response from the device.
 
     Returns:
-        A tuple containing the status and measures of most important parameters (see above).
+        A dictionary containing the status and measures of most important parameters (see above).
         If the response can not be processed, a Failure object will be returned.
 
     &#34;&#34;&#34;
@@ -283,13 +285,8 @@ def decode_status_command(response: bytes):
         &#34;temp2&#34;: temp2
     }
 
-    # return (
-    #     pow_status, lamp_status, interlock_status, psu_status, att_moving, att_factor,
-    #     att_index, pow1, t1, pow2, t2
-    # )
 
-
-def decode_att_get_level_command(response: bytes):
+def decode_att_get_level_command(response: bytes) -&gt; dict | Failure:
     &#34;&#34;&#34;
     Decode the response from the OGSE &#39;level&#39; command.
 
@@ -308,9 +305,8 @@ def decode_att_get_level_command(response: bytes):
         response: the unprocessed response from the device.
 
     Returns:
-        A tuple containing the moving status of the attenuator, the level (factor) and the index.
-        If the response can not be processed, the first element of the tuple will be
-        a Failure object and the other elements will be 0.
+        A dictionary containing the moving status of the attenuator, the level (factor)
+        and the index. If the response can not be processed, a Failure object will be returned.
 
     &#34;&#34;&#34;
 
@@ -319,10 +315,7 @@ def decode_att_get_level_command(response: bytes):
     # that issued the command.
 
     if not isinstance(response, bytes):
-        return (
-            Failure(f&#34;The given argument is not a bytes object as expected: {response=}&#34;),
-            0, 0
-        )
+        return Failure(f&#34;The given argument is not a bytes object as expected: {response=}&#34;)
 
     response = response.decode().rstrip()
 
@@ -343,15 +336,13 @@ def decode_att_get_level_command(response: bytes):
     except Exception as exc:
         logger.error(f&#34;Exception caught: {exc=}&#34;)
         return Failure(f&#34;Exception caught when converting values from &#34;
-                    f&#34;the OGSE level command: {response=}&#34;, exc)
+                       f&#34;the OGSE level command: {response=}&#34;, exc)
 
     return {
         &#34;att_moving&#34;: att_moving,
         &#34;att_factor&#34;: att_factor,
         &#34;att_index&#34;: att_index
     }
-
-    # return att_moving, att_factor, att_index
 
 
 class OnOffSwitch(str, Enum):
@@ -415,14 +406,14 @@ class OGSEInterface(DeviceInterface):
 
     @dynamic_command(cmd_type=&#34;query&#34;, cmd_string=&#34;att status&#34;, process_cmd_string=add_lf,
                      process_response=decode_response)
-    def att_status(self):
+    def att_status(self) -&gt; str:
         &#34;&#34;&#34;
-        Returns the state of the connection to attenuator device. The returned value is &#39;OK&#39;
+        Returns the state of the connection to attenuator device. The returned value contains &#39;OK&#39;
         when the attenuator device is initialised and ready, &#39;ERROR&#39; when the device failed to
         initialise.
 
         Returns:
-            &#39;OK&#39; or &#39;ERROR&#39;
+            A string containing &#39;OK&#39; or &#39;ERROR&#39;.
         &#34;&#34;&#34;
         raise NotImplementedError
 
@@ -500,19 +491,20 @@ class OGSEInterface(DeviceInterface):
 
     @dynamic_command(cmd_type=&#34;query&#34;, cmd_string=&#34;read&#34;, process_cmd_string=add_lf,
                      process_response=decode_read_command)
-    def get_power_and_temperature(self):
+    def get_power_and_temperature(self) -&gt; dict | Failure:
         &#34;&#34;&#34;
         Gets a power and temperature reading of both power-meters. Units are in Watt and degrees
-        Celcius.
+        Celsius.
 
         Returns:
-            pm1: &lt;P1&gt; W &lt;T1&gt; ºC, &lt;P2&gt; W &lt;T2&gt; ºC.
+            A dictionary containing the power and temperature values as floats. If the response
+            can not be processed, a Failure object will be returned.
         &#34;&#34;&#34;
         raise NotImplementedError
 
     @dynamic_command(cmd_type=&#34;query&#34;, cmd_string=&#34;status&#34;, process_cmd_string=add_lf,
                      process_response=decode_status_command)
-    def status(self):
+    def status(self) -&gt; dict | Failure:
         &#34;&#34;&#34;
         Gets a global view of various relevant parameters. Returns a comma separated with the
         current value of 9 parameters. Optionally, the attenuation shows an asterisk &#39;*&#39; when
@@ -526,7 +518,11 @@ class OGSEInterface(DeviceInterface):
 
     @dynamic_command(cmd_type=&#34;query&#34;, cmd_string=&#34;level&#34;, process_cmd_string=add_lf,
                      process_response=decode_att_get_level_command)
-    def att_get_level(self):
+    def att_get_level(self) -&gt; dict | Failure:
+        &#34;&#34;&#34;
+        Returns a dictionary with the following keys: att_moving [bool], att_factor [float],
+        and att_index [int].  In case of an error a Failure object will be returned.
+        &#34;&#34;&#34;
         raise NotImplementedError
 
     @dynamic_command(cmd_type=&#34;transaction&#34;, cmd_string=&#34;level ${factor}&#34;,
@@ -1088,7 +1084,7 @@ if __name__ == &#34;__main__&#34;:
 </details>
 </dd>
 <dt id="egse.collimator.fcul.ogse.decode_att_get_level_command"><code class="name flex">
-<span>def <span class="ident">decode_att_get_level_command</span></span>(<span>response: bytes)</span>
+<span>def <span class="ident">decode_att_get_level_command</span></span>(<span>response: bytes) ‑> dict | Failure</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Decode the response from the OGSE 'level' command.</p>
@@ -1111,15 +1107,14 @@ Args:
     response: the unprocessed response from the device.
 
 Returns:
-    A tuple containing the moving status of the attenuator, the level (factor) and the index.
-    If the response can not be processed, the first element of the tuple will be
-    a Failure object and the other elements will be 0.
+    A dictionary containing the moving status of the attenuator, the level (factor)
+    and the index. If the response can not be processed, a Failure object will be returned.
 </code></pre></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def decode_att_get_level_command(response: bytes):
+<pre><code class="python">def decode_att_get_level_command(response: bytes) -&gt; dict | Failure:
     &#34;&#34;&#34;
     Decode the response from the OGSE &#39;level&#39; command.
 
@@ -1138,9 +1133,8 @@ Returns:
         response: the unprocessed response from the device.
 
     Returns:
-        A tuple containing the moving status of the attenuator, the level (factor) and the index.
-        If the response can not be processed, the first element of the tuple will be
-        a Failure object and the other elements will be 0.
+        A dictionary containing the moving status of the attenuator, the level (factor)
+        and the index. If the response can not be processed, a Failure object will be returned.
 
     &#34;&#34;&#34;
 
@@ -1149,10 +1143,7 @@ Returns:
     # that issued the command.
 
     if not isinstance(response, bytes):
-        return (
-            Failure(f&#34;The given argument is not a bytes object as expected: {response=}&#34;),
-            0, 0
-        )
+        return Failure(f&#34;The given argument is not a bytes object as expected: {response=}&#34;)
 
     response = response.decode().rstrip()
 
@@ -1173,7 +1164,7 @@ Returns:
     except Exception as exc:
         logger.error(f&#34;Exception caught: {exc=}&#34;)
         return Failure(f&#34;Exception caught when converting values from &#34;
-                    f&#34;the OGSE level command: {response=}&#34;, exc)
+                       f&#34;the OGSE level command: {response=}&#34;, exc)
 
     return {
         &#34;att_moving&#34;: att_moving,
@@ -1249,7 +1240,7 @@ Returns:
 </details>
 </dd>
 <dt id="egse.collimator.fcul.ogse.decode_read_command"><code class="name flex">
-<span>def <span class="ident">decode_read_command</span></span>(<span>response: bytes)</span>
+<span>def <span class="ident">decode_read_command</span></span>(<span>response: bytes) ‑> dict | Failure</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Decode the response from the OGSE 'read' command.</p>
@@ -1276,7 +1267,7 @@ Returns:
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def decode_read_command(response: bytes):
+<pre><code class="python">def decode_read_command(response: bytes) -&gt; dict | Failure:
     &#34;&#34;&#34;
     Decode the response from the OGSE &#39;read&#39; command.
 
@@ -1343,7 +1334,7 @@ Returns:
 </details>
 </dd>
 <dt id="egse.collimator.fcul.ogse.decode_status_command"><code class="name flex">
-<span>def <span class="ident">decode_status_command</span></span>(<span>response: bytes)</span>
+<span>def <span class="ident">decode_status_command</span></span>(<span>response: bytes) ‑> dict | Failure</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Decode the response from the OGSE 'status' command.</p>
@@ -1355,36 +1346,37 @@ Returns:
 <p>'</p>
 <pre><code>In the case the attenuator is still moving, an asterisk '*' will appear after 'att:' as in:
 
-    b'power: OFF, lamp: OFF, interlock: OFF, psu: OFF, att: * 280E-3 #39, power-ch1: -6.378473e-11 W,
-     power-ch2: +2.190483e-07 W, temp-ch1: +21.5 ÂºC, temp-ch2: +22.6 ÂºC
+    b'power: OFF, lamp: OFF, interlock: OFF, psu: OFF, att: * 280E-3 #39,
+      power-ch1: -6.378473e-11 W, power-ch2: +2.190483e-07 W,
+      temp-ch1: +21.5 ÂºC, temp-ch2: +22.6 ÂºC
 </code></pre>
 <p>'</p>
-<pre><code>After processing, the function returns a tuple with the following eleven (11) values:
+<pre><code>After processing, the function returns a dictionary with the following eleven (11) values:
 
-* The status of the power
-* The status of the lamp
-* The status of the interlock
-* The status of the PSU
-* The status of the attenuator: True=Moving, False=Not Moving
-* The attenuation factor as a float
-* The attenuation index as an int
-* The power measure for power meter 1 in Watt
-* The temperature of the power meter 1 in degrees Celsius
-* The power measure for power meter 2 in Watt
-* The temperature of the power meter 2 in degrees Celsius
+* 'power': The status of the power
+* 'lamp': The status of the lamp
+* 'interlock': The status of the interlock
+* 'psu': The status of the PSU
+* 'att_moving':The status of the attenuator: True=Moving, False=Not Moving
+* 'att_factor': The attenuation factor as a float
+* 'att_index': The attenuation index as an int
+* 'power1': The power measure for power meter 1 in Watt
+* 'temp1': The temperature of the power meter 1 in degrees Celsius
+* 'power2': The power measure for power meter 2 in Watt
+* 'temp2': The temperature of the power meter 2 in degrees Celsius
 
 Args:
     response: the unprocessed response from the device.
 
 Returns:
-    A tuple containing the status and measures of most important parameters (see above).
+    A dictionary containing the status and measures of most important parameters (see above).
     If the response can not be processed, a Failure object will be returned.
 </code></pre></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def decode_status_command(response: bytes):
+<pre><code class="python">def decode_status_command(response: bytes) -&gt; dict | Failure:
     &#34;&#34;&#34;
     Decode the response from the OGSE &#39;status&#39; command.
 
@@ -1395,28 +1387,29 @@ Returns:
 
     In the case the attenuator is still moving, an asterisk &#39;*&#39; will appear after &#39;att:&#39; as in:
 
-        b&#39;power: OFF, lamp: OFF, interlock: OFF, psu: OFF, att: * 280E-3 #39, power-ch1: -6.378473e-11 W,
-         power-ch2: +2.190483e-07 W, temp-ch1: +21.5 \xc2\xbaC, temp-ch2: +22.6 \xc2\xbaC\n&#39;
+        b&#39;power: OFF, lamp: OFF, interlock: OFF, psu: OFF, att: * 280E-3 #39,
+          power-ch1: -6.378473e-11 W, power-ch2: +2.190483e-07 W,
+          temp-ch1: +21.5 \xc2\xbaC, temp-ch2: +22.6 \xc2\xbaC\n&#39;
 
-    After processing, the function returns a tuple with the following eleven (11) values:
+    After processing, the function returns a dictionary with the following eleven (11) values:
 
-    * The status of the power
-    * The status of the lamp
-    * The status of the interlock
-    * The status of the PSU
-    * The status of the attenuator: True=Moving, False=Not Moving
-    * The attenuation factor as a float
-    * The attenuation index as an int
-    * The power measure for power meter 1 in Watt
-    * The temperature of the power meter 1 in degrees Celsius
-    * The power measure for power meter 2 in Watt
-    * The temperature of the power meter 2 in degrees Celsius
+    * &#39;power&#39;: The status of the power
+    * &#39;lamp&#39;: The status of the lamp
+    * &#39;interlock&#39;: The status of the interlock
+    * &#39;psu&#39;: The status of the PSU
+    * &#39;att_moving&#39;:The status of the attenuator: True=Moving, False=Not Moving
+    * &#39;att_factor&#39;: The attenuation factor as a float
+    * &#39;att_index&#39;: The attenuation index as an int
+    * &#39;power1&#39;: The power measure for power meter 1 in Watt
+    * &#39;temp1&#39;: The temperature of the power meter 1 in degrees Celsius
+    * &#39;power2&#39;: The power measure for power meter 2 in Watt
+    * &#39;temp2&#39;: The temperature of the power meter 2 in degrees Celsius
 
     Args:
         response: the unprocessed response from the device.
 
     Returns:
-        A tuple containing the status and measures of most important parameters (see above).
+        A dictionary containing the status and measures of most important parameters (see above).
         If the response can not be processed, a Failure object will be returned.
 
     &#34;&#34;&#34;
@@ -1679,6 +1672,7 @@ configuration file.</dd>
 <li><code><b><a title="egse.collimator.fcul.ogse.OGSEInterface" href="#egse.collimator.fcul.ogse.OGSEInterface">OGSEInterface</a></b></code>:
 <ul class="hlist">
 <li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.add_observer" href="../../device.html#egse.device.DeviceConnectionObservable.add_observer">add_observer</a></code></li>
+<li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.att_get_level" href="#egse.collimator.fcul.ogse.OGSEInterface.att_get_level">att_get_level</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.att_set_level_factor" href="#egse.collimator.fcul.ogse.OGSEInterface.att_set_level_factor">att_set_level_factor</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.att_set_level_index" href="#egse.collimator.fcul.ogse.OGSEInterface.att_set_level_index">att_set_level_index</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.att_status" href="#egse.collimator.fcul.ogse.OGSEInterface.att_status">att_status</a></code></li>
@@ -1771,14 +1765,14 @@ configuration file.</dd>
 
     @dynamic_command(cmd_type=&#34;query&#34;, cmd_string=&#34;att status&#34;, process_cmd_string=add_lf,
                      process_response=decode_response)
-    def att_status(self):
+    def att_status(self) -&gt; str:
         &#34;&#34;&#34;
-        Returns the state of the connection to attenuator device. The returned value is &#39;OK&#39;
+        Returns the state of the connection to attenuator device. The returned value contains &#39;OK&#39;
         when the attenuator device is initialised and ready, &#39;ERROR&#39; when the device failed to
         initialise.
 
         Returns:
-            &#39;OK&#39; or &#39;ERROR&#39;
+            A string containing &#39;OK&#39; or &#39;ERROR&#39;.
         &#34;&#34;&#34;
         raise NotImplementedError
 
@@ -1856,19 +1850,20 @@ configuration file.</dd>
 
     @dynamic_command(cmd_type=&#34;query&#34;, cmd_string=&#34;read&#34;, process_cmd_string=add_lf,
                      process_response=decode_read_command)
-    def get_power_and_temperature(self):
+    def get_power_and_temperature(self) -&gt; dict | Failure:
         &#34;&#34;&#34;
         Gets a power and temperature reading of both power-meters. Units are in Watt and degrees
-        Celcius.
+        Celsius.
 
         Returns:
-            pm1: &lt;P1&gt; W &lt;T1&gt; ºC, &lt;P2&gt; W &lt;T2&gt; ºC.
+            A dictionary containing the power and temperature values as floats. If the response
+            can not be processed, a Failure object will be returned.
         &#34;&#34;&#34;
         raise NotImplementedError
 
     @dynamic_command(cmd_type=&#34;query&#34;, cmd_string=&#34;status&#34;, process_cmd_string=add_lf,
                      process_response=decode_status_command)
-    def status(self):
+    def status(self) -&gt; dict | Failure:
         &#34;&#34;&#34;
         Gets a global view of various relevant parameters. Returns a comma separated with the
         current value of 9 parameters. Optionally, the attenuation shows an asterisk &#39;*&#39; when
@@ -1882,7 +1877,11 @@ configuration file.</dd>
 
     @dynamic_command(cmd_type=&#34;query&#34;, cmd_string=&#34;level&#34;, process_cmd_string=add_lf,
                      process_response=decode_att_get_level_command)
-    def att_get_level(self):
+    def att_get_level(self) -&gt; dict | Failure:
+        &#34;&#34;&#34;
+        Returns a dictionary with the following keys: att_moving [bool], att_factor [float],
+        and att_index [int].  In case of an error a Failure object will be returned.
+        &#34;&#34;&#34;
         raise NotImplementedError
 
     @dynamic_command(cmd_type=&#34;transaction&#34;, cmd_string=&#34;level ${factor}&#34;,
@@ -1970,17 +1969,23 @@ configuration file.</dd>
 <h3>Methods</h3>
 <dl>
 <dt id="egse.collimator.fcul.ogse.OGSEInterface.att_get_level"><code class="name flex">
-<span>def <span class="ident">att_get_level</span></span>(<span>self)</span>
+<span>def <span class="ident">att_get_level</span></span>(<span>self) ‑> dict | Failure</span>
 </code></dt>
 <dd>
-<div class="desc"></div>
+<div class="desc"><p>Returns a dictionary with the following keys: att_moving [bool], att_factor [float],
+and att_index [int].
+In case of an error a Failure object will be returned.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">@dynamic_command(cmd_type=&#34;query&#34;, cmd_string=&#34;level&#34;, process_cmd_string=add_lf,
                  process_response=decode_att_get_level_command)
-def att_get_level(self):
+def att_get_level(self) -&gt; dict | Failure:
+    &#34;&#34;&#34;
+    Returns a dictionary with the following keys: att_moving [bool], att_factor [float],
+    and att_index [int].  In case of an error a Failure object will be returned.
+    &#34;&#34;&#34;
     raise NotImplementedError</code></pre>
 </details>
 </dd>
@@ -2093,28 +2098,28 @@ def att_set_level_position(self, level1: int, level2: int):
 </details>
 </dd>
 <dt id="egse.collimator.fcul.ogse.OGSEInterface.att_status"><code class="name flex">
-<span>def <span class="ident">att_status</span></span>(<span>self)</span>
+<span>def <span class="ident">att_status</span></span>(<span>self) ‑> str</span>
 </code></dt>
 <dd>
-<div class="desc"><p>Returns the state of the connection to attenuator device. The returned value is 'OK'
+<div class="desc"><p>Returns the state of the connection to attenuator device. The returned value contains 'OK'
 when the attenuator device is initialised and ready, 'ERROR' when the device failed to
 initialise.</p>
 <h2 id="returns">Returns</h2>
-<p>'OK' or 'ERROR'</p></div>
+<p>A string containing 'OK' or 'ERROR'.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">@dynamic_command(cmd_type=&#34;query&#34;, cmd_string=&#34;att status&#34;, process_cmd_string=add_lf,
                  process_response=decode_response)
-def att_status(self):
+def att_status(self) -&gt; str:
     &#34;&#34;&#34;
-    Returns the state of the connection to attenuator device. The returned value is &#39;OK&#39;
+    Returns the state of the connection to attenuator device. The returned value contains &#39;OK&#39;
     when the attenuator device is initialised and ready, &#39;ERROR&#39; when the device failed to
     initialise.
 
     Returns:
-        &#39;OK&#39; or &#39;ERROR&#39;
+        A string containing &#39;OK&#39; or &#39;ERROR&#39;.
     &#34;&#34;&#34;
     raise NotImplementedError</code></pre>
 </details>
@@ -2301,29 +2306,28 @@ def get_power(self):
 </details>
 </dd>
 <dt id="egse.collimator.fcul.ogse.OGSEInterface.get_power_and_temperature"><code class="name flex">
-<span>def <span class="ident">get_power_and_temperature</span></span>(<span>self)</span>
+<span>def <span class="ident">get_power_and_temperature</span></span>(<span>self) ‑> dict | Failure</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Gets a power and temperature reading of both power-meters. Units are in Watt and degrees
-Celcius.</p>
+Celsius.</p>
 <h2 id="returns">Returns</h2>
-<dl>
-<dt><code>pm1</code></dt>
-<dd><P1> W <T1> ºC, <P2> W <T2> ºC.</dd>
-</dl></div>
+<p>A dictionary containing the power and temperature values as floats. If the response
+can not be processed, a Failure object will be returned.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">@dynamic_command(cmd_type=&#34;query&#34;, cmd_string=&#34;read&#34;, process_cmd_string=add_lf,
                  process_response=decode_read_command)
-def get_power_and_temperature(self):
+def get_power_and_temperature(self) -&gt; dict | Failure:
     &#34;&#34;&#34;
     Gets a power and temperature reading of both power-meters. Units are in Watt and degrees
-    Celcius.
+    Celsius.
 
     Returns:
-        pm1: &lt;P1&gt; W &lt;T1&gt; ºC, &lt;P2&gt; W &lt;T2&gt; ºC.
+        A dictionary containing the power and temperature values as floats. If the response
+        can not be processed, a Failure object will be returned.
     &#34;&#34;&#34;
     raise NotImplementedError</code></pre>
 </details>
@@ -2494,7 +2498,7 @@ def reset(self):
 </details>
 </dd>
 <dt id="egse.collimator.fcul.ogse.OGSEInterface.status"><code class="name flex">
-<span>def <span class="ident">status</span></span>(<span>self)</span>
+<span>def <span class="ident">status</span></span>(<span>self) ‑> dict | Failure</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Gets a global view of various relevant parameters. Returns a comma separated with the
@@ -2512,7 +2516,7 @@ the wheels are moving.</p>
 </summary>
 <pre><code class="python">@dynamic_command(cmd_type=&#34;query&#34;, cmd_string=&#34;status&#34;, process_cmd_string=add_lf,
                  process_response=decode_status_command)
-def status(self):
+def status(self) -&gt; dict | Failure:
     &#34;&#34;&#34;
     Gets a global view of various relevant parameters. Returns a comma separated with the
     current value of 9 parameters. Optionally, the attenuation shows an asterisk &#39;*&#39; when
@@ -2639,6 +2643,7 @@ to the OGSE Hardware Controller remotely.</p>
 <li><code><b><a title="egse.collimator.fcul.ogse.OGSEInterface" href="#egse.collimator.fcul.ogse.OGSEInterface">OGSEInterface</a></b></code>:
 <ul class="hlist">
 <li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.add_observer" href="../../device.html#egse.device.DeviceConnectionObservable.add_observer">add_observer</a></code></li>
+<li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.att_get_level" href="#egse.collimator.fcul.ogse.OGSEInterface.att_get_level">att_get_level</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.att_set_level_factor" href="#egse.collimator.fcul.ogse.OGSEInterface.att_set_level_factor">att_set_level_factor</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.att_set_level_index" href="#egse.collimator.fcul.ogse.OGSEInterface.att_set_level_index">att_set_level_index</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.att_status" href="#egse.collimator.fcul.ogse.OGSEInterface.att_status">att_status</a></code></li>
@@ -2908,24 +2913,6 @@ to the OGSE Hardware Controller remotely.</p>
 </ul>
 <h3>Methods</h3>
 <dl>
-<dt id="egse.collimator.fcul.ogse.OGSESimulator.att_get_level"><code class="name flex">
-<span>def <span class="ident">att_get_level</span></span>(<span>self)</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def att_get_level(self):
-
-    return {
-        &#34;att_moving&#34;: False,
-        &#34;att_factor&#34;: self._att_level,
-        &#34;att_index&#34;: self._att_index
-    }</code></pre>
-</details>
-</dd>
 <dt id="egse.collimator.fcul.ogse.OGSESimulator.att_level_down"><code class="name flex">
 <span>def <span class="ident">att_level_down</span></span>(<span>self)</span>
 </code></dt>
@@ -3085,6 +3072,7 @@ to the OGSE Hardware Controller remotely.</p>
 <li><code><b><a title="egse.collimator.fcul.ogse.OGSEInterface" href="#egse.collimator.fcul.ogse.OGSEInterface">OGSEInterface</a></b></code>:
 <ul class="hlist">
 <li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.add_observer" href="../../device.html#egse.device.DeviceConnectionObservable.add_observer">add_observer</a></code></li>
+<li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.att_get_level" href="#egse.collimator.fcul.ogse.OGSEInterface.att_get_level">att_get_level</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.att_set_level_factor" href="#egse.collimator.fcul.ogse.OGSEInterface.att_set_level_factor">att_set_level_factor</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.att_set_level_index" href="#egse.collimator.fcul.ogse.OGSEInterface.att_set_level_index">att_set_level_index</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.att_status" href="#egse.collimator.fcul.ogse.OGSEInterface.att_status">att_status</a></code></li>
@@ -3223,7 +3211,6 @@ to the OGSE Hardware Controller remotely.</p>
 <li>
 <h4><code><a title="egse.collimator.fcul.ogse.OGSESimulator" href="#egse.collimator.fcul.ogse.OGSESimulator">OGSESimulator</a></code></h4>
 <ul class="">
-<li><code><a title="egse.collimator.fcul.ogse.OGSESimulator.att_get_level" href="#egse.collimator.fcul.ogse.OGSESimulator.att_get_level">att_get_level</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse.OGSESimulator.att_level_down" href="#egse.collimator.fcul.ogse.OGSESimulator.att_level_down">att_level_down</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse.OGSESimulator.att_level_up" href="#egse.collimator.fcul.ogse.OGSESimulator.att_level_up">att_level_up</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse.OGSESimulator.att_set_level_position" href="#egse.collimator.fcul.ogse.OGSESimulator.att_set_level_position">att_set_level_position</a></code></li>

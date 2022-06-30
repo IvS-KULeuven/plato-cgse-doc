@@ -87,7 +87,7 @@ except OSError as err:
 sbuf = create_string_buffer(64)
 lib.ximc_version(sbuf)
 
-logger.info(&#34;Library Loaded: version = &#34; + sbuf.raw.decode().rstrip(&#34;\0&#34;))
+logger.debug(&#34;Library Loaded: version = &#34; + sbuf.raw.decode().rstrip(&#34;\0&#34;))
 
 
 # Set bindy network key file. Must be called before any &#34;enumerate_device&#34; or &#34;open_device&#39; is colled
@@ -164,19 +164,30 @@ class FilterWheel8SMC4EthernetInterface:
     def get_id(self):
         x_device_information = device_information_t()
         result = lib.get_device_information(self._fw, byref(x_device_information))
-        id = 0
+        device_id = {}
         if result == Result.Ok:
-            version = repr(x_device_information.Major) + &#34;.&#34; + \
-                      repr(x_device_information.Minor) + &#34;.&#34; + \
-                      repr(x_device_information.Release)
-            logger.info(&#34;\nDevice information:&#34; + &#34;\nProduct Description:&#34; +
-                        repr(string_at(x_device_information.ProductDescription).decode()) +
-                        &#34;\nVersion: &#34; + version)
-            id = {&#34;Product Description&#34;: repr(string_at(x_device_information.ProductDescription).decode()),
-                  &#34;Version&#34;: version}
+            version = (
+                f&#34;{x_device_information.Major!r}.&#34;
+                f&#34;{x_device_information.Minor!r}.&#34;
+                f&#34;{x_device_information.Release!r}&#34;
+            )
+            # version = repr(x_device_information.Major) + &#34;.&#34; + \
+            #           repr(x_device_information.Minor) + &#34;.&#34; + \
+            #           repr(x_device_information.Release)
+            description = f&#34;{string_at(x_device_information.ProductDescription).decode()!r}&#34;
+            logger.debug(
+                f&#34;Device information:Product Description: {description}, version: {version}&#34;
+            )
+            # logger.info(&#34;\nDevice information:&#34; + &#34;\nProduct Description:&#34; +
+            #             repr(string_at(x_device_information.ProductDescription).decode()) +
+            #             &#34;\nVersion: &#34; + version)
+            device_id = {
+                &#34;Product Description&#34;: description,
+                &#34;Version&#34;: version
+            }
         else:
             logger.warning(&#34;Wheel has not been correctly connected&#34;)
-        return id
+        return device_id
 
     def get_position(self):
         x_pos = get_position_t()
@@ -480,19 +491,30 @@ Arguments can be positional or keyword arguments, not both.</p></div>
     def get_id(self):
         x_device_information = device_information_t()
         result = lib.get_device_information(self._fw, byref(x_device_information))
-        id = 0
+        device_id = {}
         if result == Result.Ok:
-            version = repr(x_device_information.Major) + &#34;.&#34; + \
-                      repr(x_device_information.Minor) + &#34;.&#34; + \
-                      repr(x_device_information.Release)
-            logger.info(&#34;\nDevice information:&#34; + &#34;\nProduct Description:&#34; +
-                        repr(string_at(x_device_information.ProductDescription).decode()) +
-                        &#34;\nVersion: &#34; + version)
-            id = {&#34;Product Description&#34;: repr(string_at(x_device_information.ProductDescription).decode()),
-                  &#34;Version&#34;: version}
+            version = (
+                f&#34;{x_device_information.Major!r}.&#34;
+                f&#34;{x_device_information.Minor!r}.&#34;
+                f&#34;{x_device_information.Release!r}&#34;
+            )
+            # version = repr(x_device_information.Major) + &#34;.&#34; + \
+            #           repr(x_device_information.Minor) + &#34;.&#34; + \
+            #           repr(x_device_information.Release)
+            description = f&#34;{string_at(x_device_information.ProductDescription).decode()!r}&#34;
+            logger.debug(
+                f&#34;Device information:Product Description: {description}, version: {version}&#34;
+            )
+            # logger.info(&#34;\nDevice information:&#34; + &#34;\nProduct Description:&#34; +
+            #             repr(string_at(x_device_information.ProductDescription).decode()) +
+            #             &#34;\nVersion: &#34; + version)
+            device_id = {
+                &#34;Product Description&#34;: description,
+                &#34;Version&#34;: version
+            }
         else:
             logger.warning(&#34;Wheel has not been correctly connected&#34;)
-        return id
+        return device_id
 
     def get_position(self):
         x_pos = get_position_t()
@@ -768,19 +790,30 @@ Arguments can be positional or keyword arguments, not both.</p></div>
 <pre><code class="python">def get_id(self):
     x_device_information = device_information_t()
     result = lib.get_device_information(self._fw, byref(x_device_information))
-    id = 0
+    device_id = {}
     if result == Result.Ok:
-        version = repr(x_device_information.Major) + &#34;.&#34; + \
-                  repr(x_device_information.Minor) + &#34;.&#34; + \
-                  repr(x_device_information.Release)
-        logger.info(&#34;\nDevice information:&#34; + &#34;\nProduct Description:&#34; +
-                    repr(string_at(x_device_information.ProductDescription).decode()) +
-                    &#34;\nVersion: &#34; + version)
-        id = {&#34;Product Description&#34;: repr(string_at(x_device_information.ProductDescription).decode()),
-              &#34;Version&#34;: version}
+        version = (
+            f&#34;{x_device_information.Major!r}.&#34;
+            f&#34;{x_device_information.Minor!r}.&#34;
+            f&#34;{x_device_information.Release!r}&#34;
+        )
+        # version = repr(x_device_information.Major) + &#34;.&#34; + \
+        #           repr(x_device_information.Minor) + &#34;.&#34; + \
+        #           repr(x_device_information.Release)
+        description = f&#34;{string_at(x_device_information.ProductDescription).decode()!r}&#34;
+        logger.debug(
+            f&#34;Device information:Product Description: {description}, version: {version}&#34;
+        )
+        # logger.info(&#34;\nDevice information:&#34; + &#34;\nProduct Description:&#34; +
+        #             repr(string_at(x_device_information.ProductDescription).decode()) +
+        #             &#34;\nVersion: &#34; + version)
+        device_id = {
+            &#34;Product Description&#34;: description,
+            &#34;Version&#34;: version
+        }
     else:
         logger.warning(&#34;Wheel has not been correctly connected&#34;)
-    return id</code></pre>
+    return device_id</code></pre>
 </details>
 </dd>
 <dt id="egse.filterwheel.eksma.fw8smc4_devif.FilterWheel8SMC4EthernetInterface.get_position"><code class="name flex">

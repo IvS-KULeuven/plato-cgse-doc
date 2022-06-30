@@ -68,6 +68,9 @@ Usage:
 
 &#34;&#34;&#34;
 import multiprocessing.process
+
+from egse.collimator.fcul.ogse import get_attenuation_index
+
 multiprocessing.current_process().name = &#34;ogse_sim&#34;
 
 import logging
@@ -93,7 +96,7 @@ PORT = 4181
 def write(conn, response: str):
 
     response = f&#34;{response}\n&#34;.encode()
-    LOGGER.debug(f&#34;{response=}&#34;)
+    # LOGGER.debug(f&#34;{response=}&#34;)
     conn.sendall(response)
 
 
@@ -122,8 +125,8 @@ def read(conn) -&gt; str:
         LOGGER.warning(f&#34;Socket timeout error from {e_timeout}&#34;)
         return &#34;&#34;
 
-    LOGGER.debug(f&#34;Total number of bytes received is {n_total}, idx={idx}&#34;)
-    LOGGER.debug(f&#34;{command_string=}&#34;)
+    # LOGGER.debug(f&#34;Total number of bytes received is {n_total}, idx={idx}&#34;)
+    # LOGGER.debug(f&#34;{command_string=}&#34;)
 
     return command_string.decode().rstrip()
 
@@ -142,6 +145,7 @@ class OGSEState:
         self.ldls_lamp = OnOff.OFF
         self.ldls_laser = OnOff.OFF
         self.att_level = 0.0
+        self.att_level_index = 0  # [0:46]
         self.psu = OnOff.OFF
         self.operate = OnOff.OFF
 
@@ -233,17 +237,22 @@ def att_level_down():
     ogse_state.att_level = ATT_LEVELS_BY_FACTOR[index]
 
 
-def set_att_level_index(factor: int):
+def set_att_level_index(index: int):
+    &#34;&#34;&#34;
+
+    Args:
+        index:an integer between 0 and 46 (including)
+    &#34;&#34;&#34;
 
     global error_msg
 
-    factor = int(factor)
-    LOGGER.warning(f&#34;{factor=}&#34;)
+    index = int(index)
 
-    if 0 &lt;= factor &lt;= 46:
+    if 0 &lt;= index &lt;= 46:
 
-        ogse_state.att_level = att_level = ATT_LEVELS_BY_FACTOR[factor]
-        LOGGER.info(f&#34;att level #{factor} -&gt; {att_level}&#34;)
+        ogse_state.att_level = att_level = ATT_LEVELS_BY_FACTOR[index]
+        ogse_state.att_level_index = index
+        LOGGER.debug(f&#34;att level #{index} -&gt; {att_level}&#34;)
 
     else:
 
@@ -255,8 +264,6 @@ def set_att_level_index(factor: int):
 def set_att_level_position(pos1, pos2):
     global error_msg
 
-    LOGGER.info(f&#34;{pos1 = }, {pos2 = }&#34;)
-
     wheel1, wheel2 = int(pos1), int(pos2)
     if (not 0 &lt; wheel1 &lt;= 8) and (not 0 &lt; wheel2 &lt;= 8):
         error_msg = (
@@ -265,7 +272,8 @@ def set_att_level_position(pos1, pos2):
         )
         return
     ogse_state.att_level = att_level = ATT_LEVELS_BY_WHEEL[(wheel1, wheel2)]
-    LOGGER.info(f&#34;att level {wheel1} {wheel2} -&gt; {att_level}&#34;)
+    ogse_state.att_level_index = get_attenuation_index(att_level)
+    LOGGER.debug(f&#34;att level {wheel1} {wheel2} -&gt; {ogse_state.att_level_index} -&gt; {att_level}&#34;)
 
     time.sleep(random.random() * 3 + 6)  # wait between 6.0 and 9.0 seconds
 
@@ -274,8 +282,6 @@ def set_att_level_factor(level):
 
     global error_msg
 
-    LOGGER.info(f&#34;{level = }&#34;)
-
     level = float(level)
 
     if not 0.0 &lt;= level &lt;= 1.0:
@@ -283,7 +289,7 @@ def set_att_level_factor(level):
         return
 
     ogse_state.att_level = att_level = level
-    LOGGER.info(f&#34;att level {level} -&gt; {att_level}&#34;)
+    LOGGER.debug(f&#34;att level {level} -&gt; {att_level}&#34;)
 
     time.sleep(random.random() * 3 + 6)  # wait between 6.0 and 9.0 seconds
 
@@ -293,11 +299,13 @@ def pm_get_power_and_temperature():
 
 
 def get_lamp_fault():
-    return &#34;lamp-fault: NO-ERROR&#34;
+    [error] = random.choices([&#34;ERROR&#34;, &#34;NO_ERROR&#34;], weights=[1, 5])
+    return f&#34;lamp-fault: {error}&#34;
 
 
 def get_controller_fault():
-    return &#34;controller-fault: NO-ERROR&#34;
+    [error] = random.choices([&#34;ERROR&#34;, &#34;NO_ERROR&#34;], weights=[1, 5])
+    return f&#34;controller-fault: {error}&#34;
 
 
 def get_psu():
@@ -309,9 +317,15 @@ def get_operate():
 
 
 def get_status():
-    return b&#39;power: ON, lamp: OFF, interlock: OFF, psu: ON, att: 1E+0 #46, &#39; \
-           b&#39;power-ch1: +3.185751e-11 W, power-ch2: +2.092843e-07 W, &#39; \
-           b&#39;temp-ch1: +22.2 \xc2\xbaC, temp-ch2: +22.4 \xc2\xbaC\n&#39;
+    return (
+        f&#39;power: {ogse_state.ldls_power.name}, &#39;
+        f&#39;lamp: {ogse_state.ldls_lamp.name}, &#39;
+        f&#39;interlock: CLOSED, &#39;
+        f&#39;psu: {ogse_state.psu.name}, &#39;
+        f&#39;att: {ogse_state.att_level} #{ogse_state.att_level_index}, &#39;
+        f&#39;power-ch1: +3.185751e-11 W, power-ch2: +2.092843e-07 W, &#39;
+        f&#39;temp-ch1: +22.2 \xc2\xbaC, temp-ch2: +22.4 \xc2\xbaC\n&#39;
+    )
 
 
 COMMAND_ACTIONS_RESPONSES = {
@@ -333,7 +347,7 @@ COMMAND_ACTIONS_RESPONSES = {
     &#34;get lamp&#34;: (None, get_lamp),
     &#34;get laser&#34;: (None, get_laser),
     &#34;get lamp-fault&#34;: (None, get_lamp_fault),
-    &#34;get controller-fault&#34;: (None, get_controller_fault()),
+    &#34;get controller-fault&#34;: (None, get_controller_fault),
     &#34;get psu&#34;: (None, get_psu),
     &#34;get operate&#34;: (None, get_operate),
     &#34;status&#34;: (None, get_status),
@@ -353,7 +367,7 @@ COMMAND_PATTERNS_ACTIONS_RESPONSES = {
 
 def process_command(command_string: str) -&gt; str:
 
-    LOGGER.debug(f&#34;{command_string=}&#34;)
+    # LOGGER.debug(f&#34;{command_string=}&#34;)
 
     try:
         action, response = COMMAND_ACTIONS_RESPONSES[command_string]
@@ -366,9 +380,9 @@ def process_command(command_string: str) -&gt; str:
         # try to match with a value
         for key, value in COMMAND_PATTERNS_ACTIONS_RESPONSES.items():
             if match := re.match(key, command_string):
-                LOGGER.debug(f&#34;{match=}, {match.groups()}&#34;)
+                # LOGGER.debug(f&#34;{match=}, {match.groups()}&#34;)
                 action, response = value
-                LOGGER.debug(f&#34;{action=}, {response=}&#34;)
+                # LOGGER.debug(f&#34;{action=}, {response=}&#34;)
                 action and action(*match.groups())
                 return error_msg or (response if isinstance(response, str) else response())
         return f&#34;ERROR: unknown command string: {command_string}&#34;
@@ -396,7 +410,6 @@ def start():  # sourcery skip: hoist-statement-from-loop
                 while True:
                     error_msg = &#34;&#34;
                     data = read(conn)
-                    print(f&#34;Received command: {data!r}&#34;)
                     response = process_command(data)
                     write(conn, response)
                     if not data:
@@ -505,7 +518,8 @@ if __name__ == &#34;__main__&#34;:
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def get_controller_fault():
-    return &#34;controller-fault: NO-ERROR&#34;</code></pre>
+    [error] = random.choices([&#34;ERROR&#34;, &#34;NO_ERROR&#34;], weights=[1, 5])
+    return f&#34;controller-fault: {error}&#34;</code></pre>
 </details>
 </dd>
 <dt id="egse.collimator.fcul.ogse_sim.get_interlock"><code class="name flex">
@@ -544,7 +558,8 @@ if __name__ == &#34;__main__&#34;:
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def get_lamp_fault():
-    return &#34;lamp-fault: NO-ERROR&#34;</code></pre>
+    [error] = random.choices([&#34;ERROR&#34;, &#34;NO_ERROR&#34;], weights=[1, 5])
+    return f&#34;lamp-fault: {error}&#34;</code></pre>
 </details>
 </dd>
 <dt id="egse.collimator.fcul.ogse_sim.get_laser"><code class="name flex">
@@ -622,9 +637,15 @@ if __name__ == &#34;__main__&#34;:
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def get_status():
-    return b&#39;power: ON, lamp: OFF, interlock: OFF, psu: ON, att: 1E+0 #46, &#39; \
-           b&#39;power-ch1: +3.185751e-11 W, power-ch2: +2.092843e-07 W, &#39; \
-           b&#39;temp-ch1: +22.2 \xc2\xbaC, temp-ch2: +22.4 \xc2\xbaC\n&#39;</code></pre>
+    return (
+        f&#39;power: {ogse_state.ldls_power.name}, &#39;
+        f&#39;lamp: {ogse_state.ldls_lamp.name}, &#39;
+        f&#39;interlock: CLOSED, &#39;
+        f&#39;psu: {ogse_state.psu.name}, &#39;
+        f&#39;att: {ogse_state.att_level} #{ogse_state.att_level_index}, &#39;
+        f&#39;power-ch1: +3.185751e-11 W, power-ch2: +2.092843e-07 W, &#39;
+        f&#39;temp-ch1: +22.2 \xc2\xbaC, temp-ch2: +22.4 \xc2\xbaC\n&#39;
+    )</code></pre>
 </details>
 </dd>
 <dt id="egse.collimator.fcul.ogse_sim.ldls_operate_off"><code class="name flex">
@@ -711,7 +732,7 @@ if __name__ == &#34;__main__&#34;:
 </summary>
 <pre><code class="python">def process_command(command_string: str) -&gt; str:
 
-    LOGGER.debug(f&#34;{command_string=}&#34;)
+    # LOGGER.debug(f&#34;{command_string=}&#34;)
 
     try:
         action, response = COMMAND_ACTIONS_RESPONSES[command_string]
@@ -724,9 +745,9 @@ if __name__ == &#34;__main__&#34;:
         # try to match with a value
         for key, value in COMMAND_PATTERNS_ACTIONS_RESPONSES.items():
             if match := re.match(key, command_string):
-                LOGGER.debug(f&#34;{match=}, {match.groups()}&#34;)
+                # LOGGER.debug(f&#34;{match=}, {match.groups()}&#34;)
                 action, response = value
-                LOGGER.debug(f&#34;{action=}, {response=}&#34;)
+                # LOGGER.debug(f&#34;{action=}, {response=}&#34;)
                 action and action(*match.groups())
                 return error_msg or (response if isinstance(response, str) else response())
         return f&#34;ERROR: unknown command string: {command_string}&#34;</code></pre>
@@ -770,8 +791,8 @@ if __name__ == &#34;__main__&#34;:
         LOGGER.warning(f&#34;Socket timeout error from {e_timeout}&#34;)
         return &#34;&#34;
 
-    LOGGER.debug(f&#34;Total number of bytes received is {n_total}, idx={idx}&#34;)
-    LOGGER.debug(f&#34;{command_string=}&#34;)
+    # LOGGER.debug(f&#34;Total number of bytes received is {n_total}, idx={idx}&#34;)
+    # LOGGER.debug(f&#34;{command_string=}&#34;)
 
     return command_string.decode().rstrip()</code></pre>
 </details>
@@ -789,8 +810,6 @@ if __name__ == &#34;__main__&#34;:
 
     global error_msg
 
-    LOGGER.info(f&#34;{level = }&#34;)
-
     level = float(level)
 
     if not 0.0 &lt;= level &lt;= 1.0:
@@ -798,31 +817,37 @@ if __name__ == &#34;__main__&#34;:
         return
 
     ogse_state.att_level = att_level = level
-    LOGGER.info(f&#34;att level {level} -&gt; {att_level}&#34;)
+    LOGGER.debug(f&#34;att level {level} -&gt; {att_level}&#34;)
 
     time.sleep(random.random() * 3 + 6)  # wait between 6.0 and 9.0 seconds</code></pre>
 </details>
 </dd>
 <dt id="egse.collimator.fcul.ogse_sim.set_att_level_index"><code class="name flex">
-<span>def <span class="ident">set_att_level_index</span></span>(<span>factor: int)</span>
+<span>def <span class="ident">set_att_level_index</span></span>(<span>index: int)</span>
 </code></dt>
 <dd>
-<div class="desc"></div>
+<div class="desc"><h2 id="args">Args</h2>
+<p>index:an integer between 0 and 46 (including)</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def set_att_level_index(factor: int):
+<pre><code class="python">def set_att_level_index(index: int):
+    &#34;&#34;&#34;
+
+    Args:
+        index:an integer between 0 and 46 (including)
+    &#34;&#34;&#34;
 
     global error_msg
 
-    factor = int(factor)
-    LOGGER.warning(f&#34;{factor=}&#34;)
+    index = int(index)
 
-    if 0 &lt;= factor &lt;= 46:
+    if 0 &lt;= index &lt;= 46:
 
-        ogse_state.att_level = att_level = ATT_LEVELS_BY_FACTOR[factor]
-        LOGGER.info(f&#34;att level #{factor} -&gt; {att_level}&#34;)
+        ogse_state.att_level = att_level = ATT_LEVELS_BY_FACTOR[index]
+        ogse_state.att_level_index = index
+        LOGGER.debug(f&#34;att level #{index} -&gt; {att_level}&#34;)
 
     else:
 
@@ -843,8 +868,6 @@ if __name__ == &#34;__main__&#34;:
 <pre><code class="python">def set_att_level_position(pos1, pos2):
     global error_msg
 
-    LOGGER.info(f&#34;{pos1 = }, {pos2 = }&#34;)
-
     wheel1, wheel2 = int(pos1), int(pos2)
     if (not 0 &lt; wheel1 &lt;= 8) and (not 0 &lt; wheel2 &lt;= 8):
         error_msg = (
@@ -853,7 +876,8 @@ if __name__ == &#34;__main__&#34;:
         )
         return
     ogse_state.att_level = att_level = ATT_LEVELS_BY_WHEEL[(wheel1, wheel2)]
-    LOGGER.info(f&#34;att level {wheel1} {wheel2} -&gt; {att_level}&#34;)
+    ogse_state.att_level_index = get_attenuation_index(att_level)
+    LOGGER.debug(f&#34;att level {wheel1} {wheel2} -&gt; {ogse_state.att_level_index} -&gt; {att_level}&#34;)
 
     time.sleep(random.random() * 3 + 6)  # wait between 6.0 and 9.0 seconds</code></pre>
 </details>
@@ -870,7 +894,7 @@ if __name__ == &#34;__main__&#34;:
 <pre><code class="python">def write(conn, response: str):
 
     response = f&#34;{response}\n&#34;.encode()
-    LOGGER.debug(f&#34;{response=}&#34;)
+    # LOGGER.debug(f&#34;{response=}&#34;)
     conn.sendall(response)</code></pre>
 </details>
 </dd>
@@ -896,6 +920,7 @@ if __name__ == &#34;__main__&#34;:
         self.ldls_lamp = OnOff.OFF
         self.ldls_laser = OnOff.OFF
         self.att_level = 0.0
+        self.att_level_index = 0  # [0:46]
         self.psu = OnOff.OFF
         self.operate = OnOff.OFF</code></pre>
 </details>

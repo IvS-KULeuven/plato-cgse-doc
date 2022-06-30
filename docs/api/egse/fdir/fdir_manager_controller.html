@@ -39,7 +39,6 @@ from egse.settings import Settings
 from egse.setup import get_setup
 from egse.system import replace_environment_variable
 from egse.control import Success
-from egse.fdir.gsm.beaglebone import BeagleboneProxy
 from egse.fdir.fdir_remote_interface import FdirRemoteInterface
 from egse.fdir.fdir_remote import FdirRemoteProxy
 
@@ -136,13 +135,13 @@ class FdirManagerController(FdirRemoteInterface):
             raise FdirException(&#34;unknown hostname&#34;)
 
 
-    def signal_fdir(self, fdir_code: str):
+    def signal_fdir(self, fdir_code: str, script_args: list):
 
         logger.info(f&#34;Received FDIR code {fdir_code}.&#34;)
 
         # try to get the mitigation script name and priority from the fdir table
         try:
-            mitigation_command = self._fdir_table[fdir_code][&#39;script&#39;]
+            recovery_command = self._fdir_table[fdir_code][&#39;script&#39;]
             priority = self._fdir_table[fdir_code][&#39;priority&#39;]
             actions = self._fdir_table[fdir_code][&#39;actions&#39;]
         except:
@@ -188,8 +187,9 @@ class FdirManagerController(FdirRemoteInterface):
 
         # create list of strings used to call subprocess
         exc_command = [&#34;python3&#34;]
-        exc_command.extend(mitigation_command.split(&#39; &#39;)) # read script + args from fdir table
+        exc_command.extend(recovery_command.split(&#39; &#39;)) # read script path
         exc_command[1] = f&#34;{self._storage_path}/{exc_command[1]}&#34; # prepend path to script
+        exc_command.extend(script_args) # add script arguments
 
         # run recovery script
         script_success = False
@@ -203,7 +203,7 @@ class FdirManagerController(FdirRemoteInterface):
         except Exception as e:
             logger.error(f&#34;failed to run {exc_command}: {e}&#34;)
         else:
-            logger.info(f&#34;Executed recovery script {mitigation_command}.&#34;)
+            logger.info(f&#34;Executed recovery script {recovery_command}.&#34;)
             script_success = True
         finally:
             outfile.close()
@@ -386,13 +386,13 @@ if __name__ == &#34;__main__&#34;:
             raise FdirException(&#34;unknown hostname&#34;)
 
 
-    def signal_fdir(self, fdir_code: str):
+    def signal_fdir(self, fdir_code: str, script_args: list):
 
         logger.info(f&#34;Received FDIR code {fdir_code}.&#34;)
 
         # try to get the mitigation script name and priority from the fdir table
         try:
-            mitigation_command = self._fdir_table[fdir_code][&#39;script&#39;]
+            recovery_command = self._fdir_table[fdir_code][&#39;script&#39;]
             priority = self._fdir_table[fdir_code][&#39;priority&#39;]
             actions = self._fdir_table[fdir_code][&#39;actions&#39;]
         except:
@@ -438,8 +438,9 @@ if __name__ == &#34;__main__&#34;:
 
         # create list of strings used to call subprocess
         exc_command = [&#34;python3&#34;]
-        exc_command.extend(mitigation_command.split(&#39; &#39;)) # read script + args from fdir table
+        exc_command.extend(recovery_command.split(&#39; &#39;)) # read script path
         exc_command[1] = f&#34;{self._storage_path}/{exc_command[1]}&#34; # prepend path to script
+        exc_command.extend(script_args) # add script arguments
 
         # run recovery script
         script_success = False
@@ -453,7 +454,7 @@ if __name__ == &#34;__main__&#34;:
         except Exception as e:
             logger.error(f&#34;failed to run {exc_command}: {e}&#34;)
         else:
-            logger.info(f&#34;Executed recovery script {mitigation_command}.&#34;)
+            logger.info(f&#34;Executed recovery script {recovery_command}.&#34;)
             script_success = True
         finally:
             outfile.close()
@@ -585,7 +586,7 @@ if __name__ == &#34;__main__&#34;:
 </details>
 </dd>
 <dt id="egse.fdir.fdir_manager_controller.FdirManagerController.signal_fdir"><code class="name flex">
-<span>def <span class="ident">signal_fdir</span></span>(<span>self, fdir_code: str)</span>
+<span>def <span class="ident">signal_fdir</span></span>(<span>self, fdir_code: str, script_args: list)</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -593,13 +594,13 @@ if __name__ == &#34;__main__&#34;:
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def signal_fdir(self, fdir_code: str):
+<pre><code class="python">def signal_fdir(self, fdir_code: str, script_args: list):
 
     logger.info(f&#34;Received FDIR code {fdir_code}.&#34;)
 
     # try to get the mitigation script name and priority from the fdir table
     try:
-        mitigation_command = self._fdir_table[fdir_code][&#39;script&#39;]
+        recovery_command = self._fdir_table[fdir_code][&#39;script&#39;]
         priority = self._fdir_table[fdir_code][&#39;priority&#39;]
         actions = self._fdir_table[fdir_code][&#39;actions&#39;]
     except:
@@ -645,8 +646,9 @@ if __name__ == &#34;__main__&#34;:
 
     # create list of strings used to call subprocess
     exc_command = [&#34;python3&#34;]
-    exc_command.extend(mitigation_command.split(&#39; &#39;)) # read script + args from fdir table
+    exc_command.extend(recovery_command.split(&#39; &#39;)) # read script path
     exc_command[1] = f&#34;{self._storage_path}/{exc_command[1]}&#34; # prepend path to script
+    exc_command.extend(script_args) # add script arguments
 
     # run recovery script
     script_success = False
@@ -660,7 +662,7 @@ if __name__ == &#34;__main__&#34;:
     except Exception as e:
         logger.error(f&#34;failed to run {exc_command}: {e}&#34;)
     else:
-        logger.info(f&#34;Executed recovery script {mitigation_command}.&#34;)
+        logger.info(f&#34;Executed recovery script {recovery_command}.&#34;)
         script_success = True
     finally:
         outfile.close()

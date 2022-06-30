@@ -396,7 +396,52 @@ class classproperty:
 
     def __set__(self, instance, value):
         raise AttributeError(
-            f&#34;Cannot change class property &#39;{self.func.__name__}&#39; for class &#39;{instance.__class__.__name__}&#39;.&#34;)</code></pre>
+            f&#34;Cannot change class property &#39;{self.func.__name__}&#39; for class &#39;{instance.__class__.__name__}&#39;.&#34;)
+
+
+class Nothing:
+    &#34;&#34;&#34;Just to get a nice repr for Nothing. It is kind of a Null object...&#34;&#34;&#34;
+    def __repr__(self):
+        return &#34;&lt;Nothing&gt;&#34;
+
+
+def spy_on_attr_change(obj: object, obj_name: str = None) -&gt; None:
+    &#34;&#34;&#34;
+    Tweak an object to show attributes changing. The changes are reported as WARNING log messages
+    in the `egse.spy` logger.
+
+    Note this is not a decorator, but a function that changes the class of an object.
+
+    Note that this function is a debugging aid and should not be used in production code!
+
+    Args:
+        obj (object): any object that you want to monitor
+        obj_name (str): the variable name of the object that was given in the code, if None than
+            the class name will be printed.
+
+    Examples:
+
+        &gt;&gt;&gt; class X:
+        ...    pass
+        &gt;&gt;&gt; x = X()
+        &gt;&gt;&gt; spy_on_attr_change(x, obj_name=&#34;x&#34;)
+        &gt;&gt;&gt; x.a = 5
+
+    From: https://nedbatchelder.com/blog/202206/adding_a_dunder_to_an_object.html
+    &#34;&#34;&#34;
+    logger = logging.getLogger(&#34;egse.spy&#34;)
+
+    class Wrapper(obj.__class__):
+
+        def __setattr__(self, name, value):
+            old = getattr(self, name, Nothing())
+            logger.warning(
+                f&#34;Spy: in {obj_name or obj.__class__.__name__} -&gt; {name}: {old!r} -&gt; {value!r}&#34;)
+            return super().__setattr__(name, value)
+
+    class_name = obj.__class__.__name__
+    obj.__class__ = Wrapper
+    obj.__class__.__name__ = class_name</code></pre>
 </details>
 </section>
 <section>
@@ -751,6 +796,73 @@ This is also useful in reducing the size of the printout</dd>
     return cls</code></pre>
 </details>
 </dd>
+<dt id="egse.decorators.spy_on_attr_change"><code class="name flex">
+<span>def <span class="ident">spy_on_attr_change</span></span>(<span>obj: object, obj_name: str = None) ‑> None</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Tweak an object to show attributes changing. The changes are reported as WARNING log messages
+in the <code>egse.spy</code> logger.</p>
+<p>Note this is not a decorator, but a function that changes the class of an object.</p>
+<p>Note that this function is a debugging aid and should not be used in production code!</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>obj</code></strong> :&ensp;<code>object</code></dt>
+<dd>any object that you want to monitor</dd>
+<dt><strong><code>obj_name</code></strong> :&ensp;<code>str</code></dt>
+<dd>the variable name of the object that was given in the code, if None than
+the class name will be printed.</dd>
+</dl>
+<h2 id="examples">Examples</h2>
+<pre><code class="language-python-repl">&gt;&gt;&gt; class X:
+...    pass
+&gt;&gt;&gt; x = X()
+&gt;&gt;&gt; spy_on_attr_change(x, obj_name=&quot;x&quot;)
+&gt;&gt;&gt; x.a = 5
+</code></pre>
+<p>From: <a href="https://nedbatchelder.com/blog/202206/adding_a_dunder_to_an_object.html">https://nedbatchelder.com/blog/202206/adding_a_dunder_to_an_object.html</a></p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def spy_on_attr_change(obj: object, obj_name: str = None) -&gt; None:
+    &#34;&#34;&#34;
+    Tweak an object to show attributes changing. The changes are reported as WARNING log messages
+    in the `egse.spy` logger.
+
+    Note this is not a decorator, but a function that changes the class of an object.
+
+    Note that this function is a debugging aid and should not be used in production code!
+
+    Args:
+        obj (object): any object that you want to monitor
+        obj_name (str): the variable name of the object that was given in the code, if None than
+            the class name will be printed.
+
+    Examples:
+
+        &gt;&gt;&gt; class X:
+        ...    pass
+        &gt;&gt;&gt; x = X()
+        &gt;&gt;&gt; spy_on_attr_change(x, obj_name=&#34;x&#34;)
+        &gt;&gt;&gt; x.a = 5
+
+    From: https://nedbatchelder.com/blog/202206/adding_a_dunder_to_an_object.html
+    &#34;&#34;&#34;
+    logger = logging.getLogger(&#34;egse.spy&#34;)
+
+    class Wrapper(obj.__class__):
+
+        def __setattr__(self, name, value):
+            old = getattr(self, name, Nothing())
+            logger.warning(
+                f&#34;Spy: in {obj_name or obj.__class__.__name__} -&gt; {name}: {old!r} -&gt; {value!r}&#34;)
+            return super().__setattr__(name, value)
+
+    class_name = obj.__class__.__name__
+    obj.__class__ = Wrapper
+    obj.__class__.__name__ = class_name</code></pre>
+</details>
+</dd>
 <dt id="egse.decorators.static_vars"><code class="name flex">
 <span>def <span class="ident">static_vars</span></span>(<span>**kwargs)</span>
 </code></dt>
@@ -950,6 +1062,21 @@ pass</p>
 <section>
 <h2 class="section-title" id="header-classes">Classes</h2>
 <dl>
+<dt id="egse.decorators.Nothing"><code class="flex name class">
+<span>class <span class="ident">Nothing</span></span>
+</code></dt>
+<dd>
+<div class="desc"><p>Just to get a nice repr for Nothing. It is kind of a Null object&hellip;</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Nothing:
+    &#34;&#34;&#34;Just to get a nice repr for Nothing. It is kind of a Null object...&#34;&#34;&#34;
+    def __repr__(self):
+        return &#34;&lt;Nothing&gt;&#34;</code></pre>
+</details>
+</dd>
 <dt id="egse.decorators.classproperty"><code class="flex name class">
 <span>class <span class="ident">classproperty</span></span>
 <span>(</span><span>func)</span>
@@ -1025,6 +1152,7 @@ pass</p>
 <li><code><a title="egse.decorators.query_command" href="#egse.decorators.query_command">query_command</a></code></li>
 <li><code><a title="egse.decorators.read_command" href="#egse.decorators.read_command">read_command</a></code></li>
 <li><code><a title="egse.decorators.singleton" href="#egse.decorators.singleton">singleton</a></code></li>
+<li><code><a title="egse.decorators.spy_on_attr_change" href="#egse.decorators.spy_on_attr_change">spy_on_attr_change</a></code></li>
 <li><code><a title="egse.decorators.static_vars" href="#egse.decorators.static_vars">static_vars</a></code></li>
 <li><code><a title="egse.decorators.time_it" href="#egse.decorators.time_it">time_it</a></code></li>
 <li><code><a title="egse.decorators.timer" href="#egse.decorators.timer">timer</a></code></li>
@@ -1035,6 +1163,9 @@ pass</p>
 </li>
 <li><h3><a href="#header-classes">Classes</a></h3>
 <ul>
+<li>
+<h4><code><a title="egse.decorators.Nothing" href="#egse.decorators.Nothing">Nothing</a></code></h4>
+</li>
 <li>
 <h4><code><a title="egse.decorators.classproperty" href="#egse.decorators.classproperty">classproperty</a></code></h4>
 </li>
