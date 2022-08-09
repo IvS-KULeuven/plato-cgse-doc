@@ -1,0 +1,76 @@
+== Device Simulators
+
+* Different ways to write a simulator
+** implement a Simulator class that can replace a Controller class
+** implement a simulator process
+
+
+=== The OGSE Simulator
+
+The OGSE simulator by default listens on TCP port 4181 for incoming connections from the OGSE Controller. The controller can be used stand-alone in a Python REPL for testing or can be part of the OGSE Control Server as the last step in the commanding chain.
+
+Start the OGSE simulator as follows:
+
+----
+$ ogse_sim start
+----
+
+The OGSE simulator will listen for incoming connections. There can be only one process connected to the OGSE simulator. This behaviour is similar as the hardware device, which only accepts one connection. When a connected process disconnects, the OGSE simulator will accept a new connection.
+
+The OGSE simulator can be killed by pressing CTRL-C in the Terminal where the simulator is running. Alternatively, you can send a TERM or HUP signal to the process:
+
+----
+$ ps -ef|grep ogse
+459800007 21334  1908   0  2:20PM ttys002    0:01.02 /Library/Frameworks/Python.framework/Versions/3.8/Resources/Python.app/Contents/MacOS/Python /Users/rik/git/plato-common-egse/venv38/bin/ogse_sim start
+$ kill -TERM 21334
+----
+
+The OGSE simulator has of course no interlock jack that you can pull out to immediately power off the system. Nevertheless, we can simulate this behaviour by sending a user signal to the `ogse_sim` process. Sending a USR1 signal will open the interlock when it is closed, and close it when it is open. The USR1 signal works as a toggle for the interlock.
+
+----
+$ kill -USR1 <PID>  # <1>
+----
+<1> replace `<PID>` with the correct process identifier
+
+Check the interlock state with the command method `get_interlock()`:
+
+----
+>>> ogse = OGSEController()
+>>> ogse.connect()
+>>> ogse.get_interlock()
+'interlock: OPEN'
+----
+
+The following commands have been implemented in the simulator:
+
+[cols='1,2']
+|===
+| status() | return the status of the power, lamp, interlock, laser, power meters, and attenuator
+| get_interlock() | state is OPEN or CLOSE
+| get_power() | state is On or OFF
+| get_lamp() | state is ON or OFF
+| get_laser() | state is ON or OFF
+| get_lamp_fault() | state is ERROR or NO-ERROR
+| get_controller_fault() | state is ERROR or NO-ERROR
+| get_psu() | state is ON or OFF
+| get_operate() | state is On or OFF
+| get_flags() | the state of all parameters encoded in a single number formatted in hexadecimal and binary
+| get_power_and_temperature() | returns the power and temperature reading of both power-meters
+| ldls_status() | returns the state of the connection to the LDLS device, state is OK or ERROR
+| pm_status() | returns the state of the connection to the power-meter devices, state is OK or ERROR
+| att_get_level() | returns a dictionary with the following keys: att_moving [bool], att_factor [float], and att_index [int]
+| att_status() | returns the state of the connection to attenuator device, state is OK or ERROR
+| att_set_level_index(<index>) | Sets attenuator to the level closest to <index>
+| att_set_level_factor(<factor>) | Sets attenuator to the level closest to <factor>
+| att_set_level_position(<wheel1>, <wheel2>) | sets the two filter wheels to the given position, each wheel has 8 positions, allowed values are 1 to 8.
+| att_level_up() | selects the attenuation one step higher than the current value, it has no effect if the current level is already the highest
+| att_level_down() | selects the attenuation one step lower than the current value, it has no effect if the current level is already the lowest
+| version() | returns the version of the hardware controller software
+| power_on() | turns the power supply on
+| power_off() | turns the power supply off
+| operate_on() | turns the laser on
+| operate_off() | turns the laser off
+| exit() |
+| quit() |
+| reset() |
+|===
