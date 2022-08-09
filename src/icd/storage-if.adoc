@@ -1,0 +1,75 @@
+== The Storage Data Interface
+
+The Storage Manager
+
+[%header,cols="<,^,^,^,^,^,^"]
+.Top-level keys that are mandatory or optional in the 'item' argument of the following Storage methods.
+|====
+| `key`                  | register     | unregister | new_registration | read     | save     | get_filenames
+| `origin`               | required     | required   | required         | required | required | required
+| `prep`                 | required     |            | required         | required | required | required
+| `persistence_class`    | required     |            | required         |          |          |
+| `persistence_objects`  | created ^1^  | used^2^    |                  | used^2^  | used^2^  | used^2^
+| `persistence_count`^3^ | optional     |            |                  |          |          |
+| `data`                 |              |            |                  |          | required |
+| `filename`^4^          | optional     |            |                  |          |          |
+| `select`               |              |            |                  | required |          |
+|====
+^1^ — The `persistence_objects` key is created during registration and used internally to manage all the persistent objects that are associated to the item. +
+^2^ — This key which was created during registration is used to perform an action on the persistent objects associated with this item. +
+^3^ — When the `persistent_count` is provided in the `item`, the file is treated specially. The file will not be cloned when an observation is started, nor will it be cycled when a new day is started. Basically, the file is created once and not cloned, cycled or closed. An example is the `obsid-table.txt` which is used by the configuration manager. +
+^4^ — When the `filename` key is present, the file will be created with the given name in the folder provided by the `FILE_STORAGE_LOCATION` field for the Storage manager in the Settings. By default, this is the `$PLATO_DATA_STORAGE_LOCATION` environment variable, but that can be changed in the local settings (which is not preferred!).
+
+'''
+
+In the following example you can see how to check the registrations on the Storage Manager and which `persistence_objects` are associated with each of the registered items. This particular example is during an observation run and therefore each registered item has a persistent object in the `daily` folder, and one in the `obs` folder for the observation 299. It is also clear that the `obsid-table.txt` is only in the top-level data folder because it was created with the `persistence_count` key.
+
+[%nowrap]
+----
+[plato-data@plato-arrakis 20220701]$ sm_cs status --full
+Storage Manager:
+  Status: active
+  Hostname: 129.175.66.182
+  Monitoring port: 6101
+  Commanding port: 6100
+  Service port: 6102
+  Storage location: /data/IAS
+  Registrations: ['SYN-HK', 'SYN', 'obsid', 'CM', 'PM', 'CDAQ9184', 'FOV', 'DAQ6510', 'ZONDA',
+    'KSC101', 'PTC10', 'EQ99', 'TCS', 'TCS-HK', 'DAS-PTC10', 'AEU-CRIO', 'AEU-PSU1', 'AEU-PSU2',
+    'AEU-PSU3', 'AEU-PSU4', 'AEU-PSU5', 'AEU-PSU6', 'AEU-AWG1', 'AEU-AWG2', 'N-FEE_SPW', 'DPU',
+    'N-FEE-HK', 'FW8SMC4']
+Filenames for all registered items:
+  SYN-HK     ->  [PosixPath('/data/IAS/daily/20220701/20220701_IAS_SYN-HK.csv'), PosixPath('/data/IAS/obs/00299_IAS/00299_IAS_SYN-HK_20220701_132613.csv')]
+  SYN        ->  [PosixPath('/data/IAS/daily/20220701/20220701_IAS_SYN.csv'), PosixPath('/data/IAS/obs/00299_IAS/00299_IAS_SYN_20220701_132613.csv')]
+  obsid      ->  [PosixPath('/data/IAS/obsid-table.txt')]
+  CM         ->  [PosixPath('/data/IAS/daily/20220701/20220701_IAS_CM.csv'), PosixPath('/data/IAS/obs/00299_IAS/00299_IAS_CM_20220701_132613.csv')]
+  PM         ->  [PosixPath('/data/IAS/daily/20220701/20220701_IAS_PM.csv'), PosixPath('/data/IAS/obs/00299_IAS/00299_IAS_PM_20220701_132613.csv')]
+  CDAQ9184   ->  [PosixPath('/data/IAS/daily/20220701/20220701_IAS_CDAQ9184.csv'), PosixPath('/data/IAS/obs/00299_IAS/00299_IAS_CDAQ9184_20220701_132613.csv')]
+  FOV        ->  [PosixPath('/data/IAS/daily/20220701/20220701_IAS_FOV.csv'), PosixPath('/data/IAS/obs/00299_IAS/00299_IAS_FOV_20220701_132613.csv')]
+  DAQ6510    ->  [PosixPath('/data/IAS/daily/20220701/20220701_IAS_DAQ6510.csv'), PosixPath('/data/IAS/obs/00299_IAS/00299_IAS_DAQ6510_20220701_132613.csv')]
+  ZONDA      ->  [PosixPath('/data/IAS/daily/20220701/20220701_IAS_ZONDA.csv'), PosixPath('/data/IAS/obs/00299_IAS/00299_IAS_ZONDA_20220701_132613.csv')]
+  KSC101     ->  [PosixPath('/data/IAS/daily/20220701/20220701_IAS_KSC101.csv'), PosixPath('/data/IAS/obs/00299_IAS/00299_IAS_KSC101_20220701_132613.csv')]
+  PTC10      ->  [PosixPath('/data/IAS/daily/20220701/20220701_IAS_PTC10.csv'), PosixPath('/data/IAS/obs/00299_IAS/00299_IAS_PTC10_20220701_132613.csv')]
+  EQ99       ->  [PosixPath('/data/IAS/daily/20220701/20220701_IAS_EQ99.csv'), PosixPath('/data/IAS/obs/00299_IAS/00299_IAS_EQ99_20220701_132613.csv')]
+  TCS        ->  [PosixPath('/data/IAS/daily/20220701/20220701_IAS_TCS.csv'), PosixPath('/data/IAS/obs/00299_IAS/00299_IAS_TCS_20220701_132613.csv')]
+  TCS-HK     ->  [PosixPath('/data/IAS/daily/20220701/20220701_IAS_TCS-HK.csv'), PosixPath('/data/IAS/obs/00299_IAS/00299_IAS_TCS-HK_20220701_132613.csv')]
+  DAS-PTC10  ->  [PosixPath('/data/IAS/daily/20220701/20220701_IAS_DAS-PTC10.csv'), PosixPath('/data/IAS/obs/00299_IAS/00299_IAS_DAS-PTC10_20220701_132613.csv')]
+  AEU-CRIO   ->  [PosixPath('/data/IAS/daily/20220701/20220701_IAS_AEU-CRIO.csv'), PosixPath('/data/IAS/obs/00299_IAS/00299_IAS_AEU-CRIO_20220701_132613.csv')]
+  AEU-PSU1   ->  [PosixPath('/data/IAS/daily/20220701/20220701_IAS_AEU-PSU1.csv'), PosixPath('/data/IAS/obs/00299_IAS/00299_IAS_AEU-PSU1_20220701_132613.csv')]
+  AEU-PSU2   ->  [PosixPath('/data/IAS/daily/20220701/20220701_IAS_AEU-PSU2.csv'), PosixPath('/data/IAS/obs/00299_IAS/00299_IAS_AEU-PSU2_20220701_132613.csv')]
+  AEU-PSU3   ->  [PosixPath('/data/IAS/daily/20220701/20220701_IAS_AEU-PSU3.csv'), PosixPath('/data/IAS/obs/00299_IAS/00299_IAS_AEU-PSU3_20220701_132613.csv')]
+  AEU-PSU4   ->  [PosixPath('/data/IAS/daily/20220701/20220701_IAS_AEU-PSU4.csv'), PosixPath('/data/IAS/obs/00299_IAS/00299_IAS_AEU-PSU4_20220701_132613.csv')]
+  AEU-PSU5   ->  [PosixPath('/data/IAS/daily/20220701/20220701_IAS_AEU-PSU5.csv'), PosixPath('/data/IAS/obs/00299_IAS/00299_IAS_AEU-PSU5_20220701_132613.csv')]
+  AEU-PSU6   ->  [PosixPath('/data/IAS/daily/20220701/20220701_IAS_AEU-PSU6.csv'), PosixPath('/data/IAS/obs/00299_IAS/00299_IAS_AEU-PSU6_20220701_132613.csv')]
+  AEU-AWG1   ->  [PosixPath('/data/IAS/daily/20220701/20220701_IAS_AEU-AWG1.csv'), PosixPath('/data/IAS/obs/00299_IAS/00299_IAS_AEU-AWG1_20220701_132613.csv')]
+  AEU-AWG2   ->  [PosixPath('/data/IAS/daily/20220701/20220701_IAS_AEU-AWG2.csv'), PosixPath('/data/IAS/obs/00299_IAS/00299_IAS_AEU-AWG2_20220701_132613.csv')]
+  N-FEE_SPW  ->  [PosixPath('/data/IAS/daily/20220701/20220701_IAS_N-FEE_SPW_01903.hdf5')]
+  DPU        ->  [PosixPath('/data/IAS/daily/20220701/20220701_IAS_DPU.csv'), PosixPath('/data/IAS/obs/00299_IAS/00299_IAS_DPU_20220701_132613.csv')]
+  N-FEE-HK   ->  [PosixPath('/data/IAS/daily/20220701/20220701_IAS_N-FEE-HK.csv'), PosixPath('/data/IAS/obs/00299_IAS/00299_IAS_N-FEE-HK_20220701_132613.csv')]
+  FW8SMC4    ->  [PosixPath('/data/IAS/daily/20220701/20220701_IAS_FW8SMC4.csv'), PosixPath('/data/IAS/obs/00299_IAS/00299_IAS_FW8SMC4_20220701_132613.csv')]
+An observation is registered: IAS_00062_00299
+Total disk space: 1.718 TiB
+Used disk space: 183.215 GiB (10.41%)
+Free disk space: 1.452 TiB (84.50%)
+[plato-data@plato-arrakis 20220701]$
+----

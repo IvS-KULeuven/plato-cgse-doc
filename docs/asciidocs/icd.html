@@ -436,8 +436,9 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 #footer-text{color:rgba(0,0,0,.6);font-size:.9em}}
 @media amzn-kf8{#header,#content,#footnotes,#footer{padding:0}}
 </style>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
 </head>
-<body class="book">
+<body class="book toc2 toc-left">
 <div id="header">
 <h1>Common-EGSE : Interface Control Document</h1>
 <div class="details">
@@ -445,41 +446,36 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <span id="revnumber">version 0.1,</span>
 <span id="revdate">22/05/2022</span>
 </div>
-<div id="toc" class="toc">
+<div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
 <ul class="sectlevel1">
 <li><a href="#_todo">1. TODO</a></li>
 <li><a href="#_abstract">2. Abstract</a></li>
-<li><a href="#_data_format">3. Data Format</a>
+<li><a href="#_the_storage_data_interface">3. The Storage Data Interface</a></li>
+<li><a href="#_data_format">4. Data Format</a>
 <ul class="sectlevel2">
-<li><a href="#_the_format_of_the_fits_files">3.1. The format of the FITS files</a></li>
-<li><a href="#_the_format_of_the_hdf5_files">3.2. The format of the HDF5 files</a></li>
+<li><a href="#_the_format_of_the_fits_files">4.1. The format of the FITS files</a></li>
+<li><a href="#_the_format_of_the_hdf5_files">4.2. The format of the HDF5 files</a></li>
+<li><a href="#_the_telemetry_tm_dictionary">4.3. The Telemetry (TM) Dictionary</a></li>
 </ul>
 </li>
 </ul>
 </div>
 </div>
 <div id="content">
-<div id="preamble">
-<div class="sectionbody">
-<div class="paragraph">
-<p>Describe interfaces to Storage, i.e. what is expected in the dictionaries by the different methods. Also file naming shall be described.</p>
-</div>
-</div>
-</div>
 <div class="sect1">
 <h2 id="_todo">1. TODO</h2>
 <div class="sectionbody">
 <div class="ulist checklist">
 <ul class="checklist">
 <li>
-<p>&#10063; Describe the format of the FITS files containing CCD data</p>
+<p><i class="fa fa-square-o"></i> Describe the format of the FITS files containing CCD data</p>
 </li>
 <li>
-<p>&#10063; Describe the format of the HDF5 files containing SpaceWire data from the N-FEE</p>
+<p><i class="fa fa-square-o"></i> Describe the format of the HDF5 files containing SpaceWire data from the N-FEE</p>
 </li>
 <li>
-<p>&#10063; Describe the interface to the Storage, i.e. the expected keys for the dictionaries that are passed like <code>prep</code> and <code>item</code>&#8230;&#8203;</p>
+<p><i class="fa fa-square-o"></i> Describe the interface to the Storage, i.e. the expected keys for the dictionaries that are passed like <code>prep</code> and <code>item</code>&#8230;&#8203;</p>
 </li>
 </ul>
 </div>
@@ -497,32 +493,537 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 </div>
 </div>
 <div class="sect1">
-<h2 id="_data_format">3. Data Format</h2>
+<h2 id="_the_storage_data_interface">3. The Storage Data Interface</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>The Storage Manager</p>
+</div>
+<table class="tableblock frame-all grid-all stretch">
+<caption class="title">Table 1. Top-level keys that are mandatory or optional in the 'item' argument of the following Storage methods.</caption>
+<colgroup>
+<col style="width: 14.2857%;">
+<col style="width: 14.2857%;">
+<col style="width: 14.2857%;">
+<col style="width: 14.2857%;">
+<col style="width: 14.2857%;">
+<col style="width: 14.2857%;">
+<col style="width: 14.2858%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top"><code>key</code></th>
+<th class="tableblock halign-center valign-top">register</th>
+<th class="tableblock halign-center valign-top">unregister</th>
+<th class="tableblock halign-center valign-top">new_registration</th>
+<th class="tableblock halign-center valign-top">read</th>
+<th class="tableblock halign-center valign-top">save</th>
+<th class="tableblock halign-center valign-top">get_filenames</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>origin</code></p></td>
+<td class="tableblock halign-center valign-top"><p class="tableblock">required</p></td>
+<td class="tableblock halign-center valign-top"><p class="tableblock">required</p></td>
+<td class="tableblock halign-center valign-top"><p class="tableblock">required</p></td>
+<td class="tableblock halign-center valign-top"><p class="tableblock">required</p></td>
+<td class="tableblock halign-center valign-top"><p class="tableblock">required</p></td>
+<td class="tableblock halign-center valign-top"><p class="tableblock">required</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>prep</code></p></td>
+<td class="tableblock halign-center valign-top"><p class="tableblock">required</p></td>
+<td class="tableblock halign-center valign-top"></td>
+<td class="tableblock halign-center valign-top"><p class="tableblock">required</p></td>
+<td class="tableblock halign-center valign-top"><p class="tableblock">required</p></td>
+<td class="tableblock halign-center valign-top"><p class="tableblock">required</p></td>
+<td class="tableblock halign-center valign-top"><p class="tableblock">required</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>persistence_class</code></p></td>
+<td class="tableblock halign-center valign-top"><p class="tableblock">required</p></td>
+<td class="tableblock halign-center valign-top"></td>
+<td class="tableblock halign-center valign-top"><p class="tableblock">required</p></td>
+<td class="tableblock halign-center valign-top"></td>
+<td class="tableblock halign-center valign-top"></td>
+<td class="tableblock halign-center valign-top"></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>persistence_objects</code></p></td>
+<td class="tableblock halign-center valign-top"><p class="tableblock">created <sup>1</sup></p></td>
+<td class="tableblock halign-center valign-top"><p class="tableblock">used<sup>2</sup></p></td>
+<td class="tableblock halign-center valign-top"></td>
+<td class="tableblock halign-center valign-top"><p class="tableblock">used<sup>2</sup></p></td>
+<td class="tableblock halign-center valign-top"><p class="tableblock">used<sup>2</sup></p></td>
+<td class="tableblock halign-center valign-top"><p class="tableblock">used<sup>2</sup></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>persistence_count</code><sup>3</sup></p></td>
+<td class="tableblock halign-center valign-top"><p class="tableblock">optional</p></td>
+<td class="tableblock halign-center valign-top"></td>
+<td class="tableblock halign-center valign-top"></td>
+<td class="tableblock halign-center valign-top"></td>
+<td class="tableblock halign-center valign-top"></td>
+<td class="tableblock halign-center valign-top"></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>data</code></p></td>
+<td class="tableblock halign-center valign-top"></td>
+<td class="tableblock halign-center valign-top"></td>
+<td class="tableblock halign-center valign-top"></td>
+<td class="tableblock halign-center valign-top"></td>
+<td class="tableblock halign-center valign-top"><p class="tableblock">required</p></td>
+<td class="tableblock halign-center valign-top"></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>filename</code><sup>4</sup></p></td>
+<td class="tableblock halign-center valign-top"><p class="tableblock">optional</p></td>
+<td class="tableblock halign-center valign-top"></td>
+<td class="tableblock halign-center valign-top"></td>
+<td class="tableblock halign-center valign-top"></td>
+<td class="tableblock halign-center valign-top"></td>
+<td class="tableblock halign-center valign-top"></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>select</code></p></td>
+<td class="tableblock halign-center valign-top"></td>
+<td class="tableblock halign-center valign-top"></td>
+<td class="tableblock halign-center valign-top"></td>
+<td class="tableblock halign-center valign-top"><p class="tableblock">required</p></td>
+<td class="tableblock halign-center valign-top"></td>
+<td class="tableblock halign-center valign-top"></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p><sup>1</sup> — The <code>persistence_objects</code> key is created during registration and used internally to manage all the persistent objects that are associated to the item.<br>
+<sup>2</sup> — This key which was created during registration is used to perform an action on the persistent objects associated with this item.<br>
+<sup>3</sup> — When the <code>persistent_count</code> is provided in the <code>item</code>, the file is treated specially. The file will not be cloned when an observation is started, nor will it be cycled when a new day is started. Basically, the file is created once and not cloned, cycled or closed. An example is the <code>obsid-table.txt</code> which is used by the configuration manager.<br>
+<sup>4</sup> — When the <code>filename</code> key is present, the file will be created with the given name in the folder provided by the <code>FILE_STORAGE_LOCATION</code> field for the Storage manager in the Settings. By default, this is the <code>$PLATO_DATA_STORAGE_LOCATION</code> environment variable, but that can be changed in the local settings (which is not preferred!).</p>
+</div>
+<hr>
+<div class="paragraph">
+<p>In the following example you can see how to check the registrations on the Storage Manager and which <code>persistence_objects</code> are associated with each of the registered items. This particular example is during an observation run and therefore each registered item has a persistent object in the <code>daily</code> folder, and one in the <code>obs</code> folder for the observation 299. It is also clear that the <code>obsid-table.txt</code> is only in the top-level data folder because it was created with the <code>persistence_count</code> key.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="nowrap">[plato-data@plato-arrakis 20220701]$ sm_cs status --full
+Storage Manager:
+  Status: active
+  Hostname: 129.175.66.182
+  Monitoring port: 6101
+  Commanding port: 6100
+  Service port: 6102
+  Storage location: /data/IAS
+  Registrations: ['SYN-HK', 'SYN', 'obsid', 'CM', 'PM', 'CDAQ9184', 'FOV', 'DAQ6510', 'ZONDA',
+    'KSC101', 'PTC10', 'EQ99', 'TCS', 'TCS-HK', 'DAS-PTC10', 'AEU-CRIO', 'AEU-PSU1', 'AEU-PSU2',
+    'AEU-PSU3', 'AEU-PSU4', 'AEU-PSU5', 'AEU-PSU6', 'AEU-AWG1', 'AEU-AWG2', 'N-FEE_SPW', 'DPU',
+    'N-FEE-HK', 'FW8SMC4']
+Filenames for all registered items:
+  SYN-HK     -&gt;  [PosixPath('/data/IAS/daily/20220701/20220701_IAS_SYN-HK.csv'), PosixPath('/data/IAS/obs/00299_IAS/00299_IAS_SYN-HK_20220701_132613.csv')]
+  SYN        -&gt;  [PosixPath('/data/IAS/daily/20220701/20220701_IAS_SYN.csv'), PosixPath('/data/IAS/obs/00299_IAS/00299_IAS_SYN_20220701_132613.csv')]
+  obsid      -&gt;  [PosixPath('/data/IAS/obsid-table.txt')]
+  CM         -&gt;  [PosixPath('/data/IAS/daily/20220701/20220701_IAS_CM.csv'), PosixPath('/data/IAS/obs/00299_IAS/00299_IAS_CM_20220701_132613.csv')]
+  PM         -&gt;  [PosixPath('/data/IAS/daily/20220701/20220701_IAS_PM.csv'), PosixPath('/data/IAS/obs/00299_IAS/00299_IAS_PM_20220701_132613.csv')]
+  CDAQ9184   -&gt;  [PosixPath('/data/IAS/daily/20220701/20220701_IAS_CDAQ9184.csv'), PosixPath('/data/IAS/obs/00299_IAS/00299_IAS_CDAQ9184_20220701_132613.csv')]
+  FOV        -&gt;  [PosixPath('/data/IAS/daily/20220701/20220701_IAS_FOV.csv'), PosixPath('/data/IAS/obs/00299_IAS/00299_IAS_FOV_20220701_132613.csv')]
+  DAQ6510    -&gt;  [PosixPath('/data/IAS/daily/20220701/20220701_IAS_DAQ6510.csv'), PosixPath('/data/IAS/obs/00299_IAS/00299_IAS_DAQ6510_20220701_132613.csv')]
+  ZONDA      -&gt;  [PosixPath('/data/IAS/daily/20220701/20220701_IAS_ZONDA.csv'), PosixPath('/data/IAS/obs/00299_IAS/00299_IAS_ZONDA_20220701_132613.csv')]
+  KSC101     -&gt;  [PosixPath('/data/IAS/daily/20220701/20220701_IAS_KSC101.csv'), PosixPath('/data/IAS/obs/00299_IAS/00299_IAS_KSC101_20220701_132613.csv')]
+  PTC10      -&gt;  [PosixPath('/data/IAS/daily/20220701/20220701_IAS_PTC10.csv'), PosixPath('/data/IAS/obs/00299_IAS/00299_IAS_PTC10_20220701_132613.csv')]
+  EQ99       -&gt;  [PosixPath('/data/IAS/daily/20220701/20220701_IAS_EQ99.csv'), PosixPath('/data/IAS/obs/00299_IAS/00299_IAS_EQ99_20220701_132613.csv')]
+  TCS        -&gt;  [PosixPath('/data/IAS/daily/20220701/20220701_IAS_TCS.csv'), PosixPath('/data/IAS/obs/00299_IAS/00299_IAS_TCS_20220701_132613.csv')]
+  TCS-HK     -&gt;  [PosixPath('/data/IAS/daily/20220701/20220701_IAS_TCS-HK.csv'), PosixPath('/data/IAS/obs/00299_IAS/00299_IAS_TCS-HK_20220701_132613.csv')]
+  DAS-PTC10  -&gt;  [PosixPath('/data/IAS/daily/20220701/20220701_IAS_DAS-PTC10.csv'), PosixPath('/data/IAS/obs/00299_IAS/00299_IAS_DAS-PTC10_20220701_132613.csv')]
+  AEU-CRIO   -&gt;  [PosixPath('/data/IAS/daily/20220701/20220701_IAS_AEU-CRIO.csv'), PosixPath('/data/IAS/obs/00299_IAS/00299_IAS_AEU-CRIO_20220701_132613.csv')]
+  AEU-PSU1   -&gt;  [PosixPath('/data/IAS/daily/20220701/20220701_IAS_AEU-PSU1.csv'), PosixPath('/data/IAS/obs/00299_IAS/00299_IAS_AEU-PSU1_20220701_132613.csv')]
+  AEU-PSU2   -&gt;  [PosixPath('/data/IAS/daily/20220701/20220701_IAS_AEU-PSU2.csv'), PosixPath('/data/IAS/obs/00299_IAS/00299_IAS_AEU-PSU2_20220701_132613.csv')]
+  AEU-PSU3   -&gt;  [PosixPath('/data/IAS/daily/20220701/20220701_IAS_AEU-PSU3.csv'), PosixPath('/data/IAS/obs/00299_IAS/00299_IAS_AEU-PSU3_20220701_132613.csv')]
+  AEU-PSU4   -&gt;  [PosixPath('/data/IAS/daily/20220701/20220701_IAS_AEU-PSU4.csv'), PosixPath('/data/IAS/obs/00299_IAS/00299_IAS_AEU-PSU4_20220701_132613.csv')]
+  AEU-PSU5   -&gt;  [PosixPath('/data/IAS/daily/20220701/20220701_IAS_AEU-PSU5.csv'), PosixPath('/data/IAS/obs/00299_IAS/00299_IAS_AEU-PSU5_20220701_132613.csv')]
+  AEU-PSU6   -&gt;  [PosixPath('/data/IAS/daily/20220701/20220701_IAS_AEU-PSU6.csv'), PosixPath('/data/IAS/obs/00299_IAS/00299_IAS_AEU-PSU6_20220701_132613.csv')]
+  AEU-AWG1   -&gt;  [PosixPath('/data/IAS/daily/20220701/20220701_IAS_AEU-AWG1.csv'), PosixPath('/data/IAS/obs/00299_IAS/00299_IAS_AEU-AWG1_20220701_132613.csv')]
+  AEU-AWG2   -&gt;  [PosixPath('/data/IAS/daily/20220701/20220701_IAS_AEU-AWG2.csv'), PosixPath('/data/IAS/obs/00299_IAS/00299_IAS_AEU-AWG2_20220701_132613.csv')]
+  N-FEE_SPW  -&gt;  [PosixPath('/data/IAS/daily/20220701/20220701_IAS_N-FEE_SPW_01903.hdf5')]
+  DPU        -&gt;  [PosixPath('/data/IAS/daily/20220701/20220701_IAS_DPU.csv'), PosixPath('/data/IAS/obs/00299_IAS/00299_IAS_DPU_20220701_132613.csv')]
+  N-FEE-HK   -&gt;  [PosixPath('/data/IAS/daily/20220701/20220701_IAS_N-FEE-HK.csv'), PosixPath('/data/IAS/obs/00299_IAS/00299_IAS_N-FEE-HK_20220701_132613.csv')]
+  FW8SMC4    -&gt;  [PosixPath('/data/IAS/daily/20220701/20220701_IAS_FW8SMC4.csv'), PosixPath('/data/IAS/obs/00299_IAS/00299_IAS_FW8SMC4_20220701_132613.csv')]
+An observation is registered: IAS_00062_00299
+Total disk space: 1.718 TiB
+Used disk space: 183.215 GiB (10.41%)
+Free disk space: 1.452 TiB (84.50%)
+[plato-data@plato-arrakis 20220701]$</pre>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_data_format">4. Data Format</h2>
 <div class="sectionbody">
 <div class="sect2">
-<h3 id="_the_format_of_the_fits_files">3.1. The format of the FITS files</h3>
+<h3 id="_the_format_of_the_fits_files">4.1. The format of the FITS files</h3>
 <div class="ulist checklist">
 <ul class="checklist">
 <li>
-<p>&#10063; descibe the slicing strategy and how this is handled in the commanding</p>
+<p><i class="fa fa-square-o"></i> descibe the slicing strategy and how this is handled in the commanding</p>
 </li>
 </ul>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_the_format_of_the_hdf5_files">3.2. The format of the HDF5 files</h3>
+<h3 id="_the_format_of_the_hdf5_files">4.2. The format of the HDF5 files</h3>
 <div class="ulist checklist">
 <ul class="checklist">
 <li>
-<p>&#10063; format version</p>
+<p><i class="fa fa-square-o"></i> format version</p>
 </li>
 <li>
-<p>&#10063; top-level groups</p>
+<p><i class="fa fa-square-o"></i> top-level groups</p>
 </li>
 <li>
-<p>&#10063; attributes</p>
+<p><i class="fa fa-square-o"></i> attributes</p>
 </li>
 </ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_the_telemetry_tm_dictionary">4.3. The Telemetry (TM) Dictionary</h3>
+<div class="paragraph">
+<p>The <code>tm-dicionary.csv</code> file (further referred to as the "telemetry &#8482; dictionary") provides an overview of all housekeeping (HK) and metrics parameters in the EGSE system.  It is used:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>By the <code>get_housekeeping</code> function (in <code>egse.hk</code>) to know in which file the values of the requested HK parameter should be looked for;</p>
+</li>
+<li>
+<p>To create a translation table to convert — in the <code>get_housekeeping</code> function of the device protocols — the original names from the device itself to the EGSE-conform name (see further);</p>
+</li>
+<li>
+<p>For the HK that should be included in the synoptics: to create a translation table to convert the original device-specific (but EGSE-conform) names to the corresponding synoptical name in the Synoptics Manager (in <code>egse.synoptics</code>).</p>
+</li>
+</ul>
+</div>
+<div class="sect3">
+<h4 id="_the_files_content">4.3.1. The File&#8217;s Content</h4>
+<div class="paragraph">
+<p>For each device we need to add all HK parameters to the TM dictionary.  For each of these parameters you need to add one line with the following information (in the designated columns):</p>
+</div>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Column name</th>
+<th class="tableblock halign-left valign-top">Expected content</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">TM source</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Arbitrary (but clear) name for the device.  Ideally this name is short but clear enough for outsiders to understand what the device/process is for.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Storage mnemonic</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Storage mnemonic of the device.  This will show up in the filename of the device HK file and can be found in the settings file (<code>settings.yaml</code>) in the block for that specific device/process.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">CAM EGSE mnemonic</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">EGSE-conform parameter name (see next Sect.) for the parameter.  Note that the same name should be used for the HK parameter and the corresponding metrics.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Original name in EGSE</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">In the <code>get_housekeeping</code> method of the device protocols, it is - in some cases (e.g. for the N-FEE HK) - possible that you have a dictionary with all/most of the required HK parameters, but with a non-EGSE-conform name.  The latter should go in this column.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Name of corresponding timestamp</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">In the device HK files, one of the columns holds the timestamp for the considered HK parameter.  The name of that timestamp column should go in this column of the TM dictionary.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Origin of synoptics at CSL</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Should only be filled for the entries in the TM dictionary for the Synoptics Manager.  This is the original EGSE-conform name of the synoptical parameter in the CSL-specific HK file comprising this HK parameter.  Leave empty for all other devices!</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Origin of synoptics at SRON</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Should only be filled for the entries in the TM dictionary for the Synoptics Manager.  This is the original EGSE-conform name of the synoptical parameter in the SRON-specific HK file comprising this HK parameter.  Leave empty for all other devices!</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Origin of synoptics at IAS</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Should only be filled for the entries in the TM dictionary for the Synoptics Manager.  This is the original EGSE-conform name of the synoptical parameter in the IAS-specific HK file comprising this HK parameter.  Leave empty for all other devices!</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Origin of synoptics at INTA</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Should only be filled for the entries in the TM dictionary for the Synoptics Manager.  This is the original EGSE-conform name of the synoptical parameter in the INTA-specific HK file comprising this HK parameter.  Leave empty for all other devices!</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Description</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Short description of what the parameter represents.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">MON screen</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Name of the Grafana dashboard in which the parameter can be inspected.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">unit cal1</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Unit in which the parameter is expressed.  Try to be consistent in the use of the names (e.g. Volts, Ampère, Seconds, Degrees, DegCelsius, etc.).</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">offset b cal1</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">For raw parameters that can be calibrated with a linear relationship, this column holds the offset <code>b</code> in the relation <code>calibrated = a * raw + b</code>.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">slope a cal1</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">For raw parameters that can be calibrated with a linear relationship, this column holds the slope <code>a</code> in the relation <code>calibrated = a * raw + b</code>.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">calibration function</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Not used at the moment.  Can be left emtpy.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">MAX nonops</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Maximum non-operational value.  Should be expressed in the same unit as the parameter itself.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">MIN nonops</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Minimum non-operational value.  Should be expressed in the same unit as the parameter itself.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">MAX ops</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Maximum operational value.  Should be expressed in the same unit as the parameter itself.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">MIN ops</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Minimum operational value.  Should be expressed in the same unit as the parameter itself.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Comment</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Any additional comment about the parameter that is interesting enough to be mentioned but not interesting enough for it to be included in the description of the parameter.</p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p>Since the TM dictionary grows longer and longer, the included devices/processes are ordered as follows (so it is easier to find back the telemetry parameters that apply to your TH):</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Devices/processes that all test houses have in common: AEU, N-FEE, TCS, Synoptics Manager, etc.</p>
+</li>
+<li>
+<p>Devices that are CSL-specific;</p>
+</li>
+<li>
+<p>Devices that are SRON-specific;</p>
+</li>
+<li>
+<p>Devices that are IAS-specific;</p>
+</li>
+<li>
+<p>Devices that are INTA-specific.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_egse_conform_parameter_names">4.3.2. EGSE-Conform Parameter Names</h4>
+<div class="paragraph">
+<p>The correct (i.e. EGSE-conform) naming of the telemetry should be taken care of in the <code>get_housekeeping</code> method of the device protocols.</p>
+</div>
+<div class="sect4">
+<h5 id="_common_parameters">Common Parameters</h5>
+<div class="paragraph">
+<p>A limited set of devices/processes is shared by (almost) all test houses.  Their telemetry should have the following prefix:</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 80%;">
+<col style="width: 20%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Device/process</th>
+<th class="tableblock halign-left valign-top">Prefix</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Configuration Manager</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">CM_</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">AEU (Ancillary Electrical Unit)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">GAEU_</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">N-FEE (Normal Front-End Electronics)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">NFEE_</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">TCS (Thermal Control System)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">GTCS_</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">FOV (source position)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">FOV_</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Synoptics Manager</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">GSYN_</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="sect4">
+<h5 id="_th_specific_parameters">TH-Specific Parameters</h5>
+<div class="paragraph">
+<p>Some devices are used in only one or two test houses.  Their telemetry should have TH-specific prefix:</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 50%;">
+<col style="width: 50%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">TH</th>
+<th class="tableblock halign-left valign-top">Prefix</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">CSL</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">GCSL_</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">CSL1</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">GCSL1_</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">CSL2</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">GCSL2_</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">SRON</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">GSRON_</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">IAS</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">GIAS_</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">INTA</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">GINTA_</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_synoptics">4.3.3. Synoptics</h4>
+<div class="paragraph">
+<p>The Synoptics Manager groups a pre-defined set of HK values in a single file.  It&#8217;s not the original EGSE-conform names that are use in the synoptics, but names with the prefix <code>GSYN_</code>.  The following information is comprised in the synoptics:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Acquired by common devices/processes:</p>
+</li>
+<li>
+<p>Calibrated temperatures from the N-FEE;</p>
+</li>
+<li>
+<p>Calibrated temperatures from the TCS;</p>
+</li>
+<li>
+<p>Source position (commanded + actual).</p>
+</li>
+<li>
+<p>Acquired by TH-specific devices:</p>
+</li>
+<li>
+<p>Calibrated temperatures from the TH DAQs;</p>
+</li>
+<li>
+<p>Information about the OGSE (intensity, lamp and laser status, shutter status, measured power).</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>For the first type of telemetry parameters, their original EGSE-conform name should be put into the column <code>CAM EGSE mnemonic</code>, as they are not TH-specific.</p>
+</div>
+<div class="paragraph">
+<p>The second type of telemetry parameters is measured with TH-specific devices.  The original TH-specific  EGSE-conform name should go in the column <code>Origin of synoptics at ...</code>.</p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_translation_tables">4.3.4. Translation Tables</h4>
+<div class="paragraph">
+<p>The translation tables that were mentioned in the introduction, can be created by the <code>read_conversion_dict</code> function in <code>egse.hk</code>.  It takes the following input parameters:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>storage_mnemonic</code>: Storage mnemonic of the device/process generating the HK;</p>
+</li>
+<li>
+<p><code>use_site</code>: Boolean indicating whether you want the translation table for the TH-specific telemetry rather than the common telemetry (<code>False</code> by default).</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>To apply the actual translation, you can use the <code>convert_hk_names</code> function from <code>egse.hk</code>, which takes the following input parameters:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>original_hk</code>: HK dictionary with the original names;</p>
+</li>
+<li>
+<p><code>conversion_dict</code>: Conversion table you got as output from the <code>read_conversion_dict</code> function.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_sending_hk_to_synoptics">4.3.5. Sending HK to Synoptics</h4>
+<div class="paragraph">
+<p>When you want to include HK of your devices, you need to take the following actions:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Make sure that the TM dictionary is complete (as described above);</p>
+</li>
+<li>
+<p>In the device protocol:</p>
+<div class="ulist">
+<ul>
+<li>
+<p>At initialisation: establish a connection with the Synoptics Manager: <code>self.synoptics = SynopticsManagerProxy()</code></p>
+</li>
+<li>
+<p>In <code>get_housekeeping</code> (both take the dictionary with HK as input):</p>
+<div class="ulist">
+<ul>
+<li>
+<p>For TH-specific HK: <code>self.synoptics.store_th_synoptics(hk_for_synoptics)</code>;</p>
+</li>
+<li>
+<p>For common HK: <code>self.synoptics.store_common_synoptics(hk_for_synoptics)</code>.</p>
+</li>
+</ul>
+</div>
+</li>
+</ul>
+</div>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Please, do not introduce new synoptics without further discussion!</p>
+</div>
 </div>
 </div>
 </div>
@@ -531,7 +1032,7 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <div id="footer">
 <div id="footer-text">
 Version 0.1<br>
-Last updated 2022-06-02 12:35:05 +0200
+Last updated 2022-07-01 18:10:52 +0200
 </div>
 </div>
 </body>
