@@ -1,4 +1,4 @@
-==	The System Under Test (SUT) – DPU Processor and FEE Simulator
+==	The System Under Test (SUT)
 
 - [x] Commanding is the same as all other devices, DPU Control Server and Controller, Proxy, etc
 - [x] DPU Processor as a separate process to communicate to the FEE (Simulator)
@@ -6,6 +6,8 @@
 - [x] DPU Controller and DPU Processor communicate via three Queues, the command queue, the response queue, and a priority queue.
 - [x] Timing: timecode packet, HK packet, [Data packets], Commanding through RMAP requests
 - [ ] Describe the transport
+
+=== DPU Control Server and DPU Processor
 
 The DPU Control Server (used to be called the DPU Simulator in older documents) acts like any other control server. It's Protocol class (`DPUProtocol`) starts a `DPUController` which implements the commands that are defined in the `DPUInterface` class. Specific DPU commands are sent to the control server using the `DPUProxy` class. The `DPUProxy` class also implements the `DPUInterface`.
 
@@ -16,3 +18,9 @@ Commands that are given on the Python prompt are by definition synchronous meani
 XXXXX: add here how we solved this!
 
 The priority queue is also a command queue, but the commands are not sent to the N-FEE. Instead, the commands are executed in the `DPUProcessor` and are used to either get information about the state of the N-FEE or set/get the internal state of the `DPUProcessor`.  The state of the N-FEE is mirrored and kept up-to-date by the `DPUProcessor` during the readout cycle. Priority commands are typically to request e.g. the N-FEE mode, or to set an internal DPU parameter. While the command queue is checked only during the allowed RMAP communication period, the priority queue is checked and executed several times during the readout cycle.
+
+=== The N-FEE Simulator
+
+TBW
+
+include::ccd-numbering.adoc[leveloffset=1]

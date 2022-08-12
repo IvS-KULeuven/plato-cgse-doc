@@ -662,12 +662,51 @@ Free disk space: 1.452 TiB (84.50%)
 <div class="sectionbody">
 <div class="sect2">
 <h3 id="_the_format_of_the_fits_files">4.1. The format of the FITS files</h3>
+<div class="paragraph">
+<p>During the camera tests, the DPU will be configured such that a specific part of the E- and/or F-side of the selected CCDs will be transmitted (in the form of SpW packets) for a specified number of cycles.  The following information will be reconstructed from these SpW packets and stored in FITS files:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>transmitted image data of the selected side(s) of the selected CCDs, for all cycles;</p>
+</li>
+<li>
+<p>transmitted serial pre-scan data of the selected side(s) of the selected CCDs, for all cycles;</p>
+</li>
+<li>
+<p>transmitted serial over-scan data of the selected side(s) of the selected CCDs, for all cycles;</p>
+</li>
+<li>
+<p>transmitted parallel over-scan data (if any) of the selected side(s) of the selected CCDs, for all cycles.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>While the SpW packets come in, the individual exposures are stored in individual extensions in FITS files that carry "images" in their name.  This type of data arrangement is called a "flat structure".  When there&#8217;s a change in crucial parameters, a new FITS file will be constructed (with "cube" in its name), based on the flat-structure FITS file, in which the exposures are aggregated into cubes.  The original, flat-structure file will be removed from the system.
+For analysis, only the FITS files with the cubes will be available, and therefore only the structure of these will be discussed in the section below.</p>
+</div>
+<div class="paragraph">
+<p>Each of the extensions (apart from the <code>PRIMARY</code> extension) will occur only once and comprise a 3D data array and a header with the metadata that is specific to that extension.   The name of an extension will reflect what type of data product it comprises (e.g. image data of the F-side of CCD2, serial pre-scan data of the E-side of CCD3, etc.).
+The following extensions can be included in the FITS files:</p>
+</div>
 <div class="ulist checklist">
 <ul class="checklist">
 <li>
 <p><i class="fa fa-square-o"></i> descibe the slicing strategy and how this is handled in the commanding</p>
 </li>
 </ul>
+</div>
+<div class="sect3">
+<h4 id="_crucial_parameters">4.1.1. Crucial Parameters</h4>
+
+</div>
+<div class="sect3">
+<h4 id="_fits_filenames">4.1.2. FITS Filenames</h4>
+
+</div>
+<div class="sect3">
+<h4 id="_slicing_strategy">4.1.3. Slicing Strategy</h4>
+
 </div>
 </div>
 <div class="sect2">
