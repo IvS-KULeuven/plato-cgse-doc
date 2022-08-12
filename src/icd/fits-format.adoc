@@ -1,4 +1,26 @@
 
 == The format of the FITS files
 
+During the camera tests, the DPU will be configured such that a specific part of the E- and/or F-side of the selected CCDs will be transmitted (in the form of SpW packets) for a specified number of cycles.  The following information will be reconstructed from these SpW packets and stored in FITS files:
+
+* transmitted image data of the selected side(s) of the selected CCDs, for all cycles;
+* transmitted serial pre-scan data of the selected side(s) of the selected CCDs, for all cycles;
+* transmitted serial over-scan data of the selected side(s) of the selected CCDs, for all cycles;
+* transmitted parallel over-scan data (if any) of the selected side(s) of the selected CCDs, for all cycles.
+
+While the SpW packets come in, the individual exposures are stored in individual extensions in FITS files that carry "images" in their name.  This type of data arrangement is called a "flat structure".  When there's a change in crucial parameters, a new FITS file will be constructed (with "cube" in its name), based on the flat-structure FITS file, in which the exposures are aggregated into cubes.  The original, flat-structure file will be removed from the system.
+For analysis, only the FITS files with the cubes will be available, and therefore only the structure of these will be discussed in the section below.
+
+Each of the extensions (apart from the `PRIMARY` extension) will occur only once and comprise a 3D data array and a header with the metadata that is specific to that extension.   The name of an extension will reflect what type of data product it comprises (e.g. image data of the F-side of CCD2, serial pre-scan data of the E-side of CCD3, etc.).
+The following extensions can be included in the FITS files:
+
+
+
+
 * [ ] descibe the slicing strategy and how this is handled in the commanding
+
+=== Crucial Parameters
+
+=== FITS Filenames
+
+=== Slicing Strategy
