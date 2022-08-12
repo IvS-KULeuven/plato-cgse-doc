@@ -461,6 +461,7 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <ul class="sectlevel2">
 <li><a href="#_different_user_perspectives">4.1. Different User Perspectives</a></li>
 <li><a href="#_where_do_i_start">4.2. Where do I start?</a></li>
+<li><a href="#_client_vs_server">4.3. Client vs. Server</a></li>
 </ul>
 </li>
 <li><a href="#_update_the_common_egse_software">5. Update the Common-EGSE Software</a></li>
@@ -469,9 +470,12 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <ul class="sectlevel2">
 <li><a href="#_how_can_i_check_the_installed_version_of_the_cgse_and_test_scripts">7.1. How can I check the installed version of the CGSE and Test Scripts</a></li>
 <li><a href="#_how_do_i_check_if_all_the_devices_have_been_connected_properly_and_are_active">7.2. How do I check if all the devices have been connected properly and are active?</a></li>
-<li><a href="#_how_do_i_check_if_the_storage_manager_is_running">7.3. How do I check if the Storage manager is running?</a></li>
+<li><a href="#_how_do_i_check_if_the_storage_manager_is_running">7.3. How do I check if the Storage Manager is running?</a></li>
 <li><a href="#_how_do_i_check_if_the_configuration_manager_is_running">7.4. How do I check if the Configuration Manager is running?</a></li>
-<li><a href="#_where_can_i_find_my_test_data">7.5. Where can I find my test data?</a></li>
+<li><a href="#_how_do_i_check_if_the_process_manager_is_running">7.5. How do I check if the Process Manager is running?</a></li>
+<li><a href="#_how_do_i_check_if_the_synoptics_manager_is_running">7.6. How do I check if the Synoptics Manager is running?</a></li>
+<li><a href="#_how_do_i_check_if_the_logger_is_running">7.7. How do I check if the Logger is running?</a></li>
+<li><a href="#_where_can_i_find_my_test_data">7.8. Where can I find my test data?</a></li>
 </ul>
 </li>
 </ul>
@@ -757,7 +761,7 @@ Inspecting the data
 <td class="tableblock halign-left valign-top"><p class="tableblock">Payload Module</p></td>
 </tr>
 <tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock">REP</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">REPL</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">Read-Evaluate-Print Loop, e.g. the Python interpreter prompt</p></td>
 </tr>
 <tr>
@@ -827,6 +831,57 @@ Inspecting the data
 <p>Start the PyCharm to execute test scripts</p>
 </li>
 </ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_client_vs_server">4.3. Client vs. Server</h3>
+<div class="sect3">
+<h4 id="_what_should_run_on_the_server">4.3.1. What should run on the Server?</h4>
+<div class="paragraph">
+<p>All processes should run on the server.  These are:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>The core services (Storage Manager, Configuration Manager, Process Manager, Synoptics Manager, and Logger), which are (re-)started automatically via <code>systemd</code>;</p>
+</li>
+<li>
+<p>All control servers (incl. device control servers, FDIR, alert manager);</p>
+</li>
+<li>
+<p>ALl file generation processes (FITS generation, FOV HK, and N-FEE HK).</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>These processes can be started in two different ways:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>From the PM UI (see the Sect. below), which is running on the client;</p>
+</li>
+<li>
+<p>Directly on the command line on the server.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_what_should_run_on_the_client">4.3.2. What should run on the Client?</h4>
+<div class="paragraph">
+<p>The following things should be started on the client:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>The test scripts (in a PyCharm session);</p>
+</li>
+<li>
+<p>All GUIs.  These can be started from the command line or from the PM UI.  Note that all processes (not GUIs) that are started from the PM UI are started on the server, not on the client.</p>
+</li>
+</ul>
+</div>
 </div>
 </div>
 </div>
@@ -968,7 +1023,7 @@ CAMTEST Test Scripts version = 2022.1.12-SRON-TS-37-ga4f04cd</pre>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_how_do_i_check_if_the_storage_manager_is_running">7.3. How do I check if the Storage manager is running?</h3>
+<h3 id="_how_do_i_check_if_the_storage_manager_is_running">7.3. How do I check if the Storage Manager is running?</h3>
 <div class="paragraph">
 <p>You can check this in a terminal with the following command:</p>
 </div>
@@ -1018,11 +1073,70 @@ Free disk space: 43.728 GiB (4.69%)</code></pre>
 <div class="sect2">
 <h3 id="_how_do_i_check_if_the_configuration_manager_is_running">7.4. How do I check if the Configuration Manager is running?</h3>
 <div class="paragraph">
-<p>TBW</p>
+<p>You can check this in a terminal with the following command:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>$ cm_cs status
+Configuration manager:
+  Status: active
+  Site ID: IAS
+  No observation running
+  Setup loaded: 00077
+  Hostname: 192.168.0.251
+  Monitoring port: 6001
+  Commanding port: 6000
+  Service port: 6002</pre>
+</div>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_where_can_i_find_my_test_data">7.5. Where can I find my test data?</h3>
+<h3 id="_how_do_i_check_if_the_process_manager_is_running">7.5. How do I check if the Process Manager is running?</h3>
+<div class="paragraph">
+<p>You can check this in a terminal with the following command:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>$ pm_cs status
+Process Manager:
+  Status: active
+  Hostname: 192.168.0.251
+  Monitoring port: 6201
+  Commanding port: 6200
+  Service port: 6202</pre>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_how_do_i_check_if_the_synoptics_manager_is_running">7.6. How do I check if the Synoptics Manager is running?</h3>
+<div class="paragraph">
+<p>You can check this in a terminal with the following command:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>$ syn_cs status
+Synoptics Manager:
+  Status: active
+  Hostname: 192.168.0.251
+  Monitoring port: 6205
+  Commanding port: 6204
+  Service port: 6206</pre>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_how_do_i_check_if_the_logger_is_running">7.7. How do I check if the Logger is running?</h3>
+<div class="paragraph">
+<p>You can check this in a terminal with the following command:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>$ log_cs status</pre>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_where_can_i_find_my_test_data">7.8. Where can I find my test data?</h3>
 <div class="paragraph">
 <p>TBW</p>
 </div>

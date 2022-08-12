@@ -554,7 +554,13 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <li><a href="#_the_device_interface_classes">11.1. The Device Interface Classes</a></li>
 </ul>
 </li>
-<li><a href="#_the_system_under_test_sut_dpu_processor_and_fee_simulator">12. The System Under Test (SUT) – DPU Processor and FEE Simulator</a></li>
+<li><a href="#_the_system_under_test_sut">12. The System Under Test (SUT)</a>
+<ul class="sectlevel2">
+<li><a href="#_dpu_control_server_and_dpu_processor">12.1. DPU Control Server and DPU Processor</a></li>
+<li><a href="#_the_n_fee_simulator">12.2. The N-FEE Simulator</a></li>
+<li><a href="#_ccd_numbering">12.3. CCD Numbering</a></li>
+</ul>
+</li>
 <li><a href="#_device_simulators">13. Device Simulators</a>
 <ul class="sectlevel2">
 <li><a href="#_the_ogse_simulator">13.1. The OGSE Simulator</a></li>
@@ -1821,6 +1827,37 @@ $ invoke start-core-egse</pre>
 </li>
 </ul>
 </div>
+<div class="paragraph">
+<p>In all involved test facilities, the EGSE is used to perform the same set of basic operations: monitoring temperatures, changing the intensity of the source and point it somewhere, acquiring images, etc.  However, the devices that are used to perform these tasks are not everywhere the same (e.g. the OGSE with its lamp and filterwheels, the DAQs for temperature acquisition, etc.).</p>
+</div>
+<div class="paragraph">
+<p>Each (device) control server has a dedicated CSV file in which the housekeeping information is stored and often the name of the parameters indicates the test facility at which they were acquired.</p>
+</div>
+<div class="paragraph">
+<p>It is not inconvenient if user need to memorise the HK names for all test facilities, it also makes the test and analysis scripts more complex.</p>
+</div>
+<div class="paragraph">
+<p>The Synoptics Manager stores this information in one centralised location (the synoptics file) with generic parameter names.</p>
+</div>
+<div class="sect3">
+<h4 id="_synoptical_parameters">5.5.1. Synoptical Parameters</h4>
+<div class="paragraph">
+<p>The housekeeping parameters that are stored in the synoptics are:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Calibrated temperatures, acquired by the FEE, TCS, and facility DAQs;</p>
+</li>
+<li>
+<p>OGSE information (source intensity, measured power, whether the lamp and/or the laser are on);</p>
+</li>
+<li>
+<p>Source position, both actual and commanded, as field angles (θ,φ).</p>
+</li>
+</ul>
+</div>
+</div>
 </div>
 <div class="sect2">
 <h3 id="_the_telemetry_tm_dictionary">5.6. The Telemetry (TM) Dictionary</h3>
@@ -2810,6 +2847,9 @@ There is a subtle difference between the <code>get_setup()</code> and the <code>
 <p><i class="fa fa-square-o"></i> timestamps in the log files</p>
 </li>
 <li>
+<p><i class="fa fa-square-o"></i> timestamps in Grafana</p>
+</li>
+<li>
 <p><i class="fa fa-square-o"></i> UTC versus local time</p>
 </li>
 <li>
@@ -3026,7 +3066,7 @@ puna = PunaController()
 </div>
 </div>
 <div class="sect1">
-<h2 id="_the_system_under_test_sut_dpu_processor_and_fee_simulator">12. The System Under Test (SUT) – DPU Processor and FEE Simulator</h2>
+<h2 id="_the_system_under_test_sut">12. The System Under Test (SUT)</h2>
 <div class="sectionbody">
 <div class="ulist checklist">
 <ul class="checklist">
@@ -3050,6 +3090,8 @@ puna = PunaController()
 </li>
 </ul>
 </div>
+<div class="sect2">
+<h3 id="_dpu_control_server_and_dpu_processor">12.1. DPU Control Server and DPU Processor</h3>
 <div class="paragraph">
 <p>The DPU Control Server (used to be called the DPU Simulator in older documents) acts like any other control server. It&#8217;s Protocol class (<code>DPUProtocol</code>) starts a <code>DPUController</code> which implements the commands that are defined in the <code>DPUInterface</code> class. Specific DPU commands are sent to the control server using the <code>DPUProxy</code> class. The <code>DPUProxy</code> class also implements the <code>DPUInterface</code>.</p>
 </div>
@@ -3064,6 +3106,383 @@ puna = PunaController()
 </div>
 <div class="paragraph">
 <p>The priority queue is also a command queue, but the commands are not sent to the N-FEE. Instead, the commands are executed in the <code>DPUProcessor</code> and are used to either get information about the state of the N-FEE or set/get the internal state of the <code>DPUProcessor</code>.  The state of the N-FEE is mirrored and kept up-to-date by the <code>DPUProcessor</code> during the readout cycle. Priority commands are typically to request e.g. the N-FEE mode, or to set an internal DPU parameter. While the command queue is checked only during the allowed RMAP communication period, the priority queue is checked and executed several times during the readout cycle.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_the_n_fee_simulator">12.2. The N-FEE Simulator</h3>
+<div class="paragraph">
+<p>TBW</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_ccd_numbering">12.3. CCD Numbering</h3>
+<div class="paragraph">
+<p>Throughout the PLATO camera test campaigns, the CCD numbering, used throughout the CGSE, will remain the same (see figure below), but the underlying numbering, used by MSSL for the N-FEE will be different for EM, PFM, and FM.</p>
+</div>
+<div id="ccd-numbering-cgse" class="imageblock text-center">
+<div class="content">
+<img src="../images/ccd-numbering-cgse.png" alt="ccd numbering cgse" width="50%">
+</div>
+</div>
+<div class="sect3">
+<h4 id="_mssl_numbering">12.3.1. MSSL Numbering</h4>
+<div class="paragraph">
+<p>The MSSL numbering of the CCDs is used in:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>the SpW packets with the raw image data;</p>
+</li>
+<li>
+<p>the N-FEE register map (used for configuration and queries).</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_conversions_mssl_cgse">12.3.2. Conversions MSSL &#8646; CGSE</h4>
+<div class="paragraph">
+<p>Originally, the conversion back and forth between the MSSL and CGSE numbering was configured in <code>egse.fee</code> in the following variables:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>CCD_BIN_TO_ID</code>: for the conversion from MSSL numbering to CGSE numbering (used in the FITS persistence layer, DPU UI and HDF5 viewer);</p>
+</li>
+<li>
+<p><code>CCD_BIN_TO_IDX</code>: for the conversion from MSSL numbering to display index in the DPU UI;</p>
+</li>
+<li>
+<p><code>CCD_ID_TO_BIN</code>: for the conversion from CGSE numbering to MSSL numbering;</p>
+</li>
+<li>
+<p><del><code>CCD_IDX_TO_BIN</code></del>.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>The <code>DEFAULT_CCD_READOUT_ORDER</code> variable holds the default order of the CCD readout, as defined in the N-FEE register.</p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_register_map">12.3.3. Register map</h4>
+
+</div>
+<div class="sect3">
+<h4 id="_moving_to_the_setup">12.3.4. Moving to the Setup</h4>
+<div class="paragraph">
+<p>The idea is that these conversions will be moved to the setup file, under <code>setup.camera.fee.ccd_numbering</code>.  The name of the relevant parameters is the same as above, but in small case.</p>
+</div>
+<hr>
+</div>
+<div class="sect3">
+<h4 id="_em">12.3.5. EM</h4>
+<div class="paragraph">
+<p>The CCD numbering in the CGSE and the connections to the PCBs for EM are shown in the figure below.  Between brackets are the CCD numbers by MSSL.  Not only do the CCD numbers not match between MSSL and the CGSE, but the connections between the CCDs and the corresponding PCBs is incorrect.  The latter will be corrected for in PFM.</p>
+</div>
+<div class="imageblock text-center">
+<div class="content">
+<img src="../images/ccd-numbering-em.png" alt="ccd numbering em" width="50%">
+</div>
+</div>
+<div class="sect4">
+<h5 id="_reference_documents_2">Reference Documents</h5>
+<div class="paragraph">
+<p>The entries in the N-FEE register map for EM are stipulated in the following reference document:</p>
+</div>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 50%;">
+<col style="width: 50%;">
+</colgroup>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">N-FEE ICD</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">PLATO-MSSL-PL-ICD-0002 (issue 12.0, 05/05/2022)</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Register map (Attachment)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">PLATO-MSSL-PL-PL-FI-0003_1.0_N-FEE_EM1_EM2_Register_MAP.xlsx</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="sect4">
+<h5 id="_common_egse">Common EGSE</h5>
+<div class="sect5">
+<h6 id="_cdd_conversions">CDD conversions</h6>
+<div class="ulist">
+<ul>
+<li>
+<p>CCD_BIN_TO_ID: [3, 4, 1, 2]</p>
+</li>
+<li>
+<p>CCD_BIN_TO_IDX: [2, 3, 0, 1]</p>
+</li>
+<li>
+<p>CCD_ID_TO_BIN: [0, 0b10, 0b11, 0b00, 0b01]</p>
+</li>
+<li>
+<p><del>CCD_IDX_TO_BIN: <span class="0b10"><del></span></p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect5">
+<h6 id="_ccd_ids">CCD IDs</h6>
+<div class="ulist">
+<ul>
+<li>
+<p>CCD1: 0b10</p>
+</li>
+<li>
+<p>CCD2: 0b11</p>
+</li>
+<li>
+<p>CCD3: 0b00</p>
+</li>
+<li>
+<p>CCD4: 0b01</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_default_readout_order">Default readout order</h5>
+<div class="sect5">
+<h6 id="_deviations_from_the_n_fee_icd">Deviations from the N-FEE ICD</h6>
+<div class="paragraph">
+<p>Incorrect connection between the PCBs and the CCDs:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>According to the spreadsheet for EM (see above), the default CCD readout order is 228 (decimal value).  This is supposed to correspond to the requested CCD readout scheme 1 - 2 - 3 - 4 (e.g. when going to dump mode), but - due to the incorrect connections between the PCBs and the CCDs - this actually corresponds to 3 - 4 - 1 - 2.</p>
+</li>
+<li>
+<p>To compensate for this, the default CCD order as configured in the setup does not correspond to what is in the spreadsheet: instead of using 0b11100100 (228), we use 0b01001110 (0x4E or 78).</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_cgse_configuration">CGSE Configuration</h5>
+<div class="ulist">
+<ul>
+<li>
+<p>Register map: plato-cgse-conf/data/common/n-fee: n_fee_register_em_v2.yaml</p>
+</li>
+<li>
+<p>HK map: plato-cgse-conf/data/common/n-fee: n_fee_hk_em_v2.yaml</p>
+</li>
+<li>
+<p>Sensor calibration: plato-cgse-conf/data/common/n-fee: nfee_sensor_calibration_em_v3.yaml</p>
+</li>
+</ul>
+</div>
+<hr>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_pfm">12.3.6. PFM</h4>
+<div class="paragraph">
+<p>For PFM, the following modifications will be applied w.r.t. EM:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>The CCDs will be connected to the PCB with the same number;</p>
+</li>
+<li>
+<p>Part of the entries in the N-FEE register map will move places.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>The CCD numbering and the connections to the PCBs for PFM are shown in the figure below.  Note that the underlying MSSL numbering is the same as for EM.</p>
+</div>
+<div class="imageblock text-center">
+<div class="content">
+<img src="../images/ccd-numbering-(p)fm.png" alt="ccd numbering (p)fm" width="50%">
+</div>
+</div>
+<div class="sect4">
+<h5 id="_reference_documents_3">Reference Documents</h5>
+<div class="paragraph">
+<p>The entries in the N-FEE register map for PFM are stipulated in the following reference document:</p>
+</div>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 50%;">
+<col style="width: 50%;">
+</colgroup>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">N-FEE ICD</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">PLATO-MSSL-PL-ICD-0002 (issue 12.0, 05/05/2022)</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Register map (Attachment)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">PLATO-MSSL-PL-PL-FI-0003_1.0_N-FEE_PFM_Register_MAP.xlsx</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="sect4">
+<h5 id="_common_egse_2">Common EGSE</h5>
+<div class="sect5">
+<h6 id="_cdd_conversions_2">CDD conversions</h6>
+<div class="ulist">
+<ul>
+<li>
+<p>CCD_BIN_TO_ID:</p>
+</li>
+<li>
+<p>CCD_BIN_TO_IDX:</p>
+</li>
+<li>
+<p>CCD_ID_TO_BIN:</p>
+</li>
+<li>
+<p><del>CCD_IDX_TO_BIN:<del></p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect5">
+<h6 id="_ccd_ids_2">CCD IDs</h6>
+<div class="ulist">
+<ul>
+<li>
+<p>CCD1:</p>
+</li>
+<li>
+<p>CCD2:</p>
+</li>
+<li>
+<p>CCD3:</p>
+</li>
+<li>
+<p>CCD4:</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_default_readout_order_2">Default readout order</h5>
+
+</div>
+<div class="sect4">
+<h5 id="_cgse_configuration_2">CGSE Configuration</h5>
+<div class="ulist">
+<ul>
+<li>
+<p>Register map: plato-cgse-conf/data/common/n-fee: n_fee_register_pfm_v1.yaml</p>
+</li>
+<li>
+<p>HK map: plato-cgse-conf/data/common/n-fee: n_fee_hk_pfm_v1.yaml</p>
+</li>
+<li>
+<p>Sensor calibration: plato-cgse-conf/data/common/n-fee: nfee_sensor_calibration_em_v3.yaml</p>
+</li>
+</ul>
+</div>
+<hr>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_fm">12.3.7. FM</h4>
+<div class="paragraph">
+<p>The CCD numbering and the connections to the PCBs for FM are the same as for PFM.</p>
+</div>
+<div class="sect4">
+<h5 id="_reference_documents_4">Reference Documents</h5>
+<div class="paragraph">
+<p>The entries in the N-FEE register map for FM are stipulated in the following reference document:</p>
+</div>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 50%;">
+<col style="width: 50%;">
+</colgroup>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">N-FEE ICD</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">PLATO-MSSL-PL-ICD-0002 (issue 12.0, 05/05/2022)</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Register map (Attachment)</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">PLATO-MSSL-PL-PL-FI-0003_1.0_N-FEE_PFM_Register_MAP.xlsx</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="sect4">
+<h5 id="_common_egse_3">Common EGSE</h5>
+<div class="sect5">
+<h6 id="_cdd_conversions_3">CDD conversions</h6>
+<div class="ulist">
+<ul>
+<li>
+<p>CCD_BIN_TO_ID:</p>
+</li>
+<li>
+<p>CCD_BIN_TO_IDX:</p>
+</li>
+<li>
+<p>CCD_ID_TO_BIN:</p>
+</li>
+<li>
+<p><del>CCD_IDX_TO_BIN:<del></p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect5">
+<h6 id="_ccd_ids_3">CCD IDs</h6>
+<div class="ulist">
+<ul>
+<li>
+<p>CCD1:</p>
+</li>
+<li>
+<p>CCD2:</p>
+</li>
+<li>
+<p>CCD3:</p>
+</li>
+<li>
+<p>CCD4:</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_cgse_configuration_3">CGSE Configuration</h5>
+<div class="ulist">
+<ul>
+<li>
+<p>Register map: plato-cgse-conf/data/common/n-fee: n_fee_register_fm_v1.yaml</p>
+</li>
+<li>
+<p>HK map: plato-cgse-conf/data/common/n-fee: n_fee_hk_fm_v1.yaml</p>
+</li>
+<li>
+<p>Sensor calibration: plato-cgse-conf/data/common/n-fee: nfee_sensor_calibration_em_v3.yaml</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_default_readout_order_3">Default readout order</h5>
+
+</div>
+</div>
 </div>
 </div>
 </div>
@@ -4248,7 +4667,7 @@ Below this point we have miscellaneous topics that still need their place in the
 <div id="footer">
 <div id="footer-text">
 Version 1.0<br>
-Last updated 2022-08-09 08:49:23 +0200
+Last updated 2022-08-12 17:27:37 +0200
 </div>
 </div>
 <script type="text/x-mathjax-config">
