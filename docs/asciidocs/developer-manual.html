@@ -2222,7 +2222,7 @@ $ invoke start-core-egse</pre>
 </div>
 <div class="imageblock text-center">
 <div class="content">
-<img src="../images/cgse-commanding-component-diagram.png" alt="cgse commanding component diagram" width="80%">
+<img src="../../src/images/cgse-commanding-component-diagram.png" alt="cgse commanding component diagram" width="80%">
 </div>
 </div>
 <div class="sect2">
@@ -2674,7 +2674,7 @@ gse:
 <i class="fa icon-warning" title="Warning"></i>
 </td>
 <td class="content">
-Explain here how the user should submit a Setup from the client machin. That will send the Setup to the configuration manager and automatically push the new Setup to the GitHub repository provided the proper permissions are in place, i.e. a deploy key with write access. Where shall this be described?
+Explain here how the user should submit a Setup from the client machine. That will send the Setup to the configuration manager and automatically push the new Setup to the GitHub repository provided the proper permissions are in place, i.e. a deploy key with write access. Where shall this be described?
 </td>
 </tr>
 </table>
@@ -2716,6 +2716,9 @@ This section needs to be updated!
 <p>Another use is the <code>dry_run</code> state which allows you to execute command sequences (test scripts) without actually sending instructions to the hardware, but just logging that the command would have been executed with its arguments. We could have gone with a singleton pattern, i.e. a class for which only one instance exists in your session, but a singleton is a difficult pattern to test and control. Another possible solution is to use a class for which all instances have a shared state. That means even if the class is instantiated multiple times, its state is the same for all those instances. This pattern is also known as the Borg pattern or the shared-state pattern.</p>
 </div>
 <div class="paragraph">
+<p>An alternative to provide such functionality is to pass arguments with the required state into all levels until the level/function where the information is needed, even if the argument is never used in most of the intermediate levels.</p>
+</div>
+<div class="paragraph">
 <p>The name <code>GlobalState</code> is maybe not such a good name as this class actually shares state between its instances, but this shared state is not global in the sense of a global variable. The objects can be instantiated from anywhere at anytime, which is what makes them globally available.</p>
 </div>
 </div>
@@ -2737,7 +2740,10 @@ setup = GlobalState.setup</pre>
 </div>
 </div>
 <div class="paragraph">
-<p>On system startup however, when no Setup has been loaded, the above code will return <code>None</code>. You can load the Setup with the function <code>load_setup()</code> and this will then also automatically populate the GlobalState:</p>
+<p>The GlobalState requests the Setup from the configuration manager which keeps track of the currently active Setup. On system startup however, when the configuration manager is not running, the above code will return <code>None</code>. Fix your system startup and load a proper Setup into the configuration manager if this is the case.</p>
+</div>
+<div class="paragraph">
+<p>You can load the Setup also with the function <code>load_setup()</code> and this will then automatically populate the GlobalState:</p>
 </div>
 <div class="listingblock">
 <div class="content">
@@ -2747,10 +2753,10 @@ setup = load_setup()</pre>
 </div>
 </div>
 <div class="paragraph">
-<p>From the Setup you can access all devices that are known by the configuration manager, and you have access to configuration and calibration settings. The Setup is fully described in the API documentation of the class at <code>egse.setup</code>. The Setup that comes with the GlobalState is loaded from the Configuration Manager.</p>
+<p>From the Setup you can access all devices that are known by the configuration manager, and you have access to configuration and calibration settings. The Setup is fully described in the API documentation of the class at <code>egse.setup</code>.</p>
 </div>
 <div class="paragraph">
-<p>If you need to work with different Setups simultaneously, <code>GlobalState</code> is not the right place to be. You can get any Setup with the <code>get_setup()</code> function without loading that Setup in the configuration manager.</p>
+<p>The Setup that comes with the GlobalState is loaded from the Configuration Manager. If you need to work with different Setups simultaneously, <code>GlobalState</code> is not the right place to be. In this case you should work directly with the <code>Setup</code> class. You can get any Setup with the <code>get_setup()</code> function without loading that Setup in the configuration manager.</p>
 </div>
 <div class="listingblock">
 <div class="content">
@@ -2766,7 +2772,7 @@ setup_67 = get_setup(67)</pre>
 <i class="fa icon-warning" title="Warning"></i>
 </td>
 <td class="content">
-There is a subtle difference between the <code>get_setup()</code> and the <code>load_setup()</code> function. The <code>get_setup()</code> function retrieves the requested Setup from the configuration manager without replacing the current Setup in the configuration manager control server. The <code>load_setup()</code> returns the requested Setup <strong>and</strong> replaces the currently active Setup in the configuration manager control server.
+There is a subtle difference between the <code>get_setup()</code> and the <code>load_setup()</code> function. The <code>get_setup()</code> function retrieves the requested Setup from the configuration manager without replacing the currently active Setup in the configuration manager control server. The <code>load_setup()</code> returns the requested Setup <strong>and</strong> replaces the currently active Setup in the configuration manager.
 </td>
 </tr>
 </table>
@@ -2775,7 +2781,7 @@ There is a subtle difference between the <code>get_setup()</code> and the <code>
 <p>Alternatively, you can load any Setup directly from a dictionary or a YAML file using the static methods <code>from_dict(my_dict)</code> or <code>from_yaml_file(filename)</code> of the <code>Setup</code> class.</p>
 </div>
 <div class="paragraph">
-<p>There is a full section on the Setup, how to populate it, how it is managed and controlled and what it shall contain and what not. Ckech out <a href="#_the_setup">Chapter 7</a> to get more details.</p>
+<p>There is a full section on the Setup, how to populate it, how it is managed and controlled and what it shall contain and what not. Check out the section on <a href="#_the_setup">The Setup</a> to get more details.</p>
 </div>
 </div>
 <div class="sect3">
@@ -3121,7 +3127,7 @@ puna = PunaController()
 </div>
 <div id="ccd-numbering-cgse" class="imageblock text-center">
 <div class="content">
-<img src="../images/ccd-numbering-cgse.png" alt="ccd numbering cgse" width="50%">
+<img src="../../src/images/ccd-numbering-cgse.png" alt="ccd numbering cgse" width="50%">
 </div>
 </div>
 <div class="sect3">
@@ -3183,7 +3189,7 @@ puna = PunaController()
 </div>
 <div class="imageblock text-center">
 <div class="content">
-<img src="../images/ccd-numbering-em.png" alt="ccd numbering em" width="50%">
+<img src="../../src/images/ccd-numbering-em.png" alt="ccd numbering em" width="50%">
 </div>
 </div>
 <div class="sect4">
@@ -3306,7 +3312,7 @@ puna = PunaController()
 </div>
 <div class="imageblock text-center">
 <div class="content">
-<img src="../images/ccd-numbering-(p)fm.png" alt="ccd numbering (p)fm" width="50%">
+<img src="../../src/images/ccd-numbering-(p)fm.png" alt="ccd numbering (p)fm" width="50%">
 </div>
 </div>
 <div class="sect4">
@@ -4342,7 +4348,7 @@ Everything in this part of the manual needs to be worked on and relocated in one
 <div style="page-break-after: always;"></div>
 <div class="imageblock">
 <div class="content">
-<img src="../images/cgse-cheat-sheet.pdf" alt="cgse cheat sheet" height="80%">
+<img src="../../src/images/cgse-cheat-sheet.pdf" alt="cgse cheat sheet" height="80%">
 </div>
 </div>
 </div>
@@ -4364,7 +4370,7 @@ Everything in this part of the manual needs to be worked on and relocated in one
 </div>
 <div class="imageblock">
 <div class="content">
-<img src="../images/stories-process-manager-crash.png" alt="stories process manager crash">
+<img src="../../src/images/stories-process-manager-crash.png" alt="stories process manager crash">
 </div>
 </div>
 <div class="paragraph">
@@ -4559,7 +4565,7 @@ Below this point we have miscellaneous topics that still need their place in the
 </div>
 <div id="img-cgse-components" class="imageblock text-center">
 <div class="content">
-<img src="../images/cgse-container-diagram.png" alt="cgse container diagram" width="80%">
+<img src="../../src/images/cgse-container-diagram.png" alt="cgse container diagram" width="80%">
 </div>
 <div class="title">Figure 1. The main components of the Common-EGSE (bleu) and how they interface to each other (internal interfaces) and to the test setup (grey) and the PLATO camera (SUT) (external interfaces).</div>
 </div>
