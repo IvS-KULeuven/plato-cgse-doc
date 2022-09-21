@@ -1,16 +1,42 @@
 == Introduction
+:imagesdir: ../images
 
+The Common-EGSE consists of several components, each with specific responsibilities, that communicate over a ZeroMQ messaging network protocol. The core functionality of the CGSE are what we call _core services_:
 
-=== Different User Perspectives
+* Configuration Manager: manages and keeps track of the configuration of the test Setup and test equipment.
+* Storage Manager: manages and stores all camera test data, i.e. CCD images, housekeeping data, monitoring data.
+* Process Manager: manages and keeps track of all running processes that are used by the test site.
+* Synoptics Manager: manages the synoptic housekeeping
+* Logging Manager: stores and distributes all logging messages from all components in the system
 
-* system administrator is responsible for installing the operating system, keeping the system secure, organise backups, monitor disk space, ...
-* operator
-* the test conductor executes the tests
+The core services are independent of the test house or test equipment that is used and are background processes that are started by the Linux Systemd service during startup of the CGSE server. No user interaction is need with the core services as they are managed by Systemd to restart when they crash or are stopped. You should be confident that the core services are always running.
+
+=== The User Perspectives
+
+Although this manual is intended for operators, i.e. those users that operate the system, perform the tests, and execute the procedures, some sections will be dedicated to administrators or developers when there is a need in the context of the section. Please note that this user manual is complementary to the PLATO Camera Ground Test Commanding Manual [PLATO-KUL-PL-MAN-0004] with only minimal overlap.
+
 
 === Where do I start?
 
-* Start the Process Manager GUI.
-* Start the PyCharm to execute test scripts
+Since we assume the Common-EGSE and Test Scripts have been installed and configured, the starting point for you is the Process Manager. The Process Manager (PM) provides a GUI which is started on the egse-client and looks much like the screenshot below. The PM GUI can be started either by clicking its icon on the desktop or from a terminal with the `pm_ui` command.
+
+----
+$ pm_ui
+----
+
+image::pm_ui_csl.png[width=50%,align=center]
+
+The Process Manager GUI represents the state of the system. It provides information about all the processes that are needed to perform the camera  tests. These processes are divided in four categories: Core services, File Generation Processes, Non-Device Control Servers, and Device Control Servers. The screenshot below is taken from CSL and the GUI only shows processes that are applicable to CSL. The left column of services and processes are common for CSL and all the test houses. The right column with Device Control Servers is test house specific and is defined by the content of the Setup. [XXXXX explain what the Setup is and where more info can be found].
+
+The red and green bullets in the PM GUI describe the state of the service or process. When the bullet is green the process is running as expected, when the bullet is red the process is not running. For some devices the bullet can become orange to indicate that the control server process is running, but the device is not connected and can therefore not be commanded. The icons at the right of the processes are for starting/stopping the process. Some processes can be started in simulator mode (toggle the device icon) and some of the processes have a GUI associated that can be started from the PM GUI. Please note that none of the core services can be started from the Process Manager GUI. Core services are managed by the Systemd services of your Linux system and when stopped or crashed they will be automatically restarted.
+
+The Process Manager is fully explained in its own section __The Process Manager GUI__ in <<pm_ui>>.
+
+The Process Manager presents you with a view of the state of the system and allows you to start and stop device processes and start some GUIs to manipulate certain devices and services. The main task for an operator to perform camera tests or alignment procedures is however to execute the test procedure as described in the TP-0011 Google Sheet for each of the test houses and in the ambient alignment procedure PR-0011 for CSL. These documents contain step-by-step as-run procedures that describe all manual interactions, tasks and code execution needed to successfully perform a camera test. Each of the rows in these procedures describe one action that needs to be successfully finished before proceeding to the next action. As said, this can be a manual interaction with a device, a task to be executed from a specific GUI, or a code snippet that needs to be executed in the dedicated environment. The Python source code from the as-run procedure will be executed in a Python Console that is used throughout the completion of the as-run procedure.
+
+We recommend to use the Python Console provided by the PyCharm IDE. [XXXXX What about the Qt Python Console that is available from the e.g. CSL Commanding GUI?]
+
+
 
 === Client vs. Server
 
