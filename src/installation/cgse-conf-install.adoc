@@ -1,0 +1,28 @@
+[#cgse-conf-install]
+== Installation of Setups
+
+The Setups are the configuration files for your test house and define all the configuration settings for your equipment and for the camera (SUT). All the Setups for all the test houses live in the `plato-cgse-conf` repository. This section explains how to install this repo on the server and on the client.
+
+[discrete]
+=== Installation on the server
+
+The `plato-cgse-conf` repository shall be cloned on the server in the folder `~/git` where also the `plato-common-egse` resides. To clone the repo, you need access to this repository first, follow the steps described in <<deploy-key-cgse-conf>>. When you have executed that procedure, you should have the repository up-to-date on your system.
+
+[WARNING]
+Check that the _upload_ remote is indeed a tracking branch, see <<deploy-key-cgse-conf-tracking>>. If not, your new submitted Setups will not be pushed to the GitHub repository.
+
+Make a link in the PLATO_DATA_STORAGE_LOCATION to the `conf` directory containing the Setups for your test house.
+
+----
+   $ ln -s ~/git/plato-cgse-conf/data/<TH>/conf /data/<TH>/conf  <1>
+----
+<1> replace `<TH>` in the above command with `CSL1`, `CSL2`, `IAS`, `INTA`, or `SRON`.
+
+[discrete]
+=== Installation on the client
+
+For the client follow the same procedure to create a deploy key and clone the repository (see <<deploy-key-cgse-conf>>), but **do not** allow write access on GitHub and only create the remote _updates_ (the _upload_ remote is not used on the client).
+
+Alternatively, the folder `~/git/plato-cgse-conf` can be mounted read-only from the server. make sure the location is also `~/git/plato-cgse-conf`.
+
+The `/data` folder is usually already mounted from the server, so the link from `/data` already exists and should be functional.
