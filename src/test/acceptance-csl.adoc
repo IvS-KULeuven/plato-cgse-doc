@@ -1,0 +1,105 @@
+= Common–EGSE & Test Scripts: Acceptance Testing
+Rik Huygen
+Version 1.0, 15/09/2022
+:organization: KU Leuven
+:doc-nr: PLATO-KUL-PL-MAN-0003
+:doctype: book
+:toc: left
+:toclevels: 1
+:icons: font
+:sectnums:
+:!chapter-signifier:
+:xrefstyle: short
+:imagesdir: ../images
+:stem: asciimath
+ifdef::backend-pdf[]
+:pdf-theme: cgse-light
+:pdf-themesdir: ../themes/
+:pdf-header-logo: image::cgse-logo.svg[]
+:title-logo-image: image::cgse-logo-400x400.png[Front Cover]
+:source-highlighter: rouge
+//:rouge-style: github
+endif::[]
+
+:sectnums!:
+
+include::abstract.adoc[]
+
+include::references.adoc[]
+
+
+* Each of the pull requests that go into a release shall have proper unit tests and regression testing for all changes in the code and associated data.
+
+* Devices shall have a possibility to run in simulation mode to perform functional unit tests and system tests. Simulators can be gradually enhanced to enable features that are crucial for operations.
+
+:sectnums:
+
+== Switch on the EGSE hardware
+
+=== Purpose
+
+Turn on all the hardware components, even if you are not going to use them in the short term.
+
+=== Actions
+
+- [ ] Power on the egse-server
+- [ ] Power on the egse-client
+- [ ] Power on the AEU Test EGSE
+- [ ] Power on the Diagnostic SpaceWire interface (DSI)
+- [ ] Power on the facility DAQ -> Keithley DAQ-6510
+- [ ] Power on the Symétrie Hexapod Controller
+- [ ] Power on the Symétrie HUBER Stages Controller
+
+Then log into the egse-client desktop as user `plato-data` and open a Terminal window where you are logged into the egse-client and another Terminal window where you are logged into the egse-server (also on the server, log in as user `plato-data`).
+
+
+== Installation Tests
+
+Reference: Installation Manual, PLATO-KUL-PL-MAN-0002
+
+=== Purpose
+
+We assume that an initial installation has already been performed and the system worked as expected. We will perform an installation of a new release of both the CGSE and the TS.
+
+Install the Common-EGSE on a separate machine which is not an operational machine. This should not be the developer installation either, but the operational installation. The purpose of this test is to check the following:
+
+* Can the installation be done without errors?
+  ** The initial installation of the CGSE and TS is described in the link:installation-manual.html[installation manual].
+  ** Update the Common-EGSE with the command: `update_cgse ops --tag=<release tag>`
+  ** Test scripts are updated with: `update_ts`
+
+* Are the Common-EGSE and the required third-party packages installed in the expected location?
+  ** The installation should be at `/cgse`, packages in `/cgse/lib/python`, scripts and apps in `/cgse/bin`.
+
+* Can the core services be restarted?
+  ** Core services are managed by Systemd and can be restarted by the command: `systemctl restart log_cs cm_cs sm_cs pm_cs syn_cs`
+
+
+=== Actions
+
+Some actions need to be done on the egse-client, other actions on the egse-server. This is indicated in each of the items below.
+
+- [ ] `egse-client`: Stop all control servers from the `pm_ui` (stop button in the toolbar). You will see an hourglass appearing for each of the devices control servers. Wait until all hourglasses turn into the green play button.
+
+- [ ] `egse-client`: Stop the file generation services in `pm_ui` (under "File Generation Processes")
+
+  * FITS generation
+  * FOV HK
+  * N-FEE HK
+
+- [ ] `egse-client`: Stop the Process Manager GUI, `pm_ui`
+
+- [ ] `egse-server`: Stop the core services
+
+  $ cd ~/git/plato-common-egse
+  $ invoke stop-core-egse
+
+- [ ] `egse-server`: Check for orphan control servers not stopped and kill those processes from the terminal
+
+  $ ps -ef | grep "_cs|fee|fov|das"
+  $ kill <PID>
+
+- [ ] `egse-server`: install the new release of the CGSE. Release tags are described in the link:developer-manual.html#version-numbers[Developer Manual].
+
+  $ cd ~/git/plato-common-egse
+  $ update_cgse ops --tag=<release tag>

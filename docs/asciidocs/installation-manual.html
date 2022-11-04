@@ -443,8 +443,8 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <h1>Common-EGSE : Installation Manual</h1>
 <div class="details">
 <span id="author" class="author">Sara Regibo, Rik Huygen</span><br>
-<span id="revnumber">version 1.0,</span>
-<span id="revdate">30/06/2022</span>
+<span id="revnumber">version 1.1,</span>
+<span id="revdate">03/11/2022</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -464,7 +464,8 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <li><a href="#_installation_of_python_3_8">2.1.5. Installation of Python 3.8</a></li>
 <li><a href="#_open_ports_on_the_firewall">2.1.6. Open Ports on the Firewall</a></li>
 <li><a href="#_setup_services_for_core_control_servers_with_systemd">2.1.7. Setup Services for Core Control Servers with Systemd</a></li>
-<li><a href="#_check_your_services">2.1.8. Check your services</a></li>
+<li><a href="#_disable_selinux">2.1.8. Disable SELinux</a></li>
+<li><a href="#_check_your_services">2.1.9. Check your services</a></li>
 </ul>
 </li>
 <li><a href="#egse-client-install">2.2. Client Installation</a></li>
@@ -487,7 +488,7 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <li><a href="#_environment_variables">9.1. Environment Variables</a></li>
 </ul>
 </li>
-<li><a href="#_setting_up_ssh_access_and_github_deploy_keys">10. Setting up ssh access and GitHub deploy keys</a>
+<li><a href="#github-deploy">10. Setting up ssh access and GitHub deploy keys</a>
 <ul class="sectlevel2">
 <li><a href="#deploy-key-egse-server">10.1. Create a deploy key for the plato-common-egse</a></li>
 <li><a href="#_create_a_deploy_key_for_the_plato_test_scripts">10.2. Create a deploy key for the plato-test-scripts</a></li>
@@ -537,10 +538,16 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <p>Copyright &#169; 2022 by the KU Leuven PLATO CGSE Team</p>
 </div>
 <div class="paragraph">
-<p>1<sup>st</sup> Edition — May 2022</p>
+<p>1<sup>st</sup> Edition — November 2022</p>
 </div>
 <div class="paragraph">
-<p>This manual is written in PyCharm using the AsciiDoc plugin. The PDF Book version is processed with asciidoctor-pdf. The source code is available in a GitHub repository at <a href="https://github.com/ivs-kuleuven/plato-cgse-doc">ivs-kuleuven/plato-cgse-doc</a>.</p>
+<p>This manual is written in PyCharm using the AsciiDoc plugin. The PDF Book version is processed with asciidoctor-pdf.</p>
+</div>
+<div class="paragraph">
+<p>The manual is available as HTML from <a href="http://ivs-kuleuven.github.io/plato-cgse-doc">ivs-kuleuven/github.io</a>. The HTML pages are generated with Hugo which is an OSS static web-pages generator. From this site, you can also download the PDF books.</p>
+</div>
+<div class="paragraph">
+<p>The source code is available in a GitHub repository at <a href="https://github.com/ivs-kuleuven/plato-cgse-doc">ivs-kuleuven/plato-cgse-doc</a>.</p>
 </div>
 <div class="paragraph">
 <p>When you find an error or inconsistency or you have some improvements to the text, feel free to raise an issue or create a pull request. Any contribution is greatly appreciated and will be mentioned in the acknowledgement section.</p>
@@ -936,6 +943,9 @@ ExecStartPre=/bin/sleep 3</pre>
 <pre>sudo journalctl -f -u pm_cs</pre>
 </div>
 </div>
+</div>
+<div class="sect3">
+<h4 id="_disable_selinux">2.1.8. Disable SELinux</h4>
 <div class="paragraph">
 <p>When you run into a authentication error while starting the control servers, you will need to disable SELinux (Security-Enhanced Linux). The error will look something like this (excerpt from <code>/var/log/messages</code>):</p>
 </div>
@@ -959,7 +969,7 @@ Sep 11 17:59:47 localhost platform-python[19162]: SELinux is preventing /usr/lib
 </div>
 </div>
 <div class="sect3">
-<h4 id="_check_your_services">2.1.8. Check your services</h4>
+<h4 id="_check_your_services">2.1.9. Check your services</h4>
 <div class="paragraph">
 <p>A simple and quick way to check if the core services are still running together with Prometheus<sup class="footnote">[<a id="_footnoteref_1" class="footnote" href="#_footnotedef_1" title="View footnote.">1</a>]</sup> and Grafana<sup class="footnote">[<a id="_footnoteref_2" class="footnote" href="#_footnotedef_2" title="View footnote.">2</a>]</sup> is to check the running processes:</p>
 </div>
@@ -1315,7 +1325,29 @@ ENABLE_USER_SITE: True
 <div class="sect1">
 <h2 id="test-scripts-install">8. Installing the Test Scripts</h2>
 <div class="sectionbody">
-
+<div class="paragraph">
+<p>The installation will be done as the <code>plato-data</code> user. We will <em>clone</em> the IvS-KULeuven <code>plato-test-scripts</code> repository. There is no need to <em>fork</em> because we will not develop from this account and will therefore not do any pushes or  pull requests.</p>
+</div>
+<div class="paragraph">
+<p>Create a <code>~/git</code> folder in the home directory of the <code>plato-data</code> user, move into that directory and clone the GitHub repository. Then move into the <code>plato-test-scripts</code> folder that was created by the <em>clone</em> command. If this is a first-time installation, you must first create a deploy key for the <code>plato-test-scripts</code>, see <a href="#github-deploy">Chapter 10</a>.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>$ mkdir -p ~/git
+$ cd git
+$ git clone git@repo-test-scripts:IvS-KULeuven/plato-test-scripts.git
+$ cd plato-test-scripts/</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Now, make a virtual environment for your <code>plato-test-scripts</code> installation:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>$ python3 -m venv venv --prompt 'TS-venv'
+$ source venv/bin/activate</pre>
+</div>
+</div>
 </div>
 </div>
 <div class="sect1">
@@ -1378,7 +1410,7 @@ ENABLE_USER_SITE: True
 </div>
 </div>
 <div class="sect1">
-<h2 id="_setting_up_ssh_access_and_github_deploy_keys">10. Setting up ssh access and GitHub deploy keys</h2>
+<h2 id="github-deploy">10. Setting up ssh access and GitHub deploy keys</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>We have a semi-automatic update procedure in place for the Common-EGSE and the Test Scripts. This procedure will be described in <a href="#cgse-update">Chapter 11</a> and <a href="#test-scripts-update">Chapter 12</a>, but before we can use that we need to have the proper permissions to fetch changes from the different GitHub repositories without the need to provide our credentials every time. The best way to do that is to set up deploy keys on the GitHub repos.</p>
@@ -1997,8 +2029,8 @@ $ python3 -m pip install --upgrade -r requirements.txt</pre>
 </div>
 <div id="footer">
 <div id="footer-text">
-Version 1.0<br>
-Last updated 2022-06-30 16:34:18 +0200
+Version 1.1<br>
+Last updated 2022-11-04 09:37:29 +0100
 </div>
 </div>
 </body>

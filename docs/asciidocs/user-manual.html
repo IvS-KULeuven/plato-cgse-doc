@@ -442,8 +442,8 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <h1>Common–EGSE &amp; Test Scripts: User Manual</h1>
 <div class="details">
 <span id="author" class="author">Rik Huygen, Sara Regibo</span><br>
-<span id="revnumber">version 0.1,</span>
-<span id="revdate">21/05/2022</span>
+<span id="revnumber">version 1.1,</span>
+<span id="revdate">03/11/2022</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -908,10 +908,16 @@ Inspecting the data
 </div>
 <div class="sect2">
 <h3 id="_client_vs_server">4.3. Client vs. Server</h3>
+<div class="paragraph">
+<p>Your server is a powerful machine with one or two CPUs and a few tens of cores. This was chosen because we will have a lot of applications/services running, and they can take up different cores without being interrupted. The server also has several disks that are used for active data storage and data archive. The active data storage needs to be a fast SSD disk with enough space to store the data of a few test days. The disk needs to be fast because of the image data that is received from the camera. When the image data is not written fast enough the camera front-end electronics might generate a buffer over-full error hereby corrupting the image data for the current exposure. The archive disk is a normal SATA disk that can hold the test data for the whole campaign.</p>
+</div>
+<div class="paragraph">
+<p>The client machine is a small desktop computer with preferably two large screens to place all the GUIs and the browser for commanding and monitoring the tests.</p>
+</div>
 <div class="sect3">
 <h4 id="_what_should_run_on_the_server">4.3.1. What should run on the Server?</h4>
 <div class="paragraph">
-<p>All processes should run on the server.  These are:</p>
+<p>The following processes should run on the server:</p>
 </div>
 <div class="ulist">
 <ul>
@@ -919,7 +925,7 @@ Inspecting the data
 <p>The core services (Storage Manager, Configuration Manager, Process Manager, Synoptics Manager, and Logger), which are (re-)started automatically via <code>systemd</code>;</p>
 </li>
 <li>
-<p>All control servers (incl. device control servers, FDIR, alert manager);</p>
+<p>All control servers (incl. device control servers, FDIR, Alert Manager);</p>
 </li>
 <li>
 <p>ALl file generation processes (FITS generation, FOV HK, and N-FEE HK).</p>
@@ -948,12 +954,24 @@ Inspecting the data
 <div class="ulist">
 <ul>
 <li>
-<p>The test scripts (in a PyCharm session);</p>
+<p>The test scripts, executed in a Python interpreter (PyCharm or the Operator GUI)</p>
 </li>
 <li>
-<p>All GUIs.  These can be started from the command line or from the PM UI.  Note that all processes (not GUIs) that are started from the PM UI are started on the server, not on the client.</p>
+<p>All GUIs.  These can be started from the command line or from the PM UI.</p>
 </li>
 </ul>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<div class="title">Note</div>
+</td>
+<td class="content">
+All processes (not the GUIs) that are started from the PM UI are actually started on the server by the Process Manager. When you press a start button on the PM UI, you send a request to the Process Manager to start the service. Remember the Process Manager itself is running on the server.
+</td>
+</tr>
+</table>
 </div>
 </div>
 </div>
@@ -1691,8 +1709,8 @@ Synoptics Manager:
 </div>
 <div id="footer">
 <div id="footer-text">
-Version 0.1<br>
-Last updated 2022-09-21 09:12:36 +0200
+Version 1.1<br>
+Last updated 2022-11-04 09:38:48 +0100
 </div>
 </div>
 </body>

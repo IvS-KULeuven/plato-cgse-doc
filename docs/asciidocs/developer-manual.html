@@ -443,8 +443,8 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <h1>Common–EGSE : Developer Manual</h1>
 <div class="details">
 <span id="author" class="author">Rik Huygen, Sara Regibo</span><br>
-<span id="revnumber">version 1.0,</span>
-<span id="revdate">30/06/2022</span>
+<span id="revnumber">version 1.1,</span>
+<span id="revdate">03/11/2022</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -583,7 +583,13 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <ul class="sectlevel1">
 <li><a href="#_observations">15. Observations</a></li>
 <li><a href="#_building_blocks">16. Building Blocks</a></li>
-<li><a href="#tasks-gui">17. The Tasks GUI</a></li>
+<li><a href="#tasks-gui">17. The Tasks GUI</a>
+<ul class="sectlevel2">
+<li><a href="#_todo">17.1. TODO</a></li>
+<li><a href="#_the_package_layout">17.2. The package Layout</a></li>
+<li><a href="#_defining_a_task">17.3. Defining a Task</a></li>
+</ul>
+</li>
 </ul>
 </li>
 <li><a href="#_part_vi_unit_testing_and_beyond">Part VI — Unit Testing and beyond</a>
@@ -641,10 +647,16 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <p>Copyright &#169; 2022 by the KU Leuven PLATO CGSE Team</p>
 </div>
 <div class="paragraph">
-<p>1<sup>st</sup> Edition — May 2022</p>
+<p>1<sup>st</sup> Edition — November 2022</p>
 </div>
 <div class="paragraph">
-<p>This manual is written in PyCharm using the AsciiDoc plugin. The PDF Book version is processed with asciidoctor-pdf. The source code is available in a GitHub repository at <a href="https://github.com/ivs-kuleuven/plato-cgse-doc">ivs-kuleuven/plato-cgse-doc</a>.</p>
+<p>This manual is written in PyCharm using the AsciiDoc plugin. The PDF Book version is processed with asciidoctor-pdf.</p>
+</div>
+<div class="paragraph">
+<p>The manual is available as HTML from <a href="http://ivs-kuleuven.github.io/plato-cgse-doc">ivs-kuleuven/github.io</a>. The HTML pages are generated with Hugo which is an OSS static web-pages generator. From this site, you can also download the PDF books.</p>
+</div>
+<div class="paragraph">
+<p>The source code is available in a GitHub repository at <a href="https://github.com/ivs-kuleuven/plato-cgse-doc">ivs-kuleuven/plato-cgse-doc</a>.</p>
 </div>
 <div class="paragraph">
 <p>When you find an error or inconsistency or you have some improvements to the text, feel free to raise an issue or create a pull request. Any contribution is greatly appreciated and will be mentioned in the acknowledgement section.</p>
@@ -765,13 +777,13 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <h2 id="_introduction">Introduction</h2>
 <div class="sectionbody">
 <div class="paragraph">
-<p>This document is the developer guide for the PLATO Common-EGSE, used at CSL and the test houses at IAS, INTA and SRON and describes the Common-EGSE system from the developer&#8217;s point of view. This document explains how to contribute to the code, which versions of libraries that are used, compiler options for device libraries written in C, access to the GitHub repo, coding style,and much more.</p>
+<p>This document is the developer guide for the PLATO Common-EGSE, used at CSL (Liège, Belgium) and the test houses at IAS (Paris, France), INTA (Madrid, Spain) and SRON (Groningen, The Netherlands) and describes the Common-EGSE system from the developer&#8217;s point of view. This document explains how to contribute to the code, which versions of libraries that are used, compiler options for device libraries written in C, access to the GitHub repo, coding style,and much more.</p>
 </div>
 <div class="paragraph">
 <p>The current release contains 303 Python files, together they contain 95389 lines of which there are 49360 lines of Python code. About 50% of the code files contain actual code, the rest is documentation, comments and blank lines. It is impossible for one person to fully understand all details of the system and only for that reason is it essential to have good and comprehensive documentation.</p>
 </div>
 <div class="paragraph">
-<p>Please, read the <a href="installation-manual.html">installation instructions</a> to know how to install the software and configure your Python installation.  Everything you need to know to be able to use the software is explained [here](../using-code/overview.md).  Before contributing to the code, read the instructions on how to do this [here](../contributing-code/overview.md).</p>
+<p>Please, read the <a href="installation-manual.html">installation instructions</a> to know how to install the software and configure your Python installation.</p>
 </div>
 <h2 id="_list_of_todo_topics" class="discrete">List of TODO topics</h2>
 <div class="ulist checklist">
@@ -3993,7 +4005,217 @@ end_observation()</code></pre>
 <div class="sect1">
 <h2 id="tasks-gui">17. The Tasks GUI</h2>
 <div class="sectionbody">
+<div class="paragraph">
+<p>The Tasks GUI is a generic GUI that allows the test operator to execute standard tasks by clicking the task button and provide the necessary arguments. An example of such a Task GUI is given in the screenshot below.</p>
+</div>
+<div class="imageblock text-center">
+<div class="content">
+<img src="../images/csl_ui.png" alt="csl ui" width="60%">
+</div>
+</div>
+<div class="paragraph">
+<p>The Task GUI is organised in three panels that are arranged vertically in the window. The top panel is the toolbar to control the Jupyter kernel, the panel at the center contains all the task buttons organised by category, the bottom panel is the console where the output and error messages of the tasks will appear.</p>
+</div>
+<div class="paragraph">
+<p>When you click on a task button, a fourth panel will appear above the console panel. This is the arguments panel where you can specify all arguments required for the task. Default arguments are shown in gray and can be left to use or overwritten to change. The arguments panel of the selected 'Analyse' task for the 'Circle around optical axis' group is shown below.</p>
+</div>
+<div class="imageblock text-center">
+<div class="content">
+<img src="../images/csl_ui_args.png" alt="csl ui args" width="60%">
+</div>
+</div>
+<div class="paragraph">
+<p>This 'Analyse' task accepts 5 arguments: a list of observation identifiers,the location of the reduced data, an option to save the generated plots in a given output folder, and a flag to make the tasks output more verbose. Since this task will produce plots, we want to execute it as a GUI App. Finally, the 'Close' button hides the arguments panel again and deselcts the task button, and the 'Run' button executes the task.</p>
+</div>
+<div class="paragraph">
+<p>Other task GUIs will be developed for specific purposes. The <em>CSL Operator GUI</em> is specifically developed for CSL to execute alignment and focusing measurements. Other test houses will develop their own tasks and we have also generic task GUIs like the <em>Contingency GUI</em> that is used at all test houses and quickly switches devices on or off, and allows to perform simple device configurations. An early version of the GUI is shown below, you can clearly see this GUI has the familiar layout and functionality of any Task GUI.</p>
+</div>
+<div class="imageblock text-center">
+<div class="content">
+<img src="../images/contingency_ui.png" alt="contingency ui" width="50%">
+</div>
+</div>
+<div class="paragraph">
+<p>In the rest of this chapter we will explain how these GUIs are created and how you can develop your own version for your specific tasks.</p>
+</div>
+<div class="sect2">
+<h3 id="_todo">17.1. TODO</h3>
+<div class="ulist checklist">
+<ul class="checklist">
+<li>
+<p><i class="fa fa-square-o"></i> The overall concept &#8594; tasks are functions, groups are modules, and the GUI is constructed from the modules at a given location (package)</p>
+</li>
+<li>
+<p><i class="fa fa-square-o"></i> The <code><em>init</em>.py</code> file of the package</p>
+</li>
+<li>
+<p><i class="fa fa-square-o"></i> The modules in the package (is package a good name?)</p>
+</li>
+<li>
+<p><i class="fa fa-square-o"></i> The <code>@exec_ui</code> decorator</p>
+</li>
+<li>
+<p><i class="fa fa-square-o"></i> Icons</p>
+</li>
+<li>
+<p><i class="fa fa-square-o"></i> Kernels</p>
+</li>
+<li>
+<p><i class="fa fa-square-o"></i> Starting the Task GUI</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_the_package_layout">17.2. The package Layout</h3>
+<div class="paragraph">
+<p>To build up the Task GUI, we distinguish the task button as a function, several of these functions can be grouped in a Python module (a <code>.py</code> file) and all the modules plus additional information needed for the Task GUI is kept in a Python package. The <em>CSL Operator GUI</em> shown above, is located in the package <code>camtest.csl</code> and has the following layout:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>camtest.csl
+   ├──────── __init__.py
+   ├──────── camera.py
+   ├──────── circle.py
+   ├──────── hartmann.py
+   ├──────── hexapod.py
+   ├──────── huber.py
+   ├──────── icons
+   ├──────── ogse.py
+   ├──────── refmodel.py
+   └──────── single.py</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Each of these <code>.py</code> files form a group of buttons in the above Task GUI. The <code>__init__.py</code> file is special, it defines <code>camtest.csl</code> as a package, and it defines the command to start the Task GUI [see XXXXX]. The <code>icons</code> folder contains the graphics for the task buttons and the application icon.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_defining_a_task">17.3. Defining a Task</h3>
+<div class="paragraph">
+<p>Let&#8217;s build our own simple Task GUI and start with the most stated and useless function, <em>Hello, World!</em>. We will eventually build a Task GUI with tasks of increasing complexity and guide you through the different steps.</p>
+</div>
+<div class="paragraph">
+<p>Create a folder <code>yakka</code> that will be our Task GUI package. In the folder create an empty file <code>__init__.py</code> and a file named <code>hello.py</code>.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>yakka
+   ├──────── __init__.py
+   └──────── hello.py</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>The <code>hello.py</code> file shall contain the following code:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="python"><span style="color:#080;font-weight:bold">from</span> <span style="color:#B44;font-weight:bold">gui_executor.exec</span> <span style="color:#080;font-weight:bold">import</span> <span style="color:#B44;font-weight:bold">exec_ui</span>
 
+<span style="color:#B0B">@exec_ui</span>(immediate_run=<span style="color:#069">True</span>) <i class="conum" data-value="1"></i><b>(1)</b>
+<span style="color:#080;font-weight:bold">def</span> <span style="color:#06B;font-weight:bold">hello_world</span>():
+    print(<span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">Hello, World!</span><span style="color:#710">&quot;</span></span>)</code></pre>
+</div>
+</div>
+<div class="colist arabic">
+<table>
+<tr>
+<td><i class="conum" data-value="1"></i><b>1</b></td>
+<td>Each task button in the Task GUI is actually a function that is decorated with the <code>@exec_ui</code> decorator.</td>
+</tr>
+</table>
+</div>
+<div class="paragraph">
+<p>Make sure you are at the same directory level as the <code>yakka</code> folder and the execute the following command from your terminal. That will start the Task GUI as shown in the screenshot below.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>PYTHONPATH=. gui-executor --module-path yakka</pre>
+</div>
+</div>
+<div class="imageblock text-center">
+<div class="content">
+<img src="../images/yakka-01.png" alt="yakka 01" width="50%">
+</div>
+</div>
+<div class="paragraph">
+<p>We see the task appearing in the screenshot above. The task text is blue which means it will run immediately when clicked. The tasks name is the name of the function and the task group name is the name of the <code>.py</code> file. The icon is the standard icon used for the task buttons. When you click the task button, the Console shows the following output:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>----- Running script 'hello_world' in kernel <i class="conum" data-value="1"></i><b>(1)</b>
+The code snippet:
+ ──────────────────────────────────────────
+  response = hello_world()  <i class="conum" data-value="2"></i><b>(2)</b>
+ ──────────────────────────────────────────
+
+Hello, World! <i class="conum" data-value="3"></i><b>(3)</b>
+----- function 'hello_world' execution finished. <i class="conum" data-value="4"></i><b>(4)</b></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>What do we see in this output:</p>
+</div>
+<div class="colist arabic">
+<table>
+<tr>
+<td><i class="conum" data-value="1"></i><b>1</b></td>
+<td>The script is run in the kernel, that is the Jupyter kernel which is started when the Task GUI starts up. By default, the 'python3' kernel is used as you can see in the toolbar.</td>
+</tr>
+<tr>
+<td><i class="conum" data-value="2"></i><b>2</b></td>
+<td>The code snippet that is run is shown between two horizontal lines. We see that the function is called without arguments and the return is catched in the variable <code>response</code> (which is <code>None</code> since the function doesn&#8217;t return anything).</td>
+</tr>
+<tr>
+<td><i class="conum" data-value="3"></i><b>3</b></td>
+<td>The string 'Hello, World!' is printed when the function was executed.</td>
+</tr>
+<tr>
+<td><i class="conum" data-value="4"></i><b>4</b></td>
+<td>A mark that the function execution has finished.</td>
+</tr>
+</table>
+</div>
+<div class="paragraph">
+<p>Let&#8217;s add another task that takes an argument 'name' as a string with the default value of "John".</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code data-lang="python"><span style="color:#080;font-weight:bold">from</span> <span style="color:#B44;font-weight:bold">gui_executor.exec</span> <span style="color:#080;font-weight:bold">import</span> <span style="color:#B44;font-weight:bold">exec_ui</span>
+
+<strong>UI_MODULE_DISPLAY_NAME = <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">Hello Tasks</span><span style="color:#710">&quot;</span></span></strong>  <i class="conum" data-value="1"></i><b>(1)</b>
+
+<span style="color:#B0B">@exec_ui</span>(immediate_run=<span style="color:#069">True</span>)
+<span style="color:#080;font-weight:bold">def</span> <span style="color:#06B;font-weight:bold">hello_world</span>():
+    print(<span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">Hello, World!</span><span style="color:#710">&quot;</span></span>)
+
+<strong><span style="color:#B0B">@exec_ui</span>(display_name=<span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">Hello...</span><span style="color:#710">&quot;</span></span>)  <i class="conum" data-value="2"></i><b>(2)</b>
+<span style="color:#080;font-weight:bold">def</span> <span style="color:#06B;font-weight:bold">hello_you</span>(name: str = <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">John</span><span style="color:#710">&quot;</span></span>):  <i class="conum" data-value="3"></i><b>(3)</b>
+    print(f<span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">Hello, {name}!</span><span style="color:#710">&quot;</span></span>)
+</strong></code></pre>
+</div>
+</div>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>if the global variable <code>UI_MODULE_DISPLAY_NAME</code> is defined, its value will be used as the name of the group of buttons in this module.</p>
+</li>
+<li>
+<p>You can give the task button a proper name instead of the function name.</p>
+</li>
+<li>
+<p>The type hint for the argument and the default value are used in the arguments panel in the GUI.</p>
+</li>
+</ol>
+</div>
+<div class="paragraph">
+<p><span class="image"><img src="../images/yakka-02.png" alt="yakka 02" width="40%"></span>
+<span class="image"><img src="../images/yakka-03.png" alt="yakka 03" width="40%"></span></p>
+</div>
+<div class="paragraph">
+<p>In the screenshot above, you can see the effect of the small changes we made in the <code>hello.py</code>. The tasks button group is now called 'Hello Tasks' and the new task we added got the 'Hello&#8230;&#8203;' name instead of the function name. The new task icon has a different color because it&#8217;s is selected. You can also see in the arguments panel that the type hint is picked up and shown in grey and the default name is also filled in grey in the text field. When I put my name there and press the 'Run' button, you can see that the function is called with the proper argument.</p>
+</div>
+</div>
 </div>
 </div>
 <h1 id="_part_vi_unit_testing_and_beyond" class="sect0">Part VI — Unit Testing and beyond</h1>
@@ -4710,8 +4932,8 @@ Below this point we have miscellaneous topics that still need their place in the
 </div>
 <div id="footer">
 <div id="footer-text">
-Version 1.0<br>
-Last updated 2022-09-21 17:34:18 +0200
+Version 1.1<br>
+Last updated 2022-11-04 09:27:27 +0100
 </div>
 </div>
 <script type="text/x-mathjax-config">
