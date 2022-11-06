@@ -1,0 +1,60 @@
+[#desktop-entry-install]
+== Installation of Desktop Entries
+:imagesdir: ../images
+
+This section explains how to install a Desktop icon for one of the GUI applications. In the screenshot below, you see the icon for the _Mechanical Positions Hexapod GUI_ in the toolbar on the left side of the screen. Click that icon to start the Task GUI.
+
+image::desktop-entry-mech-pos-ui.png[align=center, width=70%]
+
+A desktop entry is defined in a file with the `.desktop` extension. The content of the desktop file for the Mechanical Position Hexapod is shown below. The desktop files for several Task GUIs are located in the repo folder `~/git/plato-common-egse/client/`.
+
+The content of `mech_pos_ui.desktop`:
+
+----
+[Desktop Entry]
+Name=Mechanical Position Hexapod GUI
+Comment=Control the Hexapod on the Mechanical Position
+GenericName=Task GUI
+Exec=/home/plato-data/bin/start_mech_pos_ui.sh <1>
+Icon=/home/plato-data/git/plato-common-egse/src/egse/icons/logo-puna.svg <2>
+Type=Application
+StartupNotify=true
+Categories=Development;IDE;
+Terminal=false
+MimeType=text/plain;
+----
+<1> Commands are executed from a Bourne Shell and we therefore need to set the proper environment before we can start the GUI. The easiest way to do that is in a separate script that we will install in the `~/bin` directory.
+<2> A nice looking icon is available for most of the GUIs at this location.
+
+Install the `start_mech_pos_ui.sh` scripts in the `~/bin` directory and make this file executable. The content of this file is given below. Note that when you are starting a GUI that resides in the `plato-test-scripts`, you will also need to load the proper Python environment. An example is the `start_pm_ui.sh` script, also shown below.
+
+.Content of the start_mech_pos_ui.sh script
+----
+#! /usr/bin/bash
+
+source ~/.bash_profile
+
+mech_pos_ui
+----
+
+.Content of the start_pm_ui.sh script
+----
+#! /usr/bin/bash
+
+source ~/.bash_profile
+source ~/git/plato-test-scripts/venv/bin/activate
+
+pm_ui
+----
+
+Now finally, use the following commands to verify and install the desktop entry:
+
+----
+$ desktop-file-validate mech_pos_ui.desktop
+$ desktop-file-install --dir ~/.local/share/applications mech_pos_ui.desktop
+$ update-desktop-database ~/.local/share/applications/
+----
+
+The desktop entry should now appear in the 'Show Applications' view on your desktop. If you right click the icon, you can  _Add to Favourites_ and the icon will appear in the toolbar.
+
+After this you can delete the `mech_pos_ui.desktop` file that you created.
