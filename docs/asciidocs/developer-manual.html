@@ -437,6 +437,78 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 @media amzn-kf8{#header,#content,#footnotes,#footer{padding:0}}
 </style>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
+<style>
+/*! Asciidoctor Tabs | Copyright (c) 2018-present Dan Allen | MIT License */
+.tabs > ul {
+  display: flex;
+  flex-wrap: wrap;
+  list-style: none;
+  margin: 0 -0.25em 0 0;
+  padding: 0;
+}
+
+.tabs > ul li {
+  align-items: center;
+  border: 1px solid black;
+  border-bottom: 0;
+  cursor: pointer;
+  display: flex;
+  font-weight: bold;
+  height: 2em;
+  line-height: 1;
+  margin-right: 0.25em;
+  padding: 0 1em;
+  position: relative;
+}
+
+.tabs > ul li, .tabs > ul p {
+  margin-bottom: 0;
+}
+
+.tabs > ul li + li[id] {
+  margin-top: 0;
+}
+
+.tabset {
+  margin-bottom: 1.25em;
+}
+
+.tabset.is-loading .tabs li:not(:first-child),
+.tabset:not(.is-loading) .tabs li:not(.is-active) {
+  background-color: black;
+  color: white;
+}
+
+.tabset.is-loading .tabs li:first-child::after,
+.tabs li.is-active::after {
+  background-color: white;
+  content: "";
+  display: block;
+  height: 3px; /* Chrome doesn't always paint the line accurately, so add a little extra */
+  position: absolute;
+  bottom: -1.5px;
+  left: 0;
+  right: 0;
+}
+
+.tabset > .content {
+  border: 1px solid gray;
+  padding: 1.25em;
+}
+
+.tabset.is-loading .tab-pane:not(:first-child),
+.tabset:not(.is-loading) .tab-pane:not(.is-active) {
+  display: none;
+}
+
+.tab-pane > :first-child {
+  margin-top: 0;
+}
+
+.tab-pane > :last-child > :last-child {
+  margin-bottom: 0;
+}
+</style>
 </head>
 <body class="book toc2 toc-left">
 <div id="header">
@@ -608,7 +680,7 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 </li>
 </ul>
 </li>
-<li><a href="#_part_vii_todo">Part VII — TODO</a>
+<li><a href="#_part_vii_miscellaneous">Part VII — Miscellaneous</a>
 <ul class="sectlevel1">
 <li><a href="#_terminal_commands">22. Terminal Commands</a>
 <ul class="sectlevel2">
@@ -1216,11 +1288,11 @@ SyntaxError: invalid syntax</pre>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code data-lang="python"><span style="color:#080;font-weight:bold">from</span> <span style="color:#B44;font-weight:bold">egse</span> <span style="color:#080;font-weight:bold">import</span> <span style="color:#B44;font-weight:bold">math</span>
+<pre class="highlight"><code class="language-python" data-lang="python">from egse import math
 
 ...
 
-  <span style="color:#777"># in some expression further down the code you might use</span>
+  # in some expression further down the code you might use
 
   math.exp(a)</code></pre>
 </div>
@@ -1230,7 +1302,7 @@ SyntaxError: invalid syntax</pre>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code>  File &quot;some_module.py&quot;, line 8, in &lt;module&gt;
+<pre class="highlight"><code>  File "some_module.py", line 8, in &lt;module&gt;
     print(math.exp(a))
 AttributeError: module 'egse.math' has no attribute 'exp'</code></pre>
 </div>
@@ -1249,52 +1321,60 @@ AttributeError: module 'egse.math' has no attribute 'exp'</code></pre>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre>$ python -V
+<pre>$ python3 -V
 Python 3.8.3</pre>
 </div>
 </div>
 <div class="paragraph">
-<p>The version of the Common-EGSE and the test scripts that are installed on your system can be determined as follows:</p>
+<p>The version of the Common-EGSE (CGSE) and the test scripts (TS) that are installed on your system can be determined as follows:</p>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre>python -m egse.version
-CGSE git version = 2022.2.17-IAS-CGSE-53-ge5c9bc86
-CGSE installed version = 2022.2.17-IAS-CGSE
+<pre>$ python3 -m egse.version
+CGSE version in Settings: 2022.3.0-rc.6+CGSE
+CGSE installed version = 2022.3.0rc6+cgse
 
-python -m camtest.version
-CAMTEST git version = 2022.2.1-IAS-TS-19-gd739137</pre>
+$ python3 -m camtest.version
+CAMTEST version in Settings: 2022.3.0-rc.2+TS
+CAMTEST git version = 2022.3.0-rc.2+TS-0-g7a7789c</pre>
 </div>
 </div>
 <div class="paragraph">
-<p>The version numbers that are shown above have different parts that all have their meaning. Let&#8217;s use the CGSE git version [<code>2022.2.17-IAS-CGSE-53-ge5c9bc86</code>] to explain each of the parts:</p>
+<p>The version numbers that are shown above have different parts that all have their meaning. We use  <a href="https://semver.org:">semantic versioning</a> to define our version numbers. Let&#8217;s use the CGSE version [<code>2022.3.0-rc.6+CGSE</code>] to explain each of the parts:</p>
 </div>
 <div class="ulist">
 <ul>
 <li>
-<p><code>2022.2.17</code> is the usual semantic versioning with <code>major.minor.patch</code> numbers. The major number is the year in which the software was released. The minor number is increased with functionality changes or when a new test phase starts. The patch is used for urgent bug fixes.</p>
+<p><code>2022.3.0</code> is the core version number with <code>major.minor.patch</code> numbers. The major number is the year in which the software was released. The minor number is increased with functionality changes or when a new test phase starts. The patch is used for urgent bug fixes.</p>
 </li>
 <li>
-<p><code>IAS</code> is the site for which the release is distributed or created. We can have the same semantic version for one or more sites.</p>
+<p><code>rc.6</code> means that we are dealing with a release candidate for the 2022.3.0 release. This is already release candidate number 6. We should try to avoid using release candidates in the operational environment because these versions might not have been fully tested. In an official release of the software, this part in the versioning will be omitted.</p>
 </li>
 <li>
 <p><code>CGSE</code> is a release for the Common-EGSE repository. The Test scripts will have <code>TS</code> here.</p>
 </li>
+</ul>
+</div>
+<div class="paragraph">
+<p>The we have some additional information in the version number of the test scripts, in the above example [<code>2022.3.0-rc.2+TS-0-g7a7789c</code>].</p>
+</div>
+<div class="ulist">
+<ul>
 <li>
-<p><code>53</code> is the number of commits that have been pushed and merged to the GitHub repository since the creation of the release. This number shall be 0 at least for the CGSE on an operational system. If \$!=\$ 0 as in the example above, it means you have not installed the release properly as explained in section XXXXX and you are probably using a development version with less tested or even un-tested code. This number can differ from 0 for the test scripts as we do not yet have a proper installation procedure for the releases.</p>
+<p><code>0</code> is the number of commits that have been pushed and merged to the GitHub repository since the creation of the release. This number shall be 0 at least for the CGSE on an operational system. If this number \$!=\$ 0, it means you have not installed the release properly as explained in the <a href="installation-manual.html">installation instructions</a> and you are probably using a development version with less tested or even un-tested code. This number can differ from 0 for the test scripts as we do not yet have a proper installation procedure for the releases.</p>
 </li>
 <li>
-<p><code>ge5c9bc86</code> is the abbreviated git hash number<sup class="footnote">[<a id="_footnoteref_1" class="footnote" href="#_footnotedef_1" title="View footnote.">1</a>]</sup> for this release. The first letter <code>g</code> indicates the use of <code>git</code>.</p>
+<p><code>g7a7789c</code> is the abbreviated git hash number<sup class="footnote">[<a id="_footnoteref_1" class="footnote" href="#_footnotedef_1" title="View footnote.">1</a>]</sup> for this release. The first letter <code>g</code> indicates the use of <code>git</code>.</p>
 </li>
 </ul>
 </div>
 <div class="paragraph">
-<p>The VERSION and RELEASE are also defined in the <code>settings.yaml</code> and should match the first three parts of the version number explained above. If not, it was probably forgotten to update these numbers when preparing the release. You can use these number in your code by importing from <code>egse.version</code>. XXXXX: this is not the case yet for <code>camtest.version</code>!</p>
+<p>The VERSION and RELEASE are also defined in the <code>settings.yaml</code> and should match the first three parts of the version number explained above. If not, it was probably forgotten to update these numbers when preparing the release. You can use these version numbers in your code by importing from <code>egse.version</code> and <code>camtest.version</code>.</p>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre>from egse.version import VERSION
-from egse.version import RELEASE</pre>
+<pre>from egse.version import VERSION as CGSE_VERSION
+from camtest.version import VERSION as CAMTEST_VERSION</pre>
 </div>
 </div>
 </div>
@@ -1316,10 +1396,10 @@ All errors and exceptions should be handled to prevent the Application from cras
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code data-lang="python"><span style="color:#080;font-weight:bold">try</span>:
+<pre class="highlight"><code class="language-python" data-lang="python">try:
     main_loop()
-<span style="color:#080;font-weight:bold">except</span> <span style="color:#C00;font-weight:bold">Exception</span>:
-    logging.exception(<span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">Caught exception at the top level main_loop().</span><span style="color:#710">&quot;</span></span>)</code></pre>
+except Exception:
+    logging.exception("Caught exception at the top level main_loop().")</code></pre>
 </div>
 </div>
 <div class="paragraph">
@@ -1340,21 +1420,21 @@ Use the <code>try</code>/<code>except</code> blocks around code that can potenti
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code data-lang="python"><span style="color:#080;font-weight:bold">import</span> <span style="color:#B44;font-weight:bold">socket</span>
-<span style="color:#080;font-weight:bold">import</span> <span style="color:#B44;font-weight:bold">logging</span>
+<pre class="highlight"><code class="language-python" data-lang="python">import socket
+import logging
 
-<span style="color:#080;font-weight:bold">def</span> <span style="color:#06B;font-weight:bold">has_internet</span>(host=<span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">8.8.8.8</span><span style="color:#710">&quot;</span></span>, port=<span style="color:#00D">53</span>, timeout=<span style="color:#00D">3</span>):
-    <span style="color:#D42"><span style="color:black">&quot;&quot;&quot;</span><span>Returns True if we have internet connection, False otherwise.</span><span style="color:black">&quot;&quot;&quot;</span></span>
-    <span style="color:#080;font-weight:bold">try</span>:
+def has_internet(host="8.8.8.8", port=53, timeout=3):
+    """Returns True if we have internet connection, False otherwise."""
+    try:
         socket_ = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         socket_.settimeout(timeout)
         socket_.connect((host, port))
-        <span style="color:#080;font-weight:bold">return</span> <span style="color:#069">True</span>
-    <span style="color:#080;font-weight:bold">except</span> socket.error <span style="color:#080;font-weight:bold">as</span> ex:
-        logging.info(f<span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">No Internet: Unable to open socket to {host}:{port} [{ex}]</span><span style="color:#710">&quot;</span></span>)
-        <span style="color:#080;font-weight:bold">return</span> <span style="color:#069">False</span>
-    <span style="color:#080;font-weight:bold">finally</span>:
-        <span style="color:#080;font-weight:bold">if</span> socket_ <span style="color:#080;font-weight:bold">is</span> <span style="color:#080;font-weight:bold">not</span> <span style="color:#069">None</span>:
+        return True
+    except socket.error as ex:
+        logging.info(f"No Internet: Unable to open socket to {host}:{port} [{ex}]")
+        return False
+    finally:
+        if socket_ is not None:
             socket_.close()</code></pre>
 </div>
 </div>
@@ -1369,19 +1449,19 @@ Use the <code>try</code>/<code>except</code> blocks around code that can potenti
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code data-lang="python"><span style="color:#080;font-weight:bold">import</span> <span style="color:#B44;font-weight:bold">socket</span>
-<span style="color:#080;font-weight:bold">import</span> <span style="color:#B44;font-weight:bold">logging</span>
+<pre class="highlight"><code class="language-python" data-lang="python">import socket
+import logging
 
-<span style="color:#080;font-weight:bold">def</span> <span style="color:#06B;font-weight:bold">has_internet</span>(host=<span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">8.8.8.8</span><span style="color:#710">&quot;</span></span>, port=<span style="color:#00D">53</span>, timeout=<span style="color:#00D">3</span>):
-    <span style="color:#D42"><span style="color:black">&quot;&quot;&quot;</span><span>Returns True if we have internet connection, False otherwise.</span><span style="color:black">&quot;&quot;&quot;</span></span>
-    <span style="color:#080;font-weight:bold">try</span>:
-        <span style="color:#080;font-weight:bold">with</span> socket.socket(socket.AF_INET, socket.SOCK_STREAM) <span style="color:#080;font-weight:bold">as</span> socket_:
+def has_internet(host="8.8.8.8", port=53, timeout=3):
+    """Returns True if we have internet connection, False otherwise."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as socket_:
             socket_.settimeout(timeout)
             socket_.connect((host, port))
-            <span style="color:#080;font-weight:bold">return</span> <span style="color:#069">True</span>
-    <span style="color:#080;font-weight:bold">except</span> socket.error <span style="color:#080;font-weight:bold">as</span> ex:
-        logging.warning(f<span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">No Internet: Unable to open socket to {host}:{port} [{ex}]</span><span style="color:#710">&quot;</span></span>)
-        <span style="color:#080;font-weight:bold">return</span> <span style="color:#069">False</span></code></pre>
+            return True
+    except socket.error as ex:
+        logging.warning(f"No Internet: Unable to open socket to {host}:{port} [{ex}]")
+        return False</code></pre>
 </div>
 </div>
 <div class="paragraph">
@@ -1389,11 +1469,11 @@ Use the <code>try</code>/<code>except</code> blocks around code that can potenti
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code data-lang="python"><span style="color:#080;font-weight:bold">from</span> <span style="color:#B44;font-weight:bold">egse.hexapod.symetrie.puna</span> <span style="color:#080;font-weight:bold">import</span> <span style="color:#B44;font-weight:bold">PunaProxy</span>
+<pre class="highlight"><code class="language-python" data-lang="python">from egse.hexapod.symetrie.puna import PunaProxy
 
-<span style="color:#080;font-weight:bold">with</span> PunaProxy() <span style="color:#080;font-weight:bold">as</span> proxy:
-    proxy.move_absolute(<span style="color:#00D">0</span>, <span style="color:#00D">0</span>, <span style="color:#00D">2</span>, <span style="color:#00D">0</span>, <span style="color:#00D">0</span>, <span style="color:#00D">0</span>)
-    <span style="color:#777"># Send other commands to the Puna Hexapod.</span></code></pre>
+with PunaProxy() as proxy:
+    proxy.move_absolute(0, 0, 2, 0, 0, 0)
+    # Send other commands to the Puna Hexapod.</code></pre>
 </div>
 </div>
 <div class="paragraph">
@@ -1401,13 +1481,13 @@ Use the <code>try</code>/<code>except</code> blocks around code that can potenti
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code>PunaProxy could not connect to its control server at tcp://localhost:6700. No commands have been loaded.
+<pre class="highlight"><code>PunaProxy could not connect to its control server at tcp://localhost:6700. No commands have been loaded.
 Control Server seems to be off-line, abandoning
 Traceback (most recent call last):
-  File &quot;t.py&quot;, line 3, in &lt;module&gt;
+  File "t.py", line 3, in &lt;module&gt;
     with PunaProxy() as proxy:
-  File &quot;/Users/rik/Git/plato-common-egse/src/egse/proxy.py&quot;, line 129, in __enter__
-    raise ConnectionError(&quot;Proxy is not connected when entering the context.&quot;)
+  File "/Users/rik/Git/plato-common-egse/src/egse/proxy.py", line 129, in __enter__
+    raise ConnectionError("Proxy is not connected when entering the context.")
 ConnectionError: Proxy is not connected when entering the context.</code></pre>
 </div>
 </div>
@@ -1416,15 +1496,15 @@ ConnectionError: Proxy is not connected when entering the context.</code></pre>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code data-lang="python"><span style="color:#080;font-weight:bold">from</span> <span style="color:#B44;font-weight:bold">egse.hexapod.symetrie.puna</span> <span style="color:#080;font-weight:bold">import</span> <span style="color:#B44;font-weight:bold">PunaProxy</span>
+<pre class="highlight"><code class="language-python" data-lang="python">from egse.hexapod.symetrie.puna import PunaProxy
 
-<span style="color:#080;font-weight:bold">try</span>:
-    <span style="color:#080;font-weight:bold">with</span> PunaProxy() <span style="color:#080;font-weight:bold">as</span> proxy:
-        proxy.move_absolute(<span style="color:#00D">0</span>,<span style="color:#00D">0</span>,<span style="color:#00D">2</span>,<span style="color:#00D">0</span>,<span style="color:#00D">0</span>,<span style="color:#00D">0</span>)
-        <span style="color:#777"># Send other commands to the Puna Hexapod.</span>
-<span style="color:#080;font-weight:bold">except</span> ConnectionError <span style="color:#080;font-weight:bold">as</span> exc:
-    logger.exception(<span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">Could not send commands to the Hexapod PUNA because the control server is not reachable.</span><span style="color:#710">&quot;</span></span>)
-    <span style="color:#080;font-weight:bold">raise</span>  <i class="conum" data-value="1"></i><b>(1)</b></code></pre>
+try:
+    with PunaProxy() as proxy:
+        proxy.move_absolute(0,0,2,0,0,0)
+        # Send other commands to the Puna Hexapod.
+except ConnectionError as exc:
+    logger.exception("Could not send commands to the Hexapod PUNA because the control server is not reachable.")
+    raise  <i class="conum" data-value="1"></i><b>(1)</b></code></pre>
 </div>
 </div>
 <div class="colist arabic">
@@ -1465,17 +1545,17 @@ The main drawback here is that your code, when calling such a function, must alw
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code data-lang="python"><span style="color:#080;font-weight:bold">if</span> response[-<span style="color:#00D">2</span>:] != <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">'</span><span style="color:#b0b">\r</span><span style="color:#b0b">\n</span><span style="color:#710">'</span></span>:
-    <span style="color:#080;font-weight:bold">raise</span> ConnectionError(f<span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">Missing termination characters in response: {response}</span><span style="color:#710">&quot;</span></span>)</code></pre>
+<pre class="highlight"><code class="language-python" data-lang="python">if response[-2:] != '\r\n':
+    raise ConnectionError(f"Missing termination characters in response: {response}")</code></pre>
 </div>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code data-lang="python"><span style="color:#080;font-weight:bold">def</span> <span style="color:#06B;font-weight:bold">convert_to_float</span>(value: <span style="color:#369;font-weight:bold">str</span>) -&gt; <span style="color:#369;font-weight:bold">float</span>:
-    <span style="color:#080;font-weight:bold">try</span>:
-        <span style="color:#080;font-weight:bold">return</span> <span style="color:#369;font-weight:bold">float</span>(value)
-    <span style="color:#080;font-weight:bold">except</span> <span style="color:#C00;font-weight:bold">ValueError</span>:
-        <span style="color:#080;font-weight:bold">return</span> math.nan</code></pre>
+<pre class="highlight"><code class="language-python" data-lang="python">def convert_to_float(value: str) -&gt; float:
+    try:
+        return float(value)
+    except ValueError:
+        return math.nan</code></pre>
 </div>
 </div>
 <div class="paragraph">
@@ -1503,11 +1583,11 @@ Sometimes you just want to do something and rethrow the same Exception. This is 
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code data-lang="python"><span style="color:#080;font-weight:bold">try</span>:
-    <span style="color:#777"># do some work here</span>
-<span style="color:#080;font-weight:bold">except</span> SomeException:
-    logging.warning(<span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">...</span><span style="color:#710">&quot;</span></span>, exc_info=<span style="color:#069">True</span>)
-    <span style="color:#080;font-weight:bold">raise</span>  <i class="conum" data-value="1"></i><b>(1)</b></code></pre>
+<pre class="highlight"><code class="language-python" data-lang="python">try:
+    # do some work here
+except SomeException:
+    logging.warning("...", exc_info=True)
+    raise  <i class="conum" data-value="1"></i><b>(1)</b></code></pre>
 </div>
 </div>
 <div class="colist arabic">
@@ -1532,10 +1612,10 @@ Sometimes you just want to do something and rethrow the same Exception. This is 
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code data-lang="python"><span style="color:#080;font-weight:bold">if</span> <span style="color:#369;font-weight:bold">hasattr</span>(command, <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">'</span><span style="color:#D20">name</span><span style="color:#710">'</span></span>):
-    command_name = <span style="color:#369;font-weight:bold">getattr</span>(command, <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">'</span><span style="color:#D20">name</span><span style="color:#710">'</span></span>)
-<span style="color:#080;font-weight:bold">else</span>:
-    command_name = <span style="color:#069">None</span></code></pre>
+<pre class="highlight"><code class="language-python" data-lang="python">if hasattr(command, 'name'):
+    command_name = getattr(command, 'name')
+else:
+    command_name = None</code></pre>
 </div>
 </div>
 <div class="paragraph">
@@ -1543,10 +1623,10 @@ Sometimes you just want to do something and rethrow the same Exception. This is 
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code data-lang="python"><span style="color:#080;font-weight:bold">try</span>:
-    command_name = <span style="color:#369;font-weight:bold">getattr</span>(command, <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">'</span><span style="color:#D20">name</span><span style="color:#710">'</span></span>)
-<span style="color:#080;font-weight:bold">except</span> <span style="color:#C00;font-weight:bold">AttributeError</span>:
-    command_name = <span style="color:#069">None</span></code></pre>
+<pre class="highlight"><code class="language-python" data-lang="python">try:
+    command_name = getattr(command, 'name')
+except AttributeError:
+    command_name = None</code></pre>
 </div>
 </div>
 </div>
@@ -1561,9 +1641,9 @@ As a general rule, try to use builtin exceptions from Python, especially <code>V
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code data-lang="python"><span style="color:#080;font-weight:bold">class</span> <span style="color:#B06;font-weight:bold">DeviceNotFoundError</span>(<span style="color:#C00;font-weight:bold">Exception</span>):
-    <span style="color:#D42"><span style="color:black">&quot;&quot;&quot;</span><span>Raised when a device could not be located or loaded.</span><span style="color:black">&quot;&quot;&quot;</span></span>
-    <span style="color:#080;font-weight:bold">pass</span></code></pre>
+<pre class="highlight"><code class="language-python" data-lang="python">class DeviceNotFoundError(Exception):
+    """Raised when a device could not be located or loaded."""
+    pass</code></pre>
 </div>
 </div>
 <div class="admonitionblock note">
@@ -1589,43 +1669,43 @@ Even if we are talking about Exceptions all the time, your own Exceptions should
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code data-lang="python"><span style="color:#080;font-weight:bold">def</span> <span style="color:#06B;font-weight:bold">connect</span>(<span style="color:#069">self</span>):
+<pre class="highlight"><code class="language-python" data-lang="python">def connect(self):
 
-    <span style="color:#777"># Sanity checks</span>
+    # Sanity checks
 
-    <span style="color:#080;font-weight:bold">if</span> <span style="color:#069">self</span>.is_connection_open:
-        <span style="color:#080;font-weight:bold">raise</span> PMACException(<span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">Socket is already open</span><span style="color:#710">&quot;</span></span>)
-    <span style="color:#080;font-weight:bold">if</span> <span style="color:#069">self</span>.hostname <span style="color:#080;font-weight:bold">in</span> (<span style="color:#069">None</span>, <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#710">&quot;</span></span>):
-        <span style="color:#080;font-weight:bold">raise</span> PMACException(<span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">ERROR: hostname not initialized</span><span style="color:#710">&quot;</span></span>)
-    <span style="color:#080;font-weight:bold">if</span> <span style="color:#069">self</span>.port <span style="color:#080;font-weight:bold">in</span> (<span style="color:#069">None</span>, <span style="color:#00D">0</span>):
-        <span style="color:#080;font-weight:bold">raise</span> PMACException(<span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">ERROR: port number not initialized</span><span style="color:#710">&quot;</span></span>)
+    if self.is_connection_open:
+        raise PMACException("Socket is already open")
+    if self.hostname in (None, ""):
+        raise PMACException("ERROR: hostname not initialized")
+    if self.port in (None, 0):
+        raise PMACException("ERROR: port number not initialized")
 
-    <span style="color:#777"># Create a new socket instance</span>
+    # Create a new socket instance
 
-    <span style="color:#080;font-weight:bold">try</span>:
-        <span style="color:#069">self</span>.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        <span style="color:#069">self</span>.sock.setblocking(<span style="color:#00D">1</span>)
-        <span style="color:#069">self</span>.sock.settimeout(<span style="color:#00D">3</span>)
-    <span style="color:#080;font-weight:bold">except</span> socket.error <span style="color:#080;font-weight:bold">as</span> e_socket:
-        <span style="color:#080;font-weight:bold">raise</span> PMACException(<span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">ERROR: Failed to create socket.</span><span style="color:#710">&quot;</span></span>) <span style="color:#080;font-weight:bold">from</span> <span style="color:#B44;font-weight:bold">e_socket</span>
+    try:
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock.setblocking(1)
+        self.sock.settimeout(3)
+    except socket.error as e_socket:
+        raise PMACException("ERROR: Failed to create socket.") from e_socket
 
-    <span style="color:#777"># Attempt to establish a connection to the remote host</span>
+    # Attempt to establish a connection to the remote host
 
-    <span style="color:#080;font-weight:bold">try</span>:
-        logger.debug(f<span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">'</span><span style="color:#D20">Connecting a socket to host &quot;{self.hostname}&quot; using port {self.port}</span><span style="color:#710">'</span></span>)
-        <span style="color:#069">self</span>.sock.connect((<span style="color:#069">self</span>.hostname, <span style="color:#069">self</span>.port))
-    <span style="color:#080;font-weight:bold">except</span> ConnectionRefusedError <span style="color:#080;font-weight:bold">as</span> e_cr:
-        <span style="color:#080;font-weight:bold">raise</span> PMACException(f<span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">ERROR: Connection refused to {self.hostname}</span><span style="color:#710">&quot;</span></span>) <span style="color:#080;font-weight:bold">from</span> <span style="color:#B44;font-weight:bold">e_cr</span>
-    <span style="color:#080;font-weight:bold">except</span> socket.gaierror <span style="color:#080;font-weight:bold">as</span> e_gai:
-        <span style="color:#080;font-weight:bold">raise</span> PMACException(f<span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">ERROR: socket address info error for {self.hostname}</span><span style="color:#710">&quot;</span></span>) <span style="color:#080;font-weight:bold">from</span> <span style="color:#B44;font-weight:bold">e_gai</span>
-    <span style="color:#080;font-weight:bold">except</span> socket.herror <span style="color:#080;font-weight:bold">as</span> e_h:
-        <span style="color:#080;font-weight:bold">raise</span> PMACException(f<span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">ERROR: socket host address error for {self.hostname}</span><span style="color:#710">&quot;</span></span>) <span style="color:#080;font-weight:bold">from</span> <span style="color:#B44;font-weight:bold">e_h</span>
-    <span style="color:#080;font-weight:bold">except</span> socket.timeout <span style="color:#080;font-weight:bold">as</span> e_timeout:
-        <span style="color:#080;font-weight:bold">raise</span> PMACException(f<span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">ERROR: socket timeout error for {self.hostname}</span><span style="color:#710">&quot;</span></span>) <span style="color:#080;font-weight:bold">from</span> <span style="color:#B44;font-weight:bold">e_timeout</span>
-    <span style="color:#080;font-weight:bold">except</span> <span style="color:#C00;font-weight:bold">OSError</span> <span style="color:#080;font-weight:bold">as</span> e_ose:
-        <span style="color:#080;font-weight:bold">raise</span> PMACException(f<span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">ERROR: OSError caught ({e_ose}).</span><span style="color:#710">&quot;</span></span>) <span style="color:#080;font-weight:bold">from</span> <span style="color:#B44;font-weight:bold">e_ose</span>
+    try:
+        logger.debug(f'Connecting a socket to host "{self.hostname}" using port {self.port}')
+        self.sock.connect((self.hostname, self.port))
+    except ConnectionRefusedError as e_cr:
+        raise PMACException(f"ERROR: Connection refused to {self.hostname}") from e_cr
+    except socket.gaierror as e_gai:
+        raise PMACException(f"ERROR: socket address info error for {self.hostname}") from e_gai
+    except socket.herror as e_h:
+        raise PMACException(f"ERROR: socket host address error for {self.hostname}") from e_h
+    except socket.timeout as e_timeout:
+        raise PMACException(f"ERROR: socket timeout error for {self.hostname}") from e_timeout
+    except OSError as e_ose:
+        raise PMACException(f"ERROR: OSError caught ({e_ose}).") from e_ose
 
-    <span style="color:#069">self</span>.is_connection_open = <span style="color:#069">True</span></code></pre>
+    self.is_connection_open = True</code></pre>
 </div>
 </div>
 </div>
@@ -1637,9 +1717,9 @@ Use assertions only to check for invariants. Assertions are meant for developmen
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code data-lang="python"><span style="color:#080;font-weight:bold">def</span> <span style="color:#06B;font-weight:bold">_load_register_map</span>(<span style="color:#069">self</span>):
-    <span style="color:#777"># This method shall only be called when self._name is 'N-FEE' or 'F-FEE'.</span>
-    <span style="color:#080;font-weight:bold">assert</span> <span style="color:#069">self</span>._name <span style="color:#080;font-weight:bold">in</span> (<span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">'</span><span style="color:#D20">N-FEE</span><span style="color:#710">'</span></span>, <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">'</span><span style="color:#D20">F-FEE</span><span style="color:#710">'</span></span>)</code></pre>
+<pre class="highlight"><code class="language-python" data-lang="python">def _load_register_map(self):
+    # This method shall only be called when self._name is 'N-FEE' or 'F-FEE'.
+    assert self._name in ('N-FEE', 'F-FEE')</code></pre>
 </div>
 </div>
 <div class="paragraph">
@@ -1647,10 +1727,10 @@ Use assertions only to check for invariants. Assertions are meant for developmen
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code data-lang="python"><span style="color:#777"># If this assertion fails, there is a flaw in the algorithm above</span>
-<span style="color:#080;font-weight:bold">assert</span> tot_n_args == n_args + n_kwargs, (
-    f<span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">Total number of arguments ({tot_n_args}) doesn't match </span><span style="color:#710">&quot;</span></span>
-    f<span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20"># args ({n_args}) + # kwargs ({n_kwargs})</span><span style="color:#710">&quot;</span></span>
+<pre class="highlight"><code class="language-python" data-lang="python"># If this assertion fails, there is a flaw in the algorithm above
+assert tot_n_args == n_args + n_kwargs, (
+    f"Total number of arguments ({tot_n_args}) doesn't match "
+    f"# args ({n_args}) + # kwargs ({n_kwargs})"
 )</code></pre>
 </div>
 </div>
@@ -2346,19 +2426,19 @@ $ invoke start-core-egse</pre>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code data-lang="python"><span style="color:#080;font-weight:bold">def</span> <span style="color:#06B;font-weight:bold">_add_commands</span>(<span style="color:#069">self</span>):
-    <span style="color:#080;font-weight:bold">for</span> key <span style="color:#080;font-weight:bold">in</span> <span style="color:#069">self</span>._commands:
-        <span style="color:#080;font-weight:bold">if</span> <span style="color:#369;font-weight:bold">hasattr</span>(<span style="color:#069">self</span>, key):
-            attribute = <span style="color:#369;font-weight:bold">getattr</span>(<span style="color:#069">self</span>, key)
-            <span style="color:#080;font-weight:bold">if</span> (
-                <span style="color:#369;font-weight:bold">isinstance</span>(attribute, types.MethodType) <span style="color:#080;font-weight:bold">and</span>
-                <span style="color:#080;font-weight:bold">not</span> <span style="color:#369;font-weight:bold">hasattr</span>(attribute, <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">__dynamic_interface</span><span style="color:#710">&quot;</span></span>)
+<pre class="highlight"><code class="language-python" data-lang="python">def _add_commands(self):
+    for key in self._commands:
+        if hasattr(self, key):
+            attribute = getattr(self, key)
+            if (
+                isinstance(attribute, types.MethodType) and
+                not hasattr(attribute, "__dynamic_interface")
             ):
-                <span style="color:#080;font-weight:bold">continue</span>
-        command = <span style="color:#069">self</span>._commands[key]
-        new_method = MethodType(command.client_call, <span style="color:#069">self</span>)
+                continue
+        command = self._commands[key]
+        new_method = MethodType(command.client_call, self)
         new_method = set_docstring(new_method, command)
-        <span style="color:#369;font-weight:bold">setattr</span>(<span style="color:#069">self</span>, key, new_method)</code></pre>
+        setattr(self, key, new_method)</code></pre>
 </div>
 </div>
 <div class="paragraph">
@@ -2401,12 +2481,12 @@ $ invoke start-core-egse</pre>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code data-lang="python">    <span style="color:#B0B">@dynamic_interface</span>
-    <span style="color:#080;font-weight:bold">def</span> <span style="color:#06B;font-weight:bold">get_current_position</span>(<span style="color:#069">self</span>, axis) -&gt; <span style="color:#369;font-weight:bold">float</span>:
-        <span style="color:#D42"><span style="color:black">&quot;&quot;&quot;</span><span>
-</span><span>        Returns the current position for this axis as a float.</span><span>
-</span><span>        </span><span style="color:black">&quot;&quot;&quot;</span></span>
-        <span style="color:#080;font-weight:bold">raise</span> <span style="color:#C00;font-weight:bold">NotImplementedError</span></code></pre>
+<pre class="highlight"><code class="language-python" data-lang="python">    @dynamic_interface
+    def get_current_position(self, axis) -&gt; float:
+        """
+        Returns the current position for this axis as a float.
+        """
+        raise NotImplementedError</code></pre>
 </div>
 </div>
 <div class="paragraph">
@@ -2414,16 +2494,16 @@ $ invoke start-core-egse</pre>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code data-lang="python">    <span style="color:#080;font-weight:bold">def</span> <span style="color:#06B;font-weight:bold">get_current_position</span>(<span style="color:#069">self</span>, axis) -&gt; <span style="color:#369;font-weight:bold">float</span>:
+<pre class="highlight"><code class="language-python" data-lang="python">    def get_current_position(self, axis) -&gt; float:
         cmd_string = cmd_q_pos.get_cmd_string(axis)
-        retStr = <span style="color:#069">self</span>.huber.get_response(cmd_string)
+        retStr = self.huber.get_response(cmd_string)
 
-        <span style="color:#777"># The response will look like '&lt;axis&gt;:&lt;retPos&gt;;'</span>
-        <span style="color:#777"># where &lt;axis&gt; is the axis number and &lt;retPos&gt; is the current position</span>
-        <span style="color:#777"># as a float</span>
-        retPos = <span style="color:#369;font-weight:bold">float</span>(retStr[<span style="color:#00D">2</span>:-<span style="color:#00D">1</span>])
+        # The response will look like '&lt;axis&gt;:&lt;retPos&gt;;'
+        # where &lt;axis&gt; is the axis number and &lt;retPos&gt; is the current position
+        # as a float
+        retPos = float(retStr[2:-1])
 
-        <span style="color:#080;font-weight:bold">return</span> retPos</code></pre>
+        return retPos</code></pre>
 </div>
 </div>
 <div class="paragraph">
@@ -2431,14 +2511,14 @@ $ invoke start-core-egse</pre>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code data-lang="python">    <span style="color:#B0B">@dynamic_command</span>(cmd_type=<span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">query</span><span style="color:#710">&quot;</span></span>, cmd_string=<span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">?p${axis}</span><span style="color:#710">&quot;</span></span>,
+<pre class="highlight"><code class="language-python" data-lang="python">    @dynamic_command(cmd_type="query", cmd_string="?p${axis}",
                      process_cmd_string=process_cmd_string,
                      process_response=decode_axis_float)
-    <span style="color:#080;font-weight:bold">def</span> <span style="color:#06B;font-weight:bold">get_current_position</span>(<span style="color:#069">self</span>, axis: <span style="color:#369;font-weight:bold">int</span>) -&gt; <span style="color:#369;font-weight:bold">float</span>:
-        <span style="color:#D42"><span style="color:black">&quot;&quot;&quot;</span><span>
-</span><span>        Returns the current position for this axis as a float.</span><span>
-</span><span>        </span><span style="color:black">&quot;&quot;&quot;</span></span>
-        <span style="color:#080;font-weight:bold">raise</span> <span style="color:#C00;font-weight:bold">NotImplementedError</span></code></pre>
+    def get_current_position(self, axis: int) -&gt; float:
+        """
+        Returns the current position for this axis as a float.
+        """
+        raise NotImplementedError</code></pre>
 </div>
 </div>
 <div class="paragraph">
@@ -2449,14 +2529,14 @@ $ invoke start-core-egse</pre>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code data-lang="python"><span style="color:#080;font-weight:bold">def</span> <span style="color:#06B;font-weight:bold">decode_axis_float</span>(response: <span style="color:#369;font-weight:bold">bytes</span>) -&gt; <span style="color:#369;font-weight:bold">float</span>:
-    <span style="color:#D42"><span style="color:black">&quot;&quot;&quot;</span><span>
-</span><span>    Decodes the response of type '&lt;axis&gt;:&lt;float&gt;;' and strips off the newline.</span><span>
-</span><span>    </span><span style="color:black">&quot;&quot;&quot;</span></span>
+<pre class="highlight"><code class="language-python" data-lang="python">def decode_axis_float(response: bytes) -&gt; float:
+    """
+    Decodes the response of type '&lt;axis&gt;:&lt;float&gt;;' and strips off the newline.
+    """
 
     response = response.decode().rstrip()
 
-    <span style="color:#080;font-weight:bold">return</span> <span style="color:#369;font-weight:bold">float</span>(response[<span style="color:#00D">2</span>:-<span style="color:#00D">1</span>])</code></pre>
+    return float(response[2:-1])</code></pre>
 </div>
 </div>
 <div class="paragraph">
@@ -2465,7 +2545,7 @@ The <em>Controller</em> class still inherits from the <em>Interface</em> class, 
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code data-lang="python">    <span style="color:#080;font-weight:bold">class</span> <span style="color:#B06;font-weight:bold">HuberSMC9300Controller</span>(HuberSMC9300Interface, DynamicCommandMixin):
+<pre class="highlight"><code class="language-python" data-lang="python">    class HuberSMC9300Controller(HuberSMC9300Interface, DynamicCommandMixin):
         ...</code></pre>
 </div>
 </div>
@@ -2478,7 +2558,7 @@ The <em>Controller</em> class still inherits from the <em>Interface</em> class, 
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code data-lang="python">    <span style="color:#080;font-weight:bold">class</span> <span style="color:#B06;font-weight:bold">HuberSMC9300Proxy</span>(DynamicProxy, HuberSMC9300Interface):
+<pre class="highlight"><code class="language-python" data-lang="python">    class HuberSMC9300Proxy(DynamicProxy, HuberSMC9300Interface):
         ...</code></pre>
 </div>
 </div>
@@ -2557,7 +2637,7 @@ This is explained further in &#8230;&#8203;
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code>Setup:
+<pre class="highlight"><code>Setup:
     gse:
         hexapod:
             device_name: Symetrie Puna Hexapod
@@ -2572,10 +2652,10 @@ This is explained further in &#8230;&#8203;
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code>&gt;&gt;&gt; setup.gse.hexapod.ID
+<pre class="highlight"><code>&gt;&gt;&gt; setup.gse.hexapod.ID
 172543
 
-&gt;&gt;&gt; setup[&quot;gse&quot;][&quot;hexapod&quot;][&quot;ID&quot;]
+&gt;&gt;&gt; setup["gse"]["hexapod"]["ID"]
 172543</code></pre>
 </div>
 </div>
@@ -2584,7 +2664,7 @@ This is explained further in &#8230;&#8203;
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code>&gt;&gt;&gt; setup.gse.hexapod.device.homing()</code></pre>
+<pre class="highlight"><code>&gt;&gt;&gt; setup.gse.hexapod.device.homing()</code></pre>
 </div>
 </div>
 <div class="paragraph">
@@ -2592,7 +2672,7 @@ This is explained further in &#8230;&#8203;
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code>&gt;&gt;&gt; setup.gse.keys()
+<pre class="highlight"><code>&gt;&gt;&gt; setup.gse.keys()
 dict_keys(['hexapod', 'stages', 'thorlabs', 'shutter', 'ogse', 'filter_wheel'])</code></pre>
 </div>
 </div>
@@ -2601,7 +2681,7 @@ dict_keys(['hexapod', 'stages', 'thorlabs', 'shutter', 'ogse', 'filter_wheel'])<
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code>&gt;&gt;&gt; print(setup.gse)</code></pre>
+<pre class="highlight"><code>&gt;&gt;&gt; print(setup.gse)</code></pre>
 </div>
 </div>
 </div>
@@ -2640,7 +2720,7 @@ dict_keys(['hexapod', 'stages', 'thorlabs', 'shutter', 'ogse', 'filter_wheel'])<
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code>&gt;&gt;&gt; list_setups()</code></pre>
+<pre class="highlight"><code>&gt;&gt;&gt; list_setups()</code></pre>
 </div>
 </div>
 <div class="paragraph">
@@ -2651,7 +2731,7 @@ dict_keys(['hexapod', 'stages', 'thorlabs', 'shutter', 'ogse', 'filter_wheel'])<
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code>&gt;&gt;&gt; setup.gse.hexapod.Firmware = 3.1415</code></pre>
+<pre class="highlight"><code>&gt;&gt;&gt; setup.gse.hexapod.Firmware = 3.1415</code></pre>
 </div>
 </div>
 <div class="paragraph">
@@ -2659,7 +2739,7 @@ dict_keys(['hexapod', 'stages', 'thorlabs', 'shutter', 'ogse', 'filter_wheel'])<
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code>&gt;&gt;&gt; setup = submit_setup(setup, description=&quot;Updated firmware of PUNA Hexapod&quot;)</code></pre>
+<pre class="highlight"><code>&gt;&gt;&gt; setup = submit_setup(setup, description="Updated firmware of PUNA Hexapod")</code></pre>
 </div>
 </div>
 </div>
@@ -2676,8 +2756,8 @@ dict_keys(['hexapod', 'stages', 'thorlabs', 'shutter', 'ogse', 'filter_wheel'])<
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code>&gt;&gt;&gt; from egse.setup import Setup
-&gt;&gt;&gt; setup = Setup({&quot;gse&quot;: {&quot;hexapod&quot;: {&quot;ID&quot;: 42, &quot;name&quot;: &quot;PUNA&quot;}}})
+<pre class="highlight"><code>&gt;&gt;&gt; from egse.setup import Setup
+&gt;&gt;&gt; setup = Setup({"gse": {"hexapod": {"ID": 42, "name": "PUNA"}}})
 &gt;&gt;&gt; print(setup)
 gse:
     hexapod:
@@ -2690,7 +2770,7 @@ gse:
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code>&gt;&gt;&gt; setup.gse.hexapod.firmware = &quot;2020.07&quot;
+<pre class="highlight"><code>&gt;&gt;&gt; setup.gse.hexapod.firmware = "2020.07"
 &gt;&gt;&gt; print(setup)
 gse:
     hexapod:
@@ -2707,7 +2787,7 @@ gse:
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code>&gt;&gt;&gt; setup.to_yaml_file(filename=&quot;SETUP-42-FIXED.yaml&quot;)</code></pre>
+<pre class="highlight"><code>&gt;&gt;&gt; setup.to_yaml_file(filename="SETUP-42-FIXED.yaml")</code></pre>
 </div>
 </div>
 <div class="admonitionblock warning">
@@ -2741,6 +2821,70 @@ Explain here how the user should submit a Setup from the client machine. That wi
 </li>
 <li>
 <p>reloading settings is currently not possible</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>The <em>Settings</em> contain all static information needed to configure your system and environment. That is first of all the version and release numbers of the CGSE, and the site identifier and other information about the site. The Settings also contain all the IP addresses and port number for all the known devices, together with other static information like the device name, default settings for the device like speed, timeout, delay time, firmware version, etc. We will go into more details about the content later, let&#8217;s now first look at the format and usage of the Settings.</p>
+</div>
+<div class="paragraph">
+<p>The Settings are maintained in a YAML file which is located in the <code>egse</code> module. The default Settings file is named <code>settings.yaml</code> and we call them <em>Global Settings</em>. You can for your project or test house also define <em>Local Settings</em> with higher precedence that will overwrite the global settings when loaded. The location of the local settings YAML file is defined by the environment variable <code>$PLATO_LOCAL_SETTINGS</code> and is usually defined as follows:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>$ export PLATO_LOCAL_SETTINGS=/cgse/local_settings.yaml</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>In your code, the Settings are accessed by <code>Settings</code> class from the <code>egse.settings</code> Python module. This module defines the <code>Settings</code> class which is used to access all information in the Settings. You can load the Settings in your session with the following command:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>from egse.settings import Settings
+
+settings = Settings.load()</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>This will load the global settings first and then the local settings if the environment variable is defined. Remember that local settings will take precedence. You only need to define the settings that actually change for your local installation, respect the full hierarchy when specifying those settings. You are allowed to define new entries at any level in the Settings hierarchy.</p>
+</div>
+<div class="paragraph">
+<p>In a terminal you can check your settings as follows:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>$ python3 -m egse.settings
+AttributeDict
+├── Common-EGSE
+│   ├── VERSION: 2022.3.0-rc.13+CGSE
+│   └── RELEASE: November 2022, 2022.3.0-rc.13+CGSE
+├── SITE
+│   ├── ID: CSL1
+│   ├── SSH_SERVER: localhost
+│   └── SSH_PORT: 22
+...
+Memoized locations:
+['/cgse/lib/python/Common_EGSE-2022.3.0rc13+cgse-py3.8.egg/egse/settings.yaml', '/cgse/local_settings.yaml']</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>The memoized locations are the settings files that have been loaded and memorized. Once the application has started and the settings have been loaded, they can only be reloaded by explicitly forcing a reload as follows:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>settings = Settings.load(force=True)</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>This does however not guarantee that the settings will propagate properly throughout the application or to client apps. Settings can be saved in local variables or class instances that have no knowledge of a settings reload.</p>
+</div>
+<div class="paragraph">
+<p>Other things to document XXXXX:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>IP addresses or HOSTNAMES in the global settings shall by default all be set to <code>localhost</code>.</p>
 </li>
 </ul>
 </div>
@@ -3044,19 +3188,19 @@ datetime.datetime(2022, 6, 1, 8, 22, 3, 686000, tzinfo=datetime.timezone.utc)</p
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code data-lang="Python"><span style="color:#080;font-weight:bold">from</span> <span style="color:#B44;font-weight:bold">egse.hexapod</span> <span style="color:#080;font-weight:bold">import</span> <span style="color:#B44;font-weight:bold">HexapodError</span>
-<span style="color:#080;font-weight:bold">from</span> <span style="color:#B44;font-weight:bold">egse.hexapod.symetrie.puna</span> <span style="color:#080;font-weight:bold">import</span> <span style="color:#B44;font-weight:bold">PunaController</span>
+<pre class="highlight"><code class="language-Python" data-lang="Python">from egse.hexapod import HexapodError
+from egse.hexapod.symetrie.puna import PunaController
 
 puna = PunaController()
-<span style="color:#080;font-weight:bold">try</span>:
+try:
     puna.connect()
     puna.homing()
-    puna.move_absolute(<span style="color:#00D">0</span>, <span style="color:#00D">0</span>, <span style="color:#00D">18</span>, <span style="color:#00D">0</span>, <span style="color:#00D">0</span>, <span style="color:#00D">0</span>)
-<span style="color:#080;font-weight:bold">except</span> HexapodError <span style="color:#080;font-weight:bold">as</span> exc:
-    logger.error(f<span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">There was an error during the interaction with the PUNA Hexapod: {exc}</span><span style="color:#710">&quot;</span></span>)
-    <span style="color:#777"># do recovery action here if needed</span>
-<span style="color:#080;font-weight:bold">finally</span>:
-    <span style="color:#080;font-weight:bold">if</span> puna.is_connected():
+    puna.move_absolute(0, 0, 18, 0, 0, 0)
+except HexapodError as exc:
+    logger.error(f"There was an error during the interaction with the PUNA Hexapod: {exc}")
+    # do recovery action here if needed
+finally:
+    if puna.is_connected():
         puna.disconnect()</code></pre>
 </div>
 </div>
@@ -3065,11 +3209,11 @@ puna = PunaController()
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code data-lang="Python"><span style="color:#080;font-weight:bold">from</span> <span style="color:#B44;font-weight:bold">egse.hexapod.symetrie.puna</span> <span style="color:#080;font-weight:bold">import</span> <span style="color:#B44;font-weight:bold">PunaController</span>
+<pre class="highlight"><code class="language-Python" data-lang="Python">from egse.hexapod.symetrie.puna import PunaController
 
-<span style="color:#080;font-weight:bold">with</span> PunaController() <span style="color:#080;font-weight:bold">as</span> puna:
+with PunaController() as puna:
     puna.homing()
-    puna.move_absolute(<span style="color:#00D">0</span>, <span style="color:#00D">0</span>, <span style="color:#00D">18</span>, <span style="color:#00D">0</span>, <span style="color:#00D">0</span>, <span style="color:#00D">0</span>)</code></pre>
+    puna.move_absolute(0, 0, 18, 0, 0, 0)</code></pre>
 </div>
 </div>
 </div>
@@ -3120,11 +3264,11 @@ puna = PunaController()
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code data-lang="Python"><span style="color:#080;font-weight:bold">from</span> <span style="color:#B44;font-weight:bold">egse.hexapod.symetrie.puna</span> <span style="color:#080;font-weight:bold">import</span> <span style="color:#B44;font-weight:bold">PunaProxy</span>
+<pre class="highlight"><code class="language-Python" data-lang="Python">from egse.hexapod.symetrie.puna import PunaProxy
 
-<span style="color:#080;font-weight:bold">with</span> PunaProxy() <span style="color:#080;font-weight:bold">as</span> puna:
+with PunaProxy() as puna:
     puna.homing()
-    puna.move_absolute(<span style="color:#00D">0</span>, <span style="color:#00D">0</span>, <span style="color:#00D">18</span>, <span style="color:#00D">0</span>, <span style="color:#00D">0</span>, <span style="color:#00D">0</span>)</code></pre>
+    puna.move_absolute(0, 0, 18, 0, 0, 0)</code></pre>
 </div>
 </div>
 <div class="paragraph">
@@ -3798,15 +3942,15 @@ $ kill -TERM 21334</pre>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code data-lang="Python"><span style="color:#080;font-weight:bold">import</span> <span style="color:#B44;font-weight:bold">prometheus_client</span> <span style="color:#080;font-weight:bold">as</span> prom
+<pre class="highlight"><code class="language-Python" data-lang="Python">import prometheus_client as prom
 
-x = prom.Gauge(<span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">x</span><span style="color:#710">&quot;</span></span>, <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">the metric</span><span style="color:#710">&quot;</span></span>)
-x_ts = prom.Gauge(<span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">x_ts</span><span style="color:#710">&quot;</span></span>, <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">the metric timestamp</span><span style="color:#710">&quot;</span></span>)
+x = prom.Gauge("x", "the metric")
+x_ts = prom.Gauge("x_ts", "the metric timestamp")
 
-<span style="color:#777"># Option 1: timestamp is a metric</span>
+# Option 1: timestamp is a metric
 
 x.set( &lt;the value of the parameter&gt; )
-x_ts.set( &lt;the timestamp <span style="color:#080;font-weight:bold">for</span> the value <span style="color:#080;font-weight:bold">as</span> a <span style="color:#369;font-weight:bold">float</span>&gt; )</code></pre>
+x_ts.set( &lt;the timestamp for the value as a float&gt; )</code></pre>
 </div>
 </div>
 <div class="paragraph">
@@ -3814,13 +3958,13 @@ x_ts.set( &lt;the timestamp <span style="color:#080;font-weight:bold">for</span>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code data-lang="Python"><span style="color:#080;font-weight:bold">import</span> <span style="color:#B44;font-weight:bold">prometheus_client</span> <span style="color:#080;font-weight:bold">as</span> prom
-<span style="color:#080;font-weight:bold">import</span> <span style="color:#B44;font-weight:bold">datetime</span>
+<pre class="highlight"><code class="language-Python" data-lang="Python">import prometheus_client as prom
+import datetime
 
-x = prom.Gauge(<span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">x</span><span style="color:#710">&quot;</span></span>, <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">the metric</span><span style="color:#710">&quot;</span></span>)
-x_ts = prom.Gauge(<span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">x_ts</span><span style="color:#710">&quot;</span></span>, <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">the metric timestamp</span><span style="color:#710">&quot;</span></span>)
+x = prom.Gauge("x", "the metric")
+x_ts = prom.Gauge("x_ts", "the metric timestamp")
 
-<span style="color:#777"># Option 2. timestamp is set by the device controller</span>
+# Option 2. timestamp is set by the device controller
 
 x.set( &lt;the value of the parameter&gt; )
 x_ts.set(datetime.datetime.now(tz=datetime.timezone.utc).timestamp())</code></pre>
@@ -3906,23 +4050,23 @@ This section of the development manual is about developing test scripts to run t
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code data-lang="python"><span style="color:#B0B">@building_block</span>
-<span style="color:#080;font-weight:bold">def</span> <span style="color:#06B;font-weight:bold">set_trp1</span>(temperature: <span style="color:#369;font-weight:bold">float</span>) -&gt; <span style="color:#069">None</span>:
-    <span style="color:#D42"><span style="color:black">&quot;&quot;&quot;</span><span>
-</span><span>    Set the temperature setpoint for TRP1.</span><span>
-</span><span>
-</span><span>    Args:</span><span>
-</span><span>        temperature: Temperature setpoint for TRP1 [°C].</span><span>
-</span><span>
-</span><span>    Raises:</span><span>
-</span><span>        If a task is already running in the TCS EGSE, an Abort is raised.</span><span>
-</span><span>    </span><span style="color:black">&quot;&quot;&quot;</span></span>
+<pre class="highlight"><code class="language-python" data-lang="python">@building_block
+def set_trp1(temperature: float) -&gt; None:
+    """
+    Set the temperature setpoint for TRP1.
 
-    <span style="color:#080;font-weight:bold">if</span> is_task_running():
-        <span style="color:#080;font-weight:bold">raise</span> Abort(<span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">Cannot change the TRP1 setpoint, a task is running on the TCS</span><span style="color:#710">&quot;</span></span>)
+    Args:
+        temperature: Temperature setpoint for TRP1 [°C].
+
+    Raises:
+        If a task is already running in the TCS EGSE, an Abort is raised.
+    """
+
+    if is_task_running():
+        raise Abort("Cannot change the TRP1 setpoint, a task is running on the TCS")
 
     tcs: TCSInterface = GlobalState.setup.gse.tcs.device
-    tcs.set_parameter(name=<span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">ch1_tset</span><span style="color:#710">&quot;</span></span>, value=temperature)
+    tcs.set_parameter(name="ch1_tset", value=temperature)
     tcs.commit()</code></pre>
 </div>
 </div>
@@ -3931,11 +4075,11 @@ This section of the development manual is about developing test scripts to run t
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code data-lang="python"><span style="color:#080;font-weight:bold">from</span> <span style="color:#B44;font-weight:bold">camtest.commanding</span> <span style="color:#080;font-weight:bold">import</span> <span style="color:#B44;font-weight:bold">tcs</span>
+<pre class="highlight"><code class="language-python" data-lang="python">from camtest.commanding import tcs
 
-start_observation(<span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">Configure the TCS EGSE</span><span style="color:#710">&quot;</span></span>)
+start_observation("Configure the TCS EGSE")
 ...
-tcs.set_trp1(temperature=-<span style="color:#60E">70.0</span>)
+tcs.set_trp1(temperature=-70.0)
 ...
 end_observation()</code></pre>
 </div>
@@ -4107,11 +4251,11 @@ end_observation()</code></pre>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code data-lang="python"><span style="color:#080;font-weight:bold">from</span> <span style="color:#B44;font-weight:bold">gui_executor.exec</span> <span style="color:#080;font-weight:bold">import</span> <span style="color:#B44;font-weight:bold">exec_ui</span>
+<pre class="highlight"><code class="language-python" data-lang="python">from gui_executor.exec import exec_ui
 
-<span style="color:#B0B">@exec_ui</span>(immediate_run=<span style="color:#069">True</span>) <i class="conum" data-value="1"></i><b>(1)</b>
-<span style="color:#080;font-weight:bold">def</span> <span style="color:#06B;font-weight:bold">hello_world</span>():
-    print(<span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">Hello, World!</span><span style="color:#710">&quot;</span></span>)</code></pre>
+@exec_ui(immediate_run=True) <i class="conum" data-value="1"></i><b>(1)</b>
+def hello_world():
+    print("Hello, World!")</code></pre>
 </div>
 </div>
 <div class="colist arabic">
@@ -4178,17 +4322,17 @@ Hello, World! <i class="conum" data-value="3"></i><b>(3)</b>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="CodeRay highlight"><code data-lang="python"><span style="color:#080;font-weight:bold">from</span> <span style="color:#B44;font-weight:bold">gui_executor.exec</span> <span style="color:#080;font-weight:bold">import</span> <span style="color:#B44;font-weight:bold">exec_ui</span>
+<pre class="highlight"><code class="language-python" data-lang="python">from gui_executor.exec import exec_ui
 
-<strong>UI_MODULE_DISPLAY_NAME = <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">Hello Tasks</span><span style="color:#710">&quot;</span></span></strong>  <i class="conum" data-value="1"></i><b>(1)</b>
+<strong>UI_MODULE_DISPLAY_NAME = "Hello Tasks"</strong>  <i class="conum" data-value="1"></i><b>(1)</b>
 
-<span style="color:#B0B">@exec_ui</span>(immediate_run=<span style="color:#069">True</span>)
-<span style="color:#080;font-weight:bold">def</span> <span style="color:#06B;font-weight:bold">hello_world</span>():
-    print(<span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">Hello, World!</span><span style="color:#710">&quot;</span></span>)
+@exec_ui(immediate_run=True)
+def hello_world():
+    print("Hello, World!")
 
-<strong><span style="color:#B0B">@exec_ui</span>(display_name=<span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">Hello...</span><span style="color:#710">&quot;</span></span>)  <i class="conum" data-value="2"></i><b>(2)</b>
-<span style="color:#080;font-weight:bold">def</span> <span style="color:#06B;font-weight:bold">hello_you</span>(name: str = <span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">John</span><span style="color:#710">&quot;</span></span>):  <i class="conum" data-value="3"></i><b>(3)</b>
-    print(f<span style="background-color:hsla(0,100%,50%,0.05)"><span style="color:#710">&quot;</span><span style="color:#D20">Hello, {name}!</span><span style="color:#710">&quot;</span></span>)
+<strong>@exec_ui(display_name="Hello...")  <i class="conum" data-value="2"></i><b>(2)</b>
+def hello_you(name: str = "John"):  <i class="conum" data-value="3"></i><b>(3)</b>
+    print(f"Hello, {name}!")
 </strong></code></pre>
 </div>
 </div>
@@ -4582,7 +4726,7 @@ Be specific!</p>
 </div>
 </div>
 </div>
-<h1 id="_part_vii_todo" class="sect0">Part VII — TODO</h1>
+<h1 id="_part_vii_miscellaneous" class="sect0">Part VII — Miscellaneous</h1>
 <div class="openblock partintro">
 <div class="content">
 Everything in this part of the manual needs to be worked on and relocated in one of the above parts/sections.
@@ -4642,8 +4786,8 @@ Everything in this part of the manual needs to be worked on and relocated in one
 <h3 id="_often_used_terminal_commands">22.2. Often used terminal commands</h3>
 <table class="tableblock frame-all grid-all stretch">
 <colgroup>
-<col style="width: 33.3333%;">
-<col style="width: 66.6667%;">
+<col style="width: 40%;">
+<col style="width: 60%;">
 </colgroup>
 <thead>
 <tr>
@@ -4653,7 +4797,7 @@ Everything in this part of the manual needs to be worked on and relocated in one
 </thead>
 <tbody>
 <tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>ps -ef|grep _cs</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>ps -ef|egrep "_cs|das|fov|fee|fits"</code></p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">Check which control servers are running. The names of all control servers end with _cs, except <code>das</code>, <code>fov_hk</code>, <code>n_fee_hk</code>, and <code>fitsgen</code>.</p></td>
 </tr>
 <tr>
@@ -4666,7 +4810,7 @@ Everything in this part of the manual needs to be worked on and relocated in one
 </tr>
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock"><code>df -h /data /archive</code></p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Check the available disk space on the data and archive disks.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Check the available disk space on the data and archive disks. The <code>-h</code> option given numbers in a human readable format.</p></td>
 </tr>
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock"><code>curl localhost:&lt;port&gt;</code></p></td>
@@ -4709,8 +4853,8 @@ Everything in this part of the manual needs to be worked on and relocated in one
 <td class="tableblock halign-left valign-top"><p class="tableblock">Check the remote repositories that are known on your local copy.</p></td>
 </tr>
 <tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>git branch</code></p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Print the branches known on your local repo. The current branch has an asterisk '*' in front of its name.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>git branch [-v] [-vv]</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Print the branches known on your local repo. The current branch has an asterisk '*' in front of its name. The <code>-v</code> option adds information on the last commit, when doubling this option, <code>-vv</code>, also the remote tracking branch will be printed.</p></td>
 </tr>
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock"><code>git fetch updates</code></p></td>
@@ -5053,7 +5197,7 @@ Below this point we have miscellaneous topics that still need their place in the
 <div id="footer">
 <div id="footer-text">
 Version 1.1<br>
-Last updated 2022-11-04 23:06:28 +0100
+Last updated 2022-11-15 11:05:48 +0100
 </div>
 </div>
 <script type="text/x-mathjax-config">
@@ -5080,5 +5224,53 @@ MathJax.Hub.Register.StartupHook("AsciiMath Jax Ready", function () {
 })
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.9/MathJax.js?config=TeX-MML-AM_HTMLorMML"></script>
+<script>
+/*! Asciidoctor Tabs | Copyright (c) 2018-present Dan Allen | MIT License */
+;(function () {
+  'use strict'
+
+  var hash = window.location.hash
+  find('.tabset').forEach(function (tabset) {
+    var active
+    var tabs = tabset.querySelector('.tabs')
+    if (tabs) {
+      var first
+      find('li', tabs).forEach(function (tab, idx) {
+        var id = (tab.querySelector('a[id]') || tab).id
+        if (!id) return
+        var pane = tabset.querySelector('.tab-pane[aria-labelledby~="' + id + '"]')
+        if (!pane) return
+        if (!idx) first = { tab: tab, pane: pane }
+        if (!active && hash === '#' + id && (active = true)) {
+          tab.classList.add('is-active')
+          if (pane) pane.classList.add('is-active')
+        } else if (!idx) {
+          tab.classList.remove('is-active')
+          if (pane) pane.classList.remove('is-active')
+        }
+        tab.addEventListener('click', activateTab.bind({ tabset: tabset, tab: tab, pane: pane }))
+      })
+      if (!active && first) {
+        first.tab.classList.add('is-active')
+        if (first.pane) first.pane.classList.add('is-active')
+      }
+    }
+    tabset.classList.remove('is-loading')
+  })
+
+  function activateTab (e) {
+    var tab = this.tab
+    var pane = this.pane
+    find('.tabs li, .tab-pane', this.tabset).forEach(function (it) {
+      it === tab || it === pane ? it.classList.add('is-active') : it.classList.remove('is-active')
+    })
+    e.preventDefault()
+  }
+
+  function find (selector, from) {
+    return Array.prototype.slice.call((from || document).querySelectorAll(selector))
+  }
+})()
+</script>
 </body>
 </html>
