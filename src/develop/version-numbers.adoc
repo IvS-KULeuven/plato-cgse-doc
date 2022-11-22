@@ -4,32 +4,36 @@
 The version of Python that you use to run the code shall be asciimath:[>=] 3.8. You can determine the version of Python with the following terminal command:
 
 ----
-$ python -V
+$ python3 -V
 Python 3.8.3
 ----
 
-The version of the Common-EGSE and the test scripts that are installed on your system can be determined as follows:
+The version of the Common-EGSE (CGSE) and the test scripts (TS) that are installed on your system can be determined as follows:
 
 ----
-python -m egse.version
-CGSE git version = 2022.2.17-IAS-CGSE-53-ge5c9bc86
-CGSE installed version = 2022.2.17-IAS-CGSE
+$ python3 -m egse.version
+CGSE version in Settings: 2022.3.0-rc.6+CGSE
+CGSE installed version = 2022.3.0rc6+cgse
 
-python -m camtest.version
-CAMTEST git version = 2022.2.1-IAS-TS-19-gd739137
+$ python3 -m camtest.version
+CAMTEST version in Settings: 2022.3.0-rc.2+TS
+CAMTEST git version = 2022.3.0-rc.2+TS-0-g7a7789c
 ----
 
-The version numbers that are shown above have different parts that all have their meaning. Let's use the CGSE git version [`2022.2.17-IAS-CGSE-53-ge5c9bc86`] to explain each of the parts:
+The version numbers that are shown above have different parts that all have their meaning. We use  https://semver.org:[semantic versioning] to define our version numbers. Let's use the CGSE version [`2022.3.0-rc.6+CGSE`] to explain each of the parts:
 
-* `2022.2.17` is the usual semantic versioning with `major.minor.patch` numbers. The major number is the year in which the software was released. The minor number is increased with functionality changes or when a new test phase starts. The patch is used for urgent bug fixes.
-* `IAS` is the site for which the release is distributed or created. We can have the same semantic version for one or more sites.
+* `2022.3.0` is the core version number with `major.minor.patch` numbers. The major number is the year in which the software was released. The minor number is increased with functionality changes or when a new test phase starts. The patch is used for urgent bug fixes.
+* `rc.6` means that we are dealing with a release candidate for the 2022.3.0 release. This is already release candidate number 6. We should try to avoid using release candidates in the operational environment because these versions might not have been fully tested. In an official release of the software, this part in the versioning will be omitted.
 * `CGSE` is a release for the Common-EGSE repository. The Test scripts will have `TS` here.
-* `53` is the number of commits that have been pushed and merged to the GitHub repository since the creation of the release. This number shall be 0 at least for the CGSE on an operational system. If stem:[!=] 0 as in the example above, it means you have not installed the release properly as explained in section XXXXX and you are probably using a development version with less tested or even un-tested code. This number can differ from 0 for the test scripts as we do not yet have a proper installation procedure for the releases.
-* `ge5c9bc86` is the abbreviated git hash numberfootnote:[The full git hash is a much longer number and is an SHA-1 hash — a checksum of the content of the commit plus a header.] for this release. The first letter `g` indicates the use of `git`.
 
-The VERSION and RELEASE are also defined in the `settings.yaml` and should match the first three parts of the version number explained above. If not, it was probably forgotten to update these numbers when preparing the release. You can use these number in your code by importing from `egse.version`. XXXXX: this is not the case yet for `camtest.version`!
+The we have some additional information in the version number of the test scripts, in the above example [`2022.3.0-rc.2+TS-0-g7a7789c`].
+
+* `0` is the number of commits that have been pushed and merged to the GitHub repository since the creation of the release. This number shall be 0 at least for the CGSE on an operational system. If this number stem:[!=] 0, it means you have not installed the release properly as explained in the link:installation-manual.html[installation instructions] and you are probably using a development version with less tested or even un-tested code. This number can differ from 0 for the test scripts as we do not yet have a proper installation procedure for the releases.
+* `g7a7789c` is the abbreviated git hash numberfootnote:[The full git hash is a much longer number and is an SHA-1 hash — a checksum of the content of the commit plus a header.] for this release. The first letter `g` indicates the use of `git`.
+
+The VERSION and RELEASE are also defined in the `settings.yaml` and should match the first three parts of the version number explained above. If not, it was probably forgotten to update these numbers when preparing the release. You can use these version numbers in your code by importing from `egse.version` and `camtest.version`.
 
 ----
-from egse.version import VERSION
-from egse.version import RELEASE
+from egse.version import VERSION as CGSE_VERSION
+from camtest.version import VERSION as CAMTEST_VERSION
 ----
