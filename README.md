@@ -9,13 +9,15 @@ $ hugo
 ```
 This will generated the full documentation site in the `docs` folder of the project.
 
-Before committing and pushing the code, you should generate the CGSE manuals. The source for these manuals is located in the `src` folder. The manuals are generated using AsciiDoctor. To create a PDF file for e.g. the developer manual, go into the `src/develop` folder and run the following command:
+Before committing and pushing the code, you should generate the CGSE manuals. The source for these manuals is located in the `src` folder. The manuals are generated using AsciiDoctor. We use the [asciidoctor-tabs](https://github.com/asciidoctor/asciidoctor-tabs) package to add tabbed code blocks in our documentation. Check it's GitHub pages for installation instructions.
+
+To create a PDF file for e.g. the developer manual, go into the `src/develop` folder and run the following command:
 ```
 $ asciidoctor-pdf developer-manual.adoc
 ```
 To create the HTML file for this manual use:
 ```
-$ asciidoctor developer-manual.adoc
+$ asciidoctor -r asciidoctor-tabs developer-manual.adoc
 ```
 Other manuals are created with the same commands.
 

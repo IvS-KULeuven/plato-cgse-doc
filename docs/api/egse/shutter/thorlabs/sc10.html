@@ -49,8 +49,9 @@ LOGGER = logging.getLogger(__name__)
 DEVICE_SETTINGS = Settings.load(filename=&#34;sc10.yaml&#34;)
 CTRL_SETTINGS = Settings.load(&#34;Thorlabs SC10 Control Server&#34;)
 
+SITE_ID = Settings.load(&#34;SITE&#34;).ID
 
-gauge_enable = Gauge(&#39;GSRON_SC10_ENABLE&#39;, &#39;&#39;)
+gauge_enable = Gauge(f&#39;G{SITE_ID}_SC10_ENABLE&#39;, &#39;&#39;)
 
 
 class Sc10Command(ClientServerCommand):
@@ -83,21 +84,20 @@ class Sc10Protocol(CommandProtocol):
 
     def get_status(self):
         status_dict = super().get_status()
-
+        status_dict[&#39;shutter_state&#39;] = self.dev.get_enable()
         return status_dict
-
 
     def get_housekeeping(self) -&gt; dict:
 
         result = dict()
         result[&#34;timestamp&#34;] = format_datetime()
 
-        result[&#34;GSRON_SC10_ENABLE&#34;] = self.dev.get_enable()
+        result[f&#34;G{SITE_ID}_SC10_ENABLE&#34;] = self.dev.get_enable()
 
         with SynopticsManagerProxy() as synoptics:
             synoptics.store_th_synoptics(result)
 
-        gauge_enable.set(result[&#34;GSRON_SC10_ENABLE&#34;])
+        gauge_enable.set(result[f&#34;G{SITE_ID}_SC10_ENABLE&#34;])
 
         return result
 
@@ -195,21 +195,20 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
 
     def get_status(self):
         status_dict = super().get_status()
-
+        status_dict[&#39;shutter_state&#39;] = self.dev.get_enable()
         return status_dict
-
 
     def get_housekeeping(self) -&gt; dict:
 
         result = dict()
         result[&#34;timestamp&#34;] = format_datetime()
 
-        result[&#34;GSRON_SC10_ENABLE&#34;] = self.dev.get_enable()
+        result[f&#34;G{SITE_ID}_SC10_ENABLE&#34;] = self.dev.get_enable()
 
         with SynopticsManagerProxy() as synoptics:
             synoptics.store_th_synoptics(result)
 
-        gauge_enable.set(result[&#34;GSRON_SC10_ENABLE&#34;])
+        gauge_enable.set(result[f&#34;G{SITE_ID}_SC10_ENABLE&#34;])
 
         return result</code></pre>
 </details>

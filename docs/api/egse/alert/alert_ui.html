@@ -26,29 +26,28 @@
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">import sys
-import argparse
+<pre><code class="python">import argparse
 import logging
-from egse.gui.buttons import ToggleButton
-import zmq
-import pickle
-import rich
 import multiprocessing
+import pickle
+from pathlib import Path
+
+import sys
 import yaml
-
-from PyQt5.QtCore import QThread, QObject, Qt, pyqtSignal, pyqtSlot
-from PyQt5.QtGui import QCloseEvent, QFont
+import zmq
+from PyQt5.QtCore import QThread, QObject, Qt, pyqtSignal, pyqtSlot, QLockFile
+from PyQt5.QtGui import QCloseEvent, QFont, QIcon
 from PyQt5.QtWidgets import QMainWindow, QApplication, QLabel, QFrame, QHBoxLayout, QVBoxLayout, QGroupBox, QGridLayout, \
-    QAction, QWidget, QLineEdit,  QPushButton, QScrollArea, QComboBox, QMessageBox
+    QScrollArea, QComboBox, QMessageBox
 
-from egse.system import replace_environment_variable
 from egse.alert.alert_manager import AlertManagerProxy
-from egse.observer import Observer, Observable
 from egse.alert.alert_manager import CTRL_SETTINGS as ALERT_CTRL_SETTINGS
-from egse.gui.led import Led, Indic as LedIndic
-from egse.zmq_ser import connect_address
-
+from egse.gui.buttons import ToggleButton
+from egse.gui.led import Led
+from egse.observer import Observer, Observable
 from egse.resource import get_resource
+from egse.system import replace_environment_variable
+from egse.zmq_ser import connect_address
 
 multiprocessing.current_process().name = &#34;alert_manager_ui&#34;
 
@@ -219,7 +218,12 @@ class AlertWindow(QGroupBox):
                     self.alert_widgets[idx][0] = AlertWidget(alert_name=f&#34;{name}&#34;, alert_conf=conf)
                     
                     if &#39;operational_limit&#39; in conf:
-                        self.alert_widgets[idx][0].limit.setText(f&#34;Min: {conf[&#39;operational_limit&#39;][&#39;min&#39;]}, Max: {conf[&#39;operational_limit&#39;][&#39;max&#39;]}&#34;)
+                        if &#39;min&#39; in conf[&#39;operational_limit&#39;] and &#39;max&#39; in conf[&#39;operational_limit&#39;]:
+                            self.alert_widgets[idx][0].limit.setText(f&#34;Min: {conf[&#39;operational_limit&#39;][&#39;min&#39;]}, Max: {conf[&#39;operational_limit&#39;][&#39;max&#39;]}&#34;)
+                        elif &#39;min&#39; in conf[&#39;operational_limit&#39;]:
+                            self.alert_widgets[idx][0].limit.setText(f&#34;Min: {conf[&#39;operational_limit&#39;][&#39;min&#39;]}&#34;)
+                        elif &#39;max&#39; in conf[&#39;operational_limit&#39;]:
+                            self.alert_widgets[idx][0].limit.setText(f&#34;Max: {conf[&#39;operational_limit&#39;][&#39;max&#39;]}&#34;)
                     elif &#39;rate_of_change&#39; in conf:
                         self.alert_widgets[idx][0].limit.setText(f&#34;Limit: {conf[&#39;rate_of_change&#39;][&#39;limit&#39;]}&#34;)
                     
@@ -492,24 +496,37 @@ def parse_arguments():
     args = parser.parse_args()
     return args
 
+
 def main():
+    lock_file = QLockFile(str(Path(&#34;~/alert_ui.app.lock&#34;).expanduser()))
+
     args = list(sys.argv)
     app = QApplication(args)
     
     args = parse_arguments()
-    
-    if args.type == &#39;proxy&#39;:
-        try:
-            proxy = AlertManagerProxy
-        except Exception:
-            raise Exception
-        
-    view        = AlertUIView()
-    model       = AlertUIModel(args.type)
-    controller  = AlertUIController(model, view)
-    
-    view.show()
-    sys.exit(app.exec_())
+    app.setWindowIcon(QIcon(str(get_resource(&#34;:/icons/alert.svg&#34;))))
+
+    if lock_file.tryLock(100):
+        if args.type == &#39;proxy&#39;:
+            try:
+                proxy = AlertManagerProxy
+            except Exception:
+                raise Exception
+
+        view = AlertUIView()
+        model = AlertUIModel(args.type)
+        controller = AlertUIController(model, view)
+
+        view.show()
+        sys.exit(app.exec_())
+    else:
+        error_message = QMessageBox()
+        error_message.setIcon(QMessageBox.Warning)
+        error_message.setWindowTitle(&#34;Error&#34;)
+        error_message.setText(&#34;The Alert GUI application is already running!&#34;)
+        error_message.setStandardButtons(QMessageBox.Ok)
+
+        return error_message.exec()
 
 if __name__ == &#39;__main__&#39;:
     main()</code></pre>
@@ -532,23 +549,35 @@ if __name__ == &#39;__main__&#39;:
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def main():
+    lock_file = QLockFile(str(Path(&#34;~/alert_ui.app.lock&#34;).expanduser()))
+
     args = list(sys.argv)
     app = QApplication(args)
     
     args = parse_arguments()
-    
-    if args.type == &#39;proxy&#39;:
-        try:
-            proxy = AlertManagerProxy
-        except Exception:
-            raise Exception
-        
-    view        = AlertUIView()
-    model       = AlertUIModel(args.type)
-    controller  = AlertUIController(model, view)
-    
-    view.show()
-    sys.exit(app.exec_())</code></pre>
+    app.setWindowIcon(QIcon(str(get_resource(&#34;:/icons/alert.svg&#34;))))
+
+    if lock_file.tryLock(100):
+        if args.type == &#39;proxy&#39;:
+            try:
+                proxy = AlertManagerProxy
+            except Exception:
+                raise Exception
+
+        view = AlertUIView()
+        model = AlertUIModel(args.type)
+        controller = AlertUIController(model, view)
+
+        view.show()
+        sys.exit(app.exec_())
+    else:
+        error_message = QMessageBox()
+        error_message.setIcon(QMessageBox.Warning)
+        error_message.setWindowTitle(&#34;Error&#34;)
+        error_message.setText(&#34;The Alert GUI application is already running!&#34;)
+        error_message.setStandardButtons(QMessageBox.Ok)
+
+        return error_message.exec()</code></pre>
 </details>
 </dd>
 <dt id="egse.alert.alert_ui.parse_arguments"><code class="name flex">
@@ -1555,7 +1584,12 @@ QGroupBox(str, parent: QWidget = None)</p></div>
                     self.alert_widgets[idx][0] = AlertWidget(alert_name=f&#34;{name}&#34;, alert_conf=conf)
                     
                     if &#39;operational_limit&#39; in conf:
-                        self.alert_widgets[idx][0].limit.setText(f&#34;Min: {conf[&#39;operational_limit&#39;][&#39;min&#39;]}, Max: {conf[&#39;operational_limit&#39;][&#39;max&#39;]}&#34;)
+                        if &#39;min&#39; in conf[&#39;operational_limit&#39;] and &#39;max&#39; in conf[&#39;operational_limit&#39;]:
+                            self.alert_widgets[idx][0].limit.setText(f&#34;Min: {conf[&#39;operational_limit&#39;][&#39;min&#39;]}, Max: {conf[&#39;operational_limit&#39;][&#39;max&#39;]}&#34;)
+                        elif &#39;min&#39; in conf[&#39;operational_limit&#39;]:
+                            self.alert_widgets[idx][0].limit.setText(f&#34;Min: {conf[&#39;operational_limit&#39;][&#39;min&#39;]}&#34;)
+                        elif &#39;max&#39; in conf[&#39;operational_limit&#39;]:
+                            self.alert_widgets[idx][0].limit.setText(f&#34;Max: {conf[&#39;operational_limit&#39;][&#39;max&#39;]}&#34;)
                     elif &#39;rate_of_change&#39; in conf:
                         self.alert_widgets[idx][0].limit.setText(f&#34;Limit: {conf[&#39;rate_of_change&#39;][&#39;limit&#39;]}&#34;)
                     

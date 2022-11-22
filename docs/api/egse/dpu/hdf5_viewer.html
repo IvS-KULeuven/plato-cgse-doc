@@ -89,13 +89,14 @@ from egse.dpu.hdf5_ui import GroupPropertiesModel
 from egse.dpu.hdf5_ui import MainWindowGUI
 from egse.dpu.hdf5_ui import PropertiesModel
 from egse.exceptions import InternalError
-from egse.fee import CCD_BIN_TO_ID
 from egse.fee import n_fee_side
 from egse.fee.nfee import HousekeepingData
 from egse.reg import RegisterMap
+from egse.setup import SetupError
 from egse.spw import DataPacket
 from egse.spw import HousekeepingPacket
 from egse.spw import SpaceWirePacket
+from egse.state import GlobalState
 
 MODULE_LOGGER = logging.getLogger(__name__)
 
@@ -451,7 +452,10 @@ def create_image(hdf_item: h5py.Group, v_start: int, v_end: int, h_end: int,
             data_packet = SpaceWirePacket.create_packet(data_group[&#34;0&#34;][()])
             ccd_nr = data_packet.header.type_as_object.ccd_number  # N-FEE CCD number [0-3]
             # MODULE_LOGGER.info(f&#34;before {ccd_nr=}&#34;)
-            ccd_nr = CCD_BIN_TO_ID[ccd_nr]
+            try:
+                ccd_nr = GlobalState.setup.camera.fee.ccd_numbering.CCD_BIN_TO_ID[ccd_nr]
+            except AttributeError:
+                raise SetupError(&#34;No entry in the setup for camera.fee.ccd_numbering.CCD_BIN_TO_ID&#34;)
             # MODULE_LOGGER.info(f&#34;after  {ccd_nr=}&#34;)
         except (Exception, ) as exc:
             MODULE_LOGGER.error(exc)
@@ -584,7 +588,10 @@ if __name__ == &#34;__main__&#34;:
             data_packet = SpaceWirePacket.create_packet(data_group[&#34;0&#34;][()])
             ccd_nr = data_packet.header.type_as_object.ccd_number  # N-FEE CCD number [0-3]
             # MODULE_LOGGER.info(f&#34;before {ccd_nr=}&#34;)
-            ccd_nr = CCD_BIN_TO_ID[ccd_nr]
+            try:
+                ccd_nr = GlobalState.setup.camera.fee.ccd_numbering.CCD_BIN_TO_ID[ccd_nr]
+            except AttributeError:
+                raise SetupError(&#34;No entry in the setup for camera.fee.ccd_numbering.CCD_BIN_TO_ID&#34;)
             # MODULE_LOGGER.info(f&#34;after  {ccd_nr=}&#34;)
         except (Exception, ) as exc:
             MODULE_LOGGER.error(exc)

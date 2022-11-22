@@ -28,18 +28,21 @@
 </summary>
 <pre><code class="python">import argparse
 import logging
-import sys
 from pathlib import Path
+
+import sys
+
+from egse.resource import get_resource
 
 &#34;&#34;&#34;
 Qt imports for the LampView class
 &#34;&#34;&#34;
 
-from PyQt5.QtWidgets import QApplication
+from PyQt5.QtWidgets import QApplication, QMessageBox
 import pyqtgraph as pg
 from PyQt5.QtGui import (QFont, QIcon, QPalette, QPixmap)
-from PyQt5.QtWidgets import (QAction, QFrame, QGridLayout, QGroupBox, QHBoxLayout, QLabel, QMainWindow, QVBoxLayout, QToolButton)
-from PyQt5.QtCore import QTimer, Qt
+from PyQt5.QtWidgets import (QAction, QFrame, QGridLayout, QGroupBox, QHBoxLayout, QLabel, QMainWindow, QVBoxLayout)
+from PyQt5.QtCore import QTimer, QLockFile
 from QLed import QLed
 
 from egse.settings import Settings
@@ -52,7 +55,6 @@ from egse.lampcontrol.energetiq.lampEQ99 import LampEQ99Controller, LampEQ99Prox
 
 from egse.gui import show_warning_message
 
-from prometheus_client import Summary
 from prometheus_client import start_http_server
 from egse.process import ProcessStatus
 import threading
@@ -430,7 +432,9 @@ def parse_arguments():
     args = parser.parse_args()
     return args
 
+
 def main():
+    lock_file = QLockFile(str(Path(&#34;~/lampEQ99_ui.app.lock&#34;).expanduser()))
 
     logging.basicConfig(level=logging.DEBUG)
 
@@ -438,42 +442,52 @@ def main():
 
     args = list(sys.argv)
     args[1:1] = [&#34;-stylesheet&#34;, str(styles_location)]
-
-    process_status = ProcessStatus()
-
-    timer_thread = threading.Thread(target=do_every, args=(10, process_status.update))
-    timer_thread.daemon = True
-    timer_thread.start()
-
-    start_http_server(GUI_SETTINGS.METRICS_PORT)
-
     app = QApplication(args)
+    app.setWindowIcon(QIcon(str(get_resource(&#34;:/icons/logo-ogse.svg&#34;))))
 
-    args = parse_arguments()
+    if lock_file.tryLock(100):
 
-    if args.profile:
-        Settings.set_profiling(True)
+        process_status = ProcessStatus()
 
-    if args.type == &#34;proxy&#34;:
-        proxy = LampEQ99Proxy()
-        if not proxy.ping():
-            description = &#34;Could not connect to Lamp Control Server&#34;
-            info_text = (
-                &#34;The GUI will start, but the connection button will show a disconnected state. &#34;
-                &#34;Please check if the Control Server is running and start the server if needed. &#34;
-                &#34;Otherwise, check if the correct HOSTNAME for the control server is set in the &#34;
-                &#34;Settings.yaml &#34;
-                &#34;configuration file.&#34;
-            )
+        timer_thread = threading.Thread(target=do_every, args=(10, process_status.update))
+        timer_thread.daemon = True
+        timer_thread.start()
 
-            show_warning_message(description, info_text)
+        start_http_server(GUI_SETTINGS.METRICS_PORT)
 
-    view = LampUIView()
-    model = LampUIModel(args.type)
-    controller = LampUIController(model, view)
+        args = parse_arguments()
 
-    view.show()
-    return app.exec_()
+        if args.profile:
+            Settings.set_profiling(True)
+
+        if args.type == &#34;proxy&#34;:
+            proxy = LampEQ99Proxy()
+            if not proxy.ping():
+                description = &#34;Could not connect to Lamp Control Server&#34;
+                info_text = (
+                    &#34;The GUI will start, but the connection button will show a disconnected state. &#34;
+                    &#34;Please check if the Control Server is running and start the server if needed. &#34;
+                    &#34;Otherwise, check if the correct HOSTNAME for the control server is set in the &#34;
+                    &#34;Settings.yaml &#34;
+                    &#34;configuration file.&#34;
+                )
+
+                show_warning_message(description, info_text)
+
+        view = LampUIView()
+        model = LampUIModel(args.type)
+        controller = LampUIController(model, view)
+
+        view.show()
+        return app.exec_()
+    else:
+        error_message = QMessageBox()
+        error_message.setIcon(QMessageBox.Warning)
+        error_message.setWindowTitle(&#34;Error&#34;)
+        error_message.setText(&#34;The Lamp EQ99 GUI application is already running!&#34;)
+        error_message.setStandardButtons(QMessageBox.Ok)
+
+        return error_message.exec()
 
 if __name__ == &#34;__main__&#34;:
     sys.exit(main())</code></pre>
@@ -496,6 +510,7 @@ if __name__ == &#34;__main__&#34;:
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def main():
+    lock_file = QLockFile(str(Path(&#34;~/lampEQ99_ui.app.lock&#34;).expanduser()))
 
     logging.basicConfig(level=logging.DEBUG)
 
@@ -503,42 +518,52 @@ if __name__ == &#34;__main__&#34;:
 
     args = list(sys.argv)
     args[1:1] = [&#34;-stylesheet&#34;, str(styles_location)]
-
-    process_status = ProcessStatus()
-
-    timer_thread = threading.Thread(target=do_every, args=(10, process_status.update))
-    timer_thread.daemon = True
-    timer_thread.start()
-
-    start_http_server(GUI_SETTINGS.METRICS_PORT)
-
     app = QApplication(args)
+    app.setWindowIcon(QIcon(str(get_resource(&#34;:/icons/logo-ogse.svg&#34;))))
 
-    args = parse_arguments()
+    if lock_file.tryLock(100):
 
-    if args.profile:
-        Settings.set_profiling(True)
+        process_status = ProcessStatus()
 
-    if args.type == &#34;proxy&#34;:
-        proxy = LampEQ99Proxy()
-        if not proxy.ping():
-            description = &#34;Could not connect to Lamp Control Server&#34;
-            info_text = (
-                &#34;The GUI will start, but the connection button will show a disconnected state. &#34;
-                &#34;Please check if the Control Server is running and start the server if needed. &#34;
-                &#34;Otherwise, check if the correct HOSTNAME for the control server is set in the &#34;
-                &#34;Settings.yaml &#34;
-                &#34;configuration file.&#34;
-            )
+        timer_thread = threading.Thread(target=do_every, args=(10, process_status.update))
+        timer_thread.daemon = True
+        timer_thread.start()
 
-            show_warning_message(description, info_text)
+        start_http_server(GUI_SETTINGS.METRICS_PORT)
 
-    view = LampUIView()
-    model = LampUIModel(args.type)
-    controller = LampUIController(model, view)
+        args = parse_arguments()
 
-    view.show()
-    return app.exec_()</code></pre>
+        if args.profile:
+            Settings.set_profiling(True)
+
+        if args.type == &#34;proxy&#34;:
+            proxy = LampEQ99Proxy()
+            if not proxy.ping():
+                description = &#34;Could not connect to Lamp Control Server&#34;
+                info_text = (
+                    &#34;The GUI will start, but the connection button will show a disconnected state. &#34;
+                    &#34;Please check if the Control Server is running and start the server if needed. &#34;
+                    &#34;Otherwise, check if the correct HOSTNAME for the control server is set in the &#34;
+                    &#34;Settings.yaml &#34;
+                    &#34;configuration file.&#34;
+                )
+
+                show_warning_message(description, info_text)
+
+        view = LampUIView()
+        model = LampUIModel(args.type)
+        controller = LampUIController(model, view)
+
+        view.show()
+        return app.exec_()
+    else:
+        error_message = QMessageBox()
+        error_message.setIcon(QMessageBox.Warning)
+        error_message.setWindowTitle(&#34;Error&#34;)
+        error_message.setText(&#34;The Lamp EQ99 GUI application is already running!&#34;)
+        error_message.setStandardButtons(QMessageBox.Ok)
+
+        return error_message.exec()</code></pre>
 </details>
 </dd>
 <dt id="egse.lampcontrol.energetiq.lampEQ99_ui.parse_arguments"><code class="name flex">

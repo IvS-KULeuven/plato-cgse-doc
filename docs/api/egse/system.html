@@ -649,7 +649,7 @@ def get_os_version() -&gt; str:
     return &#34;unknown&#34;
 
 
-def wait_until(condition, *args, interval=0.1, timeout=1) -&gt; int:
+def wait_until(condition, *args, interval=0.1, timeout=1, **kwargs) -&gt; int:
     &#34;&#34;&#34;
     Sleep until the given condition is fulfilled. The arguments are passed into the condition
     callable which is called in a while loop until the condition is met or the timeout is reached.
@@ -690,7 +690,7 @@ def wait_until(condition, *args, interval=0.1, timeout=1) -&gt; int:
 
     start = time.time()
 
-    while not condition(*args):
+    while not condition(*args, **kwargs):
         if time.time() - start &gt; timeout:
             logger.warning(
                 f&#34;Timeout after {timeout} sec, from {caller.filename} at {caller.lineno},&#34;
@@ -699,7 +699,7 @@ def wait_until(condition, *args, interval=0.1, timeout=1) -&gt; int:
             return True
         time.sleep(interval)
 
-    logger.debug(f&#34;wait_until finished successfully, {func_name}{args} is met.&#34;)
+    logger.debug(f&#34;wait_until finished successfully, {func_name}{args}{kwargs} is met.&#34;)
 
     return False
 
@@ -1115,6 +1115,17 @@ class SignalCatcher:
         for signal_number in self.user_signals:
             signal.signal(signal_number, self.handler)
 
+        self._signal_number = None
+        self._signal_name = None
+
+    @property
+    def signal_number(self):
+        return self._signal_number
+
+    @property
+    def signal_name(self):
+        return self._signal_name
+
     def handler(self, signal_number, frame):
         &#34;&#34;&#34;Handle the known signals by setting the appropriate flag.&#34;&#34;&#34;
         logger.warning(f&#34;Received signal {SIGNAL_NAME[signal_number]} [{signal_number}].&#34;)
@@ -1122,11 +1133,21 @@ class SignalCatcher:
             self.term_signal_received = True
         if signal_number in self.user_signals:
             self.user_signal_received = True
+        self._signal_number = signal_number
+        self._signal_name = SIGNAL_NAME[signal_number]
 
-    def clear(self):
-        &#34;&#34;&#34;Call this method to clear the user signal after handling.
-        Termination signals are not cleared since the application is assumed to terminate.&#34;&#34;&#34;
+    def clear(self, term: bool = False):
+        &#34;&#34;&#34;
+        Call this method to clear the user signal after handling.
+        Termination signals are not cleared by default since the application is supposed to terminate.
+        Pass in a `term=True` to also clear the TERM signals, e.g. when you want to ignore some
+        TERM signals.
+        &#34;&#34;&#34;
         self.user_signal_received = False
+        if term:
+            self.term_signal_received = False
+        self._signal_number = None
+        self._signal_name = None
 
 
 def is_in(a, b):
@@ -1151,7 +1172,7 @@ if __name__ == &#34;__main__&#34;:
     print(f&#34;OS name: {get_os_name()}&#34;)
     print(f&#34;OS version: {get_os_version()}&#34;)
     print(f&#34;Python version: {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}&#34;)
-    print(f&#34;Running in IPython&#34;) if is_in_ipython() else None</code></pre>
+    print(&#34;Running in IPython&#34;) if is_in_ipython() else None</code></pre>
 </details>
 </section>
 <section>
@@ -2546,7 +2567,7 @@ Returns: Time since the 1958 epoch [s].</li>
 </details>
 </dd>
 <dt id="egse.system.wait_until"><code class="name flex">
-<span>def <span class="ident">wait_until</span></span>(<span>condition, *args, interval=0.1, timeout=1) ‑> int</span>
+<span>def <span class="ident">wait_until</span></span>(<span>condition, *args, interval=0.1, timeout=1, **kwargs) ‑> int</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Sleep until the given condition is fulfilled. The arguments are passed into the condition
@@ -2583,7 +2604,7 @@ not met [s, default=1]</dd>
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def wait_until(condition, *args, interval=0.1, timeout=1) -&gt; int:
+<pre><code class="python">def wait_until(condition, *args, interval=0.1, timeout=1, **kwargs) -&gt; int:
     &#34;&#34;&#34;
     Sleep until the given condition is fulfilled. The arguments are passed into the condition
     callable which is called in a while loop until the condition is met or the timeout is reached.
@@ -2624,7 +2645,7 @@ not met [s, default=1]</dd>
 
     start = time.time()
 
-    while not condition(*args):
+    while not condition(*args, **kwargs):
         if time.time() - start &gt; timeout:
             logger.warning(
                 f&#34;Timeout after {timeout} sec, from {caller.filename} at {caller.lineno},&#34;
@@ -2633,7 +2654,7 @@ not met [s, default=1]</dd>
             return True
         time.sleep(interval)
 
-    logger.debug(f&#34;wait_until finished successfully, {func_name}{args} is met.&#34;)
+    logger.debug(f&#34;wait_until finished successfully, {func_name}{args}{kwargs} is met.&#34;)
 
     return False</code></pre>
 </details>
@@ -2798,6 +2819,17 @@ User signals: 30 USR1, 31 USR2</p></div>
         for signal_number in self.user_signals:
             signal.signal(signal_number, self.handler)
 
+        self._signal_number = None
+        self._signal_name = None
+
+    @property
+    def signal_number(self):
+        return self._signal_number
+
+    @property
+    def signal_name(self):
+        return self._signal_name
+
     def handler(self, signal_number, frame):
         &#34;&#34;&#34;Handle the known signals by setting the appropriate flag.&#34;&#34;&#34;
         logger.warning(f&#34;Received signal {SIGNAL_NAME[signal_number]} [{signal_number}].&#34;)
@@ -2805,28 +2837,75 @@ User signals: 30 USR1, 31 USR2</p></div>
             self.term_signal_received = True
         if signal_number in self.user_signals:
             self.user_signal_received = True
+        self._signal_number = signal_number
+        self._signal_name = SIGNAL_NAME[signal_number]
 
-    def clear(self):
-        &#34;&#34;&#34;Call this method to clear the user signal after handling.
-        Termination signals are not cleared since the application is assumed to terminate.&#34;&#34;&#34;
-        self.user_signal_received = False</code></pre>
+    def clear(self, term: bool = False):
+        &#34;&#34;&#34;
+        Call this method to clear the user signal after handling.
+        Termination signals are not cleared by default since the application is supposed to terminate.
+        Pass in a `term=True` to also clear the TERM signals, e.g. when you want to ignore some
+        TERM signals.
+        &#34;&#34;&#34;
+        self.user_signal_received = False
+        if term:
+            self.term_signal_received = False
+        self._signal_number = None
+        self._signal_name = None</code></pre>
 </details>
-<h3>Methods</h3>
+<h3>Instance variables</h3>
 <dl>
-<dt id="egse.system.SignalCatcher.clear"><code class="name flex">
-<span>def <span class="ident">clear</span></span>(<span>self)</span>
-</code></dt>
+<dt id="egse.system.SignalCatcher.signal_name"><code class="name">var <span class="ident">signal_name</span></code></dt>
 <dd>
-<div class="desc"><p>Call this method to clear the user signal after handling.
-Termination signals are not cleared since the application is assumed to terminate.</p></div>
+<div class="desc"></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def clear(self):
-    &#34;&#34;&#34;Call this method to clear the user signal after handling.
-    Termination signals are not cleared since the application is assumed to terminate.&#34;&#34;&#34;
-    self.user_signal_received = False</code></pre>
+<pre><code class="python">@property
+def signal_name(self):
+    return self._signal_name</code></pre>
+</details>
+</dd>
+<dt id="egse.system.SignalCatcher.signal_number"><code class="name">var <span class="ident">signal_number</span></code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@property
+def signal_number(self):
+    return self._signal_number</code></pre>
+</details>
+</dd>
+</dl>
+<h3>Methods</h3>
+<dl>
+<dt id="egse.system.SignalCatcher.clear"><code class="name flex">
+<span>def <span class="ident">clear</span></span>(<span>self, term: bool = False)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Call this method to clear the user signal after handling.
+Termination signals are not cleared by default since the application is supposed to terminate.
+Pass in a <code>term=True</code> to also clear the TERM signals, e.g. when you want to ignore some
+TERM signals.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def clear(self, term: bool = False):
+    &#34;&#34;&#34;
+    Call this method to clear the user signal after handling.
+    Termination signals are not cleared by default since the application is supposed to terminate.
+    Pass in a `term=True` to also clear the TERM signals, e.g. when you want to ignore some
+    TERM signals.
+    &#34;&#34;&#34;
+    self.user_signal_received = False
+    if term:
+        self.term_signal_received = False
+    self._signal_number = None
+    self._signal_name = None</code></pre>
 </details>
 </dd>
 <dt id="egse.system.SignalCatcher.handler"><code class="name flex">
@@ -2844,7 +2923,9 @@ Termination signals are not cleared since the application is assumed to terminat
     if signal_number in self.term_signals:
         self.term_signal_received = True
     if signal_number in self.user_signals:
-        self.user_signal_received = True</code></pre>
+        self.user_signal_received = True
+    self._signal_number = signal_number
+    self._signal_name = SIGNAL_NAME[signal_number]</code></pre>
 </details>
 </dd>
 </dl>
@@ -3033,6 +3114,8 @@ Elapsed seconds: ...
 <ul class="">
 <li><code><a title="egse.system.SignalCatcher.clear" href="#egse.system.SignalCatcher.clear">clear</a></code></li>
 <li><code><a title="egse.system.SignalCatcher.handler" href="#egse.system.SignalCatcher.handler">handler</a></code></li>
+<li><code><a title="egse.system.SignalCatcher.signal_name" href="#egse.system.SignalCatcher.signal_name">signal_name</a></code></li>
+<li><code><a title="egse.system.SignalCatcher.signal_number" href="#egse.system.SignalCatcher.signal_number">signal_number</a></code></li>
 </ul>
 </li>
 <li>

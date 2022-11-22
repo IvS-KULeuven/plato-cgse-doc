@@ -96,30 +96,22 @@ y_size = reg_map[&#34;ccd1_win_size_y&#34;]
 ```
 &#34;&#34;&#34;
 import logging
-from pathlib import Path
 from typing import List
 from typing import Union
 
 import numpy as np
-import yaml
 
 from egse.bits import beautify_binary
 from egse.bits import clear_bit
 from egse.bits import set_bit
 from egse.bits import set_bits
-from egse.config import find_file
 from egse.settings import Settings
+from egse.setup import SetupError
+from egse.state import GlobalState
 
 n_fee_settings = Settings.load(&#34;N-FEE&#34;)
-f_fee_settings = Settings.load(&#34;F-FEE&#34;)
 
 LOGGER = logging.getLogger(__name__)
-
-# This is already the new CCD ID numbering convention
-
-CCD_ID = {
-    0b00: &#34;CCD3&#34;, 0b01: &#34;CCD4&#34;, 0b10: &#34;CCD1&#34;, 0b11: &#34;CCD2&#34;
-}
 
 
 def decode_ccd_order(ccd_order: int) -&gt; str:
@@ -138,7 +130,13 @@ def decode_ccd_order(ccd_order: int) -&gt; str:
         A string representing the readout order of the CCDs.
     &#34;&#34;&#34;
     msg = f&#34;ccd_order=0b{ccd_order:08b} ({ccd_order:3d}) &#34;
-    order = [f&#34;{CCD_ID[(ccd_order &gt;&gt; idx * 2) &amp; 0b11]}&#34; for idx in range(4)]
+
+    try:
+        ccd_id = GlobalState.setup.camera.fee.ccd_numbering.CCD_ID
+    except AttributeError:
+        raise SetupError(&#34;No entry in the setup for camera.fee.ccd_numbering.CCD_ID&#34;)
+
+    order = [f&#34;{ccd_id[(ccd_order &gt;&gt; idx * 2) &amp; 0b11]}&#34; for idx in range(4)]
     msg += &#34; -&gt; &#34;.join(order)
     return msg
 
@@ -160,9 +158,15 @@ def encode_ccd_order(ccd_order: List = None) -&gt; int:
     Returns:
         The decoded value (int) of the CCD order.
     &#34;&#34;&#34;
+
+    try:
+        ccd_id = GlobalState.setup.camera.fee.ccd_numbering.CCD_ID
+    except AttributeError:
+        raise SetupError(&#34;No entry in the setup for camera.fee.ccd_numbering.CCD_ID&#34;)
+
     order = 0
-    keys_list = list(CCD_ID.keys())
-    values_list = list(CCD_ID.values())
+    keys_list = list(ccd_id.keys())
+    values_list = list(ccd_id.values())
     for idx, name in enumerate(ccd_order):
         ccd_id = keys_list[values_list.index(name)]
         order |= ccd_id &lt;&lt; idx * 2
@@ -366,38 +370,22 @@ class RegisterMap:
         else:
             self._memory_map = memory_map
 
+
     def _load_register_map(self) -&gt; dict:
 
-        # We might want to add other registry maps in the future.
-
-        if self._name == &#34;N-FEE&#34;:
-            yaml_name = n_fee_settings.REGISTER_MAP
-        elif self._name == &#34;F-FEE&#34;:
-            yaml_name = f_fee_settings.REGISTER_MAP
-        else:
-            raise ValueError(&#34;Can only load registry map for N-FEE and F-FEE.&#34;)
-
-        fee_reg_fn: Path = find_file(yaml_name)
-
-        if fee_reg_fn is None:
-            raise FileNotFoundError(
-                f&#34;Could not find the registry file for the {self._name}: {yaml_name}&#34;
-            )
+        fee_reg = GlobalState.setup.camera.fee.register_map
 
         register_map = {}
 
-        with fee_reg_fn.open() as stream:
-            fee_reg = yaml.safe_load(stream)
-
-            for reg_name in fee_reg:
-                # each register has the &#39;reg_address&#39; as a mandatory field
-                reg = Register(reg_name, fee_reg[reg_name][&#34;reg_address&#34;])
-                for var_name in fee_reg[reg_name]:
-                    if var_name == &#34;reg_address&#34;:
-                        continue
-                    offset, width, default = fee_reg[reg_name][var_name]
-                    reg[var_name] = RegisterValue(reg, var_name, offset, width, default)
-                register_map[reg_name] = reg
+        for reg_name in fee_reg:
+            # each register has the &#39;reg_address&#39; as a mandatory field
+            reg = Register(reg_name, fee_reg[reg_name][&#34;reg_address&#34;])
+            for var_name in fee_reg[reg_name]:
+                if var_name == &#34;reg_address&#34;:
+                    continue
+                offset, width, default = fee_reg[reg_name][var_name]
+                reg[var_name] = RegisterValue(reg, var_name, offset, width, default)
+            register_map[reg_name] = reg
 
         return register_map
 
@@ -721,7 +709,13 @@ reading the variable from the RegisterMap.</p>
         A string representing the readout order of the CCDs.
     &#34;&#34;&#34;
     msg = f&#34;ccd_order=0b{ccd_order:08b} ({ccd_order:3d}) &#34;
-    order = [f&#34;{CCD_ID[(ccd_order &gt;&gt; idx * 2) &amp; 0b11]}&#34; for idx in range(4)]
+
+    try:
+        ccd_id = GlobalState.setup.camera.fee.ccd_numbering.CCD_ID
+    except AttributeError:
+        raise SetupError(&#34;No entry in the setup for camera.fee.ccd_numbering.CCD_ID&#34;)
+
+    order = [f&#34;{ccd_id[(ccd_order &gt;&gt; idx * 2) &amp; 0b11]}&#34; for idx in range(4)]
     msg += &#34; -&gt; &#34;.join(order)
     return msg</code></pre>
 </details>
@@ -765,9 +759,15 @@ stored in the RegisterMap.</p>
     Returns:
         The decoded value (int) of the CCD order.
     &#34;&#34;&#34;
+
+    try:
+        ccd_id = GlobalState.setup.camera.fee.ccd_numbering.CCD_ID
+    except AttributeError:
+        raise SetupError(&#34;No entry in the setup for camera.fee.ccd_numbering.CCD_ID&#34;)
+
     order = 0
-    keys_list = list(CCD_ID.keys())
-    values_list = list(CCD_ID.values())
+    keys_list = list(ccd_id.keys())
+    values_list = list(ccd_id.values())
     for idx, name in enumerate(ccd_order):
         ccd_id = keys_list[values_list.index(name)]
         order |= ccd_id &lt;&lt; idx * 2
@@ -1032,38 +1032,22 @@ The type of the memory_map can be a bytearray or a Numpy ndarray.</dd>
         else:
             self._memory_map = memory_map
 
+
     def _load_register_map(self) -&gt; dict:
 
-        # We might want to add other registry maps in the future.
-
-        if self._name == &#34;N-FEE&#34;:
-            yaml_name = n_fee_settings.REGISTER_MAP
-        elif self._name == &#34;F-FEE&#34;:
-            yaml_name = f_fee_settings.REGISTER_MAP
-        else:
-            raise ValueError(&#34;Can only load registry map for N-FEE and F-FEE.&#34;)
-
-        fee_reg_fn: Path = find_file(yaml_name)
-
-        if fee_reg_fn is None:
-            raise FileNotFoundError(
-                f&#34;Could not find the registry file for the {self._name}: {yaml_name}&#34;
-            )
+        fee_reg = GlobalState.setup.camera.fee.register_map
 
         register_map = {}
 
-        with fee_reg_fn.open() as stream:
-            fee_reg = yaml.safe_load(stream)
-
-            for reg_name in fee_reg:
-                # each register has the &#39;reg_address&#39; as a mandatory field
-                reg = Register(reg_name, fee_reg[reg_name][&#34;reg_address&#34;])
-                for var_name in fee_reg[reg_name]:
-                    if var_name == &#34;reg_address&#34;:
-                        continue
-                    offset, width, default = fee_reg[reg_name][var_name]
-                    reg[var_name] = RegisterValue(reg, var_name, offset, width, default)
-                register_map[reg_name] = reg
+        for reg_name in fee_reg:
+            # each register has the &#39;reg_address&#39; as a mandatory field
+            reg = Register(reg_name, fee_reg[reg_name][&#34;reg_address&#34;])
+            for var_name in fee_reg[reg_name]:
+                if var_name == &#34;reg_address&#34;:
+                    continue
+                offset, width, default = fee_reg[reg_name][var_name]
+                reg[var_name] = RegisterValue(reg, var_name, offset, width, default)
+            register_map[reg_name] = reg
 
         return register_map
 

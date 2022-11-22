@@ -61,12 +61,14 @@ class OGSEControlServer(ControlServer):
 
         self.device_protocol = OGSEProtocol(self)
 
-        self.logger = logger
         self.logger.info(f&#34;Binding ZeroMQ socket to {self.device_protocol.get_bind_address()}&#34;)
 
         self.device_protocol.bind(self.dev_ctrl_cmd_sock)
 
         self.poller.register(self.dev_ctrl_cmd_sock, zmq.POLLIN)
+
+        self.set_delay(CTRL_SETTINGS.ST_DELAY)
+        self.set_hk_delay(CTRL_SETTINGS.HK_DELAY)
 
     def get_communication_protocol(self):
         return CTRL_SETTINGS.PROTOCOL
@@ -89,9 +91,6 @@ class OGSEControlServer(ControlServer):
     def before_serve(self):
         start_http_server(CTRL_SETTINGS.METRICS_PORT)
 
-    def after_serve(self):
-        self.device_protocol.synoptics.disconnect_cs()
-
 
 @click.group()
 def cli():
@@ -99,11 +98,17 @@ def cli():
 
 
 @cli.command()
-def start():
+@click.option(
+    &#34;--simulator&#34;, &#34;--sim&#34;, is_flag=True, help=&#34;Start the OGSE Simulator as the backend.&#34;
+)
+def start(simulator):
     &#34;&#34;&#34;
     Starts the OGSE Control Server (ogse_cs). The ogse_cs is a device server which handles the
     commanding of the OGSE at CSL.
     &#34;&#34;&#34;
+
+    if simulator:
+        Settings.set_simulation_mode(True)
 
     try:
         control_server = OGSEControlServer()
@@ -123,10 +128,13 @@ def start():
 
 
 @cli.command()
-def start_bg():
+@click.option(
+    &#34;--simulator&#34;, &#34;--sim&#34;, is_flag=True, help=&#34;Start the OGSE Simulator as the backend.&#34;
+)
+def start_bg(simulator):
     &#34;&#34;&#34;Start the OGSE Control Server in the background.&#34;&#34;&#34;
-
-    invoke.run(&#39;ogse_cs start&#39;, disown=True)
+    sim = &#34;--simulator&#34; if simulator else &#34;&#34;
+    invoke.run(f&#34;ogse_cs start {sim}&#34;, disown=True)
 
 
 @cli.command()
@@ -207,12 +215,14 @@ calling the <code>execute()</code> method of the commanding protocol class.</p>
 
         self.device_protocol = OGSEProtocol(self)
 
-        self.logger = logger
         self.logger.info(f&#34;Binding ZeroMQ socket to {self.device_protocol.get_bind_address()}&#34;)
 
         self.device_protocol.bind(self.dev_ctrl_cmd_sock)
 
         self.poller.register(self.dev_ctrl_cmd_sock, zmq.POLLIN)
+
+        self.set_delay(CTRL_SETTINGS.ST_DELAY)
+        self.set_hk_delay(CTRL_SETTINGS.HK_DELAY)
 
     def get_communication_protocol(self):
         return CTRL_SETTINGS.PROTOCOL
@@ -233,10 +243,7 @@ calling the <code>execute()</code> method of the commanding protocol class.</p>
             return &#34;OGSE&#34;
 
     def before_serve(self):
-        start_http_server(CTRL_SETTINGS.METRICS_PORT)
-
-    def after_serve(self):
-        self.device_protocol.synoptics.disconnect_cs()</code></pre>
+        start_http_server(CTRL_SETTINGS.METRICS_PORT)</code></pre>
 </details>
 <h3>Ancestors</h3>
 <ul class="hlist">
@@ -244,19 +251,6 @@ calling the <code>execute()</code> method of the commanding protocol class.</p>
 </ul>
 <h3>Methods</h3>
 <dl>
-<dt id="egse.collimator.fcul.ogse_cs.OGSEControlServer.after_serve"><code class="name flex">
-<span>def <span class="ident">after_serve</span></span>(<span>self)</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def after_serve(self):
-    self.device_protocol.synoptics.disconnect_cs()</code></pre>
-</details>
-</dd>
 <dt id="egse.collimator.fcul.ogse_cs.OGSEControlServer.before_serve"><code class="name flex">
 <span>def <span class="ident">before_serve</span></span>(<span>self)</span>
 </code></dt>
@@ -369,7 +363,6 @@ calling the <code>execute()</code> method of the commanding protocol class.</p>
 <li>
 <h4><code><a title="egse.collimator.fcul.ogse_cs.OGSEControlServer" href="#egse.collimator.fcul.ogse_cs.OGSEControlServer">OGSEControlServer</a></code></h4>
 <ul class="">
-<li><code><a title="egse.collimator.fcul.ogse_cs.OGSEControlServer.after_serve" href="#egse.collimator.fcul.ogse_cs.OGSEControlServer.after_serve">after_serve</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse_cs.OGSEControlServer.before_serve" href="#egse.collimator.fcul.ogse_cs.OGSEControlServer.before_serve">before_serve</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse_cs.OGSEControlServer.get_commanding_port" href="#egse.collimator.fcul.ogse_cs.OGSEControlServer.get_commanding_port">get_commanding_port</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse_cs.OGSEControlServer.get_communication_protocol" href="#egse.collimator.fcul.ogse_cs.OGSEControlServer.get_communication_protocol">get_communication_protocol</a></code></li>

@@ -27,17 +27,21 @@
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">import pickle
+from pathlib import Path
+
 import sys
 
 import zmq
-from PyQt5.QtCore import Qt, QThread, pyqtSignal, pyqtSlot, QObject
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, pyqtSlot, QObject, QLockFile
 from PyQt5.QtGui import QPixmap, QIcon, QCloseEvent
-from PyQt5.QtWidgets import (QApplication, QFrame, QHBoxLayout, QLabel, QMainWindow, QTextBrowser, QVBoxLayout, QAction)
+from PyQt5.QtWidgets import (QApplication, QFrame, QHBoxLayout, QLabel, QMainWindow, QTextBrowser, QVBoxLayout, QAction,
+                             QMessageBox)
 from rich.console import Console
 
 from egse.config import find_file
 from egse.confman import (ConfigurationManagerProxy, is_configuration_manager_active)
 from egse.confman.setup_ui import SetupUIView
+from egse.resource import get_resource
 from egse.settings import Settings
 from egse.zmq_ser import set_address_port
 
@@ -379,14 +383,26 @@ def main():
     &#34;&#34;&#34; Main method to launch the Configuration Manager GUI.
     &#34;&#34;&#34;
 
+    lock_file = QLockFile(str(Path(&#34;~/cm_ui.app.lock&#34;).expanduser()))
+
     app = QApplication(sys.argv)
+    app.setWindowIcon(QIcon(str(get_resource(&#34;:/icons/settings.svg&#34;))))
 
-    view = ConfigurationManagerUIView()
-    model = ConfigurationManagerUIModel()
-    ConfigurationManagerUIController(model, view)
+    if lock_file.tryLock(100):
+        view = ConfigurationManagerUIView()
+        model = ConfigurationManagerUIModel()
+        ConfigurationManagerUIController(model, view)
 
-    view.show()
-    sys.exit(app.exec_())
+        view.show()
+        sys.exit(app.exec_())
+    else:
+        error_message = QMessageBox()
+        error_message.setIcon(QMessageBox.Warning)
+        error_message.setWindowTitle(&#34;Error&#34;)
+        error_message.setText(&#34;The Configuration Manager (CM) GUI application is already running!&#34;)
+        error_message.setStandardButtons(QMessageBox.Ok)
+
+        return error_message.exec()
 
 
 if __name__ == &#34;__main__&#34;:
@@ -413,14 +429,26 @@ if __name__ == &#34;__main__&#34;:
     &#34;&#34;&#34; Main method to launch the Configuration Manager GUI.
     &#34;&#34;&#34;
 
+    lock_file = QLockFile(str(Path(&#34;~/cm_ui.app.lock&#34;).expanduser()))
+
     app = QApplication(sys.argv)
+    app.setWindowIcon(QIcon(str(get_resource(&#34;:/icons/settings.svg&#34;))))
 
-    view = ConfigurationManagerUIView()
-    model = ConfigurationManagerUIModel()
-    ConfigurationManagerUIController(model, view)
+    if lock_file.tryLock(100):
+        view = ConfigurationManagerUIView()
+        model = ConfigurationManagerUIModel()
+        ConfigurationManagerUIController(model, view)
 
-    view.show()
-    sys.exit(app.exec_())</code></pre>
+        view.show()
+        sys.exit(app.exec_())
+    else:
+        error_message = QMessageBox()
+        error_message.setIcon(QMessageBox.Warning)
+        error_message.setWindowTitle(&#34;Error&#34;)
+        error_message.setText(&#34;The Configuration Manager (CM) GUI application is already running!&#34;)
+        error_message.setStandardButtons(QMessageBox.Ok)
+
+        return error_message.exec()</code></pre>
 </details>
 </dd>
 </dl>

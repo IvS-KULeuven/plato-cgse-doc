@@ -131,11 +131,11 @@ To shut down individual Control Servers from the terminal:
 &#34;&#34;&#34;
 
 import logging
-import sys
-
 import multiprocessing
 
-from egse.setup import load_setup
+import sys
+
+from egse.state import GlobalState
 from egse.system import SignalCatcher
 
 multiprocessing.current_process().name = &#34;aeu_cs&#34;
@@ -459,17 +459,12 @@ def start_awg_cs(simulator, index):
     if index == 2:
 
         try:
-
-            setup = load_setup()
-            setup.gse.aeu.awg2.calibration
-
+            GlobalState.setup.gse.aeu.awg2.calibration
         except AttributeError:
-
             logger.exception(&#34;Starting AWG2 Control Server failed because no setup was loaded &#34; +
                              &#34;or the loaded setup does not contain AWG2 calibration data&#34;)
 
     if simulator:
-
         Settings.set_simulation_mode(True)
 
     try:

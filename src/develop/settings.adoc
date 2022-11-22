@@ -4,3 +4,47 @@
 * The `settings.yaml` file is located in the `egse` module.
 * The local settings ....
 * reloading settings is currently not possible
+
+The _Settings_ contain all static information needed to configure your system and environment. That is first of all the version and release numbers of the CGSE, and the site identifier and other information about the site. The Settings also contain all the IP addresses and port number for all the known devices, together with other static information like the device name, default settings for the device like speed, timeout, delay time, firmware version, etc. We will go into more details about the content later, let's now first look at the format and usage of the Settings.
+
+The Settings are maintained in a YAML file which is located in the `egse` module. The default Settings file is named `settings.yaml` and we call them _Global Settings_. You can for your project or test house also define _Local Settings_ with higher precedence that will overwrite the global settings when loaded. The location of the local settings YAML file is defined by the environment variable `$PLATO_LOCAL_SETTINGS` and is usually defined as follows:
+
+----
+$ export PLATO_LOCAL_SETTINGS=/cgse/local_settings.yaml
+----
+
+In your code, the Settings are accessed by `Settings` class from the `egse.settings` Python module. This module defines the `Settings` class which is used to access all information in the Settings. You can load the Settings in your session with the following command:
+
+----
+from egse.settings import Settings
+
+settings = Settings.load()
+----
+This will load the global settings first and then the local settings if the environment variable is defined. Remember that local settings will take precedence. You only need to define the settings that actually change for your local installation, respect the full hierarchy when specifying those settings. You are allowed to define new entries at any level in the Settings hierarchy.
+
+In a terminal you can check your settings as follows:
+
+----
+$ python3 -m egse.settings
+AttributeDict
+├── Common-EGSE
+│   ├── VERSION: 2022.3.0-rc.13+CGSE
+│   └── RELEASE: November 2022, 2022.3.0-rc.13+CGSE
+├── SITE
+│   ├── ID: CSL1
+│   ├── SSH_SERVER: localhost
+│   └── SSH_PORT: 22
+...
+Memoized locations:
+['/cgse/lib/python/Common_EGSE-2022.3.0rc13+cgse-py3.8.egg/egse/settings.yaml', '/cgse/local_settings.yaml']
+----
+The memoized locations are the settings files that have been loaded and memorized. Once the application has started and the settings have been loaded, they can only be reloaded by explicitly forcing a reload as follows:
+
+----
+settings = Settings.load(force=True)
+----
+This does however not guarantee that the settings will propagate properly throughout the application or to client apps. Settings can be saved in local variables or class instances that have no knowledge of a settings reload.
+
+Other things to document XXXXX:
+
+* IP addresses or HOSTNAMES in the global settings shall by default all be set to `localhost`.

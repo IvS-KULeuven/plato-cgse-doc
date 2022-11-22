@@ -30,8 +30,12 @@
 
 from egse.control import ControlServer
 from egse.device import DeviceTimeoutError
+from egse.hk import read_conversion_dict
+from egse.metrics import define_metrics
 from egse.protocol import CommandProtocol
 from egse.settings import Settings
+from egse.state import GlobalState
+from egse.synoptics import SynopticsManagerProxy
 from egse.system import format_datetime
 from egse.tempcontrol.keithley.daq6510 import DAQ6510Controller
 from egse.tempcontrol.keithley.daq6510 import DAQ6510Interface
@@ -63,6 +67,13 @@ class DAQ6510Protocol(CommandProtocol):
         self.load_commands(COMMAND_SETTINGS.Commands, DAQ6510Command, DAQ6510Interface)
         self.build_device_method_lookup_table(self.daq)
 
+        self.channels = GlobalState.setup.gse.DAQ6510.channels
+
+        self.hk_conversion_table = read_conversion_dict(self.control_server.get_storage_mnemonic())
+
+        self.synoptics = SynopticsManagerProxy()
+        self.metrics = define_metrics(&#34;DAS-DAQ6510&#34;)
+
     def get_bind_address(self):
         return bind_address(
             self.control_server.get_communication_protocol(),
@@ -73,9 +84,23 @@ class DAQ6510Protocol(CommandProtocol):
         return super().get_status()
 
     def get_housekeeping(self) -&gt; dict:
-        return {
-            &#34;timestamp&#34;: format_datetime(),
-        }</code></pre>
+
+        hk_dict = dict()
+        hk_dict[&#34;timestamp&#34;] = format_datetime()
+
+        # # TODO I guess we have to do something along those lines
+        # # (We&#39;ll have to increase the HK delay, cfr. Agilents)
+        # measurement = self.daq.perform_measurement(channel_list=self.channels)
+        # temperatures = convert_hk_names(measurement, self.hk_conversion_table)
+        # hk_dict.update(temperatures)
+        #
+        # self.synoptics.store_th_synoptics(hk_dict)
+        #
+        # for key, value in hk_dict.items():
+        #     if key != &#34;timestamp&#34;:
+        #         self.metrics[key].set(value)
+
+        return hk_dict</code></pre>
 </details>
 </section>
 <section>
@@ -123,6 +148,13 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
         self.load_commands(COMMAND_SETTINGS.Commands, DAQ6510Command, DAQ6510Interface)
         self.build_device_method_lookup_table(self.daq)
 
+        self.channels = GlobalState.setup.gse.DAQ6510.channels
+
+        self.hk_conversion_table = read_conversion_dict(self.control_server.get_storage_mnemonic())
+
+        self.synoptics = SynopticsManagerProxy()
+        self.metrics = define_metrics(&#34;DAS-DAQ6510&#34;)
+
     def get_bind_address(self):
         return bind_address(
             self.control_server.get_communication_protocol(),
@@ -133,9 +165,23 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
         return super().get_status()
 
     def get_housekeeping(self) -&gt; dict:
-        return {
-            &#34;timestamp&#34;: format_datetime(),
-        }</code></pre>
+
+        hk_dict = dict()
+        hk_dict[&#34;timestamp&#34;] = format_datetime()
+
+        # # TODO I guess we have to do something along those lines
+        # # (We&#39;ll have to increase the HK delay, cfr. Agilents)
+        # measurement = self.daq.perform_measurement(channel_list=self.channels)
+        # temperatures = convert_hk_names(measurement, self.hk_conversion_table)
+        # hk_dict.update(temperatures)
+        #
+        # self.synoptics.store_th_synoptics(hk_dict)
+        #
+        # for key, value in hk_dict.items():
+        #     if key != &#34;timestamp&#34;:
+        #         self.metrics[key].set(value)
+
+        return hk_dict</code></pre>
 </details>
 <h3>Ancestors</h3>
 <ul class="hlist">

@@ -78,8 +78,8 @@ class BeagleboneDeviceInterface:
             &#34;MV022&#34;         : 46,
             &#34;MV023&#34;         : 47,
             &#34;MV024&#34;         : 48,
-            &#34;MV001&#34;         : 49,
-            &#34;MV002&#34;         : 60   
+            &#34;MV002&#34;         : 49,
+            &#34;MV001&#34;         : 50   
         }
         
         self.valvefb = {
@@ -91,24 +91,25 @@ class BeagleboneDeviceInterface:
             &#34;N2_TEB-FEE_RMT&#34;     : 69,
             &#34;N2_TEB-TOU_RMT&#34;     : 115,
             &#34;N2_TRAP_RMT&#34;        : 117,
-            &#34;VENT_VALVE_RMT&#34;     : 70,
-            &#34;GATE_VALVE_RMT&#34;     : 71,
-            &#34;LN2_SHROUD_FB&#34;      : 72,
-            &#34;LN2_TEB-FEE_FB&#34;     : 73,
-            &#34;LN2_TEB-TOU_FB&#34;     : 74,
-            &#34;LN2_TRAP_FB&#34;        : 75,
-            &#34;N2_SHROUD_FB&#34;       : 76,
-            &#34;N2_TEB-FEE_FB&#34;      : 77,
-            &#34;N2_TEB-TOU_FB&#34;      : 78,
-            &#34;N2_TRAP_FB&#34;         : 79,
-            &#34;VENT_VALVE_FB&#34;      : 80,
-            &#34;GATE_OPEN_FB&#34;       : 81,
-            &#34;GATE_CLOSE_FB&#34;      : 8,
-            &#34;INTRLCK_DOOR_FB&#34;    : 9
+            &#34;VENT_VALVE_RMT&#34;     : 112,
+            &#34;GATE_VALVE_RMT&#34;     : 2,
+            &#34;LN2_SHROUD_FB&#34;      : 113,
+            &#34;LN2_TEB-FEE_FB&#34;     : 5,
+            &#34;LN2_TEB-TOU_FB&#34;     : 14,
+            &#34;LN2_TRAP_FB&#34;        : 4,
+            &#34;N2_SHROUD_FB&#34;       : 15,
+            &#34;N2_TEB-FEE_FB&#34;      : 89,
+            &#34;N2_TEB-TOU_FB&#34;      : 87,
+            &#34;N2_TRAP_FB&#34;         : 88,
+            &#34;VENT_VALVE_FB&#34;      : 22,
+            &#34;GATE_OPEN_FB&#34;       : 10,
+            &#34;GATE_CLOSE_FB&#34;      : 86,
+            &#34;INTRLCK_DOOR_FB&#34;    : 23
         }
 
         self._dev_gpio = Device(&#39;gpio_vacuum&#39;, config, hal)
-
+        # self._export_control()
+        # self._export_feedback()
 
     def connect(self):
         self._is_connected = True
@@ -124,19 +125,26 @@ class BeagleboneDeviceInterface:
     def is_connected(self):
         return self._is_connected
 
+    def _export_feedback(self):
+        for pin in self.valvefb.values():
+            self._dev_gpio.setMultiple([(&#39;GPIO_PIN&#39;, pin), (&#39;GPIO_EXPORT&#39;, True), (&#39;GPIO_EXPORT&#39;, True), (&#39;GPIO_DIRECTION&#39;, False)])
+    
+    def _export_control(self):
+        for pin in self.valves.values():
+            self._dev_gpio.setMultiple([(&#39;GPIO_PIN&#39;, pin), (&#39;GPIO_EXPORT&#39;, True), (&#39;GPIO_EXPORT&#39;, True), (&#39;GPIO_DIRECTION&#39;, True)])
+    
     def set_valve(self, valve_idx, valve_state):
-        if valve_idx in self.valves.values():
-            self._dev_gpio.set(&#39;GPIO_PIN&#39;, self.valves[valve_idx])
-            self._dev_gpio.set(&#39;GPIO_VALUE&#39;, valve_state)
-            return self._dev_gpio.get(&#39;GPIO_VALUE&#39;)
+        if valve_idx in self.valves.keys():
+            # logger.info(f&#34;{valve_idx} {valve_state}&#34;)
+            state = self._dev_gpio.getSetMultiple([(&#39;GPIO_PIN&#39;, self.valves[valve_idx]), (&#39;GPIO_VALUE&#39;, valve_state), (&#39;GPIO_VALUE&#39;, None)])
+            return state[0]
         else:
             raise ValueError(f&#34;{self.valves[valve_idx]} is not a valid valve ctrl ID&#34;)
 
     def get_valve(self, valve_idx):
         if valve_idx in self.valvefb.keys():
-            self._dev_gpio.set(&#39;GPIO_PIN&#39;, self.valvefb[valve_idx])
-            state = self._dev_gpio.get(&#39;GPIO_VALUE&#39;)
-            return state
+            state = self._dev_gpio.getSetMultiple([(&#39;GPIO_PIN&#39;, self.valvefb[valve_idx]), (&#39;GPIO_VALUE&#39;, None)])
+            return state[0]
         else:
             raise ValueError(f&#34;{self.valvefb[valve_idx]} is not a valid valve feedback ID&#34;)
 
@@ -337,8 +345,8 @@ Arguments can be positional or keyword arguments, not both.</p></div>
             &#34;MV022&#34;         : 46,
             &#34;MV023&#34;         : 47,
             &#34;MV024&#34;         : 48,
-            &#34;MV001&#34;         : 49,
-            &#34;MV002&#34;         : 60   
+            &#34;MV002&#34;         : 49,
+            &#34;MV001&#34;         : 50   
         }
         
         self.valvefb = {
@@ -350,24 +358,25 @@ Arguments can be positional or keyword arguments, not both.</p></div>
             &#34;N2_TEB-FEE_RMT&#34;     : 69,
             &#34;N2_TEB-TOU_RMT&#34;     : 115,
             &#34;N2_TRAP_RMT&#34;        : 117,
-            &#34;VENT_VALVE_RMT&#34;     : 70,
-            &#34;GATE_VALVE_RMT&#34;     : 71,
-            &#34;LN2_SHROUD_FB&#34;      : 72,
-            &#34;LN2_TEB-FEE_FB&#34;     : 73,
-            &#34;LN2_TEB-TOU_FB&#34;     : 74,
-            &#34;LN2_TRAP_FB&#34;        : 75,
-            &#34;N2_SHROUD_FB&#34;       : 76,
-            &#34;N2_TEB-FEE_FB&#34;      : 77,
-            &#34;N2_TEB-TOU_FB&#34;      : 78,
-            &#34;N2_TRAP_FB&#34;         : 79,
-            &#34;VENT_VALVE_FB&#34;      : 80,
-            &#34;GATE_OPEN_FB&#34;       : 81,
-            &#34;GATE_CLOSE_FB&#34;      : 8,
-            &#34;INTRLCK_DOOR_FB&#34;    : 9
+            &#34;VENT_VALVE_RMT&#34;     : 112,
+            &#34;GATE_VALVE_RMT&#34;     : 2,
+            &#34;LN2_SHROUD_FB&#34;      : 113,
+            &#34;LN2_TEB-FEE_FB&#34;     : 5,
+            &#34;LN2_TEB-TOU_FB&#34;     : 14,
+            &#34;LN2_TRAP_FB&#34;        : 4,
+            &#34;N2_SHROUD_FB&#34;       : 15,
+            &#34;N2_TEB-FEE_FB&#34;      : 89,
+            &#34;N2_TEB-TOU_FB&#34;      : 87,
+            &#34;N2_TRAP_FB&#34;         : 88,
+            &#34;VENT_VALVE_FB&#34;      : 22,
+            &#34;GATE_OPEN_FB&#34;       : 10,
+            &#34;GATE_CLOSE_FB&#34;      : 86,
+            &#34;INTRLCK_DOOR_FB&#34;    : 23
         }
 
         self._dev_gpio = Device(&#39;gpio_vacuum&#39;, config, hal)
-
+        # self._export_control()
+        # self._export_feedback()
 
     def connect(self):
         self._is_connected = True
@@ -383,19 +392,26 @@ Arguments can be positional or keyword arguments, not both.</p></div>
     def is_connected(self):
         return self._is_connected
 
+    def _export_feedback(self):
+        for pin in self.valvefb.values():
+            self._dev_gpio.setMultiple([(&#39;GPIO_PIN&#39;, pin), (&#39;GPIO_EXPORT&#39;, True), (&#39;GPIO_EXPORT&#39;, True), (&#39;GPIO_DIRECTION&#39;, False)])
+    
+    def _export_control(self):
+        for pin in self.valves.values():
+            self._dev_gpio.setMultiple([(&#39;GPIO_PIN&#39;, pin), (&#39;GPIO_EXPORT&#39;, True), (&#39;GPIO_EXPORT&#39;, True), (&#39;GPIO_DIRECTION&#39;, True)])
+    
     def set_valve(self, valve_idx, valve_state):
-        if valve_idx in self.valves.values():
-            self._dev_gpio.set(&#39;GPIO_PIN&#39;, self.valves[valve_idx])
-            self._dev_gpio.set(&#39;GPIO_VALUE&#39;, valve_state)
-            return self._dev_gpio.get(&#39;GPIO_VALUE&#39;)
+        if valve_idx in self.valves.keys():
+            # logger.info(f&#34;{valve_idx} {valve_state}&#34;)
+            state = self._dev_gpio.getSetMultiple([(&#39;GPIO_PIN&#39;, self.valves[valve_idx]), (&#39;GPIO_VALUE&#39;, valve_state), (&#39;GPIO_VALUE&#39;, None)])
+            return state[0]
         else:
             raise ValueError(f&#34;{self.valves[valve_idx]} is not a valid valve ctrl ID&#34;)
 
     def get_valve(self, valve_idx):
         if valve_idx in self.valvefb.keys():
-            self._dev_gpio.set(&#39;GPIO_PIN&#39;, self.valvefb[valve_idx])
-            state = self._dev_gpio.get(&#39;GPIO_VALUE&#39;)
-            return state
+            state = self._dev_gpio.getSetMultiple([(&#39;GPIO_PIN&#39;, self.valvefb[valve_idx]), (&#39;GPIO_VALUE&#39;, None)])
+            return state[0]
         else:
             raise ValueError(f&#34;{self.valvefb[valve_idx]} is not a valid valve feedback ID&#34;)</code></pre>
 </details>
@@ -438,9 +454,8 @@ Arguments can be positional or keyword arguments, not both.</p></div>
 </summary>
 <pre><code class="python">def get_valve(self, valve_idx):
     if valve_idx in self.valvefb.keys():
-        self._dev_gpio.set(&#39;GPIO_PIN&#39;, self.valvefb[valve_idx])
-        state = self._dev_gpio.get(&#39;GPIO_VALUE&#39;)
-        return state
+        state = self._dev_gpio.getSetMultiple([(&#39;GPIO_PIN&#39;, self.valvefb[valve_idx]), (&#39;GPIO_VALUE&#39;, None)])
+        return state[0]
     else:
         raise ValueError(f&#34;{self.valvefb[valve_idx]} is not a valid valve feedback ID&#34;)</code></pre>
 </details>
@@ -483,10 +498,10 @@ Arguments can be positional or keyword arguments, not both.</p></div>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def set_valve(self, valve_idx, valve_state):
-    if valve_idx in self.valves.values():
-        self._dev_gpio.set(&#39;GPIO_PIN&#39;, self.valves[valve_idx])
-        self._dev_gpio.set(&#39;GPIO_VALUE&#39;, valve_state)
-        return self._dev_gpio.get(&#39;GPIO_VALUE&#39;)
+    if valve_idx in self.valves.keys():
+        # logger.info(f&#34;{valve_idx} {valve_state}&#34;)
+        state = self._dev_gpio.getSetMultiple([(&#39;GPIO_PIN&#39;, self.valves[valve_idx]), (&#39;GPIO_VALUE&#39;, valve_state), (&#39;GPIO_VALUE&#39;, None)])
+        return state[0]
     else:
         raise ValueError(f&#34;{self.valves[valve_idx]} is not a valid valve ctrl ID&#34;)</code></pre>
 </details>

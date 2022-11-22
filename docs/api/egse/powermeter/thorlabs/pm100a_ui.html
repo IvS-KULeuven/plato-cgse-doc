@@ -45,16 +45,17 @@ from pathlib import Path
 
 import pyqtgraph as pg
 from PyQt5 import QtGui
-from PyQt5.QtCore import QDateTime, QTimer, Qt
+from PyQt5.QtCore import QDateTime, QTimer, Qt, QLockFile
 from PyQt5.QtGui import QFont, QIcon, QPalette, QPixmap
 from PyQt5.QtWidgets import (QAction, QApplication, QCheckBox, QComboBox, QDoubleSpinBox,
                              QFrame, QGridLayout, QGroupBox, QHBoxLayout, QLabel, QMainWindow, QPushButton,
-                             QSpinBox, QTextEdit, QToolButton, QVBoxLayout)
+                             QSpinBox, QTextEdit, QToolButton, QVBoxLayout, QMessageBox)
 
 from egse.gui.stripchart import StripChart
 from egse.observer import Observable
 from egse.observer import Observer
 from egse.powermeter.thorlabs.pm100a import ThorlabsPM100Controller, ThorlabsPM100Proxy, ThorlabsPM100Simulator
+from egse.resource import get_resource
 
 from egse.settings import Settings
 from egse.state import UnknownStateError
@@ -241,7 +242,7 @@ class ThorlabsUIView(QMainWindow, Observable):
 
         self.wavelength_value = QComboBox()
         self.wavelength_value.addItems(
-            [&#34;535 nm&#34;, &#34;635 nm&#34;, &#34;785 nm&#34;, &#34;800 nm&#34;, &#34;830 nm&#34;, &#34;980 nm&#34;, &#34;1060 nm&#34;]
+            [&#34;532 nm&#34;, &#34;535 nm&#34;, &#34;635 nm&#34;, &#34;785 nm&#34;, &#34;800 nm&#34;, &#34;830 nm&#34;, &#34;980 nm&#34;, &#34;1060 nm&#34;]
         )  # puedes acceder a los indices luego
         self.wavelength_value.currentIndexChanged.connect(self.wavelength_changed)
 
@@ -373,7 +374,7 @@ class ThorlabsUIView(QMainWindow, Observable):
 
     def wavelength_changed(self, i):
         &#34;gets the index&#34;
-        wavelength = [535, 635, 785, 800, 830, 980, 1060]
+        wavelength = [532, 535, 635, 785, 800, 830, 980, 1060]
         self.actionObservers({&#34;set_wavelength&#34;: wavelength[i]})
 
     def beam_changed(self, v):
@@ -698,51 +699,60 @@ def parse_arguments():
     args = parser.parse_args()
     return args
 
+
 def main():
+    lock_file = QLockFile(str(Path(&#34;~/pm100a_ui.app.lock&#34;).expanduser()))
 
     styles_location = find_file(&#34;styles.qss&#34;, in_dir=&#34;egse/gui&#34;)
 
     args = list(sys.argv)
     args[1:1] = [&#34;-stylesheet&#34;, str(styles_location)]
-
-    process_status = ProcessStatus()
-
-    timer_thread = threading.Thread(target=do_every, args=(10, process_status.update))
-    timer_thread.daemon = True
-    timer_thread.start()
-
-    start_http_server(GUI_SETTINGS.METRICS_PORT)
-
     app = QApplication(args)
+    app.setWindowIcon(QIcon(str(get_resource(&#34;:/icons/meter.svg&#34;))))
 
-    args = parse_arguments()
+    if lock_file.tryLock(100):
+        process_status = ProcessStatus()
 
+        timer_thread = threading.Thread(target=do_every, args=(10, process_status.update))
+        timer_thread.daemon = True
+        timer_thread.start()
 
-    if args.profile:
-        Settings.set_profiling(True)
+        start_http_server(GUI_SETTINGS.METRICS_PORT)
 
-    if args.type == &#34;proxy&#34;:
-        proxy = ThorlabsPM100Proxy()
-        if not proxy.ping():
-            description = &#34;Could not connect to Powermeter Control Server&#34;
-            info_text = (
-                &#34;The GUI will start, but the connection button will show a disconnected state. &#34;
-                &#34;Please check if the Control Server is running and start the server if needed. &#34;
-                &#34;Otherwise, check if the correct HOSTNAME for the control server is set in the &#34;
-                &#34;Settings.yaml &#34;
-                &#34;configuration file.&#34;
-            )
+        args = parse_arguments()
 
-            show_warning_message(description, info_text)
+        if args.profile:
+            Settings.set_profiling(True)
 
-    view = ThorlabsUIView()
-    model = ThorlabsUIModel(args.type)
-    controller = ThorlabsUIController(model, view)
+        if args.type == &#34;proxy&#34;:
+            proxy = ThorlabsPM100Proxy()
+            if not proxy.ping():
+                description = &#34;Could not connect to Powermeter Control Server&#34;
+                info_text = (
+                    &#34;The GUI will start, but the connection button will show a disconnected state. &#34;
+                    &#34;Please check if the Control Server is running and start the server if needed. &#34;
+                    &#34;Otherwise, check if the correct HOSTNAME for the control server is set in the &#34;
+                    &#34;Settings.yaml &#34;
+                    &#34;configuration file.&#34;
+                )
 
+                show_warning_message(description, info_text)
 
-    view.show()
+        view = ThorlabsUIView()
+        model = ThorlabsUIModel(args.type)
+        controller = ThorlabsUIController(model, view)
 
-    return app.exec_()
+        view.show()
+
+        return app.exec_()
+    else:
+        error_message = QMessageBox()
+        error_message.setIcon(QMessageBox.Warning)
+        error_message.setWindowTitle(&#34;Error&#34;)
+        error_message.setText(&#34;The PM100a GUI application is already running!&#34;)
+        error_message.setStandardButtons(QMessageBox.Ok)
+
+        return error_message.exec()
 
 
 if __name__ == &#34;__main__&#34;:
@@ -766,50 +776,58 @@ if __name__ == &#34;__main__&#34;:
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def main():
+    lock_file = QLockFile(str(Path(&#34;~/pm100a_ui.app.lock&#34;).expanduser()))
 
     styles_location = find_file(&#34;styles.qss&#34;, in_dir=&#34;egse/gui&#34;)
 
     args = list(sys.argv)
     args[1:1] = [&#34;-stylesheet&#34;, str(styles_location)]
-
-    process_status = ProcessStatus()
-
-    timer_thread = threading.Thread(target=do_every, args=(10, process_status.update))
-    timer_thread.daemon = True
-    timer_thread.start()
-
-    start_http_server(GUI_SETTINGS.METRICS_PORT)
-
     app = QApplication(args)
+    app.setWindowIcon(QIcon(str(get_resource(&#34;:/icons/meter.svg&#34;))))
 
-    args = parse_arguments()
+    if lock_file.tryLock(100):
+        process_status = ProcessStatus()
 
+        timer_thread = threading.Thread(target=do_every, args=(10, process_status.update))
+        timer_thread.daemon = True
+        timer_thread.start()
 
-    if args.profile:
-        Settings.set_profiling(True)
+        start_http_server(GUI_SETTINGS.METRICS_PORT)
 
-    if args.type == &#34;proxy&#34;:
-        proxy = ThorlabsPM100Proxy()
-        if not proxy.ping():
-            description = &#34;Could not connect to Powermeter Control Server&#34;
-            info_text = (
-                &#34;The GUI will start, but the connection button will show a disconnected state. &#34;
-                &#34;Please check if the Control Server is running and start the server if needed. &#34;
-                &#34;Otherwise, check if the correct HOSTNAME for the control server is set in the &#34;
-                &#34;Settings.yaml &#34;
-                &#34;configuration file.&#34;
-            )
+        args = parse_arguments()
 
-            show_warning_message(description, info_text)
+        if args.profile:
+            Settings.set_profiling(True)
 
-    view = ThorlabsUIView()
-    model = ThorlabsUIModel(args.type)
-    controller = ThorlabsUIController(model, view)
+        if args.type == &#34;proxy&#34;:
+            proxy = ThorlabsPM100Proxy()
+            if not proxy.ping():
+                description = &#34;Could not connect to Powermeter Control Server&#34;
+                info_text = (
+                    &#34;The GUI will start, but the connection button will show a disconnected state. &#34;
+                    &#34;Please check if the Control Server is running and start the server if needed. &#34;
+                    &#34;Otherwise, check if the correct HOSTNAME for the control server is set in the &#34;
+                    &#34;Settings.yaml &#34;
+                    &#34;configuration file.&#34;
+                )
 
+                show_warning_message(description, info_text)
 
-    view.show()
+        view = ThorlabsUIView()
+        model = ThorlabsUIModel(args.type)
+        controller = ThorlabsUIController(model, view)
 
-    return app.exec_()</code></pre>
+        view.show()
+
+        return app.exec_()
+    else:
+        error_message = QMessageBox()
+        error_message.setIcon(QMessageBox.Warning)
+        error_message.setWindowTitle(&#34;Error&#34;)
+        error_message.setText(&#34;The PM100a GUI application is already running!&#34;)
+        error_message.setStandardButtons(QMessageBox.Ok)
+
+        return error_message.exec()</code></pre>
 </details>
 </dd>
 <dt id="egse.powermeter.thorlabs.pm100a_ui.parse_arguments"><code class="name flex">
@@ -1727,7 +1745,7 @@ inheritance.</p></div>
 
         self.wavelength_value = QComboBox()
         self.wavelength_value.addItems(
-            [&#34;535 nm&#34;, &#34;635 nm&#34;, &#34;785 nm&#34;, &#34;800 nm&#34;, &#34;830 nm&#34;, &#34;980 nm&#34;, &#34;1060 nm&#34;]
+            [&#34;532 nm&#34;, &#34;535 nm&#34;, &#34;635 nm&#34;, &#34;785 nm&#34;, &#34;800 nm&#34;, &#34;830 nm&#34;, &#34;980 nm&#34;, &#34;1060 nm&#34;]
         )  # puedes acceder a los indices luego
         self.wavelength_value.currentIndexChanged.connect(self.wavelength_changed)
 
@@ -1859,7 +1877,7 @@ inheritance.</p></div>
 
     def wavelength_changed(self, i):
         &#34;gets the index&#34;
-        wavelength = [535, 635, 785, 800, 830, 980, 1060]
+        wavelength = [532, 535, 635, 785, 800, 830, 980, 1060]
         self.actionObservers({&#34;set_wavelength&#34;: wavelength[i]})
 
     def beam_changed(self, v):
@@ -2159,7 +2177,7 @@ inheritance.</p></div>
 
     self.wavelength_value = QComboBox()
     self.wavelength_value.addItems(
-        [&#34;535 nm&#34;, &#34;635 nm&#34;, &#34;785 nm&#34;, &#34;800 nm&#34;, &#34;830 nm&#34;, &#34;980 nm&#34;, &#34;1060 nm&#34;]
+        [&#34;532 nm&#34;, &#34;535 nm&#34;, &#34;635 nm&#34;, &#34;785 nm&#34;, &#34;800 nm&#34;, &#34;830 nm&#34;, &#34;980 nm&#34;, &#34;1060 nm&#34;]
     )  # puedes acceder a los indices luego
     self.wavelength_value.currentIndexChanged.connect(self.wavelength_changed)
 
@@ -2441,7 +2459,7 @@ that was loaded for the Application.</p></div>
 </summary>
 <pre><code class="python">def wavelength_changed(self, i):
     &#34;gets the index&#34;
-    wavelength = [535, 635, 785, 800, 830, 980, 1060]
+    wavelength = [532, 535, 635, 785, 800, 830, 980, 1060]
     self.actionObservers({&#34;set_wavelength&#34;: wavelength[i]})</code></pre>
 </details>
 </dd>

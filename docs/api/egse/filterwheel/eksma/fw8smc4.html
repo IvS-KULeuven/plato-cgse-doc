@@ -47,6 +47,9 @@ from egse.device import DeviceInterface
 from egse.filterwheel import FilterWheelError
 from egse.filterwheel.eksma.fw8smc4_devif import FilterWheel8SMC4Error
 from egse.filterwheel.eksma.fw8smc4_devif import FilterWheel8SMC4EthernetInterface
+from egse.filterwheel.eksma.fw8smc4_devif import FilterWheel8SMC4USBInterface
+
+
 from egse.proxy import Proxy
 from egse.settings import Settings
 from egse.zmq_ser import connect_address
@@ -55,6 +58,7 @@ LOGGER = logging.getLogger(__name__)
 
 CTRL_SETTINGS = Settings.load(&#34;Filter Wheel 8SMC4 Control Server&#34;)
 DEVICE_SETTINGS = Settings.load(filename=&#34;fw8smc4.yaml&#34;)
+SITE = Settings.load(&#34;SITE&#34;)
 
 
 class FilterWheel8SMC4Interface(DeviceInterface):
@@ -395,7 +399,6 @@ class FilterWheel8SMC4Controller(FilterWheel8SMC4Interface):
         # when the wheel factor is 0 there is no filter in the wheel, if OD units are considered
         # when the wheel factor is a character, the filter is a spectral filter
         # will be late replaced by the setup configuration
-
         self.wheel1 = {0: 0,
                       1: 2,
                       2: 1,
@@ -406,13 +409,13 @@ class FilterWheel8SMC4Controller(FilterWheel8SMC4Interface):
                       7: &#34;T6.5K&#34;}
 
         self.wheel2 = {0: 0,
-                      1: 0.3,
-                      2: 0.05,
-                      3: 5,
-                      4: 2,
-                      5: 0.1,
-                      6: 0.15,
-                      7: 3}
+                       1: 0.3,
+                       2: 0.05,
+                       3: 5,
+                       4: 2,
+                       5: 0.1,
+                       6: 0.15,
+                       7: 3}
 
         # Initializes the to wheel positions dummy variables
         self.wheel_position = [0, 0]
@@ -445,7 +448,10 @@ class FilterWheel8SMC4Controller(FilterWheel8SMC4Interface):
                              &#34;Current Motor 3&#34;: 0}
 
         try:
-            self.fw = FilterWheel8SMC4EthernetInterface()
+            if SITE.ID == &#34;INTA&#34;:
+                self.fw = FilterWheel8SMC4USBInterface()
+            else:
+                self.fw = FilterWheel8SMC4EthernetInterface()
             self.fw.connect()
         except FilterWheel8SMC4Error as exc:
             LOGGER.warning(f&#34;FilterWheel8SMC4Error caught: Couldn&#39;t establish connection ({exc})&#34;)
@@ -488,6 +494,10 @@ class FilterWheel8SMC4Controller(FilterWheel8SMC4Interface):
             self._setup = cm.get_setup()
         #todo: still some work here to manage the default setup to be loaded
         return self._setup
+
+    def get_id(self):
+        return self.fw.get_id()
+
 
     def get_response(self, cmd_string):
         response = self.fw.get_response(cmd_string)
@@ -715,7 +725,6 @@ class FilterWheel8SMC4Proxy(Proxy, FilterWheel8SMC4Interface):
         # when the wheel factor is 0 there is no filter in the wheel, if OD units are considered
         # when the wheel factor is a character, the filter is a spectral filter
         # will be late replaced by the setup configuration
-
         self.wheel1 = {0: 0,
                       1: 2,
                       2: 1,
@@ -726,13 +735,13 @@ class FilterWheel8SMC4Proxy(Proxy, FilterWheel8SMC4Interface):
                       7: &#34;T6.5K&#34;}
 
         self.wheel2 = {0: 0,
-                      1: 0.3,
-                      2: 0.05,
-                      3: 5,
-                      4: 2,
-                      5: 0.1,
-                      6: 0.15,
-                      7: 3}
+                       1: 0.3,
+                       2: 0.05,
+                       3: 5,
+                       4: 2,
+                       5: 0.1,
+                       6: 0.15,
+                       7: 3}
 
         # Initializes the to wheel positions dummy variables
         self.wheel_position = [0, 0]
@@ -765,7 +774,10 @@ class FilterWheel8SMC4Proxy(Proxy, FilterWheel8SMC4Interface):
                              &#34;Current Motor 3&#34;: 0}
 
         try:
-            self.fw = FilterWheel8SMC4EthernetInterface()
+            if SITE.ID == &#34;INTA&#34;:
+                self.fw = FilterWheel8SMC4USBInterface()
+            else:
+                self.fw = FilterWheel8SMC4EthernetInterface()
             self.fw.connect()
         except FilterWheel8SMC4Error as exc:
             LOGGER.warning(f&#34;FilterWheel8SMC4Error caught: Couldn&#39;t establish connection ({exc})&#34;)
@@ -808,6 +820,10 @@ class FilterWheel8SMC4Proxy(Proxy, FilterWheel8SMC4Interface):
             self._setup = cm.get_setup()
         #todo: still some work here to manage the default setup to be loaded
         return self._setup
+
+    def get_id(self):
+        return self.fw.get_id()
+
 
     def get_response(self, cmd_string):
         response = self.fw.get_response(cmd_string)
@@ -1032,6 +1048,19 @@ class FilterWheel8SMC4Proxy(Proxy, FilterWheel8SMC4Interface):
             self.fw.connect()
         except FilterWheelError as exc:
             LOGGER.warning(f&#34;HuberError caught: Couldn&#39;t establish connection ({exc})&#34;)</code></pre>
+</details>
+</dd>
+<dt id="egse.filterwheel.eksma.fw8smc4.FilterWheel8SMC4Controller.get_id"><code class="name flex">
+<span>def <span class="ident">get_id</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_id(self):
+    return self.fw.get_id()</code></pre>
 </details>
 </dd>
 <dt id="egse.filterwheel.eksma.fw8smc4.FilterWheel8SMC4Controller.get_response"><code class="name flex">
@@ -1941,6 +1970,7 @@ during initialization, a ConnectionError will be raised.</p>
 <ul class="two-column">
 <li><code><a title="egse.filterwheel.eksma.fw8smc4.FilterWheel8SMC4Controller.command_zero" href="#egse.filterwheel.eksma.fw8smc4.FilterWheel8SMC4Controller.command_zero">command_zero</a></code></li>
 <li><code><a title="egse.filterwheel.eksma.fw8smc4.FilterWheel8SMC4Controller.connect" href="#egse.filterwheel.eksma.fw8smc4.FilterWheel8SMC4Controller.connect">connect</a></code></li>
+<li><code><a title="egse.filterwheel.eksma.fw8smc4.FilterWheel8SMC4Controller.get_id" href="#egse.filterwheel.eksma.fw8smc4.FilterWheel8SMC4Controller.get_id">get_id</a></code></li>
 <li><code><a title="egse.filterwheel.eksma.fw8smc4.FilterWheel8SMC4Controller.get_response" href="#egse.filterwheel.eksma.fw8smc4.FilterWheel8SMC4Controller.get_response">get_response</a></code></li>
 <li><code><a title="egse.filterwheel.eksma.fw8smc4.FilterWheel8SMC4Controller.get_speed" href="#egse.filterwheel.eksma.fw8smc4.FilterWheel8SMC4Controller.get_speed">get_speed</a></code></li>
 <li><code><a title="egse.filterwheel.eksma.fw8smc4.FilterWheel8SMC4Controller.get_status" href="#egse.filterwheel.eksma.fw8smc4.FilterWheel8SMC4Controller.get_status">get_status</a></code></li>

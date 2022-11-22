@@ -26,22 +26,15 @@
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">import threading
-import logging
-import struct
+<pre><code class="python">import logging
+import threading
+
 import time
-import socket
-import errno
-import os
-from threading import Thread
 
 from egse.hk import get_housekeeping
-from egse.exceptions import DeviceNotFoundError
-from egse.settings import Settings
-from egse.confman import ConfigurationManagerProxy
-from egse.tempcontrol.spid.spid import PidInterface, PidError
+from egse.state import GlobalState
 from egse.tempcontrol.beaglebone.beaglebone import BeagleboneProxy
-
+from egse.tempcontrol.spid.spid import PidInterface, PidError
 
 logger = logging.getLogger(__name__)
 
@@ -54,8 +47,7 @@ class PidController(PidInterface):
     def __init__(self):
 
         # Get spid setup entry
-        with ConfigurationManagerProxy() as cm:
-            setup = cm.get_setup()
+        setup = GlobalState.setup
 
         heaters = setup.gse.spid.configuration.heaters
 
@@ -459,8 +451,7 @@ if __name__ == &#39;__main__&#39;:
     def __init__(self):
 
         # Get spid setup entry
-        with ConfigurationManagerProxy() as cm:
-            setup = cm.get_setup()
+        setup = GlobalState.setup
 
         heaters = setup.gse.spid.configuration.heaters
 

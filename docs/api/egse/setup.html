@@ -213,6 +213,7 @@ import importlib
 import logging
 import os
 import re
+import textwrap
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -232,6 +233,11 @@ from egse.system import sanity_check
 from egse.system import walk_dict_tree
 
 MODULE_LOGGER = logging.getLogger(__name__)
+
+
+class SetupError(Exception):
+    &#34;&#34;&#34; A setup-specific error.&#34;&#34;&#34;
+    pass
 
 
 def _load_class(class_name: str):
@@ -841,6 +847,10 @@ def list_setups(**attr):
 def get_setup(setup_id: int = None):
     &#34;&#34;&#34;
     Retrieve the currently active Setup from the configuration manager.
+
+    When a setup_id is provided, that setup will be returned, but not loaded in the configuration
+    manager. This function does NOT change the configuration manager.
+
     This function is for interactive use and consults the configuration manager server. Don&#39;t use
     this within the test script, but use the `GlobalState.setup` property instead.
     &#34;&#34;&#34;
@@ -1037,12 +1047,18 @@ def submit_setup(setup: Setup, description: str):
         print(&#34;Could not make a connection with the Configuration Manager, no Setup was submitted.&#34;)
 
 
+class SetupError(Exception):
+    &#34;&#34;&#34; A setup-specific error.&#34;&#34;&#34;
+    pass
+
+
 __all__ = [
     &#34;Setup&#34;,
     &#34;list_setups&#34;,
     &#34;load_setup&#34;,
     &#34;get_setup&#34;,
     &#34;submit_setup&#34;,
+    &#34;SetupError&#34;,
 ]
 
 if __name__ == &#34;__main__&#34;:
@@ -1057,11 +1073,11 @@ if __name__ == &#34;__main__&#34;:
     SITE = Settings.load(&#34;SITE&#34;)
     location = os.environ.get(&#34;PLATO_CONF_DATA_LOCATION&#34;)
     parser = argparse.ArgumentParser(
-        description=(
-            f&#34;Print out the Setup for the given setup-id. The Setup will &#34;
-            f&#34;be loaded from the location given by the environment variable &#34;
-            f&#34;PLATO_CONF_DATA_LOCATION. If this env is not set, the Setup &#34;
-            f&#34;will be searched from the current directory.&#34;
+        description=textwrap.dedent(f&#34;&#34;&#34;\
+            Print out the Setup for the given setup-id. The Setup will 
+            be loaded from the location given by the environment variable 
+            PLATO_CONF_DATA_LOCATION. If this env is not set, the Setup 
+            will be searched from the current directory.&#34;&#34;&#34;
         ),
         epilog=f&#34;PLATO_CONF_DATA_LOCATION={location}&#34;
     )
@@ -1097,12 +1113,7 @@ if __name__ == &#34;__main__&#34;:
             setup_files = find_files(f&#34;SETUP_{SITE.ID}_{setup_id:05d}_*.yaml&#34;, root=location)
         setup_file = sorted(setup_files)[-1]
         setup = Setup.from_yaml_file(setup_file)
-        print(setup)
-
-class SetupError(Exception):
-    &#34;&#34;&#34; A setup-specific error.&#34;&#34;&#34;
-
-    pass</code></pre>
+        print(setup)</code></pre>
 </details>
 </section>
 <section>
@@ -1116,8 +1127,10 @@ class SetupError(Exception):
 <span>def <span class="ident">get_setup</span></span>(<span>setup_id: int = None)</span>
 </code></dt>
 <dd>
-<div class="desc"><p>Retrieve the currently active Setup from the configuration manager.
-This function is for interactive use and consults the configuration manager server. Don't use
+<div class="desc"><p>Retrieve the currently active Setup from the configuration manager.</p>
+<p>When a setup_id is provided, that setup will be returned, but not loaded in the configuration
+manager. This function does NOT change the configuration manager.</p>
+<p>This function is for interactive use and consults the configuration manager server. Don't use
 this within the test script, but use the <code>GlobalState.setup</code> property instead.</p></div>
 <details class="source">
 <summary>
@@ -1126,6 +1139,10 @@ this within the test script, but use the <code>GlobalState.setup</code> property
 <pre><code class="python">def get_setup(setup_id: int = None):
     &#34;&#34;&#34;
     Retrieve the currently active Setup from the configuration manager.
+
+    When a setup_id is provided, that setup will be returned, but not loaded in the configuration
+    manager. This function does NOT change the configuration manager.
+
     This function is for interactive use and consults the configuration manager server. Don&#39;t use
     this within the test script, but use the `GlobalState.setup` property instead.
     &#34;&#34;&#34;
@@ -1905,6 +1922,26 @@ lose proper formatting and/or comments.</p>
 </dd>
 </dl>
 </dd>
+<dt id="egse.setup.SetupError"><code class="flex name class">
+<span>class <span class="ident">SetupError</span></span>
+<span>(</span><span>*args, **kwargs)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>A setup-specific error.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class SetupError(Exception):
+    &#34;&#34;&#34; A setup-specific error.&#34;&#34;&#34;
+    pass</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>builtins.Exception</li>
+<li>builtins.BaseException</li>
+</ul>
+</dd>
 </dl>
 </section>
 </article>
@@ -1948,6 +1985,9 @@ lose proper formatting and/or comments.</p>
 <li><code><a title="egse.setup.Setup.to_yaml_file" href="#egse.setup.Setup.to_yaml_file">to_yaml_file</a></code></li>
 <li><code><a title="egse.setup.Setup.walk" href="#egse.setup.Setup.walk">walk</a></code></li>
 </ul>
+</li>
+<li>
+<h4><code><a title="egse.setup.SetupError" href="#egse.setup.SetupError">SetupError</a></code></h4>
 </li>
 </ul>
 </li>

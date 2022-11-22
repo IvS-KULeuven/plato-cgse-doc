@@ -27,6 +27,8 @@
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">from egse.control import ControlServer
+from egse.metrics import define_metrics
+from egse.synoptics import SynopticsManagerProxy
 from egse.tempcontrol.srs.ptc10 import ptc10Controller, ptc10Simulator, ptc10Interface
 from egse.tempcontrol.srs.ptc10_devif import ptc10Command
 
@@ -54,6 +56,9 @@ class ptc10Protocol(CommandProtocol):
 
         self.build_device_method_lookup_table(self.temp)
 
+        self.synoptics = SynopticsManagerProxy()
+        self.metrics = define_metrics(&#34;DAS-PTC10&#34;)
+
     def get_bind_address(self):
         return bind_address(
             self.control_server.get_communication_protocol(),
@@ -64,6 +69,7 @@ class ptc10Protocol(CommandProtocol):
         return super().get_status()
 
     def get_housekeeping(self) -&gt; dict:
+
         result = dict()
         result[&#34;timestamp&#34;] = format_datetime()
 
@@ -112,6 +118,9 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
 
         self.build_device_method_lookup_table(self.temp)
 
+        self.synoptics = SynopticsManagerProxy()
+        self.metrics = define_metrics(&#34;DAS-PTC10&#34;)
+
     def get_bind_address(self):
         return bind_address(
             self.control_server.get_communication_protocol(),
@@ -122,6 +131,7 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
         return super().get_status()
 
     def get_housekeeping(self) -&gt; dict:
+
         result = dict()
         result[&#34;timestamp&#34;] = format_datetime()
 

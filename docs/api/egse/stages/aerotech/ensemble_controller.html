@@ -27,18 +27,15 @@
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">import logging
-import time
-from functools import partial
-from enum import IntEnum
 
-from numpy import sqrt, degrees, arccos, cos, radians
-from egse.socketdevice import SocketDevice
+from numpy import degrees, arccos, cos, radians
+
 from egse.command import Command
 from egse.settings import Settings
-from egse.state import GlobalState
-from egse.setup import get_setup
-from egse.stages.aerotech.ensemble_parameters import EnsembleParameter
+from egse.socketdevice import SocketDevice
 from egse.stages.aerotech.ensemble_interface import EnsembleInterface
+from egse.stages.aerotech.ensemble_parameters import EnsembleParameter
+from egse.state import GlobalState
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +65,7 @@ class EnsembleController(SocketDevice, EnsembleInterface):
                 self._commands[name] = Command(name, items[&#39;cmd&#39;])
 
         # Get the movement speed from the setup
-        setup = get_setup()
+        setup = GlobalState.setup
         self.speed = setup.gse.ensemble.maximum_speed
         self.limit = setup.gse.ensemble.limit
         
@@ -328,7 +325,7 @@ if __name__ == &#34;__main__&#34;:
                 self._commands[name] = Command(name, items[&#39;cmd&#39;])
 
         # Get the movement speed from the setup
-        setup = get_setup()
+        setup = GlobalState.setup
         self.speed = setup.gse.ensemble.maximum_speed
         self.limit = setup.gse.ensemble.limit
         

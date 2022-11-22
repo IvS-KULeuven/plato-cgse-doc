@@ -27,13 +27,14 @@
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">import pickle
+from pathlib import Path
 
 import sys
 import zmq
-from PyQt5.QtCore import QObject, pyqtSignal, pyqtSlot, QThread
+from PyQt5.QtCore import QObject, pyqtSignal, pyqtSlot, QThread, QLockFile
 from PyQt5.QtGui import QCloseEvent, QFont, QIcon
 from PyQt5.QtWidgets import QMainWindow, QLabel, QFrame, QHBoxLayout, QGridLayout, QVBoxLayout, QApplication, QAction, \
-    QWidget, QSizePolicy
+    QWidget, QSizePolicy, QMessageBox
 from math import tan, radians
 
 from egse import coordinates
@@ -47,7 +48,7 @@ from egse.help.help_ui import HelpWindow, HELP_TOPICS
 from egse.observer import Observer, Observable
 from egse.resource import get_resource
 from egse.settings import Settings
-from egse.setup import load_setup
+from egse.state import GlobalState
 from egse.zmq_ser import connect_address
 
 FONT = QFont(&#34;Helvetica&#34;, 18)
@@ -176,7 +177,7 @@ class StagesMonitoringWorker(MonitoringWorker):
 
         # Information from the setup
 
-        setup = load_setup()
+        setup = GlobalState.setup
 
         self.focal_length = setup.camera.fov.focal_length_mm
         self.distortion_coefficients = setup.camera.fov.distortion_coefficients
@@ -489,7 +490,7 @@ class FOVUIView(QMainWindow, Observable):
         self.setGeometry(300, 300, 1500, 1000)
         self.setWindowTitle(&#34;FOV Position GUI&#34;)
 
-        setup = load_setup()
+        setup = GlobalState.setup
         self.fov_radius_mm = setup.camera.fov.radius_mm
 
         # Monitoring the stages
@@ -850,6 +851,7 @@ class FOVUIController(Observer):
 
 
 def main():
+    lock_file = QLockFile(str(Path(&#34;~/fov_ui.app.lock&#34;).expanduser()))
 
     styles_location = find_file(&#34;styles.qss&#34;, in_dir=&#34;egse/gui&#34;)
 
@@ -857,16 +859,25 @@ def main():
     args[1:1] = [&#39;-stylesheet&#39;, str(styles_location)]
 
     app = QApplication(args)
+    app.setWindowIcon(QIcon(str(get_resource(&#34;:/icons/location-marker.svg&#34;))))
 
-    view = FOVUIView()
-    FOVUIController(view)
-    view.show()
+    if lock_file.tryLock(100):
+        view = FOVUIView()
+        FOVUIController(view)
+        view.show()
 
-    return app.exec_()
+        return app.exec_()
+    else:
+        error_message = QMessageBox()
+        error_message.setIcon(QMessageBox.Warning)
+        error_message.setWindowTitle(&#34;Error&#34;)
+        error_message.setText(&#34;The FOV GUI application is already running!&#34;)
+        error_message.setStandardButtons(QMessageBox.Ok)
+
+        return error_message.exec()
 
 
 if __name__ == &#34;__main__&#34;:
-
     sys.exit(main())</code></pre>
 </details>
 </section>
@@ -887,6 +898,7 @@ if __name__ == &#34;__main__&#34;:
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def main():
+    lock_file = QLockFile(str(Path(&#34;~/fov_ui.app.lock&#34;).expanduser()))
 
     styles_location = find_file(&#34;styles.qss&#34;, in_dir=&#34;egse/gui&#34;)
 
@@ -894,12 +906,22 @@ if __name__ == &#34;__main__&#34;:
     args[1:1] = [&#39;-stylesheet&#39;, str(styles_location)]
 
     app = QApplication(args)
+    app.setWindowIcon(QIcon(str(get_resource(&#34;:/icons/location-marker.svg&#34;))))
 
-    view = FOVUIView()
-    FOVUIController(view)
-    view.show()
+    if lock_file.tryLock(100):
+        view = FOVUIView()
+        FOVUIController(view)
+        view.show()
 
-    return app.exec_()</code></pre>
+        return app.exec_()
+    else:
+        error_message = QMessageBox()
+        error_message.setIcon(QMessageBox.Warning)
+        error_message.setWindowTitle(&#34;Error&#34;)
+        error_message.setText(&#34;The FOV GUI application is already running!&#34;)
+        error_message.setStandardButtons(QMessageBox.Ok)
+
+        return error_message.exec()</code></pre>
 </details>
 </dd>
 </dl>
@@ -1012,7 +1034,7 @@ the size of the field-of-view, and a red dot indicating the current position of 
         self.setGeometry(300, 300, 1500, 1000)
         self.setWindowTitle(&#34;FOV Position GUI&#34;)
 
-        setup = load_setup()
+        setup = GlobalState.setup
         self.fov_radius_mm = setup.camera.fov.radius_mm
 
         # Monitoring the stages
@@ -2362,7 +2384,7 @@ to notify the GUI.</p></div>
 
         # Information from the setup
 
-        setup = load_setup()
+        setup = GlobalState.setup
 
         self.focal_length = setup.camera.fov.focal_length_mm
         self.distortion_coefficients = setup.camera.fov.distortion_coefficients

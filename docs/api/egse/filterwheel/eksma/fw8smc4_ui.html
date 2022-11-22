@@ -28,10 +28,12 @@
 </summary>
 <pre><code class="python">import argparse
 import logging
-import sys
 from pathlib import Path
-import numpy as np
+
+import sys
 from itertools import compress
+
+from egse.resource import get_resource
 
 &#34;&#34;&#34;
 Qt imports for the FilterwheelView class
@@ -39,8 +41,9 @@ Qt imports for the FilterwheelView class
 import pyqtgraph as pg
 from PyQt5.QtGui import QFont, QIcon, QPalette, QPixmap
 from PyQt5.QtWidgets import (QAction, QApplication, QFrame, QGroupBox, QHBoxLayout, QVBoxLayout, QLabel,
-                             QMainWindow, QLineEdit, QComboBox, QPushButton, QSpinBox, QToolButton, QRadioButton)
-from PyQt5.QtCore import QTimer, Qt
+                             QMainWindow, QLineEdit, QComboBox, QPushButton, QToolButton, QRadioButton,
+                             QMessageBox)
+from PyQt5.QtCore import QTimer, Qt, QLockFile
 from QLed import QLed
 
 from egse.settings import Settings
@@ -55,7 +58,6 @@ from egse.gui import show_warning_message
 from egse.process import ProcessStatus
 from egse.system import do_every
 
-from prometheus_client import Gauge, Summary
 from prometheus_client import start_http_server
 
 import threading
@@ -905,33 +907,39 @@ def parse_arguments():
     args = parser.parse_args()
     return args
 
+
 def main():
+
+    lock_file = QLockFile(str(Path(&#34;~/fw8scm4_ui.app.lock&#34;).expanduser()))
 
     STYLES_LOCATION = find_file(&#34;styles.qss&#34;, in_dir=&#34;egse/gui&#34;)
 
     args = list(sys.argv)
     args[1:1] = [&#34;-stylesheet&#34;, str(STYLES_LOCATION)]
 
-    process_status = ProcessStatus()
-
-    timer_thread = threading.Thread(target=do_every, args=(10, process_status.update))
-    timer_thread.daemon = True
-    timer_thread.start()
-
-    start_http_server(GUI_SETTINGS.METRICS_PORT)
-
     app = QApplication(args)
+    app.setWindowIcon(QIcon(str(get_resource(&#34;:/icons/color-scheme.svg&#34;))))
 
-    args = parse_arguments()
+    if lock_file.tryLock(100):
 
-    if args.profile:
-        Settings.set_profiling(True)
+        process_status = ProcessStatus()
 
-    if args.type == &#34;proxy&#34;:
-        proxy = FilterWheel8SMC4Proxy()
-        if not proxy.ping():
-            description = &#34;Could not connect to Filter Wheel Control Server&#34;
-            info_text = (
+        timer_thread = threading.Thread(target=do_every, args=(10, process_status.update))
+        timer_thread.daemon = True
+        timer_thread.start()
+
+        start_http_server(GUI_SETTINGS.METRICS_PORT)
+
+        args = parse_arguments()
+
+        if args.profile:
+            Settings.set_profiling(True)
+
+        if args.type == &#34;proxy&#34;:
+            proxy = FilterWheel8SMC4Proxy()
+            if not proxy.ping():
+                description = &#34;Could not connect to Filter Wheel Control Server&#34;
+                info_text = (
                     &#34;The GUI will start, but the connection button will show a disconnected state. &#34;
                     &#34;Please check if the Control Server is running and start the server if needed. &#34;
                     &#34;Otherwise, check if the correct HOSTNAME for the control server is set in the &#34;
@@ -939,14 +947,22 @@ def main():
                     &#34;configuration file.&#34;
                 )
 
-            show_warning_message(description, info_text)
+                show_warning_message(description, info_text)
 
-    view = FilterWheelUIView()
-    model = FilterWheelUIModel(args.type)
-    controller = FilterWheelUIController(model, view)
+        view = FilterWheelUIView()
+        model = FilterWheelUIModel(args.type)
+        controller = FilterWheelUIController(model, view)
 
-    view.show()
-    return app.exec_()
+        view.show()
+        return app.exec_()
+    else:
+        error_message = QMessageBox()
+        error_message.setIcon(QMessageBox.Warning)
+        error_message.setWindowTitle(&#34;Error&#34;)
+        error_message.setText(&#34;The FW8SMC4 GUI application is already running!&#34;)
+        error_message.setStandardButtons(QMessageBox.Ok)
+
+        return error_message.exec()
 
 if __name__ == &#34;__main__&#34;:
     sys.exit(main())</code></pre>
@@ -970,31 +986,36 @@ if __name__ == &#34;__main__&#34;:
 </summary>
 <pre><code class="python">def main():
 
+    lock_file = QLockFile(str(Path(&#34;~/fw8scm4_ui.app.lock&#34;).expanduser()))
+
     STYLES_LOCATION = find_file(&#34;styles.qss&#34;, in_dir=&#34;egse/gui&#34;)
 
     args = list(sys.argv)
     args[1:1] = [&#34;-stylesheet&#34;, str(STYLES_LOCATION)]
 
-    process_status = ProcessStatus()
-
-    timer_thread = threading.Thread(target=do_every, args=(10, process_status.update))
-    timer_thread.daemon = True
-    timer_thread.start()
-
-    start_http_server(GUI_SETTINGS.METRICS_PORT)
-
     app = QApplication(args)
+    app.setWindowIcon(QIcon(str(get_resource(&#34;:/icons/color-scheme.svg&#34;))))
 
-    args = parse_arguments()
+    if lock_file.tryLock(100):
 
-    if args.profile:
-        Settings.set_profiling(True)
+        process_status = ProcessStatus()
 
-    if args.type == &#34;proxy&#34;:
-        proxy = FilterWheel8SMC4Proxy()
-        if not proxy.ping():
-            description = &#34;Could not connect to Filter Wheel Control Server&#34;
-            info_text = (
+        timer_thread = threading.Thread(target=do_every, args=(10, process_status.update))
+        timer_thread.daemon = True
+        timer_thread.start()
+
+        start_http_server(GUI_SETTINGS.METRICS_PORT)
+
+        args = parse_arguments()
+
+        if args.profile:
+            Settings.set_profiling(True)
+
+        if args.type == &#34;proxy&#34;:
+            proxy = FilterWheel8SMC4Proxy()
+            if not proxy.ping():
+                description = &#34;Could not connect to Filter Wheel Control Server&#34;
+                info_text = (
                     &#34;The GUI will start, but the connection button will show a disconnected state. &#34;
                     &#34;Please check if the Control Server is running and start the server if needed. &#34;
                     &#34;Otherwise, check if the correct HOSTNAME for the control server is set in the &#34;
@@ -1002,14 +1023,22 @@ if __name__ == &#34;__main__&#34;:
                     &#34;configuration file.&#34;
                 )
 
-            show_warning_message(description, info_text)
+                show_warning_message(description, info_text)
 
-    view = FilterWheelUIView()
-    model = FilterWheelUIModel(args.type)
-    controller = FilterWheelUIController(model, view)
+        view = FilterWheelUIView()
+        model = FilterWheelUIModel(args.type)
+        controller = FilterWheelUIController(model, view)
 
-    view.show()
-    return app.exec_()</code></pre>
+        view.show()
+        return app.exec_()
+    else:
+        error_message = QMessageBox()
+        error_message.setIcon(QMessageBox.Warning)
+        error_message.setWindowTitle(&#34;Error&#34;)
+        error_message.setText(&#34;The FW8SMC4 GUI application is already running!&#34;)
+        error_message.setStandardButtons(QMessageBox.Ok)
+
+        return error_message.exec()</code></pre>
 </details>
 </dd>
 <dt id="egse.filterwheel.eksma.fw8smc4_ui.parse_arguments"><code class="name flex">

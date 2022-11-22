@@ -105,28 +105,19 @@ class Agilent34972Protocol(CommandProtocol):
         except Exception as e:
             logger.warning(f&#39;failed to get HK ({e})&#39;)
 
-            # with FdirManagerProxy() as fdir:
-            #     fdir_code = FDIR_PREFIX + 1
-            #     fdir.signal_fdir(fdir_code)
-            #     logger.warning(f&#39;asserted fdir signal: {fdir_code}&#39;)
-
-            # Store the temperatures as synoptics
-
             with SynopticsManagerProxy() as synoptics:
                 synoptics.store_th_synoptics(hk_dict)
 
             return hk_dict
 
-        dif = len(self.channels) - len(resistances)
-        resistances = resistances + ([0] * dif)
-        # Sometimes the agilent does not return the right amount of values
-        if len(temperatures) == len(self.channels):
-
-            for i, ch in enumerate(self.channels):
-                hk_dict[f&#39;GSRON_AG34972_{self.device_index}_R{ch}&#39;] = resistances[i]
-                hk_dict[f&#39;GSRON_AG34972_{self.device_index}_T{ch}&#39;] = temperatures[i]
-                self.resistance_gauges[i].set(resistances[i])
-                self.temperature_gauges[i].set(temperatures[i])
+        if len(temperatures.values()) == len(self.channels) and len(resistances.values()) == len(self.channels):
+            for idx, (chnl, temp) in enumerate(temperatures.items()):
+                hk_dict[f&#39;GSRON_AG34972_{self.device_index}_T{chnl}&#39;] = temp
+                self.temperature_gauges[idx].set(temp)
+                
+            for idx, (chnl, res) in enumerate(resistances.items()):
+                hk_dict[f&#39;GSRON_AG34972_{self.device_index}_R{chnl}&#39;] = res
+                self.resistance_gauges[idx].set(res)
         else:
             logger.warning(f&#39;Invalid scan result&#39;)
 
@@ -218,28 +209,19 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
         except Exception as e:
             logger.warning(f&#39;failed to get HK ({e})&#39;)
 
-            # with FdirManagerProxy() as fdir:
-            #     fdir_code = FDIR_PREFIX + 1
-            #     fdir.signal_fdir(fdir_code)
-            #     logger.warning(f&#39;asserted fdir signal: {fdir_code}&#39;)
-
-            # Store the temperatures as synoptics
-
             with SynopticsManagerProxy() as synoptics:
                 synoptics.store_th_synoptics(hk_dict)
 
             return hk_dict
 
-        dif = len(self.channels) - len(resistances)
-        resistances = resistances + ([0] * dif)
-        # Sometimes the agilent does not return the right amount of values
-        if len(temperatures) == len(self.channels):
-
-            for i, ch in enumerate(self.channels):
-                hk_dict[f&#39;GSRON_AG34972_{self.device_index}_R{ch}&#39;] = resistances[i]
-                hk_dict[f&#39;GSRON_AG34972_{self.device_index}_T{ch}&#39;] = temperatures[i]
-                self.resistance_gauges[i].set(resistances[i])
-                self.temperature_gauges[i].set(temperatures[i])
+        if len(temperatures.values()) == len(self.channels) and len(resistances.values()) == len(self.channels):
+            for idx, (chnl, temp) in enumerate(temperatures.items()):
+                hk_dict[f&#39;GSRON_AG34972_{self.device_index}_T{chnl}&#39;] = temp
+                self.temperature_gauges[idx].set(temp)
+                
+            for idx, (chnl, res) in enumerate(resistances.items()):
+                hk_dict[f&#39;GSRON_AG34972_{self.device_index}_R{chnl}&#39;] = res
+                self.resistance_gauges[idx].set(res)
         else:
             logger.warning(f&#39;Invalid scan result&#39;)
 

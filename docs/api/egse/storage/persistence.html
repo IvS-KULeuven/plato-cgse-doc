@@ -51,10 +51,10 @@ from math import cos
 from math import radians
 from math import sin
 
-from egse.fee import fee_side, CCD_BIN_TO_ID
+from egse.fee import fee_side
 from egse.fee import n_fee_mode
 from egse.settings import Settings
-from egse.setup import Setup
+from egse.setup import Setup, SetupError
 from egse.spw import DataDataPacket
 from egse.spw import DataPacket
 from egse.spw import DataPacketType
@@ -233,12 +233,12 @@ class FITS(PersistenceLayer):
 
         # Read information from the setup
 
-        setup: Setup = prep[&#34;setup&#34;]
+        self.setup: Setup = prep[&#34;setup&#34;]
 
-        self.setup_id = setup.get_id()              # Setup ID
-        self.camera_id = setup.camera.get(&#34;ID&#34;)     # Camera ID (None if not present in the setup)
+        self.setup_id = self.setup.get_id()              # Setup ID
+        self.camera_id = self.setup.camera.get(&#34;ID&#34;)     # Camera ID (None if not present in the setup)
 
-        self.readout_time = self.calculate_readout_time(setup)      # Readout time [s]
+        self.readout_time = self.calculate_readout_time(self.setup)      # Readout time [s]
         try:
             self.exposure_time = self.cycle_time - self.readout_time    # Exposure time [s]
         except TypeError:
@@ -270,8 +270,6 @@ class FITS(PersistenceLayer):
 
         Returns: Readout time for the requested part of a single CCD side [s].
         &#34;&#34;&#34;
-
-        # setup = load_setup()
 
         time_row_parallel = setup.camera.fee.time_row_parallel
         time_row_clearout = setup.camera.fee.time_row_clearout
@@ -735,8 +733,12 @@ class FITS(PersistenceLayer):
 
             elif isinstance(spw_packet, DataPacket):
 
+                try:
+                    ccd_bin_to_id = self.setup.camera.fee.ccd_numbering.CCD_BIN_TO_ID
+                except AttributeError:
+                    raise SetupError(&#34;No entry in the setup for camera.fee.ccd_numbering.CCD_BIN_TO_ID&#34;)
                 spw_packet_data_type = spw_packet.type
-                ccd_number = CCD_BIN_TO_ID[spw_packet_data_type.ccd_number] # 1-4
+                ccd_number = ccd_bin_to_id[spw_packet_data_type.ccd_number] # 1-4
                 ccd_side = fee_side(spw_packet_data_type.ccd_side)
                 data_array = spw_packet.data_as_ndarray
 
@@ -3269,12 +3271,12 @@ read out;</li>
 
         # Read information from the setup
 
-        setup: Setup = prep[&#34;setup&#34;]
+        self.setup: Setup = prep[&#34;setup&#34;]
 
-        self.setup_id = setup.get_id()              # Setup ID
-        self.camera_id = setup.camera.get(&#34;ID&#34;)     # Camera ID (None if not present in the setup)
+        self.setup_id = self.setup.get_id()              # Setup ID
+        self.camera_id = self.setup.camera.get(&#34;ID&#34;)     # Camera ID (None if not present in the setup)
 
-        self.readout_time = self.calculate_readout_time(setup)      # Readout time [s]
+        self.readout_time = self.calculate_readout_time(self.setup)      # Readout time [s]
         try:
             self.exposure_time = self.cycle_time - self.readout_time    # Exposure time [s]
         except TypeError:
@@ -3306,8 +3308,6 @@ read out;</li>
 
         Returns: Readout time for the requested part of a single CCD side [s].
         &#34;&#34;&#34;
-
-        # setup = load_setup()
 
         time_row_parallel = setup.camera.fee.time_row_parallel
         time_row_clearout = setup.camera.fee.time_row_clearout
@@ -3771,8 +3771,12 @@ read out;</li>
 
             elif isinstance(spw_packet, DataPacket):
 
+                try:
+                    ccd_bin_to_id = self.setup.camera.fee.ccd_numbering.CCD_BIN_TO_ID
+                except AttributeError:
+                    raise SetupError(&#34;No entry in the setup for camera.fee.ccd_numbering.CCD_BIN_TO_ID&#34;)
                 spw_packet_data_type = spw_packet.type
-                ccd_number = CCD_BIN_TO_ID[spw_packet_data_type.ccd_number] # 1-4
+                ccd_number = ccd_bin_to_id[spw_packet_data_type.ccd_number] # 1-4
                 ccd_side = fee_side(spw_packet_data_type.ccd_side)
                 data_array = spw_packet.data_as_ndarray
 
@@ -4577,8 +4581,6 @@ read out;</li>
     Returns: Readout time for the requested part of a single CCD side [s].
     &#34;&#34;&#34;
 
-    # setup = load_setup()
-
     time_row_parallel = setup.camera.fee.time_row_parallel
     time_row_clearout = setup.camera.fee.time_row_clearout
     time_pixel_readout = setup.camera.fee.time_pixel_readout
@@ -4751,8 +4753,12 @@ last packet has not been received for the next exposure for the given CCD.</p>
 
         elif isinstance(spw_packet, DataPacket):
 
+            try:
+                ccd_bin_to_id = self.setup.camera.fee.ccd_numbering.CCD_BIN_TO_ID
+            except AttributeError:
+                raise SetupError(&#34;No entry in the setup for camera.fee.ccd_numbering.CCD_BIN_TO_ID&#34;)
             spw_packet_data_type = spw_packet.type
-            ccd_number = CCD_BIN_TO_ID[spw_packet_data_type.ccd_number] # 1-4
+            ccd_number = ccd_bin_to_id[spw_packet_data_type.ccd_number] # 1-4
             ccd_side = fee_side(spw_packet_data_type.ccd_side)
             data_array = spw_packet.data_as_ndarray
 

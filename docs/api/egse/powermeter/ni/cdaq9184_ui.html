@@ -32,15 +32,17 @@ from pathlib import Path
 
 import sys
 
+from egse.resource import get_resource
+
 &#34;&#34;&#34;
 Qt imports for the View class
 &#34;&#34;&#34;
 
-from PyQt5.QtWidgets import QApplication
+from PyQt5.QtWidgets import QApplication, QMessageBox
 import pyqtgraph as pg
 from PyQt5.QtGui import (QFont, QIcon, QPalette, QPixmap)
 from PyQt5.QtWidgets import (QAction, QFrame, QGridLayout, QGroupBox, QHBoxLayout, QLabel, QMainWindow, QVBoxLayout)
-from PyQt5.QtCore import QTimer
+from PyQt5.QtCore import QTimer, QLockFile
 
 from egse.settings import Settings
 from egse.observer import Observable, Observer
@@ -512,51 +514,58 @@ def parse_arguments():
 
 
 def main():
+    lock_file = QLockFile(str(Path(&#34;~/cdaq98184_ui.app.lock&#34;).expanduser()))
 
     styles_location = find_file(&#34;styles.qss&#34;, in_dir=&#34;egse/gui&#34;)
 
     args = list(sys.argv)
     args[1:1] = [&#34;-stylesheet&#34;, str(styles_location)]
-
-    process_status = ProcessStatus()
-
-    timer_thread = threading.Thread(target=do_every, args=(10, process_status.update))
-    timer_thread.daemon = True
-    timer_thread.start()
-
-    start_http_server(GUI_SETTINGS.METRICS_PORT)
-
-
     app = QApplication(args)
+    app.setWindowIcon(QIcon(str(get_resource(&#34;:/icons/meter.svg&#34;))))
 
-    args = parse_arguments()
+    if lock_file.tryLock(100):
+        process_status = ProcessStatus()
 
+        timer_thread = threading.Thread(target=do_every, args=(10, process_status.update))
+        timer_thread.daemon = True
+        timer_thread.start()
 
-    if args.profile:
-        Settings.set_profiling(True)
+        start_http_server(GUI_SETTINGS.METRICS_PORT)
 
-    if args.type == &#34;proxy&#34;:
-        proxy = cdaq9184Proxy()
-        if not proxy.ping():
-            description = &#34;Could not connect to CDAQ9184 Control Server&#34;
-            info_text = (
-                &#34;The GUI will start, but the connection button will show a disconnected state. &#34;
-                &#34;Please check if the Control Server is running and start the server if needed. &#34;
-                &#34;Otherwise, check if the correct HOSTNAME for the control server is set in the &#34;
-                &#34;Settings.yaml &#34;
-                &#34;configuration file.&#34;
-            )
+        args = parse_arguments()
 
-            show_warning_message(description, info_text)
+        if args.profile:
+            Settings.set_profiling(True)
 
-    view = cdaq9184UIView()
-    model = cdaq9184UIModel(args.type)
-    controller = cdaq9184UIController(model, view)
+        if args.type == &#34;proxy&#34;:
+            proxy = cdaq9184Proxy()
+            if not proxy.ping():
+                description = &#34;Could not connect to CDAQ9184 Control Server&#34;
+                info_text = (
+                    &#34;The GUI will start, but the connection button will show a disconnected state. &#34;
+                    &#34;Please check if the Control Server is running and start the server if needed. &#34;
+                    &#34;Otherwise, check if the correct HOSTNAME for the control server is set in the &#34;
+                    &#34;Settings.yaml &#34;
+                    &#34;configuration file.&#34;
+                )
 
+                show_warning_message(description, info_text)
 
-    view.show()
+        view = cdaq9184UIView()
+        model = cdaq9184UIModel(args.type)
+        controller = cdaq9184UIController(model, view)
 
-    return app.exec_()
+        view.show()
+
+        return app.exec_()
+    else:
+        error_message = QMessageBox()
+        error_message.setIcon(QMessageBox.Warning)
+        error_message.setWindowTitle(&#34;Error&#34;)
+        error_message.setText(&#34;The CDAQ9184 GUI application is already running!&#34;)
+        error_message.setStandardButtons(QMessageBox.Ok)
+
+        return error_message.exec()
 
 
 if __name__ == &#34;__main__&#34;:
@@ -580,51 +589,58 @@ if __name__ == &#34;__main__&#34;:
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def main():
+    lock_file = QLockFile(str(Path(&#34;~/cdaq98184_ui.app.lock&#34;).expanduser()))
 
     styles_location = find_file(&#34;styles.qss&#34;, in_dir=&#34;egse/gui&#34;)
 
     args = list(sys.argv)
     args[1:1] = [&#34;-stylesheet&#34;, str(styles_location)]
-
-    process_status = ProcessStatus()
-
-    timer_thread = threading.Thread(target=do_every, args=(10, process_status.update))
-    timer_thread.daemon = True
-    timer_thread.start()
-
-    start_http_server(GUI_SETTINGS.METRICS_PORT)
-
-
     app = QApplication(args)
+    app.setWindowIcon(QIcon(str(get_resource(&#34;:/icons/meter.svg&#34;))))
 
-    args = parse_arguments()
+    if lock_file.tryLock(100):
+        process_status = ProcessStatus()
 
+        timer_thread = threading.Thread(target=do_every, args=(10, process_status.update))
+        timer_thread.daemon = True
+        timer_thread.start()
 
-    if args.profile:
-        Settings.set_profiling(True)
+        start_http_server(GUI_SETTINGS.METRICS_PORT)
 
-    if args.type == &#34;proxy&#34;:
-        proxy = cdaq9184Proxy()
-        if not proxy.ping():
-            description = &#34;Could not connect to CDAQ9184 Control Server&#34;
-            info_text = (
-                &#34;The GUI will start, but the connection button will show a disconnected state. &#34;
-                &#34;Please check if the Control Server is running and start the server if needed. &#34;
-                &#34;Otherwise, check if the correct HOSTNAME for the control server is set in the &#34;
-                &#34;Settings.yaml &#34;
-                &#34;configuration file.&#34;
-            )
+        args = parse_arguments()
 
-            show_warning_message(description, info_text)
+        if args.profile:
+            Settings.set_profiling(True)
 
-    view = cdaq9184UIView()
-    model = cdaq9184UIModel(args.type)
-    controller = cdaq9184UIController(model, view)
+        if args.type == &#34;proxy&#34;:
+            proxy = cdaq9184Proxy()
+            if not proxy.ping():
+                description = &#34;Could not connect to CDAQ9184 Control Server&#34;
+                info_text = (
+                    &#34;The GUI will start, but the connection button will show a disconnected state. &#34;
+                    &#34;Please check if the Control Server is running and start the server if needed. &#34;
+                    &#34;Otherwise, check if the correct HOSTNAME for the control server is set in the &#34;
+                    &#34;Settings.yaml &#34;
+                    &#34;configuration file.&#34;
+                )
 
+                show_warning_message(description, info_text)
 
-    view.show()
+        view = cdaq9184UIView()
+        model = cdaq9184UIModel(args.type)
+        controller = cdaq9184UIController(model, view)
 
-    return app.exec_()</code></pre>
+        view.show()
+
+        return app.exec_()
+    else:
+        error_message = QMessageBox()
+        error_message.setIcon(QMessageBox.Warning)
+        error_message.setWindowTitle(&#34;Error&#34;)
+        error_message.setText(&#34;The CDAQ9184 GUI application is already running!&#34;)
+        error_message.setStandardButtons(QMessageBox.Ok)
+
+        return error_message.exec()</code></pre>
 </details>
 </dd>
 <dt id="egse.powermeter.ni.cdaq9184_ui.parse_arguments"><code class="name flex">

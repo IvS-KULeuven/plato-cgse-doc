@@ -66,6 +66,8 @@ import textwrap
 import time
 from typing import Optional
 
+from egse.settings import Settings
+
 multiprocessing.current_process().name = &#34;smc9300_sim&#34;
 
 import logging
@@ -80,7 +82,7 @@ logging.basicConfig(level=logging.DEBUG)
 LOGGER = logging.getLogger(&#34;egse.stages.huber.smc9300_sim&#34;)
 
 HOST = &#34;localhost&#34;
-PORT = 4243
+STAGES_SETTINGS = Settings.load(&#34;Huber Controller&#34;)
 
 
 class InvalidStateError(Exception):
@@ -99,7 +101,7 @@ def write(conn, response: str) -&gt; None:
         None.
     &#34;&#34;&#34;
     response = f&#34;{response}\r\n&#34;.encode()
-    LOGGER.debug(f&#34;{response=}&#34;)
+    # LOGGER.debug(f&#34;{response=}&#34;)
     conn.sendall(response)
 
 
@@ -150,7 +152,6 @@ class AxisTimer:
         &#34;&#34;&#34;Start the timer.&#34;&#34;&#34;
         self._start_time = time.time()
         self._running = True
-
 
     def stop(self):
         &#34;&#34;&#34;Stop the timer.&#34;&#34;&#34;
@@ -246,10 +247,7 @@ class Axis:
         return self._slew_speed * 1e-4
 
     def get_state(self) -&gt; int:
-        state = 0
-        if not self._moving:
-            state = 129
-        return state
+        return 0 if self._moving else 129
 
     def start(self):
         &#34;&#34;&#34;
@@ -300,7 +298,7 @@ class Axis:
         slew_speed = self.get_converted_slew_speed()
         travel = slew_speed * delta_t
 
-        LOGGER.info(f&#34;{delta_t=}, {slew_speed=}, {travel=}&#34;)
+        # LOGGER.info(f&#34;{delta_t=}, {slew_speed=}, {travel=}&#34;)
 
         if travel &gt;= abs(self._distance):
             self._current_position = self._commanded_position
@@ -378,7 +376,7 @@ def get_error(axis: str) -&gt; str:
 
 
 def get_parameter(par_name: str, axis: str) -&gt; str:
-    LOGGER.info(f&#34;get_parameter({par_name=}, {axis=})&#34;)
+    # LOGGER.info(f&#34;get_parameter({par_name=}, {axis=})&#34;)
     if par_name == &#34;edev&#34;:
         return f&#34;{par_name}{axis}:{axes[int(axis)].edev}&#34;
     elif par_name == &#34;edir&#34;:
@@ -392,7 +390,7 @@ def get_parameter(par_name: str, axis: str) -&gt; str:
 
 
 def set_parameter(par_name: str, axis: str, value: int | float):
-    LOGGER.info(f&#34;set_parameter({par_name=}, {axis=}, {value=}&#34;)
+    # LOGGER.info(f&#34;set_parameter({par_name=}, {axis=}, {value=}&#34;)
     if par_name == &#34;edev&#34;:
         axes[int(axis)].edev = float(value)
     elif par_name == &#34;edir&#34;:
@@ -447,6 +445,14 @@ def move_to_position(axis, distance):
     axes[axis].start()
 
 
+def save_configuration():
+    print(&#34;Request to save the current configuration, not implemented.&#34;)
+
+
+def reset():
+    print(&#34;Request to reset the device, not implemented.&#34;)
+
+
 def nothing():
     return None
 
@@ -465,22 +471,23 @@ pass_args = Pass()
 
 COMMAND_ACTIONS_RESPONSES = {
     &#34;?v&#34;: (None, &#34;smc 1.2.1093&#34;),
-    &#34;?&#34;: (None,
-        textwrap.dedent(&#34;&#34;&#34;\
-            system date: June 20, 2022 08:44:22
-            os image: wes7
-            control IC: MCX
-            FBWF/UWF: disabled
-            available axes: 3
-            counter: not installed.
-            filter device: not available.
-            half screen device: not available.
-            
-            ?:cmdlist returns a command list,
-            ?:xyz returns help for command &#39;xyz&#39;.
-            ?&lt;parameter&gt;{:&lt;axis&gt;} returns current setting.&#34;&#34;&#34;
-        )
-    ),
+    &#34;?&#34;: (None, textwrap.dedent(&#34;&#34;&#34;\
+              system date: June 20, 2022 08:44:22
+              os image: wes7
+              control IC: MCX
+              FBWF/UWF: disabled
+              available axes: 3
+              counter: not installed.
+              filter device: not available.
+              half screen device: not available.
+              simulator: true.
+              
+              ?:cmdlist returns a command list,
+              ?:xyz returns help for command &#39;xyz&#39;.
+              ?&lt;parameter&gt;{:&lt;axis&gt;} returns current setting.
+              &#34;&#34;&#34;)),
+    &#34;update&#34;: (save_configuration, nothing),
+    &#34;reset&#34;: (reset, nothing),
     &#34;quit&#34;: (cancel_movement, nothing)
 }
 
@@ -504,7 +511,7 @@ COMMAND_PATTERNS_ACTIONS_RESPONSES = {
 
 def process_command(command_string: str) -&gt; str:
 
-    LOGGER.debug(f&#34;{command_string = }&#34;)
+    # LOGGER.debug(f&#34;{command_string = }&#34;)
 
     try:
         action, response = COMMAND_ACTIONS_RESPONSES[command_string]
@@ -548,11 +555,11 @@ def start():  # sourcery skip: hoist-statement-from-loop
 
     while not quit_request:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.bind((HOST, PORT))
+            s.bind((HOST, STAGES_SETTINGS.PORT))
             s.listen()
             conn, addr = s.accept()
             with conn:
-                print(&#39;Accepted connection from&#39;, addr)
+                LOGGER.info(f&#34;Accepted connection from {addr}&#34;)
                 write(conn, &#39;smc 1.2.1093&#39;)
                 try:
                     while True:
@@ -560,15 +567,15 @@ def start():  # sourcery skip: hoist-statement-from-loop
                         data = read(conn)
                         if (response := process_command(data)) is not None:
                             write(conn, response)
-                        LOGGER.debug(f&#34;{data = } -&gt; {response = }&#34;)
+                        # LOGGER.debug(f&#34;{data = } -&gt; {response = }&#34;)
                         if not data:
                             break  # connection closed by peer
                 except KeyboardInterrupt:
-                    print(&#34;Keyboard interrupt, closing.&#34;)
+                    LOGGER.info(&#34;Keyboard interrupt, closing.&#34;)
                 except ConnectionResetError as exc:
-                    print(f&#34;ConnectionResetError: {exc}&#34;, flush=True)
-
-    print(flush=True)
+                    LOGGER.info(f&#34;ConnectionResetError: {exc}&#34;)
+                except Exception as exc:
+                    LOGGER.info(f&#34;{exc.__class__.__name__} caught: {exc.args}&#34;)
 
 
 if __name__ == &#34;__main__&#34;:
@@ -701,7 +708,7 @@ if __name__ == &#34;__main__&#34;:
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def get_parameter(par_name: str, axis: str) -&gt; str:
-    LOGGER.info(f&#34;get_parameter({par_name=}, {axis=})&#34;)
+    # LOGGER.info(f&#34;get_parameter({par_name=}, {axis=})&#34;)
     if par_name == &#34;edev&#34;:
         return f&#34;{par_name}{axis}:{axes[int(axis)].edev}&#34;
     elif par_name == &#34;edir&#34;:
@@ -804,7 +811,7 @@ if __name__ == &#34;__main__&#34;:
 </summary>
 <pre><code class="python">def process_command(command_string: str) -&gt; str:
 
-    LOGGER.debug(f&#34;{command_string = }&#34;)
+    # LOGGER.debug(f&#34;{command_string = }&#34;)
 
     try:
         action, response = COMMAND_ACTIONS_RESPONSES[command_string]
@@ -877,6 +884,32 @@ if __name__ == &#34;__main__&#34;:
     return command_string.decode().rstrip()</code></pre>
 </details>
 </dd>
+<dt id="egse.stages.huber.smc9300_sim.reset"><code class="name flex">
+<span>def <span class="ident">reset</span></span>(<span>)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def reset():
+    print(&#34;Request to reset the device, not implemented.&#34;)</code></pre>
+</details>
+</dd>
+<dt id="egse.stages.huber.smc9300_sim.save_configuration"><code class="name flex">
+<span>def <span class="ident">save_configuration</span></span>(<span>)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def save_configuration():
+    print(&#34;Request to save the current configuration, not implemented.&#34;)</code></pre>
+</details>
+</dd>
 <dt id="egse.stages.huber.smc9300_sim.set_parameter"><code class="name flex">
 <span>def <span class="ident">set_parameter</span></span>(<span>par_name: str, axis: str, value: int | float)</span>
 </code></dt>
@@ -887,7 +920,7 @@ if __name__ == &#34;__main__&#34;:
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def set_parameter(par_name: str, axis: str, value: int | float):
-    LOGGER.info(f&#34;set_parameter({par_name=}, {axis=}, {value=}&#34;)
+    # LOGGER.info(f&#34;set_parameter({par_name=}, {axis=}, {value=}&#34;)
     if par_name == &#34;edev&#34;:
         axes[int(axis)].edev = float(value)
     elif par_name == &#34;edir&#34;:
@@ -937,7 +970,7 @@ if __name__ == &#34;__main__&#34;:
         None.
     &#34;&#34;&#34;
     response = f&#34;{response}\r\n&#34;.encode()
-    LOGGER.debug(f&#34;{response=}&#34;)
+    # LOGGER.debug(f&#34;{response=}&#34;)
     conn.sendall(response)</code></pre>
 </details>
 </dd>
@@ -1037,10 +1070,7 @@ for the HUBER Stages.</p>
         return self._slew_speed * 1e-4
 
     def get_state(self) -&gt; int:
-        state = 0
-        if not self._moving:
-            state = 129
-        return state
+        return 0 if self._moving else 129
 
     def start(self):
         &#34;&#34;&#34;
@@ -1091,7 +1121,7 @@ for the HUBER Stages.</p>
         slew_speed = self.get_converted_slew_speed()
         travel = slew_speed * delta_t
 
-        LOGGER.info(f&#34;{delta_t=}, {slew_speed=}, {travel=}&#34;)
+        # LOGGER.info(f&#34;{delta_t=}, {slew_speed=}, {travel=}&#34;)
 
         if travel &gt;= abs(self._distance):
             self._current_position = self._commanded_position
@@ -1266,10 +1296,7 @@ def unit(self):
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def get_state(self) -&gt; int:
-    state = 0
-    if not self._moving:
-        state = 129
-    return state</code></pre>
+    return 0 if self._moving else 129</code></pre>
 </details>
 </dd>
 <dt id="egse.stages.huber.smc9300_sim.Axis.is_in_position"><code class="name flex">
@@ -1386,7 +1413,6 @@ be with respect to the starting position.</p></div>
         &#34;&#34;&#34;Start the timer.&#34;&#34;&#34;
         self._start_time = time.time()
         self._running = True
-
 
     def stop(self):
         &#34;&#34;&#34;Stop the timer.&#34;&#34;&#34;
@@ -1593,6 +1619,8 @@ response function.</p></div>
 <li><code><a title="egse.stages.huber.smc9300_sim.nothing" href="#egse.stages.huber.smc9300_sim.nothing">nothing</a></code></li>
 <li><code><a title="egse.stages.huber.smc9300_sim.process_command" href="#egse.stages.huber.smc9300_sim.process_command">process_command</a></code></li>
 <li><code><a title="egse.stages.huber.smc9300_sim.read" href="#egse.stages.huber.smc9300_sim.read">read</a></code></li>
+<li><code><a title="egse.stages.huber.smc9300_sim.reset" href="#egse.stages.huber.smc9300_sim.reset">reset</a></code></li>
+<li><code><a title="egse.stages.huber.smc9300_sim.save_configuration" href="#egse.stages.huber.smc9300_sim.save_configuration">save_configuration</a></code></li>
 <li><code><a title="egse.stages.huber.smc9300_sim.set_parameter" href="#egse.stages.huber.smc9300_sim.set_parameter">set_parameter</a></code></li>
 <li><code><a title="egse.stages.huber.smc9300_sim.set_slew_speed" href="#egse.stages.huber.smc9300_sim.set_slew_speed">set_slew_speed</a></code></li>
 <li><code><a title="egse.stages.huber.smc9300_sim.write" href="#egse.stages.huber.smc9300_sim.write">write</a></code></li>

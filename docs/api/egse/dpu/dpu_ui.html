@@ -31,7 +31,15 @@ import multiprocessing
 import os
 import pickle
 import sys
+import tempfile
 import threading
+from pathlib import Path
+
+from PyQt5.QtCore import QLockFile
+from PyQt5.QtWidgets import QMessageBox
+
+from egse.setup import SetupError
+from egse.state import GlobalState
 
 multiprocessing.current_process().name = &#34;dpu_ui&#34;
 
@@ -56,8 +64,6 @@ from prometheus_client import start_http_server
 from egse.dpu.ccd_ui import ImageCreatorFullSize
 from egse.dpu.ccd_ui import NFEE4CCDWidget
 from egse.dpu.hk_ui import NFEEHousekeepingWidget
-from egse.fee import CCD_BIN_TO_IDX
-from egse.fee import CCD_BIN_TO_ID
 from egse.fee import convert_ccd_order_value
 from egse.fee import n_fee_mode
 from egse.fee import sensor_sel
@@ -222,6 +228,17 @@ class MainWindow(QMainWindow):
         self.image = None
         self.register_map = None
         self.data_puller = None
+        self.setup = GlobalState.setup
+
+        try:
+            self.ccd_bin_to_id = self.setup.camera.fee.ccd_numbering.CCD_BIN_TO_ID
+        except AttributeError:
+            raise SetupError(&#34;No entry in the setup for camera.fee.ccd_numbering.CCD_BIN_TO_ID&#34;)
+
+        try:
+            self.ccd_bin_to_idx = self.setup.camera.fee.ccd_numbering.CCD_BIN_TO_IDX
+        except AttributeError:
+            raise SetupError(&#34;No entry in the setup for camera.fee.ccd_numbering.CCD_BIN_TO_IDX&#34;)
 
         self.threadpool = QThreadPool()
 
@@ -322,10 +339,11 @@ class MainWindow(QMainWindow):
                 self.image.add_data(data_packet)
                 if data_packet.type.last_packet:
                     self.ccd_box.show_ccd_image(
-                        CCD_BIN_TO_ID[data_packet.type.ccd_number],
+                        self.ccd_bin_to_id[data_packet.type.ccd_number],
                         data_packet.type.ccd_side,
                         self.image.get_image(data_packet.type.ccd_side)
                     )
+
         if sync_id == MessageIdentifier.N_FEE_REGISTER_MAP:
             self.register_map = reg = RegisterMap(&#39;N-FEE&#39;, memory_map=data)
             # LOGGER.info(f&#34;REGISTER_MAP: {reg[&#39;ccd_mode_config&#39;]=}&#34;)
@@ -361,36 +379,48 @@ class MainWindow(QMainWindow):
         LOGGER.warning(&#34;ERROR: %s&#34; % t)
 
     def mark_ccd_widget(self, ccd_number: int):
-        ccd_id = CCD_BIN_TO_IDX[ccd_number]
-        self.ccd_box.mark(ccd_id)
+        self.ccd_box.mark(self.ccd_bin_to_idx[ccd_number])
 
 
 def main():
 
+    lock_file = QLockFile(str(Path(&#34;~/dpu_ui.app.lock&#34;).expanduser()))
+
     app_logo = get_resource(&#34;:/icons/logo-dpu.svg&#34;)
-
-    process_status = ProcessStatus()
-
-    timer_thread = threading.Thread(target=do_every, args=(10, process_status.update))
-    timer_thread.daemon = True
-    timer_thread.start()
-
-    start_http_server(GUI_SETTINGS.METRICS_PORT)
 
     app = QApplication(sys.argv)
     app.setWindowIcon(QIcon(str(app_logo)))
 
     os.environ[&#34;QT_ENABLE_HIGHDPI_SCALING&#34;] = &#34;1&#34;
+
     QApplication.setHighDpiScaleFactorRoundingPolicy(
         QtCore.Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
-    window = MainWindow()
-    window.show()
 
-    return app.exec_()
+    if lock_file.tryLock(100):
+
+        process_status = ProcessStatus()
+
+        timer_thread = threading.Thread(target=do_every, args=(10, process_status.update))
+        timer_thread.daemon = True
+        timer_thread.start()
+
+        start_http_server(GUI_SETTINGS.METRICS_PORT)
+
+        window = MainWindow()
+        window.show()
+        return app.exec()
+
+    else:
+        error_message = QMessageBox()
+        error_message.setIcon(QMessageBox.Warning)
+        error_message.setWindowTitle(&#34;Error&#34;)
+        error_message.setText(&#34;The DPU GUI application is already running!&#34;)
+        error_message.setStandardButtons(QMessageBox.Ok)
+
+        return error_message.exec()
 
 
 if __name__ == &#39;__main__&#39;:
-
     sys.exit(main())</code></pre>
 </details>
 </section>
@@ -412,26 +442,40 @@ if __name__ == &#39;__main__&#39;:
 </summary>
 <pre><code class="python">def main():
 
+    lock_file = QLockFile(str(Path(&#34;~/dpu_ui.app.lock&#34;).expanduser()))
+
     app_logo = get_resource(&#34;:/icons/logo-dpu.svg&#34;)
-
-    process_status = ProcessStatus()
-
-    timer_thread = threading.Thread(target=do_every, args=(10, process_status.update))
-    timer_thread.daemon = True
-    timer_thread.start()
-
-    start_http_server(GUI_SETTINGS.METRICS_PORT)
 
     app = QApplication(sys.argv)
     app.setWindowIcon(QIcon(str(app_logo)))
 
     os.environ[&#34;QT_ENABLE_HIGHDPI_SCALING&#34;] = &#34;1&#34;
+
     QApplication.setHighDpiScaleFactorRoundingPolicy(
         QtCore.Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
-    window = MainWindow()
-    window.show()
 
-    return app.exec_()</code></pre>
+    if lock_file.tryLock(100):
+
+        process_status = ProcessStatus()
+
+        timer_thread = threading.Thread(target=do_every, args=(10, process_status.update))
+        timer_thread.daemon = True
+        timer_thread.start()
+
+        start_http_server(GUI_SETTINGS.METRICS_PORT)
+
+        window = MainWindow()
+        window.show()
+        return app.exec()
+
+    else:
+        error_message = QMessageBox()
+        error_message.setIcon(QMessageBox.Warning)
+        error_message.setWindowTitle(&#34;Error&#34;)
+        error_message.setText(&#34;The DPU GUI application is already running!&#34;)
+        error_message.setStandardButtons(QMessageBox.Ok)
+
+        return error_message.exec()</code></pre>
 </details>
 </dd>
 </dl>
@@ -588,6 +632,17 @@ def run(self):
         self.image = None
         self.register_map = None
         self.data_puller = None
+        self.setup = GlobalState.setup
+
+        try:
+            self.ccd_bin_to_id = self.setup.camera.fee.ccd_numbering.CCD_BIN_TO_ID
+        except AttributeError:
+            raise SetupError(&#34;No entry in the setup for camera.fee.ccd_numbering.CCD_BIN_TO_ID&#34;)
+
+        try:
+            self.ccd_bin_to_idx = self.setup.camera.fee.ccd_numbering.CCD_BIN_TO_IDX
+        except AttributeError:
+            raise SetupError(&#34;No entry in the setup for camera.fee.ccd_numbering.CCD_BIN_TO_IDX&#34;)
 
         self.threadpool = QThreadPool()
 
@@ -688,10 +743,11 @@ def run(self):
                 self.image.add_data(data_packet)
                 if data_packet.type.last_packet:
                     self.ccd_box.show_ccd_image(
-                        CCD_BIN_TO_ID[data_packet.type.ccd_number],
+                        self.ccd_bin_to_id[data_packet.type.ccd_number],
                         data_packet.type.ccd_side,
                         self.image.get_image(data_packet.type.ccd_side)
                     )
+
         if sync_id == MessageIdentifier.N_FEE_REGISTER_MAP:
             self.register_map = reg = RegisterMap(&#39;N-FEE&#39;, memory_map=data)
             # LOGGER.info(f&#34;REGISTER_MAP: {reg[&#39;ccd_mode_config&#39;]=}&#34;)
@@ -727,8 +783,7 @@ def run(self):
         LOGGER.warning(&#34;ERROR: %s&#34; % t)
 
     def mark_ccd_widget(self, ccd_number: int):
-        ccd_id = CCD_BIN_TO_IDX[ccd_number]
-        self.ccd_box.mark(ccd_id)</code></pre>
+        self.ccd_box.mark(self.ccd_bin_to_idx[ccd_number])</code></pre>
 </details>
 <h3>Ancestors</h3>
 <ul class="hlist">
@@ -770,8 +825,7 @@ def run(self):
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def mark_ccd_widget(self, ccd_number: int):
-    ccd_id = CCD_BIN_TO_IDX[ccd_number]
-    self.ccd_box.mark(ccd_id)</code></pre>
+    self.ccd_box.mark(self.ccd_bin_to_idx[ccd_number])</code></pre>
 </details>
 </dd>
 <dt id="egse.dpu.dpu_ui.MainWindow.start_pulling_data"><code class="name flex">
@@ -858,10 +912,11 @@ def worker_output(self, sync_id, data):
             self.image.add_data(data_packet)
             if data_packet.type.last_packet:
                 self.ccd_box.show_ccd_image(
-                    CCD_BIN_TO_ID[data_packet.type.ccd_number],
+                    self.ccd_bin_to_id[data_packet.type.ccd_number],
                     data_packet.type.ccd_side,
                     self.image.get_image(data_packet.type.ccd_side)
                 )
+
     if sync_id == MessageIdentifier.N_FEE_REGISTER_MAP:
         self.register_map = reg = RegisterMap(&#39;N-FEE&#39;, memory_map=data)
         # LOGGER.info(f&#34;REGISTER_MAP: {reg[&#39;ccd_mode_config&#39;]=}&#34;)

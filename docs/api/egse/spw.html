@@ -42,6 +42,8 @@ from egse.bits import clear_bit
 from egse.bits import crc_calc
 from egse.bits import set_bit
 from egse.exceptions import Error
+from egse.setup import SetupError
+from egse.state import GlobalState
 
 MODULE_LOGGER = logging.getLogger(__name__)
 
@@ -575,12 +577,16 @@ def to_string(data: Union[DataPacketType]) -&gt; str:
     &#34;&#34;&#34;
     from egse.fee import n_fee_mode
     from egse.fee import n_fee_side
-    from egse.fee import CCD_BIN_TO_ID
 
     if isinstance(data, DataPacketType):
+        try:
+            ccd_bin_to_id = GlobalState.setup.camera.fee.ccd_numbering.CCD_BIN_TO_ID
+        except AttributeError:
+            raise SetupError(&#34;No entry in the setup for camera.fee.ccd_numbering.CCD_BIN_TO_ID&#34;)
         return (
             f&#34;mode:{n_fee_mode(data.mode).name}, last_packet:{data.last_packet}, &#34;
-            f&#34;CCD side:{n_fee_side(data.ccd_side).name}, CCD number:{CCD_BIN_TO_ID[data.ccd_number]}, &#34;
+            f&#34;CCD side:{n_fee_side(data.ccd_side).name}, CCD number:&#34;
+            f&#34;{ccd_bin_to_id[data.ccd_number]}, &#34;
             f&#34;Frame number:{data.frame_number}, Packet Type:{PacketType(data.packet_type).name}&#34;
         )
     else:
@@ -2454,12 +2460,16 @@ processing or conversion.</p>
     &#34;&#34;&#34;
     from egse.fee import n_fee_mode
     from egse.fee import n_fee_side
-    from egse.fee import CCD_BIN_TO_ID
 
     if isinstance(data, DataPacketType):
+        try:
+            ccd_bin_to_id = GlobalState.setup.camera.fee.ccd_numbering.CCD_BIN_TO_ID
+        except AttributeError:
+            raise SetupError(&#34;No entry in the setup for camera.fee.ccd_numbering.CCD_BIN_TO_ID&#34;)
         return (
             f&#34;mode:{n_fee_mode(data.mode).name}, last_packet:{data.last_packet}, &#34;
-            f&#34;CCD side:{n_fee_side(data.ccd_side).name}, CCD number:{CCD_BIN_TO_ID[data.ccd_number]}, &#34;
+            f&#34;CCD side:{n_fee_side(data.ccd_side).name}, CCD number:&#34;
+            f&#34;{ccd_bin_to_id[data.ccd_number]}, &#34;
             f&#34;Frame number:{data.frame_number}, Packet Type:{PacketType(data.packet_type).name}&#34;
         )
     else:

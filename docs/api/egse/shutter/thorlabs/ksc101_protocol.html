@@ -27,6 +27,7 @@
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">from egse.control import ControlServer
+from egse.metrics import define_metrics
 from egse.protocol import CommandProtocol
 from egse.settings import Settings
 
@@ -34,6 +35,7 @@ from egse.shutter.thorlabs.ksc101 import ShutterKSC101Controller
 from egse.shutter.thorlabs.ksc101 import ShutterKSC101Interface
 from egse.shutter.thorlabs.ksc101 import ShutterKSC101Simulator
 from egse.shutter.thorlabs.ksc101_devif import ShutterKSC101Command
+from egse.synoptics import SynopticsManagerProxy
 from egse.system import format_datetime
 from egse.zmq_ser import bind_address
 
@@ -53,6 +55,9 @@ class ShutterKSC101Protocol(CommandProtocol):
         self.load_commands(COMMAND_SETTINGS.Commands, ShutterKSC101Command, ShutterKSC101Interface)
 
         self.build_device_method_lookup_table(self.shutter)
+
+        self.synoptics = SynopticsManagerProxy()
+        self.metrics = define_metrics(&#34;KSC101&#34;)
 
     def get_bind_address(self):
         return bind_address(
@@ -77,8 +82,16 @@ class ShutterKSC101Protocol(CommandProtocol):
             _parameters.append(v)
 
         _status = [_enable, _mode, _cycles, _parameters[0], _parameters[1], _parameters[2]]
-        for idx, key in enumerate([&#34;is enabled:&#34;, &#34;shutter mode:&#34;, &#34;cycle config:&#34;]):
+
+        for idx, key in enumerate([&#34;GIAS_KSC101_ENABLE&#34;, &#34;GIAS_KSC101_MODE&#34;, &#34;GIAS_KSC101_CYCLE_CONFIG&#34;]):
             result[key] = _status[idx]
+
+        for key, value in result.items():
+            if key != &#34;timestamp&#34; and key != &#34;GIAS_KSC101_CYCLE_CONFIG&#34;:
+                # TODO Prometheus doesn&#39;t seem to be able to deal with dictionaries (GIAS_KSC101_CYCLE_CONFIG)
+                self.metrics[key].set(value)
+
+        self.synoptics.store_th_synoptics(result)
 
         return result</code></pre>
 </details>
@@ -123,6 +136,9 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
 
         self.build_device_method_lookup_table(self.shutter)
 
+        self.synoptics = SynopticsManagerProxy()
+        self.metrics = define_metrics(&#34;KSC101&#34;)
+
     def get_bind_address(self):
         return bind_address(
             self.control_server.get_communication_protocol(),
@@ -146,8 +162,16 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
             _parameters.append(v)
 
         _status = [_enable, _mode, _cycles, _parameters[0], _parameters[1], _parameters[2]]
-        for idx, key in enumerate([&#34;is enabled:&#34;, &#34;shutter mode:&#34;, &#34;cycle config:&#34;]):
+
+        for idx, key in enumerate([&#34;GIAS_KSC101_ENABLE&#34;, &#34;GIAS_KSC101_MODE&#34;, &#34;GIAS_KSC101_CYCLE_CONFIG&#34;]):
             result[key] = _status[idx]
+
+        for key, value in result.items():
+            if key != &#34;timestamp&#34; and key != &#34;GIAS_KSC101_CYCLE_CONFIG&#34;:
+                # TODO Prometheus doesn&#39;t seem to be able to deal with dictionaries (GIAS_KSC101_CYCLE_CONFIG)
+                self.metrics[key].set(value)
+
+        self.synoptics.store_th_synoptics(result)
 
         return result</code></pre>
 </details>

@@ -34,6 +34,7 @@ little to no intelligence behind it.</p>
 <li>ldls power on|off - returns "OK"</li>
 <li>ldls operate on|off - returns "OK"</li>
 <li>get lamp - return "lamp: ON|OFF"</li>
+<li>get laser - return "laser: ON|OFF"</li>
 <li>att status - returns "attenuator: ready"</li>
 <li>version - returns a version string</li>
 </ul>
@@ -59,6 +60,7 @@ Known commands are:
 * ldls power on|off - returns &#34;OK&#34;
 * ldls operate on|off - returns &#34;OK&#34;
 * get lamp - return &#34;lamp: ON|OFF&#34;
+* get laser - return &#34;laser: ON|OFF&#34;
 * att status - returns &#34;attenuator: ready&#34;
 * version - returns a version string
 
@@ -70,6 +72,8 @@ Usage:
 import multiprocessing.process
 
 from egse.collimator.fcul.ogse import get_attenuation_index
+from egse.settings import Settings
+from egse.system import SignalCatcher
 
 multiprocessing.current_process().name = &#34;ogse_sim&#34;
 
@@ -90,7 +94,7 @@ logging.basicConfig(level=logging.DEBUG)
 
 LOGGER = logging.getLogger(&#34;egse.ogse.sim&#34;)
 HOST = &#34;localhost&#34;
-PORT = 4181
+OGSE_SETTINGS = Settings.load(&#34;OGSE Controller&#34;)
 
 
 def write(conn, response: str):
@@ -122,8 +126,9 @@ def read(conn) -&gt; str:
             if n &lt; buf_size:
                 break
     except socket.timeout as e_timeout:
-        LOGGER.warning(f&#34;Socket timeout error from {e_timeout}&#34;)
-        return &#34;&#34;
+        # LOGGER.warning(f&#34;Socket timeout error from {e_timeout}&#34;)
+        # This timeout is catch at the caller, where the timeout is set.
+        raise
 
     # LOGGER.debug(f&#34;Total number of bytes received is {n_total}, idx={idx}&#34;)
     # LOGGER.debug(f&#34;{command_string=}&#34;)
@@ -148,6 +153,7 @@ class OGSEState:
         self.att_level_index = 0  # [0:46]
         self.psu = OnOff.OFF
         self.operate = OnOff.OFF
+        self.interlock = OnOff.ON  # OPEN by default
 
 
 ogse_state = OGSEState()
@@ -156,6 +162,10 @@ error_msg = &#34;&#34;
 
 def get_pm_status():
     return &#34;pm1: OK, pm2: ERROR&#34;
+
+
+def toggle_interlock():
+    ogse_state.interlock = OnOff.ON if ogse_state.interlock == OnOff.OFF else OnOff.OFF
 
 
 def ldls_power_on():
@@ -183,7 +193,7 @@ def ldls_operate_off():
 
 
 def get_interlock():
-    return &#39;interlock: CLOSED&#39;
+    return f&#39;interlock: {&#34;OPEN&#34; if ogse_state.interlock == OnOff.ON else &#34;CLOSE&#34;}&#39;
 
 
 def get_lamp():
@@ -299,12 +309,12 @@ def pm_get_power_and_temperature():
 
 
 def get_lamp_fault():
-    [error] = random.choices([&#34;ERROR&#34;, &#34;NO_ERROR&#34;], weights=[1, 5])
+    [error] = random.choices([&#34;ERROR&#34;, &#34;NO-ERROR&#34;], weights=[1, 5])
     return f&#34;lamp-fault: {error}&#34;
 
 
 def get_controller_fault():
-    [error] = random.choices([&#34;ERROR&#34;, &#34;NO_ERROR&#34;], weights=[1, 5])
+    [error] = random.choices([&#34;ERROR&#34;, &#34;NO-ERROR&#34;], weights=[1, 5])
     return f&#34;controller-fault: {error}&#34;
 
 
@@ -320,7 +330,7 @@ def get_status():
     return (
         f&#39;power: {ogse_state.ldls_power.name}, &#39;
         f&#39;lamp: {ogse_state.ldls_lamp.name}, &#39;
-        f&#39;interlock: CLOSED, &#39;
+        f&#39;interlock: {ogse_state.interlock.name}, &#39;
         f&#39;psu: {ogse_state.psu.name}, &#39;
         f&#39;att: {ogse_state.att_level} #{ogse_state.att_level_index}, &#39;
         f&#39;power-ch1: +3.185751e-11 W, power-ch2: +2.092843e-07 W, &#39;
@@ -328,10 +338,14 @@ def get_status():
     )
 
 
+def nothing():
+    return None
+
+
 COMMAND_ACTIONS_RESPONSES = {
-    &#34;version&#34;: (None, &#34;PLATO-RT-OGSE (v2.1)&#34;),
+    &#34;version&#34;: (None, &#34;PLATO-RT-OGSE (v2.1.sim)&#34;),
     &#34;get flags&#34;: (None, &#34;flags: 0x00  0000 0000&#34;),
-    &#34;ldls status&#34;: (None, &#34;OK&#34;),
+    &#34;ldls status&#34;: (None, &#34;ldls: OK&#34;),
     &#34;pm status&#34;: (None, get_pm_status),
     &#34;att status&#34;: (None, get_att_status),
     &#34;power on&#34;: (ldls_power_on, &#34;OK&#34;),
@@ -350,6 +364,7 @@ COMMAND_ACTIONS_RESPONSES = {
     &#34;get controller-fault&#34;: (None, get_controller_fault),
     &#34;get psu&#34;: (None, get_psu),
     &#34;get operate&#34;: (None, get_operate),
+    &#34;toggle interlock&#34;: (toggle_interlock, nothing),
     &#34;status&#34;: (None, get_status),
 }
 
@@ -399,27 +414,52 @@ def start():  # sourcery skip: hoist-statement-from-loop
 
     LOGGER.info(&#34;Starting the OGSE Simulator&#34;)
 
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind((HOST, PORT))
-        s.listen()
-        conn, addr = s.accept()
-        with conn:
-            print(&#39;Accepted connection from&#39;, addr)
-            write(conn, &#39;This is PLATO RT-OGSE 2.1&#39;)
-            try:
-                while True:
-                    error_msg = &#34;&#34;
-                    data = read(conn)
-                    response = process_command(data)
-                    write(conn, response)
-                    if not data:
-                        break
-            except KeyboardInterrupt:
-                print(&#34;Keyboard interrupt, closing.&#34;)
-            except ConnectionResetError as exc:
-                print(f&#34;ConnectionResetError: {exc}&#34;, flush=True)
+    killer = SignalCatcher()
 
-    print(flush=True)
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind((HOST, OGSE_SETTINGS.PORT))
+        s.listen()
+        s.settimeout(2.0)
+        while True:
+            while True:
+                try:
+                    conn, addr = s.accept()
+                    break
+                except socket.timeout:
+                    pass
+                if killer.term_signal_received:
+                    return
+            with conn:
+                LOGGER.info(f&#39;Accepted connection from {addr}&#39;)
+                write(conn, &#39;This is PLATO RT-OGSE 2.1.sim&#39;)
+                conn.settimeout(2.0)
+                try:
+                    while True:
+                        error_msg = &#34;&#34;
+                        try:
+                            data = read(conn)
+                            response = process_command(data)
+                            write(conn, response)
+                            if not data:
+                                LOGGER.info(&#34;Client closed connection, accepting new connection...&#34;)
+                                break
+                        except socket.timeout:
+                            pass
+                        if killer.term_signal_received:
+                            LOGGER.info(&#34;Terminating...&#34;)
+                            return
+                        if killer.user_signal_received:
+                            if killer.signal_name == &#34;SIGUSR1&#34;:
+                                LOGGER.info(&#34;Sending toggle interlock command to OGSE simulator&#34;)
+                                process_command(&#34;toggle interlock&#34;)
+                            killer.clear()
+
+                except KeyboardInterrupt:
+                    LOGGER.info(&#34;Keyboard interrupt, closing.&#34;)
+                except ConnectionResetError as exc:
+                    LOGGER.info(f&#34;ConnectionResetError: {exc}&#34;)
+                except Exception as exc:
+                    LOGGER.info(f&#34;{exc.__class__.__name__} caught: {exc.args}&#34;)
 
 
 if __name__ == &#34;__main__&#34;:
@@ -518,7 +558,7 @@ if __name__ == &#34;__main__&#34;:
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def get_controller_fault():
-    [error] = random.choices([&#34;ERROR&#34;, &#34;NO_ERROR&#34;], weights=[1, 5])
+    [error] = random.choices([&#34;ERROR&#34;, &#34;NO-ERROR&#34;], weights=[1, 5])
     return f&#34;controller-fault: {error}&#34;</code></pre>
 </details>
 </dd>
@@ -532,7 +572,7 @@ if __name__ == &#34;__main__&#34;:
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def get_interlock():
-    return &#39;interlock: CLOSED&#39;</code></pre>
+    return f&#39;interlock: {&#34;OPEN&#34; if ogse_state.interlock == OnOff.ON else &#34;CLOSE&#34;}&#39;</code></pre>
 </details>
 </dd>
 <dt id="egse.collimator.fcul.ogse_sim.get_lamp"><code class="name flex">
@@ -558,7 +598,7 @@ if __name__ == &#34;__main__&#34;:
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def get_lamp_fault():
-    [error] = random.choices([&#34;ERROR&#34;, &#34;NO_ERROR&#34;], weights=[1, 5])
+    [error] = random.choices([&#34;ERROR&#34;, &#34;NO-ERROR&#34;], weights=[1, 5])
     return f&#34;lamp-fault: {error}&#34;</code></pre>
 </details>
 </dd>
@@ -640,7 +680,7 @@ if __name__ == &#34;__main__&#34;:
     return (
         f&#39;power: {ogse_state.ldls_power.name}, &#39;
         f&#39;lamp: {ogse_state.ldls_lamp.name}, &#39;
-        f&#39;interlock: CLOSED, &#39;
+        f&#39;interlock: {ogse_state.interlock.name}, &#39;
         f&#39;psu: {ogse_state.psu.name}, &#39;
         f&#39;att: {ogse_state.att_level} #{ogse_state.att_level_index}, &#39;
         f&#39;power-ch1: +3.185751e-11 W, power-ch2: +2.092843e-07 W, &#39;
@@ -706,6 +746,19 @@ if __name__ == &#34;__main__&#34;:
 </summary>
 <pre><code class="python">def ldls_power_on():
     ogse_state.ldls_power = OnOff.ON</code></pre>
+</details>
+</dd>
+<dt id="egse.collimator.fcul.ogse_sim.nothing"><code class="name flex">
+<span>def <span class="ident">nothing</span></span>(<span>)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def nothing():
+    return None</code></pre>
 </details>
 </dd>
 <dt id="egse.collimator.fcul.ogse_sim.pm_get_power_and_temperature"><code class="name flex">
@@ -788,8 +841,9 @@ if __name__ == &#34;__main__&#34;:
             if n &lt; buf_size:
                 break
     except socket.timeout as e_timeout:
-        LOGGER.warning(f&#34;Socket timeout error from {e_timeout}&#34;)
-        return &#34;&#34;
+        # LOGGER.warning(f&#34;Socket timeout error from {e_timeout}&#34;)
+        # This timeout is catch at the caller, where the timeout is set.
+        raise
 
     # LOGGER.debug(f&#34;Total number of bytes received is {n_total}, idx={idx}&#34;)
     # LOGGER.debug(f&#34;{command_string=}&#34;)
@@ -882,6 +936,19 @@ if __name__ == &#34;__main__&#34;:
     time.sleep(random.random() * 3 + 6)  # wait between 6.0 and 9.0 seconds</code></pre>
 </details>
 </dd>
+<dt id="egse.collimator.fcul.ogse_sim.toggle_interlock"><code class="name flex">
+<span>def <span class="ident">toggle_interlock</span></span>(<span>)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def toggle_interlock():
+    ogse_state.interlock = OnOff.ON if ogse_state.interlock == OnOff.OFF else OnOff.OFF</code></pre>
+</details>
+</dd>
 <dt id="egse.collimator.fcul.ogse_sim.write"><code class="name flex">
 <span>def <span class="ident">write</span></span>(<span>conn, response: str)</span>
 </code></dt>
@@ -922,7 +989,8 @@ if __name__ == &#34;__main__&#34;:
         self.att_level = 0.0
         self.att_level_index = 0  # [0:46]
         self.psu = OnOff.OFF
-        self.operate = OnOff.OFF</code></pre>
+        self.operate = OnOff.OFF
+        self.interlock = OnOff.ON  # OPEN by default</code></pre>
 </details>
 </dd>
 <dt id="egse.collimator.fcul.ogse_sim.OnOff"><code class="flex name class">
@@ -991,12 +1059,14 @@ if __name__ == &#34;__main__&#34;:
 <li><code><a title="egse.collimator.fcul.ogse_sim.ldls_operate_on" href="#egse.collimator.fcul.ogse_sim.ldls_operate_on">ldls_operate_on</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse_sim.ldls_power_off" href="#egse.collimator.fcul.ogse_sim.ldls_power_off">ldls_power_off</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse_sim.ldls_power_on" href="#egse.collimator.fcul.ogse_sim.ldls_power_on">ldls_power_on</a></code></li>
+<li><code><a title="egse.collimator.fcul.ogse_sim.nothing" href="#egse.collimator.fcul.ogse_sim.nothing">nothing</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse_sim.pm_get_power_and_temperature" href="#egse.collimator.fcul.ogse_sim.pm_get_power_and_temperature">pm_get_power_and_temperature</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse_sim.process_command" href="#egse.collimator.fcul.ogse_sim.process_command">process_command</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse_sim.read" href="#egse.collimator.fcul.ogse_sim.read">read</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse_sim.set_att_level_factor" href="#egse.collimator.fcul.ogse_sim.set_att_level_factor">set_att_level_factor</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse_sim.set_att_level_index" href="#egse.collimator.fcul.ogse_sim.set_att_level_index">set_att_level_index</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse_sim.set_att_level_position" href="#egse.collimator.fcul.ogse_sim.set_att_level_position">set_att_level_position</a></code></li>
+<li><code><a title="egse.collimator.fcul.ogse_sim.toggle_interlock" href="#egse.collimator.fcul.ogse_sim.toggle_interlock">toggle_interlock</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse_sim.write" href="#egse.collimator.fcul.ogse_sim.write">write</a></code></li>
 </ul>
 </li>

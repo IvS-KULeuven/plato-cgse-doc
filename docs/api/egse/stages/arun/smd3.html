@@ -39,7 +39,7 @@ from egse.settings import Settings
 from egse.zmq_ser import bind_address
 from egse.system import format_datetime
 from egse.stages.arun.smd3_interface import Smd3Interface
-from egse.stages.arun.smd3_controller import Smd3Controller
+from egse.stages.arun.smd3_controller import Smd3Controller, EFLAGS, SFLAGS
 from egse.stages.arun.smd3_simulator import Smd3Simulator
 from egse.zmq_ser import connect_address
 
@@ -50,27 +50,6 @@ FDIR_PREFIX = 200
 DEVICE_SETTINGS = Settings.load(filename=&#34;smd3.yaml&#34;)
 CTRL_SETTINGS = Settings.load(&#34;Arun SMD3 Control Server&#34;)
 SITE_ID = Settings.load(&#34;SITE&#34;).ID
-
-EFLAGS = {
-    0: &#34;TSHORT&#34;,
-    1: &#34;TOPEN&#34;,
-    2: &#34;TOVR&#34;,
-    3: &#34;MOTORSHORT&#34;,
-    4: &#34;EXTERNALDISABLE&#34;,
-    5: &#34;EMERGENCYSTOP&#34;,
-    6: &#34;CONFIGURATIONERROR&#34;
-}
-
-SFLAGS = {
-    0: &#34;JSCON&#34;,
-    1: &#34;LIMITNEGATIVE&#34;,
-    2: &#34;LIMITPOSITIVE&#34;,
-    3: &#34;EXTEN&#34;,
-    4: &#34;IDENT&#34;,
-    6: &#34;STANDBY&#34;,
-    7: &#34;BAKE&#34;,
-    8: &#34;ATSPEED&#34;
-}
 
 gauge_absolute_position_steps   = Gauge(&#39;GSRON_SMD3_ABS_POS_STEPS&#39;, &#39;&#39;)
 gauge_absolute_position_mm      = Gauge(&#39;GSRON_SMD3_ABS_POS_MM&#39;, &#39;&#39;)
@@ -115,7 +94,7 @@ class Smd3Protocol(CommandProtocol):
 
     def get_status(self):
         status_dict = super().get_status()
-
+        status_dict[&#39;hartmann_status&#39;] = self.dev.mask_in_fov()
         return status_dict
 
 
@@ -125,26 +104,18 @@ class Smd3Protocol(CommandProtocol):
 
         # get values from device
         try:
-            result[&#34;GSRON_SMD3_ABS_POS_STEPS&#34;] = self.dev.get_position_absolute_steps()
-            result[&#34;GSRON_SMD3_ABS_POS_MM&#34;] = self.dev.get_position_absolute_mm()
-            result[&#34;GSRON_SMD3_MOTOR_TEMP&#34;] = self.dev.get_motor_temperature()
-            result[&#34;GSRON_SMD3_ERRORS&#34;] = self.dev.get_errors()
-            result[&#34;GSRON_SMD3_STATUS&#34;] = self.dev.get_status()
+            _, _, result[&#34;GSRON_SMD3_ABS_POS_STEPS&#34;] = self.dev.actual_position()
+            result[&#34;GSRON_SMD3_ABS_POS_MM&#34;] = self.dev.actual_position_mm()
+            result[&#34;GSRON_SMD3_STATUS&#34;], result[&#34;GSRON_SMD3_ERRORS&#34;], result[&#34;GSRON_SMD3_MOTOR_TEMP&#34;] = self.dev.get_temperature()
         except Exception as exc:
             logger.warning(f&#39;failed to get HK ({exc})&#39;)
-
-            # with FdirManagerProxy() as fdir:
-            #     fdir_code = FDIR_PREFIX + 1
-            #     fdir.signal_fdir(fdir_code)
-            #     logger.warning(f&#39;asserted fdir signal: {fdir_code}&#39;)
-
             return result
 
         for y, x in enumerate(EFLAGS):
-            gauge_errors[y].set((result[&#34;GSRON_SMD3_ERRORS&#34;] &gt;&gt; x) &amp; 0b1)
+            gauge_errors[y].set((int(result[&#34;GSRON_SMD3_ERRORS&#34;], 0) &gt;&gt; x) &amp; 0b1)
 
         for y, x in enumerate(SFLAGS):
-            gauge_status[y].set((result[&#34;GSRON_SMD3_STATUS&#34;] &gt;&gt; x) &amp; 0b1)
+            gauge_status[y].set((int(result[&#34;GSRON_SMD3_STATUS&#34;], 0) &gt;&gt; x) &amp; 0b1)
 
         # update prometheus
         gauge_absolute_position_steps.set(result[&#34;GSRON_SMD3_ABS_POS_STEPS&#34;])
@@ -247,7 +218,7 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
 
     def get_status(self):
         status_dict = super().get_status()
-
+        status_dict[&#39;hartmann_status&#39;] = self.dev.mask_in_fov()
         return status_dict
 
 
@@ -257,26 +228,18 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
 
         # get values from device
         try:
-            result[&#34;GSRON_SMD3_ABS_POS_STEPS&#34;] = self.dev.get_position_absolute_steps()
-            result[&#34;GSRON_SMD3_ABS_POS_MM&#34;] = self.dev.get_position_absolute_mm()
-            result[&#34;GSRON_SMD3_MOTOR_TEMP&#34;] = self.dev.get_motor_temperature()
-            result[&#34;GSRON_SMD3_ERRORS&#34;] = self.dev.get_errors()
-            result[&#34;GSRON_SMD3_STATUS&#34;] = self.dev.get_status()
+            _, _, result[&#34;GSRON_SMD3_ABS_POS_STEPS&#34;] = self.dev.actual_position()
+            result[&#34;GSRON_SMD3_ABS_POS_MM&#34;] = self.dev.actual_position_mm()
+            result[&#34;GSRON_SMD3_STATUS&#34;], result[&#34;GSRON_SMD3_ERRORS&#34;], result[&#34;GSRON_SMD3_MOTOR_TEMP&#34;] = self.dev.get_temperature()
         except Exception as exc:
             logger.warning(f&#39;failed to get HK ({exc})&#39;)
-
-            # with FdirManagerProxy() as fdir:
-            #     fdir_code = FDIR_PREFIX + 1
-            #     fdir.signal_fdir(fdir_code)
-            #     logger.warning(f&#39;asserted fdir signal: {fdir_code}&#39;)
-
             return result
 
         for y, x in enumerate(EFLAGS):
-            gauge_errors[y].set((result[&#34;GSRON_SMD3_ERRORS&#34;] &gt;&gt; x) &amp; 0b1)
+            gauge_errors[y].set((int(result[&#34;GSRON_SMD3_ERRORS&#34;], 0) &gt;&gt; x) &amp; 0b1)
 
         for y, x in enumerate(SFLAGS):
-            gauge_status[y].set((result[&#34;GSRON_SMD3_STATUS&#34;] &gt;&gt; x) &amp; 0b1)
+            gauge_status[y].set((int(result[&#34;GSRON_SMD3_STATUS&#34;], 0) &gt;&gt; x) &amp; 0b1)
 
         # update prometheus
         gauge_absolute_position_steps.set(result[&#34;GSRON_SMD3_ABS_POS_STEPS&#34;])

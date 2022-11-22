@@ -26,13 +26,21 @@
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">from egse.stages.arun.smd3 import Smd3Controller
+<pre><code class="python">from egse.stages.arun.smd3 import Smd3Controller, Smd3Proxy
+import logging
 
+logger = logging.getLogger(&#34;smd3_stopper&#34;)
 
 if __name__ == &#34;__main__&#34;:
 
-    dev = Smd3Controller()
-    dev.stop()</code></pre>
+    try:
+        smd3 = Smd3Proxy()
+        logger.info(&#34;Stopping through proxy&#34;)
+    except:
+        smd3 = Smd3Controller()
+        logger.info(&#34;Stopping through controller&#34;)
+    finally:
+        smd3.emergency_stop()</code></pre>
 </details>
 </section>
 <section>

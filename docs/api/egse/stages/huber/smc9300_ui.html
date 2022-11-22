@@ -46,6 +46,8 @@ platform that supports Python and Qt5.
 import argparse
 import logging
 import multiprocessing
+from pathlib import Path
+
 import sys
 import textwrap
 import threading
@@ -57,13 +59,13 @@ from egse.stages.huber.smc9300 import HuberSMC9300Interface
 multiprocessing.current_process().name = &#34;smc9300_ui&#34;
 
 import pyqtgraph as pg
-from PyQt5.QtCore import QSize
+from PyQt5.QtCore import QSize, QLockFile
 from PyQt5.QtCore import QTime
 from PyQt5.QtCore import QTimer
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QIcon
 from PyQt5.QtGui import QIntValidator
-from PyQt5.QtWidgets import QAction
+from PyQt5.QtWidgets import QAction, QMessageBox
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtWidgets import QComboBox
 from PyQt5.QtWidgets import QDialog
@@ -546,7 +548,7 @@ class HuberUIView(QMainWindow, Observable):
             self.statusBar().showMessage(message, msecs=timeout)
         if mode:
             self.mode_label.setStyleSheet(
-                f&#34;border: 0; &#34; f&#34;color: {&#39;red&#39; if mode == &#39;Simulator&#39; else &#39;black&#39;};&#34;
+                f&#34;border: 0; &#34; f&#34;color: {&#39;red&#39; if &#39;Simulator&#39; in mode else &#39;black&#39;};&#34;
             )
             self.mode_label.setText(f&#34;mode: {mode}&#34;)
         self.statusBar().repaint()
@@ -646,7 +648,10 @@ class HuberUIController(Observer):
 
         try:
             if self.model.is_device_connected():
-                self.view.update_status_bar(mode=self.model.connection_type.capitalize())
+                mode = self.model.connection_type.capitalize()
+                if self.model.is_simulator():
+                    mode = f&#34;{mode} [Simulator]&#34;
+                self.view.update_status_bar(mode=mode)
                 self.view.check_device_action()
             else:
                 self.view.uncheck_device_action()
@@ -809,7 +814,7 @@ class HuberUIController(Observer):
             MODULE_LOGGER.debug(f&#34;do {action} with {value}&#34;)
             if action == &#34;move_absolute&#34;:
                 axis, position = value
-                MODULE_LOGGER.info(f&#34;do: goto({axis}, {position})&#34;)
+                # MODULE_LOGGER.info(f&#34;do: goto({axis}, {position})&#34;)
                 try:
                     self.model.goto(axis, position)
                 except ValueError as exc:
@@ -817,11 +822,11 @@ class HuberUIController(Observer):
                     dialog.exec_()
             elif action == &#34;move_relative&#34;:
                 axis, distance = value
-                MODULE_LOGGER.info(f&#34;do: move({axis}, {distance})&#34;)
+                # MODULE_LOGGER.info(f&#34;do: move({axis}, {distance})&#34;)
                 self.model.move(axis, distance)
             elif action == &#34;set_speed&#34;:
                 axis, speed = value
-                MODULE_LOGGER.info(f&#34;do: set_speed({axis=}, {speed=})&#34;)
+                # MODULE_LOGGER.info(f&#34;do: set_speed({axis=}, {speed=})&#34;)
                 self.model.set_speed(axis, speed)
 
 
@@ -846,12 +851,12 @@ class HuberUIModel:
 
     def has_commands(self):
         if self.connection_type == &#34;proxy&#34;:
-            return self.huber.has_commands()
+            return True  # with the new dynamic_command decorator there are always commands
         return True
 
     def load_commands(self):
         if self.connection_type == &#34;proxy&#34;:
-            self.huber.load_commands()
+            return  # no need anymore to load commands
 
     def is_simulator(self):
         return self.huber.is_simulator()
@@ -944,48 +949,58 @@ def parse_arguments():
 
 
 def main():
+    lock_file = QLockFile(str(Path(&#34;~/scm9300_ui.app.lock&#34;).expanduser()))
     styles_location = get_resource(&#34;:/styles/default.qss&#34;)
     app_logo = get_resource(&#34;:/icons/logo-huber.svg&#34;)
 
     args = list(sys.argv)
     args[1:1] = [&#34;-stylesheet&#34;, str(styles_location)]
-
-    process_status = ProcessStatus()
-
-    timer_thread = threading.Thread(target=do_every, args=(10, process_status.update))
-    timer_thread.daemon = True
-    timer_thread.start()
-
-    start_http_server(GUI_SETTINGS.METRICS_PORT)
-
     app = QApplication(args)
     app.setWindowIcon(QIcon(str(app_logo)))
 
-    args = parse_arguments()
+    if lock_file.tryLock(100):
 
-    if args.profile:
-        Settings.set_profiling(True)
+        process_status = ProcessStatus()
 
-    if args.type == &#34;proxy&#34;:
-        proxy = HuberSMC9300Proxy()
-        if not proxy.ping():
-            description = &#34;Could not connect to Stages Control Server&#34;
-            info_text = (
-                &#34;The GUI will start, but the connection button will show a disconnected state. &#34;
-                &#34;Please check if the Control Server is running and start the server if needed. &#34;
-                &#34;Otherwise, check if the correct HOSTNAME for the control server is set in the &#34;
-                &#34;Settings.yaml &#34;
-                &#34;configuration file.&#34;
-            )
+        timer_thread = threading.Thread(target=do_every, args=(10, process_status.update))
+        timer_thread.daemon = True
+        timer_thread.start()
 
-            show_warning_message(description, info_text)
+        start_http_server(GUI_SETTINGS.METRICS_PORT)
 
-    view = HuberUIView()
-    model = HuberUIModel(args.type)
-    HuberUIController(model, view)
+        args = parse_arguments()
 
-    view.show()
-    sys.exit(app.exec_())
+        if args.profile:
+            Settings.set_profiling(True)
+
+        if args.type == &#34;proxy&#34;:
+            proxy = HuberSMC9300Proxy()
+            if not proxy.ping():
+                description = &#34;Could not connect to Stages Control Server&#34;
+                info_text = (
+                    &#34;The GUI will start, but the connection button will show a disconnected state. &#34;
+                    &#34;Please check if the Control Server is running and start the server if needed. &#34;
+                    &#34;Otherwise, check if the correct HOSTNAME for the control server is set in the &#34;
+                    &#34;Settings.yaml &#34;
+                    &#34;configuration file.&#34;
+                )
+
+                show_warning_message(description, info_text)
+
+        view = HuberUIView()
+        model = HuberUIModel(args.type)
+        HuberUIController(model, view)
+
+        view.show()
+        sys.exit(app.exec_())
+    else:
+        error_message = QMessageBox()
+        error_message.setIcon(QMessageBox.Warning)
+        error_message.setWindowTitle(&#34;Error&#34;)
+        error_message.setText(&#34;The SCM9300 GUI application is already running!&#34;)
+        error_message.setStandardButtons(QMessageBox.Ok)
+
+        return error_message.exec()
 
 
 if __name__ == &#34;__main__&#34;:
@@ -1009,48 +1024,58 @@ if __name__ == &#34;__main__&#34;:
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def main():
+    lock_file = QLockFile(str(Path(&#34;~/scm9300_ui.app.lock&#34;).expanduser()))
     styles_location = get_resource(&#34;:/styles/default.qss&#34;)
     app_logo = get_resource(&#34;:/icons/logo-huber.svg&#34;)
 
     args = list(sys.argv)
     args[1:1] = [&#34;-stylesheet&#34;, str(styles_location)]
-
-    process_status = ProcessStatus()
-
-    timer_thread = threading.Thread(target=do_every, args=(10, process_status.update))
-    timer_thread.daemon = True
-    timer_thread.start()
-
-    start_http_server(GUI_SETTINGS.METRICS_PORT)
-
     app = QApplication(args)
     app.setWindowIcon(QIcon(str(app_logo)))
 
-    args = parse_arguments()
+    if lock_file.tryLock(100):
 
-    if args.profile:
-        Settings.set_profiling(True)
+        process_status = ProcessStatus()
 
-    if args.type == &#34;proxy&#34;:
-        proxy = HuberSMC9300Proxy()
-        if not proxy.ping():
-            description = &#34;Could not connect to Stages Control Server&#34;
-            info_text = (
-                &#34;The GUI will start, but the connection button will show a disconnected state. &#34;
-                &#34;Please check if the Control Server is running and start the server if needed. &#34;
-                &#34;Otherwise, check if the correct HOSTNAME for the control server is set in the &#34;
-                &#34;Settings.yaml &#34;
-                &#34;configuration file.&#34;
-            )
+        timer_thread = threading.Thread(target=do_every, args=(10, process_status.update))
+        timer_thread.daemon = True
+        timer_thread.start()
 
-            show_warning_message(description, info_text)
+        start_http_server(GUI_SETTINGS.METRICS_PORT)
 
-    view = HuberUIView()
-    model = HuberUIModel(args.type)
-    HuberUIController(model, view)
+        args = parse_arguments()
 
-    view.show()
-    sys.exit(app.exec_())</code></pre>
+        if args.profile:
+            Settings.set_profiling(True)
+
+        if args.type == &#34;proxy&#34;:
+            proxy = HuberSMC9300Proxy()
+            if not proxy.ping():
+                description = &#34;Could not connect to Stages Control Server&#34;
+                info_text = (
+                    &#34;The GUI will start, but the connection button will show a disconnected state. &#34;
+                    &#34;Please check if the Control Server is running and start the server if needed. &#34;
+                    &#34;Otherwise, check if the correct HOSTNAME for the control server is set in the &#34;
+                    &#34;Settings.yaml &#34;
+                    &#34;configuration file.&#34;
+                )
+
+                show_warning_message(description, info_text)
+
+        view = HuberUIView()
+        model = HuberUIModel(args.type)
+        HuberUIController(model, view)
+
+        view.show()
+        sys.exit(app.exec_())
+    else:
+        error_message = QMessageBox()
+        error_message.setIcon(QMessageBox.Warning)
+        error_message.setWindowTitle(&#34;Error&#34;)
+        error_message.setText(&#34;The SCM9300 GUI application is already running!&#34;)
+        error_message.setStandardButtons(QMessageBox.Ok)
+
+        return error_message.exec()</code></pre>
 </details>
 </dd>
 <dt id="egse.stages.huber.smc9300_ui.parse_arguments"><code class="name flex">
@@ -1207,7 +1232,10 @@ inheritance.</p></div>
 
         try:
             if self.model.is_device_connected():
-                self.view.update_status_bar(mode=self.model.connection_type.capitalize())
+                mode = self.model.connection_type.capitalize()
+                if self.model.is_simulator():
+                    mode = f&#34;{mode} [Simulator]&#34;
+                self.view.update_status_bar(mode=mode)
                 self.view.check_device_action()
             else:
                 self.view.uncheck_device_action()
@@ -1370,7 +1398,7 @@ inheritance.</p></div>
             MODULE_LOGGER.debug(f&#34;do {action} with {value}&#34;)
             if action == &#34;move_absolute&#34;:
                 axis, position = value
-                MODULE_LOGGER.info(f&#34;do: goto({axis}, {position})&#34;)
+                # MODULE_LOGGER.info(f&#34;do: goto({axis}, {position})&#34;)
                 try:
                     self.model.goto(axis, position)
                 except ValueError as exc:
@@ -1378,11 +1406,11 @@ inheritance.</p></div>
                     dialog.exec_()
             elif action == &#34;move_relative&#34;:
                 axis, distance = value
-                MODULE_LOGGER.info(f&#34;do: move({axis}, {distance})&#34;)
+                # MODULE_LOGGER.info(f&#34;do: move({axis}, {distance})&#34;)
                 self.model.move(axis, distance)
             elif action == &#34;set_speed&#34;:
                 axis, speed = value
-                MODULE_LOGGER.info(f&#34;do: set_speed({axis=}, {speed=})&#34;)
+                # MODULE_LOGGER.info(f&#34;do: set_speed({axis=}, {speed=})&#34;)
                 self.model.set_speed(axis, speed)</code></pre>
 </details>
 <h3>Ancestors</h3>
@@ -1430,7 +1458,7 @@ inheritance.</p></div>
         MODULE_LOGGER.debug(f&#34;do {action} with {value}&#34;)
         if action == &#34;move_absolute&#34;:
             axis, position = value
-            MODULE_LOGGER.info(f&#34;do: goto({axis}, {position})&#34;)
+            # MODULE_LOGGER.info(f&#34;do: goto({axis}, {position})&#34;)
             try:
                 self.model.goto(axis, position)
             except ValueError as exc:
@@ -1438,11 +1466,11 @@ inheritance.</p></div>
                 dialog.exec_()
         elif action == &#34;move_relative&#34;:
             axis, distance = value
-            MODULE_LOGGER.info(f&#34;do: move({axis}, {distance})&#34;)
+            # MODULE_LOGGER.info(f&#34;do: move({axis}, {distance})&#34;)
             self.model.move(axis, distance)
         elif action == &#34;set_speed&#34;:
             axis, speed = value
-            MODULE_LOGGER.info(f&#34;do: set_speed({axis=}, {speed=})&#34;)
+            # MODULE_LOGGER.info(f&#34;do: set_speed({axis=}, {speed=})&#34;)
             self.model.set_speed(axis, speed)</code></pre>
 </details>
 </dd>
@@ -1655,12 +1683,12 @@ the device or to a simulator.</p></div>
 
     def has_commands(self):
         if self.connection_type == &#34;proxy&#34;:
-            return self.huber.has_commands()
+            return True  # with the new dynamic_command decorator there are always commands
         return True
 
     def load_commands(self):
         if self.connection_type == &#34;proxy&#34;:
-            self.huber.load_commands()
+            return  # no need anymore to load commands
 
     def is_simulator(self):
         return self.huber.is_simulator()
@@ -1862,7 +1890,7 @@ the device or to a simulator.</p></div>
 </summary>
 <pre><code class="python">def has_commands(self):
     if self.connection_type == &#34;proxy&#34;:
-        return self.huber.has_commands()
+        return True  # with the new dynamic_command decorator there are always commands
     return True</code></pre>
 </details>
 </dd>
@@ -1932,7 +1960,7 @@ the device or to a simulator.</p></div>
 </summary>
 <pre><code class="python">def load_commands(self):
     if self.connection_type == &#34;proxy&#34;:
-        self.huber.load_commands()</code></pre>
+        return  # no need anymore to load commands</code></pre>
 </details>
 </dd>
 <dt id="egse.stages.huber.smc9300_ui.HuberUIModel.move"><code class="name flex">
@@ -2225,7 +2253,7 @@ def reconnect(self):
             self.statusBar().showMessage(message, msecs=timeout)
         if mode:
             self.mode_label.setStyleSheet(
-                f&#34;border: 0; &#34; f&#34;color: {&#39;red&#39; if mode == &#39;Simulator&#39; else &#39;black&#39;};&#34;
+                f&#34;border: 0; &#34; f&#34;color: {&#39;red&#39; if &#39;Simulator&#39; in mode else &#39;black&#39;};&#34;
             )
             self.mode_label.setText(f&#34;mode: {mode}&#34;)
         self.statusBar().repaint()
@@ -2571,7 +2599,7 @@ def reconnect(self):
         self.statusBar().showMessage(message, msecs=timeout)
     if mode:
         self.mode_label.setStyleSheet(
-            f&#34;border: 0; &#34; f&#34;color: {&#39;red&#39; if mode == &#39;Simulator&#39; else &#39;black&#39;};&#34;
+            f&#34;border: 0; &#34; f&#34;color: {&#39;red&#39; if &#39;Simulator&#39; in mode else &#39;black&#39;};&#34;
         )
         self.mode_label.setText(f&#34;mode: {mode}&#34;)
     self.statusBar().repaint()</code></pre>

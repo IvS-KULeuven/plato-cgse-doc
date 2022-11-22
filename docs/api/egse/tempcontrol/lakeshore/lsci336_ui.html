@@ -40,15 +40,17 @@ A Graphical User Interface for monitoring the LakeShore Temperature Controller.
 &#34;&#34;&#34;
 import argparse
 import logging
+from pathlib import Path
+
 import sys
 
 import pyqtgraph as pg
 from PyQt5 import QtGui
-from PyQt5.QtCore import QDateTime
+from PyQt5.QtCore import QDateTime, QLockFile
 from PyQt5.QtCore import QTimer
 from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QPalette
-from PyQt5.QtWidgets import QApplication
+from PyQt5.QtGui import QPalette, QIcon
+from PyQt5.QtWidgets import QApplication, QMessageBox
 from PyQt5.QtWidgets import QFrame
 from PyQt5.QtWidgets import QGridLayout
 from PyQt5.QtWidgets import QGroupBox
@@ -62,6 +64,7 @@ from egse.gui import show_warning_message
 from egse.gui.stripchart import StripChart
 from egse.observer import Observable
 from egse.observer import Observer
+from egse.resource import get_resource
 from egse.settings import Settings
 from egse.state import UnknownStateError
 from egse.tempcontrol.lakeshore.lsci336 import LakeShore336Controller
@@ -378,40 +381,52 @@ def parse_arguments():
     args = parser.parse_args()
     return args
 
-def main():
 
+def main():
+    lock_file = QLockFile(str(Path(&#34;~/lsci336_ui.app.lock&#34;).expanduser()))
     STYLES_LOCATION = find_file(&#34;styles.qss&#34;, in_dir=&#34;egse/gui&#34;)
 
     args = list(sys.argv)
     args[1:1] = [&#34;-stylesheet&#34;, str(STYLES_LOCATION)]
 
     app = QApplication(args)
+    app.setWindowIcon(QIcon(str(get_resource(&#34;:/icons/temperature-control.svg&#34;))))
 
-    args = parse_arguments()
+    if lock_file.tryLock(100):
 
-    if args.profile:
-        Settings.set_profiling(True)
+        args = parse_arguments()
 
-    if args.type == &#34;proxy&#34;:
-        proxy = LakeShore336Proxy()
-        if not proxy.ping():
-            description = &#34;Could not connect to Temperature Control Control Server&#34;
-            info_text = (
-                &#34;The GUI will start, but the connection button will show a disconnected state. &#34;
-                &#34;Please check if the Control Server is running and start the server if needed. &#34;
-                &#34;Otherwise, check if the correct HOSTNAME for the control server is set in the &#34;
-                &#34;Settings.yaml &#34;
-                &#34;configuration file.&#34;
-            )
+        if args.profile:
+            Settings.set_profiling(True)
 
-            show_warning_message(description, info_text)
+        if args.type == &#34;proxy&#34;:
+            proxy = LakeShore336Proxy()
+            if not proxy.ping():
+                description = &#34;Could not connect to Temperature Control Control Server&#34;
+                info_text = (
+                    &#34;The GUI will start, but the connection button will show a disconnected state. &#34;
+                    &#34;Please check if the Control Server is running and start the server if needed. &#34;
+                    &#34;Otherwise, check if the correct HOSTNAME for the control server is set in the &#34;
+                    &#34;Settings.yaml &#34;
+                    &#34;configuration file.&#34;
+                )
 
-    view = LakeShoreUIView()
-    model = LakeShoreUIModel(args.type)
-    controller = LakeShoreUIController(model, view)
+                show_warning_message(description, info_text)
 
-    view.show()
-    sys.exit(app.exec_())
+        view = LakeShoreUIView()
+        model = LakeShoreUIModel(args.type)
+        controller = LakeShoreUIController(model, view)
+
+        view.show()
+        sys.exit(app.exec_())
+    else:
+        error_message = QMessageBox()
+        error_message.setIcon(QMessageBox.Warning)
+        error_message.setWindowTitle(&#34;Error&#34;)
+        error_message.setText(&#34;The LSCI336 tempcontrol GUI application is already running!&#34;)
+        error_message.setStandardButtons(QMessageBox.Ok)
+
+        return error_message.exec()
 
 
 if __name__ == &#34;__main__&#34;:
@@ -436,39 +451,50 @@ if __name__ == &#34;__main__&#34;:
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def main():
-
+    lock_file = QLockFile(str(Path(&#34;~/lsci336_ui.app.lock&#34;).expanduser()))
     STYLES_LOCATION = find_file(&#34;styles.qss&#34;, in_dir=&#34;egse/gui&#34;)
 
     args = list(sys.argv)
     args[1:1] = [&#34;-stylesheet&#34;, str(STYLES_LOCATION)]
 
     app = QApplication(args)
+    app.setWindowIcon(QIcon(str(get_resource(&#34;:/icons/temperature-control.svg&#34;))))
 
-    args = parse_arguments()
+    if lock_file.tryLock(100):
 
-    if args.profile:
-        Settings.set_profiling(True)
+        args = parse_arguments()
 
-    if args.type == &#34;proxy&#34;:
-        proxy = LakeShore336Proxy()
-        if not proxy.ping():
-            description = &#34;Could not connect to Temperature Control Control Server&#34;
-            info_text = (
-                &#34;The GUI will start, but the connection button will show a disconnected state. &#34;
-                &#34;Please check if the Control Server is running and start the server if needed. &#34;
-                &#34;Otherwise, check if the correct HOSTNAME for the control server is set in the &#34;
-                &#34;Settings.yaml &#34;
-                &#34;configuration file.&#34;
-            )
+        if args.profile:
+            Settings.set_profiling(True)
 
-            show_warning_message(description, info_text)
+        if args.type == &#34;proxy&#34;:
+            proxy = LakeShore336Proxy()
+            if not proxy.ping():
+                description = &#34;Could not connect to Temperature Control Control Server&#34;
+                info_text = (
+                    &#34;The GUI will start, but the connection button will show a disconnected state. &#34;
+                    &#34;Please check if the Control Server is running and start the server if needed. &#34;
+                    &#34;Otherwise, check if the correct HOSTNAME for the control server is set in the &#34;
+                    &#34;Settings.yaml &#34;
+                    &#34;configuration file.&#34;
+                )
 
-    view = LakeShoreUIView()
-    model = LakeShoreUIModel(args.type)
-    controller = LakeShoreUIController(model, view)
+                show_warning_message(description, info_text)
 
-    view.show()
-    sys.exit(app.exec_())</code></pre>
+        view = LakeShoreUIView()
+        model = LakeShoreUIModel(args.type)
+        controller = LakeShoreUIController(model, view)
+
+        view.show()
+        sys.exit(app.exec_())
+    else:
+        error_message = QMessageBox()
+        error_message.setIcon(QMessageBox.Warning)
+        error_message.setWindowTitle(&#34;Error&#34;)
+        error_message.setText(&#34;The LSCI336 tempcontrol GUI application is already running!&#34;)
+        error_message.setStandardButtons(QMessageBox.Ok)
+
+        return error_message.exec()</code></pre>
 </details>
 </dd>
 <dt id="egse.tempcontrol.lakeshore.lsci336_ui.parse_arguments"><code class="name flex">

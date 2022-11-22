@@ -42,6 +42,7 @@ from egse.confman import ConfigurationManagerProxy
 from egse.exceptions import DeviceNotFoundError
 from egse.settings import Settings
 from egse.confman import ConfigurationManagerProxy
+from egse.state import GlobalState
 
 WATCHDOG = 7
     
@@ -75,10 +76,7 @@ class BeagleboneDeviceInterface:
         config = configClient.config
         addLoggingLevel(&#39;data&#39;, 15)
 
-        with ConfigurationManagerProxy() as cm:
-            setup = cm.get_setup()
-
-        self._availability = setup.gse.beaglebone_heater.availability
+        self._availability = GlobalState.setup.gse.beaglebone_heater.availability
 
         hal = Hal()
         hal_client = HalClient(hal, config)
@@ -110,7 +108,7 @@ class BeagleboneDeviceInterface:
             GSM = [8, 80, 78]
             logger.info(f&#34;Settings Alert {GSM[pin]}&#34;)
             self._dev_gpio.setMultiple([(&#34;GPIO_PIN&#34;, GSM[pin]), (&#34;GPIO_VALUE&#34;, True)])
-            unset = Timer(10, self.unset_alert(pin))
+            unset = Timer(10.0, self.unset_alert, args=(pin,))
             unset.start()
         
     def unset_alert(self, pin):
@@ -119,7 +117,7 @@ class BeagleboneDeviceInterface:
         else:
             logger.info(f&#34;Unsettings Alert {GSM[pin]}&#34;)
             self._dev_gpio.setMultiple([(&#34;GPIO_PIN&#34;, GSM[pin]), (&#34;GPIO_VALUE&#34;, False)])
-            
+        
     def get_alert(self, pin):
         if pin &gt;= 3:
             logger.info(&#34;Alert out of range (0 - 3)&#34;)
@@ -282,10 +280,7 @@ Arguments can be positional or keyword arguments, not both.</p></div>
         config = configClient.config
         addLoggingLevel(&#39;data&#39;, 15)
 
-        with ConfigurationManagerProxy() as cm:
-            setup = cm.get_setup()
-
-        self._availability = setup.gse.beaglebone_heater.availability
+        self._availability = GlobalState.setup.gse.beaglebone_heater.availability
 
         hal = Hal()
         hal_client = HalClient(hal, config)
@@ -317,7 +312,7 @@ Arguments can be positional or keyword arguments, not both.</p></div>
             GSM = [8, 80, 78]
             logger.info(f&#34;Settings Alert {GSM[pin]}&#34;)
             self._dev_gpio.setMultiple([(&#34;GPIO_PIN&#34;, GSM[pin]), (&#34;GPIO_VALUE&#34;, True)])
-            unset = Timer(10, self.unset_alert(pin))
+            unset = Timer(10.0, self.unset_alert, args=(pin,))
             unset.start()
         
     def unset_alert(self, pin):
@@ -326,7 +321,7 @@ Arguments can be positional or keyword arguments, not both.</p></div>
         else:
             logger.info(f&#34;Unsettings Alert {GSM[pin]}&#34;)
             self._dev_gpio.setMultiple([(&#34;GPIO_PIN&#34;, GSM[pin]), (&#34;GPIO_VALUE&#34;, False)])
-            
+        
     def get_alert(self, pin):
         if pin &gt;= 3:
             logger.info(&#34;Alert out of range (0 - 3)&#34;)
@@ -429,7 +424,7 @@ Arguments can be positional or keyword arguments, not both.</p></div>
         GSM = [8, 80, 78]
         logger.info(f&#34;Settings Alert {GSM[pin]}&#34;)
         self._dev_gpio.setMultiple([(&#34;GPIO_PIN&#34;, GSM[pin]), (&#34;GPIO_VALUE&#34;, True)])
-        unset = Timer(10, self.unset_alert(pin))
+        unset = Timer(10.0, self.unset_alert, args=(pin,))
         unset.start()</code></pre>
 </details>
 </dd>

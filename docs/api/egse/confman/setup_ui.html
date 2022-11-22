@@ -30,10 +30,10 @@
 from pathlib import Path
 
 import sys
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QLockFile
 from PyQt5.QtGui import QIcon
 from PyQt5.QtGui import QPixmap
-from PyQt5.QtWidgets import QAction, QListWidget
+from PyQt5.QtWidgets import QAction, QListWidget, QMessageBox
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtWidgets import QFrame
 from PyQt5.QtWidgets import QGroupBox
@@ -52,6 +52,7 @@ from egse.config import get_common_egse_root
 from egse.confman import ConfigurationManagerProxy
 from egse.control import Failure
 from egse.gui import show_warning_message, VLine, show_info_message
+from egse.resource import get_resource
 from egse.settings import Settings
 from egse.system import replace_environment_variable
 
@@ -563,18 +564,29 @@ class SetupUIView(QMainWindow):
 #
 
 def main():
-    &#34;&#34;&#34; Main method to launch the Process Manager GUI.&#34;&#34;&#34;
+    &#34;&#34;&#34; Main method to launch the Setup GUI.&#34;&#34;&#34;
+    lock_file = QLockFile(str(Path(&#34;~/setup_ui.app.lock&#34;).expanduser()))
 
     app = QApplication(sys.argv)
+    app.setWindowIcon(QIcon(str(get_resource(&#34;:/icons/settings.svg&#34;))))
 
-    # Check whether the Process Manager CS is running
-    # (show a warning in a pop-up window if it&#39;s not)
+    if lock_file.tryLock(100):
+        # Check whether the Process Manager CS is running
+        # (show a warning in a pop-up window if it&#39;s not)
 
-    view = SetupUIView()
+        view = SetupUIView()
 
-    view.show()
+        view.show()
 
-    return app.exec_()
+        return app.exec_()
+    else:
+        error_message = QMessageBox()
+        error_message.setIcon(QMessageBox.Warning)
+        error_message.setWindowTitle(&#34;Error&#34;)
+        error_message.setText(&#34;The setup GUI application is already running!&#34;)
+        error_message.setStandardButtons(QMessageBox.Ok)
+
+        return error_message.exec()
 
 
 if __name__ == &#39;__main__&#39;:
@@ -592,24 +604,35 @@ if __name__ == &#39;__main__&#39;:
 <span>def <span class="ident">main</span></span>(<span>)</span>
 </code></dt>
 <dd>
-<div class="desc"><p>Main method to launch the Process Manager GUI.</p></div>
+<div class="desc"><p>Main method to launch the Setup GUI.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def main():
-    &#34;&#34;&#34; Main method to launch the Process Manager GUI.&#34;&#34;&#34;
+    &#34;&#34;&#34; Main method to launch the Setup GUI.&#34;&#34;&#34;
+    lock_file = QLockFile(str(Path(&#34;~/setup_ui.app.lock&#34;).expanduser()))
 
     app = QApplication(sys.argv)
+    app.setWindowIcon(QIcon(str(get_resource(&#34;:/icons/settings.svg&#34;))))
 
-    # Check whether the Process Manager CS is running
-    # (show a warning in a pop-up window if it&#39;s not)
+    if lock_file.tryLock(100):
+        # Check whether the Process Manager CS is running
+        # (show a warning in a pop-up window if it&#39;s not)
 
-    view = SetupUIView()
+        view = SetupUIView()
 
-    view.show()
+        view.show()
 
-    return app.exec_()</code></pre>
+        return app.exec_()
+    else:
+        error_message = QMessageBox()
+        error_message.setIcon(QMessageBox.Warning)
+        error_message.setWindowTitle(&#34;Error&#34;)
+        error_message.setText(&#34;The setup GUI application is already running!&#34;)
+        error_message.setStandardButtons(QMessageBox.Ok)
+
+        return error_message.exec()</code></pre>
 </details>
 </dd>
 </dl>

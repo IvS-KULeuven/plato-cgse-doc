@@ -141,7 +141,7 @@ from pathlib import Path
 from typing import Dict
 from typing import Union
 
-from egse.config import find_dirs
+from egse.config import find_first_occurrence_of_dir
 from egse.config import find_files
 from egse.exceptions import InternalError
 
@@ -267,16 +267,8 @@ def initialise_resources(root: Union[Path, str] = Path(__file__).parent):
     #  the resources with their absolute path names
 
     for resource_id in DEFAULT_RESOURCES:
-        dirs = list(find_dirs(DEFAULT_RESOURCES[resource_id], root=resources_root))
-        if len(dirs) == 1:
-            resources[resource_id] = dirs[0]
-        elif len(dirs) == 0:
-            MODULE_LOGGER.warning(
-                f&#34;No location found for the given resource identifier &#39;{resource_id}&#39;&#34;)
-        else:
-            raise AmbiguityError(
-                f&#34;More than one possible location found for the given resource identifier &#39;&#34;
-                f&#34;{resource_id}&#39;&#34;)
+        folder = find_first_occurrence_of_dir(DEFAULT_RESOURCES[resource_id], root=resources_root)
+        resources[resource_id] = folder
 
     MODULE_LOGGER.debug(f&#34;Resources have been defined: {DEFAULT_RESOURCES=}&#34;)
 
@@ -671,16 +663,8 @@ code as the root argument.</p>
     #  the resources with their absolute path names
 
     for resource_id in DEFAULT_RESOURCES:
-        dirs = list(find_dirs(DEFAULT_RESOURCES[resource_id], root=resources_root))
-        if len(dirs) == 1:
-            resources[resource_id] = dirs[0]
-        elif len(dirs) == 0:
-            MODULE_LOGGER.warning(
-                f&#34;No location found for the given resource identifier &#39;{resource_id}&#39;&#34;)
-        else:
-            raise AmbiguityError(
-                f&#34;More than one possible location found for the given resource identifier &#39;&#34;
-                f&#34;{resource_id}&#39;&#34;)
+        folder = find_first_occurrence_of_dir(DEFAULT_RESOURCES[resource_id], root=resources_root)
+        resources[resource_id] = folder
 
     MODULE_LOGGER.debug(f&#34;Resources have been defined: {DEFAULT_RESOURCES=}&#34;)
 

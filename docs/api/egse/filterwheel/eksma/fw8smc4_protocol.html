@@ -26,9 +26,13 @@
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">from egse.control import ControlServer
+<pre><code class="python">import logging
+
+from egse.control import ControlServer
+from egse.metrics import define_metrics
 from egse.protocol import CommandProtocol
 from egse.settings import Settings
+from egse.synoptics import SynopticsManagerProxy
 
 from egse.system import format_datetime
 from egse.zmq_ser import bind_address
@@ -37,7 +41,10 @@ from egse.filterwheel.eksma.fw8smc4 import (FilterWheel8SMC4Controller, FilterWh
                                             FilterWheel8SMC4Simulator)
 from egse.filterwheel.eksma.fw8smc4_devif import FilterWheel8SMC4Command
 
+logger = logging.getLogger(__name__)
+
 DEVICE_SETTINGS = Settings.load(filename=&#34;fw8smc4.yaml&#34;)
+SITE_ID = Settings.load(&#34;SITE&#34;).ID
 
 
 class FilterWheel8SMC4Protocol(CommandProtocol):
@@ -56,6 +63,11 @@ class FilterWheel8SMC4Protocol(CommandProtocol):
 
         self.build_device_method_lookup_table(self.filterwheel)
 
+        # self.fwc_calibration = GlobalState.setup.gse.ogse.calibration.fwc_calibration     TODO
+
+        self.synoptics = SynopticsManagerProxy()
+        self.metrics = define_metrics(&#34;FW8SMC4&#34;)
+
     def get_bind_address(self):
         return bind_address(
             self.control_server.get_communication_protocol(),
@@ -66,18 +78,29 @@ class FilterWheel8SMC4Protocol(CommandProtocol):
         return super().get_status()
 
     def get_housekeeping(self) -&gt; dict:
-        return {
-            &#34;timestamp&#34;: format_datetime(),
-            # &#34;axis 1 - cur_pos&#34;: self.huber.get_current_position(axis=1),
-            # &#34;axis 2 - cur_pos&#34;: self.huber.get_current_position(axis=2),
-            # &#34;axis 3 - cur_pos&#34;: self.huber.get_current_position(axis=3),
-            # &#34;axis 1 - enc_pos&#34;: self.huber.get_current_encoder_position(axis=1),
-            # &#34;axis 2 - enc_pos&#34;: self.huber.get_current_encoder_position(axis=2),
-            # &#34;axis 3 - enc_pos&#34;: self.huber.get_current_encoder_position(axis=3),
-            # &#34;axis 1 - enc_cnt&#34;: self.huber.get_current_encoder_counter_value(axis=1),
-            # &#34;axis 2 - enc_cnt&#34;: self.huber.get_current_encoder_counter_value(axis=2),
-            # &#34;axis 3 - enc_cnt&#34;: self.huber.get_current_encoder_counter_value(axis=3),
-        }</code></pre>
+
+
+        hk_dict = dict()
+        hk_dict[&#34;timestamp&#34;] = format_datetime()
+        try:
+            filterwheel_positions = self.filterwheel.get_position()
+            # relative_intensity = self.filterwheel.get_relative_intensity()      # TODO Use the correct command name
+
+            # hk_dict[&#34;G{SITE_ID}_FW8SMC4_REL_INTENSITY&#34;] = relative_intensity                          # TODO
+            # hk_dict[&#34;G{SITE_ID}_FW8SMC4_FWC_FRACTION&#34;] = relative_intensity / self.fwc_calibration,   # TODO
+    
+            # self.synoptics.store_th_synoptics(hk_dict)    TODO Uncomment when the relative intensity + FWC fraction are available
+            # TODO Update the TM dictionary (entry for the HK + for the synoptics)
+
+            hk_dict[&#34;G{SITE_ID}_FW8SMC4_POS_0&#34;] = filterwheel_positions[0]
+            hk_dict[&#34;G{SITE_ID}_FW8SMC4_POS_1&#34;] = filterwheel_positions[1]
+
+            # Send the HK acquired so far to the Synoptics Manager
+            self.synoptics.store_th_synoptics(hk_dict)
+        except Exception as exc:
+            logger.warning(f&#39;failed to get HK ({exc})&#39;)
+
+        return hk_dict</code></pre>
 </details>
 </section>
 <section>
@@ -122,6 +145,11 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
 
         self.build_device_method_lookup_table(self.filterwheel)
 
+        # self.fwc_calibration = GlobalState.setup.gse.ogse.calibration.fwc_calibration     TODO
+
+        self.synoptics = SynopticsManagerProxy()
+        self.metrics = define_metrics(&#34;FW8SMC4&#34;)
+
     def get_bind_address(self):
         return bind_address(
             self.control_server.get_communication_protocol(),
@@ -132,18 +160,29 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
         return super().get_status()
 
     def get_housekeeping(self) -&gt; dict:
-        return {
-            &#34;timestamp&#34;: format_datetime(),
-            # &#34;axis 1 - cur_pos&#34;: self.huber.get_current_position(axis=1),
-            # &#34;axis 2 - cur_pos&#34;: self.huber.get_current_position(axis=2),
-            # &#34;axis 3 - cur_pos&#34;: self.huber.get_current_position(axis=3),
-            # &#34;axis 1 - enc_pos&#34;: self.huber.get_current_encoder_position(axis=1),
-            # &#34;axis 2 - enc_pos&#34;: self.huber.get_current_encoder_position(axis=2),
-            # &#34;axis 3 - enc_pos&#34;: self.huber.get_current_encoder_position(axis=3),
-            # &#34;axis 1 - enc_cnt&#34;: self.huber.get_current_encoder_counter_value(axis=1),
-            # &#34;axis 2 - enc_cnt&#34;: self.huber.get_current_encoder_counter_value(axis=2),
-            # &#34;axis 3 - enc_cnt&#34;: self.huber.get_current_encoder_counter_value(axis=3),
-        }</code></pre>
+
+
+        hk_dict = dict()
+        hk_dict[&#34;timestamp&#34;] = format_datetime()
+        try:
+            filterwheel_positions = self.filterwheel.get_position()
+            # relative_intensity = self.filterwheel.get_relative_intensity()      # TODO Use the correct command name
+
+            # hk_dict[&#34;G{SITE_ID}_FW8SMC4_REL_INTENSITY&#34;] = relative_intensity                          # TODO
+            # hk_dict[&#34;G{SITE_ID}_FW8SMC4_FWC_FRACTION&#34;] = relative_intensity / self.fwc_calibration,   # TODO
+    
+            # self.synoptics.store_th_synoptics(hk_dict)    TODO Uncomment when the relative intensity + FWC fraction are available
+            # TODO Update the TM dictionary (entry for the HK + for the synoptics)
+
+            hk_dict[&#34;G{SITE_ID}_FW8SMC4_POS_0&#34;] = filterwheel_positions[0]
+            hk_dict[&#34;G{SITE_ID}_FW8SMC4_POS_1&#34;] = filterwheel_positions[1]
+
+            # Send the HK acquired so far to the Synoptics Manager
+            self.synoptics.store_th_synoptics(hk_dict)
+        except Exception as exc:
+            logger.warning(f&#39;failed to get HK ({exc})&#39;)
+
+        return hk_dict</code></pre>
 </details>
 <h3>Ancestors</h3>
 <ul class="hlist">
