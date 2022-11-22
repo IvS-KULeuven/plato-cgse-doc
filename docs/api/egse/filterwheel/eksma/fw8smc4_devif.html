@@ -34,6 +34,8 @@ import sys
 import time
 from ctypes import *
 
+from egse.lib.ximc.pyximc import lib as ximc
+from egse.lib.ximc.pyximc import device_information_t, get_position_t, status_t, MoveState
 from egse.command import ClientServerCommand
 from egse.device import DeviceConnectionError
 from egse.settings import Settings
@@ -102,6 +104,220 @@ class FilterWheel8SMC4Error(Exception):
 
 
 DEVICE_NAME = &#34;Filter Wheel 8SMC4&#34;
+
+
+class FilterWheel8SMC4USBInterface:
+    &#34;&#34;&#34; This class controls a 8smc4 filterwheel controller through serial devices
+        connected via USB. It uses a wrapped c library (ximc) to communicate with the device.
+    &#34;&#34;&#34;
+
+    def __init__(self):
+        self._port = ctrl_settings.PORT
+        self._is_connected = False
+        self._devId = None
+
+        try:
+            self.connect()
+        except Exception as exc:
+            logger.error(f&#34;Could not connect to device ({exc})&#34;)
+
+
+    def connect(self):
+        if self._is_connected:
+            logger.warning(&#34;Trying to connect to an already connected device&#34;)
+        else:
+            try:
+                self._devId = ximc.open_device(f&#34;xi-com:{self._port}&#34;.encode())                
+            except OSError as exc:
+                raise DeviceConnectionError(self.DEVICE_NAME, f&#34;Could not connect ({exc}).&#34;) from exc
+            self._is_connected = True
+
+    def disconnect(self):
+        if not self._is_connected():
+            logger.warning(&#34;Trying to disconnect to an already disconnected device&#34;)
+        try:
+            ximc.close_device(byref(cast(self._devId, POINTER(c_int))))
+        except OSError as exc:
+            raise DeviceConnectionError(self.DEVICE_NAME, f&#34;Could not disconnect ({exc}).&#34;) from exc
+        else:
+            self._is_connected = False
+
+    def is_connected(self):
+        return self._is_connected
+
+    def get_response(self, cmd_string):
+        pass
+
+    def get_id(self):
+        x_device_information = device_information_t()
+        result = ximc.get_device_information(self._devId, byref(x_device_information))
+        device_id = {}
+        if result == Result.Ok:
+            version = (
+                f&#34;{x_device_information.Major!r}.&#34;
+                f&#34;{x_device_information.Minor!r}.&#34;
+                f&#34;{x_device_information.Release!r}&#34;
+            )
+            # version = repr(x_device_information.Major) + &#34;.&#34; + \
+            #           repr(x_device_information.Minor) + &#34;.&#34; + \
+            #           repr(x_device_information.Release)
+            description = f&#34;{string_at(x_device_information.ProductDescription).decode()!r}&#34;
+            logger.debug(
+                f&#34;Device information:Product Description: {description}, version: {version}&#34;
+            )
+            # logger.info(&#34;\nDevice information:&#34; + &#34;\nProduct Description:&#34; +
+            #             repr(string_at(x_device_information.ProductDescription).decode()) +
+            #             &#34;\nVersion: &#34; + version)
+            device_id = {
+                &#34;Product Description&#34;: description,
+                &#34;Version&#34;: version
+            }
+        else:
+            logger.warning(&#34;Wheel has not been correctly connected&#34;)
+        return device_id
+
+    def get_position(self):
+        x_pos = get_position_t()
+        ximc.get_position(self._devId, byref(x_pos))
+        result = [x_pos.Position, x_pos.uPosition]
+        return result
+
+    def equalize_wheels(self, position):
+        # This makes the 2 wheels move to the index defined by the position argument
+        # If the highest wheel index position is &gt; than the actual step position of the filter wheel, then it
+        # sets both wheels to the highest wheel index position in order to perform further movements
+        logger.info(&#34;Equalizing the wheels by moving first to zero&#34;)
+        self.move_wheel(1)
+        self.move_wheel(9)
+
+        self.command_zero()
+        logging.info(f&#34;New zero position reached:({self.get_position()[0]})&#34;)
+        logging.info(f&#34;Commanding the wheels to the equalized position:({position})&#34;)
+
+        self.move_wheel(position+1)
+        logging.info(f&#34;New equalized position reached at:({self.get_position()[0]})&#34;)
+
+    def move_wheel(self, steps):
+        print(&#34;moving wheel to the following number of x25 steps:&#34;, steps)
+        steps = steps - 1
+        try:
+            ximc.command_move(self._devId, steps*25, 0)
+            time.sleep(0.3)
+            while self.is_moving() != 0:
+                logger.info(&#34;The wheel is moving ...&#34;)
+                time.sleep(0.03)
+            logger.info(&#34;... the wheel stopped its movement&#34;)
+        except AssertionError:
+            logger.warning(&#34;Something went wrong when moving the filterwheel&#34;)
+
+    def set_pos(self, pos_wheel2, pos_wheel1):
+        # delay so the commands don&#39;t overlap
+        # the wheel 2 is the one that moves (opposite side of the motor)
+        # gets the actual position
+        pos = self.get_position()
+        pos = pos[0]
+        # from manual: command_move(device_t id, Position, uPosition)
+        # the engine starts to move with the pre-set parameters to the point specified by Position and uPosition
+        # uPosition sets the microstep in range -255 to 255
+        # 1 turn of the wheel has 200 steps, so each transition is reached by 25 steps.
+        if pos_wheel1 == pos_wheel2:
+            self.equalize_wheels(pos_wheel2)
+            logger.info(&#34;position 1&amp;2 reached&#34;)
+
+        elif pos_wheel1 &lt; pos_wheel2:
+            if abs(pos) &lt; pos_wheel1*25:
+                self.move_wheel(pos_wheel1+1)
+            else:
+                self.equalize_wheels(pos_wheel1)
+
+            logger.info(&#34;position 1 reached&#34;)
+            self.move_wheel(pos_wheel2-7)
+            logger.info(&#34;position 2 reached&#34;)
+
+        elif pos_wheel1 &gt; pos_wheel2:
+
+            if pos &lt; pos_wheel1*25:
+                self.move_wheel(pos_wheel1+1)
+
+            else:
+                self.equalize_wheels(pos_wheel1)
+            logger.info(&#34;position 1 reached&#34;)
+            self.move_wheel(pos_wheel2+1)
+            logger.info(&#34;position 2 reached&#34;)
+
+        _output = self.wait_stop(10)
+        if _output == 0:
+            logger.info(&#34;Movement finished&#34;)
+        if _output &gt; 0:
+            logger.warning(&#34;Movement finished after forcing the wait_stop&#34;)
+        if _output &lt; 0:
+            logger.error(&#34;Error on movement&#34;)
+        return _output
+
+    def command_zero(self):
+        logger.warning(&#34;Commanding the wheels to zero position&#34;)
+        try:
+            ximc.command_zero(self._devId)
+            time.sleep(0.3)
+            while self.is_moving() != 0:
+                logger.info(&#34;The wheel is moving to zero...&#34;)
+                time.sleep(0.03)
+            logger.info(&#34;... the wheel stopped its movement&#34;)
+        except AssertionError:
+            logger.warning(&#34;Something went wrong when moving the filterwheel&#34;)
+
+    def homing(self):
+        logger.info(&#34;Starting homing sequence ...&#34;)
+
+        ximc.command_homezero(self._devId)
+
+        logger.info(&#34;... Wheels homing succeeded&#34;)
+
+    def get_status(self):
+        status = status_t()
+
+        ximc.get_status(self._devId, byref(status))
+
+        return status
+
+    def get_speed(self):
+        _speed = self.get_status()
+        return _speed.CurSpeed
+
+    #fixme: this is not working, so don&#39;t use it for the moment. Replaced with time.sleeps
+    def wait_stop(self, t):
+        _output = None
+        timeout = time.time() + t
+        time.sleep(0.3)
+        _speed = self.get_speed()
+        while time.time() &lt; timeout:
+            time.sleep(0.03)
+            _speed = self.get_speed()
+            if _speed == 0:
+                break
+        if _speed != 0:
+            logger.warning(&#34;wait_stop timeout over but the motor is still running, forcing the wheel to stop&#34;)
+            result = lib.command_wait_for_stop(self._devId, 10)
+            if result.Result == Ok:
+                logger.warning(&#34;The wheel stopped after forcing command&#34;)
+                _output = 1
+            else:
+                logger.error(&#34;An error occurred during the movement&#34;)
+                _output = -1
+        else:
+            _output = 0
+        return _output
+
+    def get_flags(self):
+        status = self.get_status()
+        return (status.Flags)
+
+    def is_moving(self):
+        mvt = self.get_status()
+        return mvt.MoveSts
+
+
+
 
 
 class FilterWheel8SMC4EthernetInterface:
@@ -1061,6 +1277,583 @@ and validate the answer.</p>
 </dd>
 </dl>
 </dd>
+<dt id="egse.filterwheel.eksma.fw8smc4_devif.FilterWheel8SMC4USBInterface"><code class="flex name class">
+<span>class <span class="ident">FilterWheel8SMC4USBInterface</span></span>
+</code></dt>
+<dd>
+<div class="desc"><p>This class controls a 8smc4 filterwheel controller through serial devices
+connected via USB. It uses a wrapped c library (ximc) to communicate with the device.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class FilterWheel8SMC4USBInterface:
+    &#34;&#34;&#34; This class controls a 8smc4 filterwheel controller through serial devices
+        connected via USB. It uses a wrapped c library (ximc) to communicate with the device.
+    &#34;&#34;&#34;
+
+    def __init__(self):
+        self._port = ctrl_settings.PORT
+        self._is_connected = False
+        self._devId = None
+
+        try:
+            self.connect()
+        except Exception as exc:
+            logger.error(f&#34;Could not connect to device ({exc})&#34;)
+
+
+    def connect(self):
+        if self._is_connected:
+            logger.warning(&#34;Trying to connect to an already connected device&#34;)
+        else:
+            try:
+                self._devId = ximc.open_device(f&#34;xi-com:{self._port}&#34;.encode())                
+            except OSError as exc:
+                raise DeviceConnectionError(self.DEVICE_NAME, f&#34;Could not connect ({exc}).&#34;) from exc
+            self._is_connected = True
+
+    def disconnect(self):
+        if not self._is_connected():
+            logger.warning(&#34;Trying to disconnect to an already disconnected device&#34;)
+        try:
+            ximc.close_device(byref(cast(self._devId, POINTER(c_int))))
+        except OSError as exc:
+            raise DeviceConnectionError(self.DEVICE_NAME, f&#34;Could not disconnect ({exc}).&#34;) from exc
+        else:
+            self._is_connected = False
+
+    def is_connected(self):
+        return self._is_connected
+
+    def get_response(self, cmd_string):
+        pass
+
+    def get_id(self):
+        x_device_information = device_information_t()
+        result = ximc.get_device_information(self._devId, byref(x_device_information))
+        device_id = {}
+        if result == Result.Ok:
+            version = (
+                f&#34;{x_device_information.Major!r}.&#34;
+                f&#34;{x_device_information.Minor!r}.&#34;
+                f&#34;{x_device_information.Release!r}&#34;
+            )
+            # version = repr(x_device_information.Major) + &#34;.&#34; + \
+            #           repr(x_device_information.Minor) + &#34;.&#34; + \
+            #           repr(x_device_information.Release)
+            description = f&#34;{string_at(x_device_information.ProductDescription).decode()!r}&#34;
+            logger.debug(
+                f&#34;Device information:Product Description: {description}, version: {version}&#34;
+            )
+            # logger.info(&#34;\nDevice information:&#34; + &#34;\nProduct Description:&#34; +
+            #             repr(string_at(x_device_information.ProductDescription).decode()) +
+            #             &#34;\nVersion: &#34; + version)
+            device_id = {
+                &#34;Product Description&#34;: description,
+                &#34;Version&#34;: version
+            }
+        else:
+            logger.warning(&#34;Wheel has not been correctly connected&#34;)
+        return device_id
+
+    def get_position(self):
+        x_pos = get_position_t()
+        ximc.get_position(self._devId, byref(x_pos))
+        result = [x_pos.Position, x_pos.uPosition]
+        return result
+
+    def equalize_wheels(self, position):
+        # This makes the 2 wheels move to the index defined by the position argument
+        # If the highest wheel index position is &gt; than the actual step position of the filter wheel, then it
+        # sets both wheels to the highest wheel index position in order to perform further movements
+        logger.info(&#34;Equalizing the wheels by moving first to zero&#34;)
+        self.move_wheel(1)
+        self.move_wheel(9)
+
+        self.command_zero()
+        logging.info(f&#34;New zero position reached:({self.get_position()[0]})&#34;)
+        logging.info(f&#34;Commanding the wheels to the equalized position:({position})&#34;)
+
+        self.move_wheel(position+1)
+        logging.info(f&#34;New equalized position reached at:({self.get_position()[0]})&#34;)
+
+    def move_wheel(self, steps):
+        print(&#34;moving wheel to the following number of x25 steps:&#34;, steps)
+        steps = steps - 1
+        try:
+            ximc.command_move(self._devId, steps*25, 0)
+            time.sleep(0.3)
+            while self.is_moving() != 0:
+                logger.info(&#34;The wheel is moving ...&#34;)
+                time.sleep(0.03)
+            logger.info(&#34;... the wheel stopped its movement&#34;)
+        except AssertionError:
+            logger.warning(&#34;Something went wrong when moving the filterwheel&#34;)
+
+    def set_pos(self, pos_wheel2, pos_wheel1):
+        # delay so the commands don&#39;t overlap
+        # the wheel 2 is the one that moves (opposite side of the motor)
+        # gets the actual position
+        pos = self.get_position()
+        pos = pos[0]
+        # from manual: command_move(device_t id, Position, uPosition)
+        # the engine starts to move with the pre-set parameters to the point specified by Position and uPosition
+        # uPosition sets the microstep in range -255 to 255
+        # 1 turn of the wheel has 200 steps, so each transition is reached by 25 steps.
+        if pos_wheel1 == pos_wheel2:
+            self.equalize_wheels(pos_wheel2)
+            logger.info(&#34;position 1&amp;2 reached&#34;)
+
+        elif pos_wheel1 &lt; pos_wheel2:
+            if abs(pos) &lt; pos_wheel1*25:
+                self.move_wheel(pos_wheel1+1)
+            else:
+                self.equalize_wheels(pos_wheel1)
+
+            logger.info(&#34;position 1 reached&#34;)
+            self.move_wheel(pos_wheel2-7)
+            logger.info(&#34;position 2 reached&#34;)
+
+        elif pos_wheel1 &gt; pos_wheel2:
+
+            if pos &lt; pos_wheel1*25:
+                self.move_wheel(pos_wheel1+1)
+
+            else:
+                self.equalize_wheels(pos_wheel1)
+            logger.info(&#34;position 1 reached&#34;)
+            self.move_wheel(pos_wheel2+1)
+            logger.info(&#34;position 2 reached&#34;)
+
+        _output = self.wait_stop(10)
+        if _output == 0:
+            logger.info(&#34;Movement finished&#34;)
+        if _output &gt; 0:
+            logger.warning(&#34;Movement finished after forcing the wait_stop&#34;)
+        if _output &lt; 0:
+            logger.error(&#34;Error on movement&#34;)
+        return _output
+
+    def command_zero(self):
+        logger.warning(&#34;Commanding the wheels to zero position&#34;)
+        try:
+            ximc.command_zero(self._devId)
+            time.sleep(0.3)
+            while self.is_moving() != 0:
+                logger.info(&#34;The wheel is moving to zero...&#34;)
+                time.sleep(0.03)
+            logger.info(&#34;... the wheel stopped its movement&#34;)
+        except AssertionError:
+            logger.warning(&#34;Something went wrong when moving the filterwheel&#34;)
+
+    def homing(self):
+        logger.info(&#34;Starting homing sequence ...&#34;)
+
+        ximc.command_homezero(self._devId)
+
+        logger.info(&#34;... Wheels homing succeeded&#34;)
+
+    def get_status(self):
+        status = status_t()
+
+        ximc.get_status(self._devId, byref(status))
+
+        return status
+
+    def get_speed(self):
+        _speed = self.get_status()
+        return _speed.CurSpeed
+
+    #fixme: this is not working, so don&#39;t use it for the moment. Replaced with time.sleeps
+    def wait_stop(self, t):
+        _output = None
+        timeout = time.time() + t
+        time.sleep(0.3)
+        _speed = self.get_speed()
+        while time.time() &lt; timeout:
+            time.sleep(0.03)
+            _speed = self.get_speed()
+            if _speed == 0:
+                break
+        if _speed != 0:
+            logger.warning(&#34;wait_stop timeout over but the motor is still running, forcing the wheel to stop&#34;)
+            result = lib.command_wait_for_stop(self._devId, 10)
+            if result.Result == Ok:
+                logger.warning(&#34;The wheel stopped after forcing command&#34;)
+                _output = 1
+            else:
+                logger.error(&#34;An error occurred during the movement&#34;)
+                _output = -1
+        else:
+            _output = 0
+        return _output
+
+    def get_flags(self):
+        status = self.get_status()
+        return (status.Flags)
+
+    def is_moving(self):
+        mvt = self.get_status()
+        return mvt.MoveSts</code></pre>
+</details>
+<h3>Methods</h3>
+<dl>
+<dt id="egse.filterwheel.eksma.fw8smc4_devif.FilterWheel8SMC4USBInterface.command_zero"><code class="name flex">
+<span>def <span class="ident">command_zero</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def command_zero(self):
+    logger.warning(&#34;Commanding the wheels to zero position&#34;)
+    try:
+        ximc.command_zero(self._devId)
+        time.sleep(0.3)
+        while self.is_moving() != 0:
+            logger.info(&#34;The wheel is moving to zero...&#34;)
+            time.sleep(0.03)
+        logger.info(&#34;... the wheel stopped its movement&#34;)
+    except AssertionError:
+        logger.warning(&#34;Something went wrong when moving the filterwheel&#34;)</code></pre>
+</details>
+</dd>
+<dt id="egse.filterwheel.eksma.fw8smc4_devif.FilterWheel8SMC4USBInterface.connect"><code class="name flex">
+<span>def <span class="ident">connect</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def connect(self):
+    if self._is_connected:
+        logger.warning(&#34;Trying to connect to an already connected device&#34;)
+    else:
+        try:
+            self._devId = ximc.open_device(f&#34;xi-com:{self._port}&#34;.encode())                
+        except OSError as exc:
+            raise DeviceConnectionError(self.DEVICE_NAME, f&#34;Could not connect ({exc}).&#34;) from exc
+        self._is_connected = True</code></pre>
+</details>
+</dd>
+<dt id="egse.filterwheel.eksma.fw8smc4_devif.FilterWheel8SMC4USBInterface.disconnect"><code class="name flex">
+<span>def <span class="ident">disconnect</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def disconnect(self):
+    if not self._is_connected():
+        logger.warning(&#34;Trying to disconnect to an already disconnected device&#34;)
+    try:
+        ximc.close_device(byref(cast(self._devId, POINTER(c_int))))
+    except OSError as exc:
+        raise DeviceConnectionError(self.DEVICE_NAME, f&#34;Could not disconnect ({exc}).&#34;) from exc
+    else:
+        self._is_connected = False</code></pre>
+</details>
+</dd>
+<dt id="egse.filterwheel.eksma.fw8smc4_devif.FilterWheel8SMC4USBInterface.equalize_wheels"><code class="name flex">
+<span>def <span class="ident">equalize_wheels</span></span>(<span>self, position)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def equalize_wheels(self, position):
+    # This makes the 2 wheels move to the index defined by the position argument
+    # If the highest wheel index position is &gt; than the actual step position of the filter wheel, then it
+    # sets both wheels to the highest wheel index position in order to perform further movements
+    logger.info(&#34;Equalizing the wheels by moving first to zero&#34;)
+    self.move_wheel(1)
+    self.move_wheel(9)
+
+    self.command_zero()
+    logging.info(f&#34;New zero position reached:({self.get_position()[0]})&#34;)
+    logging.info(f&#34;Commanding the wheels to the equalized position:({position})&#34;)
+
+    self.move_wheel(position+1)
+    logging.info(f&#34;New equalized position reached at:({self.get_position()[0]})&#34;)</code></pre>
+</details>
+</dd>
+<dt id="egse.filterwheel.eksma.fw8smc4_devif.FilterWheel8SMC4USBInterface.get_flags"><code class="name flex">
+<span>def <span class="ident">get_flags</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_flags(self):
+    status = self.get_status()
+    return (status.Flags)</code></pre>
+</details>
+</dd>
+<dt id="egse.filterwheel.eksma.fw8smc4_devif.FilterWheel8SMC4USBInterface.get_id"><code class="name flex">
+<span>def <span class="ident">get_id</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_id(self):
+    x_device_information = device_information_t()
+    result = ximc.get_device_information(self._devId, byref(x_device_information))
+    device_id = {}
+    if result == Result.Ok:
+        version = (
+            f&#34;{x_device_information.Major!r}.&#34;
+            f&#34;{x_device_information.Minor!r}.&#34;
+            f&#34;{x_device_information.Release!r}&#34;
+        )
+        # version = repr(x_device_information.Major) + &#34;.&#34; + \
+        #           repr(x_device_information.Minor) + &#34;.&#34; + \
+        #           repr(x_device_information.Release)
+        description = f&#34;{string_at(x_device_information.ProductDescription).decode()!r}&#34;
+        logger.debug(
+            f&#34;Device information:Product Description: {description}, version: {version}&#34;
+        )
+        # logger.info(&#34;\nDevice information:&#34; + &#34;\nProduct Description:&#34; +
+        #             repr(string_at(x_device_information.ProductDescription).decode()) +
+        #             &#34;\nVersion: &#34; + version)
+        device_id = {
+            &#34;Product Description&#34;: description,
+            &#34;Version&#34;: version
+        }
+    else:
+        logger.warning(&#34;Wheel has not been correctly connected&#34;)
+    return device_id</code></pre>
+</details>
+</dd>
+<dt id="egse.filterwheel.eksma.fw8smc4_devif.FilterWheel8SMC4USBInterface.get_position"><code class="name flex">
+<span>def <span class="ident">get_position</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_position(self):
+    x_pos = get_position_t()
+    ximc.get_position(self._devId, byref(x_pos))
+    result = [x_pos.Position, x_pos.uPosition]
+    return result</code></pre>
+</details>
+</dd>
+<dt id="egse.filterwheel.eksma.fw8smc4_devif.FilterWheel8SMC4USBInterface.get_response"><code class="name flex">
+<span>def <span class="ident">get_response</span></span>(<span>self, cmd_string)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_response(self, cmd_string):
+    pass</code></pre>
+</details>
+</dd>
+<dt id="egse.filterwheel.eksma.fw8smc4_devif.FilterWheel8SMC4USBInterface.get_speed"><code class="name flex">
+<span>def <span class="ident">get_speed</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_speed(self):
+    _speed = self.get_status()
+    return _speed.CurSpeed</code></pre>
+</details>
+</dd>
+<dt id="egse.filterwheel.eksma.fw8smc4_devif.FilterWheel8SMC4USBInterface.get_status"><code class="name flex">
+<span>def <span class="ident">get_status</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_status(self):
+    status = status_t()
+
+    ximc.get_status(self._devId, byref(status))
+
+    return status</code></pre>
+</details>
+</dd>
+<dt id="egse.filterwheel.eksma.fw8smc4_devif.FilterWheel8SMC4USBInterface.homing"><code class="name flex">
+<span>def <span class="ident">homing</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def homing(self):
+    logger.info(&#34;Starting homing sequence ...&#34;)
+
+    ximc.command_homezero(self._devId)
+
+    logger.info(&#34;... Wheels homing succeeded&#34;)</code></pre>
+</details>
+</dd>
+<dt id="egse.filterwheel.eksma.fw8smc4_devif.FilterWheel8SMC4USBInterface.is_connected"><code class="name flex">
+<span>def <span class="ident">is_connected</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def is_connected(self):
+    return self._is_connected</code></pre>
+</details>
+</dd>
+<dt id="egse.filterwheel.eksma.fw8smc4_devif.FilterWheel8SMC4USBInterface.is_moving"><code class="name flex">
+<span>def <span class="ident">is_moving</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def is_moving(self):
+    mvt = self.get_status()
+    return mvt.MoveSts</code></pre>
+</details>
+</dd>
+<dt id="egse.filterwheel.eksma.fw8smc4_devif.FilterWheel8SMC4USBInterface.move_wheel"><code class="name flex">
+<span>def <span class="ident">move_wheel</span></span>(<span>self, steps)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def move_wheel(self, steps):
+    print(&#34;moving wheel to the following number of x25 steps:&#34;, steps)
+    steps = steps - 1
+    try:
+        ximc.command_move(self._devId, steps*25, 0)
+        time.sleep(0.3)
+        while self.is_moving() != 0:
+            logger.info(&#34;The wheel is moving ...&#34;)
+            time.sleep(0.03)
+        logger.info(&#34;... the wheel stopped its movement&#34;)
+    except AssertionError:
+        logger.warning(&#34;Something went wrong when moving the filterwheel&#34;)</code></pre>
+</details>
+</dd>
+<dt id="egse.filterwheel.eksma.fw8smc4_devif.FilterWheel8SMC4USBInterface.set_pos"><code class="name flex">
+<span>def <span class="ident">set_pos</span></span>(<span>self, pos_wheel2, pos_wheel1)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def set_pos(self, pos_wheel2, pos_wheel1):
+    # delay so the commands don&#39;t overlap
+    # the wheel 2 is the one that moves (opposite side of the motor)
+    # gets the actual position
+    pos = self.get_position()
+    pos = pos[0]
+    # from manual: command_move(device_t id, Position, uPosition)
+    # the engine starts to move with the pre-set parameters to the point specified by Position and uPosition
+    # uPosition sets the microstep in range -255 to 255
+    # 1 turn of the wheel has 200 steps, so each transition is reached by 25 steps.
+    if pos_wheel1 == pos_wheel2:
+        self.equalize_wheels(pos_wheel2)
+        logger.info(&#34;position 1&amp;2 reached&#34;)
+
+    elif pos_wheel1 &lt; pos_wheel2:
+        if abs(pos) &lt; pos_wheel1*25:
+            self.move_wheel(pos_wheel1+1)
+        else:
+            self.equalize_wheels(pos_wheel1)
+
+        logger.info(&#34;position 1 reached&#34;)
+        self.move_wheel(pos_wheel2-7)
+        logger.info(&#34;position 2 reached&#34;)
+
+    elif pos_wheel1 &gt; pos_wheel2:
+
+        if pos &lt; pos_wheel1*25:
+            self.move_wheel(pos_wheel1+1)
+
+        else:
+            self.equalize_wheels(pos_wheel1)
+        logger.info(&#34;position 1 reached&#34;)
+        self.move_wheel(pos_wheel2+1)
+        logger.info(&#34;position 2 reached&#34;)
+
+    _output = self.wait_stop(10)
+    if _output == 0:
+        logger.info(&#34;Movement finished&#34;)
+    if _output &gt; 0:
+        logger.warning(&#34;Movement finished after forcing the wait_stop&#34;)
+    if _output &lt; 0:
+        logger.error(&#34;Error on movement&#34;)
+    return _output</code></pre>
+</details>
+</dd>
+<dt id="egse.filterwheel.eksma.fw8smc4_devif.FilterWheel8SMC4USBInterface.wait_stop"><code class="name flex">
+<span>def <span class="ident">wait_stop</span></span>(<span>self, t)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def wait_stop(self, t):
+    _output = None
+    timeout = time.time() + t
+    time.sleep(0.3)
+    _speed = self.get_speed()
+    while time.time() &lt; timeout:
+        time.sleep(0.03)
+        _speed = self.get_speed()
+        if _speed == 0:
+            break
+    if _speed != 0:
+        logger.warning(&#34;wait_stop timeout over but the motor is still running, forcing the wheel to stop&#34;)
+        result = lib.command_wait_for_stop(self._devId, 10)
+        if result.Result == Ok:
+            logger.warning(&#34;The wheel stopped after forcing command&#34;)
+            _output = 1
+        else:
+            logger.error(&#34;An error occurred during the movement&#34;)
+            _output = -1
+    else:
+        _output = 0
+    return _output</code></pre>
+</details>
+</dd>
+</dl>
+</dd>
 </dl>
 </section>
 </article>
@@ -1105,6 +1898,27 @@ and validate the answer.</p>
 <li><code><a title="egse.filterwheel.eksma.fw8smc4_devif.FilterWheel8SMC4EthernetInterface.move_wheel" href="#egse.filterwheel.eksma.fw8smc4_devif.FilterWheel8SMC4EthernetInterface.move_wheel">move_wheel</a></code></li>
 <li><code><a title="egse.filterwheel.eksma.fw8smc4_devif.FilterWheel8SMC4EthernetInterface.set_pos" href="#egse.filterwheel.eksma.fw8smc4_devif.FilterWheel8SMC4EthernetInterface.set_pos">set_pos</a></code></li>
 <li><code><a title="egse.filterwheel.eksma.fw8smc4_devif.FilterWheel8SMC4EthernetInterface.wait_stop" href="#egse.filterwheel.eksma.fw8smc4_devif.FilterWheel8SMC4EthernetInterface.wait_stop">wait_stop</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="egse.filterwheel.eksma.fw8smc4_devif.FilterWheel8SMC4USBInterface" href="#egse.filterwheel.eksma.fw8smc4_devif.FilterWheel8SMC4USBInterface">FilterWheel8SMC4USBInterface</a></code></h4>
+<ul class="two-column">
+<li><code><a title="egse.filterwheel.eksma.fw8smc4_devif.FilterWheel8SMC4USBInterface.command_zero" href="#egse.filterwheel.eksma.fw8smc4_devif.FilterWheel8SMC4USBInterface.command_zero">command_zero</a></code></li>
+<li><code><a title="egse.filterwheel.eksma.fw8smc4_devif.FilterWheel8SMC4USBInterface.connect" href="#egse.filterwheel.eksma.fw8smc4_devif.FilterWheel8SMC4USBInterface.connect">connect</a></code></li>
+<li><code><a title="egse.filterwheel.eksma.fw8smc4_devif.FilterWheel8SMC4USBInterface.disconnect" href="#egse.filterwheel.eksma.fw8smc4_devif.FilterWheel8SMC4USBInterface.disconnect">disconnect</a></code></li>
+<li><code><a title="egse.filterwheel.eksma.fw8smc4_devif.FilterWheel8SMC4USBInterface.equalize_wheels" href="#egse.filterwheel.eksma.fw8smc4_devif.FilterWheel8SMC4USBInterface.equalize_wheels">equalize_wheels</a></code></li>
+<li><code><a title="egse.filterwheel.eksma.fw8smc4_devif.FilterWheel8SMC4USBInterface.get_flags" href="#egse.filterwheel.eksma.fw8smc4_devif.FilterWheel8SMC4USBInterface.get_flags">get_flags</a></code></li>
+<li><code><a title="egse.filterwheel.eksma.fw8smc4_devif.FilterWheel8SMC4USBInterface.get_id" href="#egse.filterwheel.eksma.fw8smc4_devif.FilterWheel8SMC4USBInterface.get_id">get_id</a></code></li>
+<li><code><a title="egse.filterwheel.eksma.fw8smc4_devif.FilterWheel8SMC4USBInterface.get_position" href="#egse.filterwheel.eksma.fw8smc4_devif.FilterWheel8SMC4USBInterface.get_position">get_position</a></code></li>
+<li><code><a title="egse.filterwheel.eksma.fw8smc4_devif.FilterWheel8SMC4USBInterface.get_response" href="#egse.filterwheel.eksma.fw8smc4_devif.FilterWheel8SMC4USBInterface.get_response">get_response</a></code></li>
+<li><code><a title="egse.filterwheel.eksma.fw8smc4_devif.FilterWheel8SMC4USBInterface.get_speed" href="#egse.filterwheel.eksma.fw8smc4_devif.FilterWheel8SMC4USBInterface.get_speed">get_speed</a></code></li>
+<li><code><a title="egse.filterwheel.eksma.fw8smc4_devif.FilterWheel8SMC4USBInterface.get_status" href="#egse.filterwheel.eksma.fw8smc4_devif.FilterWheel8SMC4USBInterface.get_status">get_status</a></code></li>
+<li><code><a title="egse.filterwheel.eksma.fw8smc4_devif.FilterWheel8SMC4USBInterface.homing" href="#egse.filterwheel.eksma.fw8smc4_devif.FilterWheel8SMC4USBInterface.homing">homing</a></code></li>
+<li><code><a title="egse.filterwheel.eksma.fw8smc4_devif.FilterWheel8SMC4USBInterface.is_connected" href="#egse.filterwheel.eksma.fw8smc4_devif.FilterWheel8SMC4USBInterface.is_connected">is_connected</a></code></li>
+<li><code><a title="egse.filterwheel.eksma.fw8smc4_devif.FilterWheel8SMC4USBInterface.is_moving" href="#egse.filterwheel.eksma.fw8smc4_devif.FilterWheel8SMC4USBInterface.is_moving">is_moving</a></code></li>
+<li><code><a title="egse.filterwheel.eksma.fw8smc4_devif.FilterWheel8SMC4USBInterface.move_wheel" href="#egse.filterwheel.eksma.fw8smc4_devif.FilterWheel8SMC4USBInterface.move_wheel">move_wheel</a></code></li>
+<li><code><a title="egse.filterwheel.eksma.fw8smc4_devif.FilterWheel8SMC4USBInterface.set_pos" href="#egse.filterwheel.eksma.fw8smc4_devif.FilterWheel8SMC4USBInterface.set_pos">set_pos</a></code></li>
+<li><code><a title="egse.filterwheel.eksma.fw8smc4_devif.FilterWheel8SMC4USBInterface.wait_stop" href="#egse.filterwheel.eksma.fw8smc4_devif.FilterWheel8SMC4USBInterface.wait_stop">wait_stop</a></code></li>
 </ul>
 </li>
 </ul>

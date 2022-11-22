@@ -46,8 +46,10 @@ from egse.settings import Settings
 from egse.zmq_ser import connect_address
 from egse.mixin import dynamic_command
 from egse.mixin import add_lf
-from time import sleep, time
+from time import sleep, strftime, gmtime
 from egse.confman import ConfigurationManagerProxy
+from egse.system import format_datetime
+from datetime import datetime
 
 
 LOGGER = logging.getLogger(__name__)
@@ -856,6 +858,16 @@ class ptc10Controller(ptc10Interface):
             if i in list_error[:3]:
                 self.disable_heater(Sensor_names.index(i) + 1)
 
+    def get_time(self) -&gt; str:
+        smhdmy = self.temp.trans(&#34;Systemtime.smh?&#34;)
+        timestamp = format_datetime(datetime.strptime(smhdmy + &#34; +0000&#34;, &#39;%S %M %H %d %m %Y %z&#39;))
+        return timestamp
+
+
+    def update_time(self):
+        &#34;&#34;&#34;Updates the PTC10 date and time in UTC from the server&#39;s time which is ntp synchronised.&#34;&#34;&#34;
+        self.temp.write(&#34;systemtime.dmy &#34; + strftime(&#34;%d/%m/%Y&#34;, gmtime()))
+        self.temp.write(&#34;systemtime.hms &#34; + strftime(&#34;%H:%M:%S&#34;, gmtime()))
 
 class ptc10Proxy(Proxy, ptc10Interface):
     &#34;&#34;&#34;The ptc10Proxy class is used to connect to the control server and send commands to
@@ -1352,7 +1364,18 @@ class ptc10Proxy(Proxy, ptc10Interface):
         Sensor_names = self.get_names()[0]
         for i in [&#34;TRP2&#34;, &#34;TRP3&#34;, &#34;TRP4&#34;]:
             if i in list_error[:3]:
-                self.disable_heater(Sensor_names.index(i) + 1)</code></pre>
+                self.disable_heater(Sensor_names.index(i) + 1)
+
+    def get_time(self) -&gt; str:
+        smhdmy = self.temp.trans(&#34;Systemtime.smh?&#34;)
+        timestamp = format_datetime(datetime.strptime(smhdmy + &#34; +0000&#34;, &#39;%S %M %H %d %m %Y %z&#39;))
+        return timestamp
+
+
+    def update_time(self):
+        &#34;&#34;&#34;Updates the PTC10 date and time in UTC from the server&#39;s time which is ntp synchronised.&#34;&#34;&#34;
+        self.temp.write(&#34;systemtime.dmy &#34; + strftime(&#34;%d/%m/%Y&#34;, gmtime()))
+        self.temp.write(&#34;systemtime.hms &#34; + strftime(&#34;%H:%M:%S&#34;, gmtime()))</code></pre>
 </details>
 <h3>Ancestors</h3>
 <ul class="hlist">
@@ -1425,6 +1448,21 @@ output_ch parameter sets the PID output channel. output_ch = 1, 2, 3</p></div>
         print(f&#34;Successful PID autotuning!!\nP = {PID_final[&#39;P&#39;]}\nI = {PID_final[&#39;I&#39;]}\nD = {PID_final[&#39;D&#39;]}&#34;)</code></pre>
 </details>
 </dd>
+<dt id="egse.tempcontrol.srs.ptc10.ptc10Controller.get_time"><code class="name flex">
+<span>def <span class="ident">get_time</span></span>(<span>self) ‑> str</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_time(self) -&gt; str:
+    smhdmy = self.temp.trans(&#34;Systemtime.smh?&#34;)
+    timestamp = format_datetime(datetime.strptime(smhdmy + &#34; +0000&#34;, &#39;%S %M %H %d %m %Y %z&#39;))
+    return timestamp</code></pre>
+</details>
+</dd>
 <dt id="egse.tempcontrol.srs.ptc10.ptc10Controller.read_temperature"><code class="name flex">
 <span>def <span class="ident">read_temperature</span></span>(<span>self) ‑> list</span>
 </code></dt>
@@ -1443,6 +1481,21 @@ output_ch parameter sets the PID output channel. output_ch = 1, 2, 3</p></div>
         self.temp.write(f&#34;({channel_name}?)&#34;)
         Sensors_values.append(float(self.temp.read()))
     return Sensors_values</code></pre>
+</details>
+</dd>
+<dt id="egse.tempcontrol.srs.ptc10.ptc10Controller.update_time"><code class="name flex">
+<span>def <span class="ident">update_time</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Updates the PTC10 date and time in UTC from the server's time which is ntp synchronised.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def update_time(self):
+    &#34;&#34;&#34;Updates the PTC10 date and time in UTC from the server&#39;s time which is ntp synchronised.&#34;&#34;&#34;
+    self.temp.write(&#34;systemtime.dmy &#34; + strftime(&#34;%d/%m/%Y&#34;, gmtime()))
+    self.temp.write(&#34;systemtime.hms &#34; + strftime(&#34;%H:%M:%S&#34;, gmtime()))</code></pre>
 </details>
 </dd>
 </dl>
@@ -2760,7 +2813,9 @@ the SRS PTC10 device remotely.</p>
 <h4><code><a title="egse.tempcontrol.srs.ptc10.ptc10Controller" href="#egse.tempcontrol.srs.ptc10.ptc10Controller">ptc10Controller</a></code></h4>
 <ul class="">
 <li><code><a title="egse.tempcontrol.srs.ptc10.ptc10Controller.autotune_PID" href="#egse.tempcontrol.srs.ptc10.ptc10Controller.autotune_PID">autotune_PID</a></code></li>
+<li><code><a title="egse.tempcontrol.srs.ptc10.ptc10Controller.get_time" href="#egse.tempcontrol.srs.ptc10.ptc10Controller.get_time">get_time</a></code></li>
 <li><code><a title="egse.tempcontrol.srs.ptc10.ptc10Controller.read_temperature" href="#egse.tempcontrol.srs.ptc10.ptc10Controller.read_temperature">read_temperature</a></code></li>
+<li><code><a title="egse.tempcontrol.srs.ptc10.ptc10Controller.update_time" href="#egse.tempcontrol.srs.ptc10.ptc10Controller.update_time">update_time</a></code></li>
 </ul>
 </li>
 <li>

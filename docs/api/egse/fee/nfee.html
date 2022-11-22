@@ -37,11 +37,11 @@ from pathlib import Path
 from typing import Tuple
 
 import rich
-import yaml
 
 from egse.bits import clear_bit
 from egse.bits import set_bit
 from egse.bits import toggle_bit
+from egse.state import GlobalState
 from egse.system import AttributeDict
 
 THIS_FILE_LOCATION = Path(__file__).parent
@@ -62,50 +62,49 @@ def load_hk_definition() -&gt; Tuple[dict, int]:
         A dictionary with the HK parameter names as keys and position in the N-FEE memory map as
         values.
     &#34;&#34;&#34;
-    filename = THIS_FILE_LOCATION / &#34;n_fee_hk.yaml&#34;
 
+    reg_map = GlobalState.setup.camera.fee.hk_map
     hk_map = {}
 
-    with filename.open() as stream:
-        reg_map = yaml.safe_load(stream)
+    start_address = reg_map[&#34;start_address&#34;]
+    hk_data_length = reg_map[&#34;hk_data_length&#34;]
+    reg_map = dict(filter(lambda x: x[0].startswith(&#34;reg_&#34;), reg_map.items()))
 
-        start_address = reg_map[&#34;start_address&#34;]
-        hk_data_length = reg_map[&#34;hk_data_length&#34;]
-        reg_map = dict(filter(lambda x: x[0].startswith(&#34;reg_&#34;), reg_map.items()))
+    for reg_name, reg_hk in reg_map.items():
+        offset = reg_hk[&#34;address&#34;] - start_address
+        del reg_hk[&#34;address&#34;]
 
-        for reg_name, reg_hk in reg_map.items():
-            offset = reg_hk[&#34;address&#34;] - start_address
-            del reg_hk[&#34;address&#34;]
+        if &#34;twos_complement&#34; in reg_hk:
+            twos_complement = bool(reg_hk[&#34;twos_complement&#34;])
+            del reg_hk[&#34;twos_complement&#34;]
+        else:
+            twos_complement = False
 
-            if &#34;twos_complement&#34; in reg_hk:
-                twos_complement = bool(reg_hk[&#34;twos_complement&#34;])
-                del reg_hk[&#34;twos_complement&#34;]
+        # LOGGER.info(f&#34;{reg_name=}, {twos_complement=}&#34;)
+
+        for hk_name in reg_hk:
+            var = reg_hk[hk_name]
+            if len(var) == 2:
+                hk_map[hk_name] = [offset, var[0], var[1], int, twos_complement]
             else:
-                twos_complement = False
-
-            # LOGGER.info(f&#34;{reg_name=}, {twos_complement=}&#34;)
-
-            for hk_name in reg_hk:
-                var = reg_hk[hk_name]
-                if len(var) == 2:
-                    hk_map[hk_name] = [offset, var[0], var[1], int, twos_complement]
-                else:
-                    hk_map[hk_name] = [offset, var[0], var[1], float, twos_complement]
+                hk_map[hk_name] = [offset, var[0], var[1], float, twos_complement]
 
     return hk_map, hk_data_length
 
 
-HK_DEFINITION, HK_DATA_LENGTH = load_hk_definition()
-
-
 class HousekeepingData:
+
     &#34;&#34;&#34;This class holds and parses the data part of an N-FEE Housekeeping packet.&#34;&#34;&#34;
     def __init__(self, data: bytes = None):
+
+        self.hk_definition, self.hk_data_length = load_hk_definition()
+
         # TODO: add a sanity check for the len(data)
-        self._data = bytearray(data or bytes(HK_DATA_LENGTH))
+
+        self._data = bytearray(data or bytes(self.hk_data_length))
 
     def __getitem__(self, item):
-        hk_def = HK_DEFINITION[item]
+        hk_def = self.hk_definition[item]
         offset, shift, width, type_, twos_complement = hk_def
 
         # LOGGER.info(f&#34;{item=}, {offset=}, {shift=}, {width=}, {type_=}, {twos_complement=}&#34;)
@@ -132,7 +131,7 @@ class HousekeepingData:
         return value
 
     def __setitem__(self, key, value):
-        hk_def = HK_DEFINITION[key]
+        hk_def = self.hk_definition[key]
         offset, shift, width, type_, twos_complement = hk_def
 
         if type_ is int:
@@ -183,11 +182,11 @@ class HousekeepingData:
         return timecode
 
     def __rich__(self):
-        d = {hk_name: self[hk_name] for hk_name in HK_DEFINITION}
+        d = {hk_name: self[hk_name] for hk_name in self.hk_definition}
         return AttributeDict(d).__rich__()
 
     def __iter__(self):
-        return iter(HK_DEFINITION)
+        return iter(self.hk_definition)
 
 
 if __name__ == &#34;__main__&#34;:
@@ -237,35 +236,32 @@ values.</p></div>
         A dictionary with the HK parameter names as keys and position in the N-FEE memory map as
         values.
     &#34;&#34;&#34;
-    filename = THIS_FILE_LOCATION / &#34;n_fee_hk.yaml&#34;
 
+    reg_map = GlobalState.setup.camera.fee.hk_map
     hk_map = {}
 
-    with filename.open() as stream:
-        reg_map = yaml.safe_load(stream)
+    start_address = reg_map[&#34;start_address&#34;]
+    hk_data_length = reg_map[&#34;hk_data_length&#34;]
+    reg_map = dict(filter(lambda x: x[0].startswith(&#34;reg_&#34;), reg_map.items()))
 
-        start_address = reg_map[&#34;start_address&#34;]
-        hk_data_length = reg_map[&#34;hk_data_length&#34;]
-        reg_map = dict(filter(lambda x: x[0].startswith(&#34;reg_&#34;), reg_map.items()))
+    for reg_name, reg_hk in reg_map.items():
+        offset = reg_hk[&#34;address&#34;] - start_address
+        del reg_hk[&#34;address&#34;]
 
-        for reg_name, reg_hk in reg_map.items():
-            offset = reg_hk[&#34;address&#34;] - start_address
-            del reg_hk[&#34;address&#34;]
+        if &#34;twos_complement&#34; in reg_hk:
+            twos_complement = bool(reg_hk[&#34;twos_complement&#34;])
+            del reg_hk[&#34;twos_complement&#34;]
+        else:
+            twos_complement = False
 
-            if &#34;twos_complement&#34; in reg_hk:
-                twos_complement = bool(reg_hk[&#34;twos_complement&#34;])
-                del reg_hk[&#34;twos_complement&#34;]
+        # LOGGER.info(f&#34;{reg_name=}, {twos_complement=}&#34;)
+
+        for hk_name in reg_hk:
+            var = reg_hk[hk_name]
+            if len(var) == 2:
+                hk_map[hk_name] = [offset, var[0], var[1], int, twos_complement]
             else:
-                twos_complement = False
-
-            # LOGGER.info(f&#34;{reg_name=}, {twos_complement=}&#34;)
-
-            for hk_name in reg_hk:
-                var = reg_hk[hk_name]
-                if len(var) == 2:
-                    hk_map[hk_name] = [offset, var[0], var[1], int, twos_complement]
-                else:
-                    hk_map[hk_name] = [offset, var[0], var[1], float, twos_complement]
+                hk_map[hk_name] = [offset, var[0], var[1], float, twos_complement]
 
     return hk_map, hk_data_length</code></pre>
 </details>
@@ -286,13 +282,18 @@ values.</p></div>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">class HousekeepingData:
+
     &#34;&#34;&#34;This class holds and parses the data part of an N-FEE Housekeeping packet.&#34;&#34;&#34;
     def __init__(self, data: bytes = None):
+
+        self.hk_definition, self.hk_data_length = load_hk_definition()
+
         # TODO: add a sanity check for the len(data)
-        self._data = bytearray(data or bytes(HK_DATA_LENGTH))
+
+        self._data = bytearray(data or bytes(self.hk_data_length))
 
     def __getitem__(self, item):
-        hk_def = HK_DEFINITION[item]
+        hk_def = self.hk_definition[item]
         offset, shift, width, type_, twos_complement = hk_def
 
         # LOGGER.info(f&#34;{item=}, {offset=}, {shift=}, {width=}, {type_=}, {twos_complement=}&#34;)
@@ -319,7 +320,7 @@ values.</p></div>
         return value
 
     def __setitem__(self, key, value):
-        hk_def = HK_DEFINITION[key]
+        hk_def = self.hk_definition[key]
         offset, shift, width, type_, twos_complement = hk_def
 
         if type_ is int:
@@ -370,11 +371,11 @@ values.</p></div>
         return timecode
 
     def __rich__(self):
-        d = {hk_name: self[hk_name] for hk_name in HK_DEFINITION}
+        d = {hk_name: self[hk_name] for hk_name in self.hk_definition}
         return AttributeDict(d).__rich__()
 
     def __iter__(self):
-        return iter(HK_DEFINITION)</code></pre>
+        return iter(self.hk_definition)</code></pre>
 </details>
 <h3>Instance variables</h3>
 <dl>

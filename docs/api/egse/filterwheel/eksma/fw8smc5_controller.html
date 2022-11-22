@@ -27,21 +27,18 @@
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">import logging
-import os
-import sys
-import time
 from collections import OrderedDict
+from ctypes import cast, byref, c_int, POINTER
 
 import numpy as np
-from ctypes import cast, byref, c_int, POINTER
-from egse.lib.ximc.pyximc import lib as ximc
-from egse.lib.ximc.pyximc import device_information_t, get_position_t, status_t, MoveState
-from egse.confman import ConfigurationManagerProxy
-from egse.command import ClientServerCommand
+import time
+
 from egse.device import DeviceConnectionError
+from egse.filterwheel.eksma.fw8smc5 import Fw8Smc5Interface
+from egse.lib.ximc.pyximc import device_information_t, get_position_t, status_t, MoveState
+from egse.lib.ximc.pyximc import lib as ximc
 from egse.settings import Settings
 from egse.state import GlobalState
-from egse.filterwheel.eksma.fw8smc5 import Fw8Smc5Interface
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +69,7 @@ class Fw8Smc5Controller(Fw8Smc5Interface):
 
 
         # Get device calibration from the setup
-        self.setup = GlobalState.load_setup()
+        self.setup = GlobalState.setup
         self.relative_intensities = self.setup.gse.ogse.calibration.relative_intensity_by_index
         self.home_offsets = self.setup.gse.filterwheel.home_offset
         self.ri_wheel_positions = self.setup.gse.ogse.calibration.relative_intensity_by_wheel
@@ -191,8 +188,8 @@ class Fw8Smc5Controller(Fw8Smc5Interface):
 
     def set_position_wheels(self, position_a, position_b):
 
-        self._set_position_wheel(0, position_a)
-        self._set_position_wheel(1, position_b)
+        self.set_position_wheel(0, position_a)
+        self.set_position_wheel(1, position_b)
 
 
     def get_position_index(self):
@@ -206,7 +203,11 @@ class Fw8Smc5Controller(Fw8Smc5Interface):
         try:
             return list(self.ri_wheel_positions.keys()).index((p0, p1))
         except ValueError:
-            raise Fw8Smc5Exception(&#34;Filterwheel is in a non-indexed combination of wheel positions&#34;)
+            return None
+            # Do we really need to crash the CS/Leave a log message if the comination is non indexed?
+            # I think we are better off just returning an impossible value
+            # logger.warning(&#34;Filterwheel is in a non-indexed combination of wheel positions&#34;)
+            # raise Fw8Smc5Exception(&#34;Filterwheel is in a non-indexed combination of wheel positions&#34;)
 
 
     def set_position_index(self, index):
@@ -217,7 +218,10 @@ class Fw8Smc5Controller(Fw8Smc5Interface):
 
     def get_relative_intensity(self):
         index = self.get_position_index()
-        return self.relative_intensities[index]
+        if index in self.relative_intensities:
+            return self.relative_intensities[index]
+        else:
+            return 9.99999e9
 
 
     def set_relative_intensity(self, relative_intensity):
@@ -287,7 +291,7 @@ class Fw8Smc5Controller(Fw8Smc5Interface):
             return position // self.POSITION_STEPS % self.WHEEL_POSITIONS
 
 
-    def _set_position_wheel(self, id, position):
+    def set_position_wheel(self, id, position):
         &#34;&#34;&#34; Set the position of one of the wheels. &#34;&#34;&#34;
 
         assert 0 &lt;= position &lt; self.WHEEL_POSITIONS, f&#34;Filterwheel index out of range ({position})&#34;
@@ -405,7 +409,7 @@ connected via USB. It uses a wrapped c library (ximc) to communicate with the de
 
 
         # Get device calibration from the setup
-        self.setup = GlobalState.load_setup()
+        self.setup = GlobalState.setup
         self.relative_intensities = self.setup.gse.ogse.calibration.relative_intensity_by_index
         self.home_offsets = self.setup.gse.filterwheel.home_offset
         self.ri_wheel_positions = self.setup.gse.ogse.calibration.relative_intensity_by_wheel
@@ -524,8 +528,8 @@ connected via USB. It uses a wrapped c library (ximc) to communicate with the de
 
     def set_position_wheels(self, position_a, position_b):
 
-        self._set_position_wheel(0, position_a)
-        self._set_position_wheel(1, position_b)
+        self.set_position_wheel(0, position_a)
+        self.set_position_wheel(1, position_b)
 
 
     def get_position_index(self):
@@ -539,7 +543,11 @@ connected via USB. It uses a wrapped c library (ximc) to communicate with the de
         try:
             return list(self.ri_wheel_positions.keys()).index((p0, p1))
         except ValueError:
-            raise Fw8Smc5Exception(&#34;Filterwheel is in a non-indexed combination of wheel positions&#34;)
+            return None
+            # Do we really need to crash the CS/Leave a log message if the comination is non indexed?
+            # I think we are better off just returning an impossible value
+            # logger.warning(&#34;Filterwheel is in a non-indexed combination of wheel positions&#34;)
+            # raise Fw8Smc5Exception(&#34;Filterwheel is in a non-indexed combination of wheel positions&#34;)
 
 
     def set_position_index(self, index):
@@ -550,7 +558,10 @@ connected via USB. It uses a wrapped c library (ximc) to communicate with the de
 
     def get_relative_intensity(self):
         index = self.get_position_index()
-        return self.relative_intensities[index]
+        if index in self.relative_intensities:
+            return self.relative_intensities[index]
+        else:
+            return 9.99999e9
 
 
     def set_relative_intensity(self, relative_intensity):
@@ -620,7 +631,7 @@ connected via USB. It uses a wrapped c library (ximc) to communicate with the de
             return position // self.POSITION_STEPS % self.WHEEL_POSITIONS
 
 
-    def _set_position_wheel(self, id, position):
+    def set_position_wheel(self, id, position):
         &#34;&#34;&#34; Set the position of one of the wheels. &#34;&#34;&#34;
 
         assert 0 &lt;= position &lt; self.WHEEL_POSITIONS, f&#34;Filterwheel index out of range ({position})&#34;
@@ -719,7 +730,11 @@ connected via USB. It uses a wrapped c library (ximc) to communicate with the de
     try:
         return list(self.ri_wheel_positions.keys()).index((p0, p1))
     except ValueError:
-        raise Fw8Smc5Exception(&#34;Filterwheel is in a non-indexed combination of wheel positions&#34;)</code></pre>
+        return None
+        # Do we really need to crash the CS/Leave a log message if the comination is non indexed?
+        # I think we are better off just returning an impossible value
+        # logger.warning(&#34;Filterwheel is in a non-indexed combination of wheel positions&#34;)
+        # raise Fw8Smc5Exception(&#34;Filterwheel is in a non-indexed combination of wheel positions&#34;)</code></pre>
 </details>
 </dd>
 <dt id="egse.filterwheel.eksma.fw8smc5_controller.Fw8Smc5Controller.get_position_steps"><code class="name flex">
@@ -764,7 +779,10 @@ connected via USB. It uses a wrapped c library (ximc) to communicate with the de
 </summary>
 <pre><code class="python">def get_relative_intensity(self):
     index = self.get_position_index()
-    return self.relative_intensities[index]</code></pre>
+    if index in self.relative_intensities:
+        return self.relative_intensities[index]
+    else:
+        return 9.99999e9</code></pre>
 </details>
 </dd>
 <dt id="egse.filterwheel.eksma.fw8smc5_controller.Fw8Smc5Controller.home"><code class="name flex">
@@ -875,6 +893,30 @@ connected via USB. It uses a wrapped c library (ximc) to communicate with the de
         time.sleep(0.1)</code></pre>
 </details>
 </dd>
+<dt id="egse.filterwheel.eksma.fw8smc5_controller.Fw8Smc5Controller.set_position_wheel"><code class="name flex">
+<span>def <span class="ident">set_position_wheel</span></span>(<span>self, id, position)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Set the position of one of the wheels.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def set_position_wheel(self, id, position):
+    &#34;&#34;&#34; Set the position of one of the wheels. &#34;&#34;&#34;
+
+    assert 0 &lt;= position &lt; self.WHEEL_POSITIONS, f&#34;Filterwheel index out of range ({position})&#34;
+
+    position_steps = (position * self.POSITION_STEPS + self.home_offsets[id]) % self.ROTATION_STEPS
+    self.set_position_steps(id, position_steps)
+
+    logger.debug(f&#39;set wheel {id} to step position {position_steps}&#39;)
+
+    while(self.get_position_steps(id) != position_steps):
+        logger.info(f&#39;position = {self.get_position_steps(id)}&#39;)
+        time.sleep(1)</code></pre>
+</details>
+</dd>
 <dt id="egse.filterwheel.eksma.fw8smc5_controller.Fw8Smc5Controller.set_position_wheels"><code class="name flex">
 <span>def <span class="ident">set_position_wheels</span></span>(<span>self, position_a, position_b)</span>
 </code></dt>
@@ -886,8 +928,8 @@ connected via USB. It uses a wrapped c library (ximc) to communicate with the de
 </summary>
 <pre><code class="python">def set_position_wheels(self, position_a, position_b):
 
-    self._set_position_wheel(0, position_a)
-    self._set_position_wheel(1, position_b)</code></pre>
+    self.set_position_wheel(0, position_a)
+    self.set_position_wheel(1, position_b)</code></pre>
 </details>
 </dd>
 <dt id="egse.filterwheel.eksma.fw8smc5_controller.Fw8Smc5Controller.set_relative_intensity"><code class="name flex">
@@ -989,6 +1031,7 @@ connected via USB. It uses a wrapped c library (ximc) to communicate with the de
 <li><code><a title="egse.filterwheel.eksma.fw8smc5_controller.Fw8Smc5Controller.is_moving" href="#egse.filterwheel.eksma.fw8smc5_controller.Fw8Smc5Controller.is_moving">is_moving</a></code></li>
 <li><code><a title="egse.filterwheel.eksma.fw8smc5_controller.Fw8Smc5Controller.set_position_index" href="#egse.filterwheel.eksma.fw8smc5_controller.Fw8Smc5Controller.set_position_index">set_position_index</a></code></li>
 <li><code><a title="egse.filterwheel.eksma.fw8smc5_controller.Fw8Smc5Controller.set_position_steps" href="#egse.filterwheel.eksma.fw8smc5_controller.Fw8Smc5Controller.set_position_steps">set_position_steps</a></code></li>
+<li><code><a title="egse.filterwheel.eksma.fw8smc5_controller.Fw8Smc5Controller.set_position_wheel" href="#egse.filterwheel.eksma.fw8smc5_controller.Fw8Smc5Controller.set_position_wheel">set_position_wheel</a></code></li>
 <li><code><a title="egse.filterwheel.eksma.fw8smc5_controller.Fw8Smc5Controller.set_position_wheels" href="#egse.filterwheel.eksma.fw8smc5_controller.Fw8Smc5Controller.set_position_wheels">set_position_wheels</a></code></li>
 <li><code><a title="egse.filterwheel.eksma.fw8smc5_controller.Fw8Smc5Controller.set_relative_intensity" href="#egse.filterwheel.eksma.fw8smc5_controller.Fw8Smc5Controller.set_relative_intensity">set_relative_intensity</a></code></li>
 </ul>

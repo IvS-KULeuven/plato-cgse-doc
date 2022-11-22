@@ -34,11 +34,13 @@ import pyqtgraph as pg
 import numpy as np
 
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QAction, QFrame,
-                             QVBoxLayout, QHBoxLayout, QGroupBox, QLabel, QSpinBox, QToolButton, QRadioButton)
-from PyQt5.QtCore import Qt, QTimer
+                             QVBoxLayout, QHBoxLayout, QGroupBox, QLabel, QSpinBox, QToolButton, QRadioButton,
+                             QMessageBox)
+from PyQt5.QtCore import Qt, QTimer, QLockFile
 from PyQt5.QtGui import QIcon, QPixmap, QPalette, QFont
 from QLed import QLed
 
+from egse.resource import get_resource
 from egse.settings import Settings
 from egse.observer import Observer
 from egse.observer import Observable
@@ -515,48 +517,60 @@ def parse_arguments():
     args = parser.parse_args()
     return args
 
+
 def main():
+    lock_file = QLockFile(str(Path(&#34;~/ksc101_ui.app.lock&#34;).expanduser()))
 
     STYLES_LOCATION = find_file(&#34;styles.qss&#34;, in_dir=&#34;egse/gui&#34;)
 
     args = list(sys.argv)
     args[1:1] = [&#34;-stylesheet&#34;, str(STYLES_LOCATION)]
-
-    process_status = ProcessStatus()
-
-    timer_thread = threading.Thread(target=do_every, args=(10, process_status.update))
-    timer_thread.daemon = True
-    timer_thread.start()
-
-    start_http_server(GUI_SETTINGS.METRICS_PORT)
-
     app = QApplication(args)
+    app.setWindowIcon(QIcon(str(get_resource(&#34;:/icons/shutter.svg&#34;))))
 
-    args = parse_arguments()
+    if lock_file.tryLock(100):
+        process_status = ProcessStatus()
 
-    if args.profile:
-        Settings.set_profiling(True)
+        timer_thread = threading.Thread(target=do_every, args=(10, process_status.update))
+        timer_thread.daemon = True
+        timer_thread.start()
 
-    if args.type == &#34;proxy&#34;:
-        proxy = ShutterKSC101Proxy()
-        if not proxy.ping():
-            description = &#34;Could not connect to Shutter Control Server&#34;
-            info_text = (
-                    &#34;The GUI will start, but the connection button will show a disconnected state. &#34;
-                    &#34;Please check if the Control Server is running and start the server if needed. &#34;
-                    &#34;Otherwise, check if the correct HOSTNAME for the control server is set in the &#34;
-                    &#34;Settings.yaml &#34;
-                    &#34;configuration file.&#34;
-                )
+        start_http_server(GUI_SETTINGS.METRICS_PORT)
 
-            show_warning_message(description, info_text)
+        args = parse_arguments()
 
-    view = ShutterUIView()
-    model = ShutterUIModel(args.type)
-    controller = ShutterUIController(model, view)
+        if args.profile:
+            Settings.set_profiling(True)
 
-    view.show()
-    return app.exec_()
+        if args.type == &#34;proxy&#34;:
+            proxy = ShutterKSC101Proxy()
+            if not proxy.ping():
+                description = &#34;Could not connect to Shutter Control Server&#34;
+                info_text = (
+                        &#34;The GUI will start, but the connection button will show a disconnected state. &#34;
+                        &#34;Please check if the Control Server is running and start the server if needed. &#34;
+                        &#34;Otherwise, check if the correct HOSTNAME for the control server is set in the &#34;
+                        &#34;Settings.yaml &#34;
+                        &#34;configuration file.&#34;
+                    )
+
+                show_warning_message(description, info_text)
+
+        view = ShutterUIView()
+        model = ShutterUIModel(args.type)
+        controller = ShutterUIController(model, view)
+
+        view.show()
+        return app.exec_()
+    else:
+        error_message = QMessageBox()
+        error_message.setIcon(QMessageBox.Warning)
+        error_message.setWindowTitle(&#34;Error&#34;)
+        error_message.setText(&#34;The KSC101 GUI application is already running!&#34;)
+        error_message.setStandardButtons(QMessageBox.Ok)
+
+        return error_message.exec()
+
 
 if __name__ == &#34;__main__&#34;:
     sys.exit(main())</code></pre>
@@ -579,47 +593,57 @@ if __name__ == &#34;__main__&#34;:
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def main():
+    lock_file = QLockFile(str(Path(&#34;~/ksc101_ui.app.lock&#34;).expanduser()))
 
     STYLES_LOCATION = find_file(&#34;styles.qss&#34;, in_dir=&#34;egse/gui&#34;)
 
     args = list(sys.argv)
     args[1:1] = [&#34;-stylesheet&#34;, str(STYLES_LOCATION)]
-
-    process_status = ProcessStatus()
-
-    timer_thread = threading.Thread(target=do_every, args=(10, process_status.update))
-    timer_thread.daemon = True
-    timer_thread.start()
-
-    start_http_server(GUI_SETTINGS.METRICS_PORT)
-
     app = QApplication(args)
+    app.setWindowIcon(QIcon(str(get_resource(&#34;:/icons/shutter.svg&#34;))))
 
-    args = parse_arguments()
+    if lock_file.tryLock(100):
+        process_status = ProcessStatus()
 
-    if args.profile:
-        Settings.set_profiling(True)
+        timer_thread = threading.Thread(target=do_every, args=(10, process_status.update))
+        timer_thread.daemon = True
+        timer_thread.start()
 
-    if args.type == &#34;proxy&#34;:
-        proxy = ShutterKSC101Proxy()
-        if not proxy.ping():
-            description = &#34;Could not connect to Shutter Control Server&#34;
-            info_text = (
-                    &#34;The GUI will start, but the connection button will show a disconnected state. &#34;
-                    &#34;Please check if the Control Server is running and start the server if needed. &#34;
-                    &#34;Otherwise, check if the correct HOSTNAME for the control server is set in the &#34;
-                    &#34;Settings.yaml &#34;
-                    &#34;configuration file.&#34;
-                )
+        start_http_server(GUI_SETTINGS.METRICS_PORT)
 
-            show_warning_message(description, info_text)
+        args = parse_arguments()
 
-    view = ShutterUIView()
-    model = ShutterUIModel(args.type)
-    controller = ShutterUIController(model, view)
+        if args.profile:
+            Settings.set_profiling(True)
 
-    view.show()
-    return app.exec_()</code></pre>
+        if args.type == &#34;proxy&#34;:
+            proxy = ShutterKSC101Proxy()
+            if not proxy.ping():
+                description = &#34;Could not connect to Shutter Control Server&#34;
+                info_text = (
+                        &#34;The GUI will start, but the connection button will show a disconnected state. &#34;
+                        &#34;Please check if the Control Server is running and start the server if needed. &#34;
+                        &#34;Otherwise, check if the correct HOSTNAME for the control server is set in the &#34;
+                        &#34;Settings.yaml &#34;
+                        &#34;configuration file.&#34;
+                    )
+
+                show_warning_message(description, info_text)
+
+        view = ShutterUIView()
+        model = ShutterUIModel(args.type)
+        controller = ShutterUIController(model, view)
+
+        view.show()
+        return app.exec_()
+    else:
+        error_message = QMessageBox()
+        error_message.setIcon(QMessageBox.Warning)
+        error_message.setWindowTitle(&#34;Error&#34;)
+        error_message.setText(&#34;The KSC101 GUI application is already running!&#34;)
+        error_message.setStandardButtons(QMessageBox.Ok)
+
+        return error_message.exec()</code></pre>
 </details>
 </dd>
 <dt id="egse.shutter.thorlabs.ksc101_ui.parse_arguments"><code class="name flex">

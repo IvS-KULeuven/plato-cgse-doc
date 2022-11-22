@@ -52,6 +52,8 @@ the content is refreshed.
 &#34;&#34;&#34;
 import logging
 import multiprocessing
+from pathlib import Path
+
 import sys
 import warnings
 from collections import namedtuple
@@ -60,11 +62,11 @@ from enum import Enum
 multiprocessing.current_process().name = &#34;tcs_ui&#34;
 
 from PyQt5 import QtWidgets
-from PyQt5.QtCore import QTimer
+from PyQt5.QtCore import QTimer, QLockFile
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont
 from PyQt5.QtGui import QIcon
-from PyQt5.QtWidgets import QMainWindow
+from PyQt5.QtWidgets import QMainWindow, QMessageBox
 from PyQt5.QtWidgets import QScrollArea
 from PyQt5.QtWidgets import QSizePolicy
 from PyQt5.QtWidgets import QStatusBar
@@ -548,19 +550,31 @@ def main():
               &#34;start the TCS control server before launching this GUI.&#34;)
         sys.exit(1)
 
+    lock_file = QLockFile(str(Path(&#34;~/tcs_ui.app.lock&#34;).expanduser()))
+
     app_logo = get_resource(&#34;:/icons/logo-tcs.svg&#34;)
 
     app = QtWidgets.QApplication(sys.argv)
     app.setWindowIcon(QIcon(str(app_logo)))
 
-    view = TCSUIView()
-    model = TCSUIModel()
+    if lock_file.tryLock(100):
 
-    TCSUIController(model, view)
+        view = TCSUIView()
+        model = TCSUIModel()
 
-    view.show()
+        TCSUIController(model, view)
 
-    return app.exec()
+        view.show()
+
+        return app.exec()
+    else:
+        error_message = QMessageBox()
+        error_message.setIcon(QMessageBox.Warning)
+        error_message.setWindowTitle(&#34;Error&#34;)
+        error_message.setText(&#34;The TCS GUI application is already running!&#34;)
+        error_message.setStandardButtons(QMessageBox.Ok)
+
+        return error_message.exec()
 
 
 if __name__ == &#39;__main__&#39;:
@@ -590,19 +604,31 @@ if __name__ == &#39;__main__&#39;:
               &#34;start the TCS control server before launching this GUI.&#34;)
         sys.exit(1)
 
+    lock_file = QLockFile(str(Path(&#34;~/tcs_ui.app.lock&#34;).expanduser()))
+
     app_logo = get_resource(&#34;:/icons/logo-tcs.svg&#34;)
 
     app = QtWidgets.QApplication(sys.argv)
     app.setWindowIcon(QIcon(str(app_logo)))
 
-    view = TCSUIView()
-    model = TCSUIModel()
+    if lock_file.tryLock(100):
 
-    TCSUIController(model, view)
+        view = TCSUIView()
+        model = TCSUIModel()
 
-    view.show()
+        TCSUIController(model, view)
 
-    return app.exec()</code></pre>
+        view.show()
+
+        return app.exec()
+    else:
+        error_message = QMessageBox()
+        error_message.setIcon(QMessageBox.Warning)
+        error_message.setWindowTitle(&#34;Error&#34;)
+        error_message.setText(&#34;The TCS GUI application is already running!&#34;)
+        error_message.setStandardButtons(QMessageBox.Ok)
+
+        return error_message.exec()</code></pre>
 </details>
 </dd>
 </dl>

@@ -46,34 +46,6 @@ logger = logging.getLogger(__name__)
 
 COMMAND_SETTINGS = Settings.load(filename=&#39;beaglebone.yaml&#39;)
 
-FDIR_PREFIX = 700
-
-gauge_rmt_mv011_fb = Gauge(&#39;GSRON_VALVE_RMT_MV011&#39;, &#39;&#39;)
-gauge_rmt_mv021_fb = Gauge(&#39;GSRON_VALVE_RMT_MV021&#39;, &#39;&#39;)
-gauge_rmt_mv031_fb = Gauge(&#39;GSRON_VALVE_RMT_MV031&#39;, &#39;&#39;)
-gauge_rmt_mv041_fb = Gauge(&#39;GSRON_VALVE_RMT_MV041&#39;, &#39;&#39;)
-gauge_rmt_mv012_fb = Gauge(&#39;GSRON_VALVE_RMT_MV012&#39;, &#39;&#39;)
-gauge_rmt_mv022_fb = Gauge(&#39;GSRON_VALVE_RMT_MV022&#39;, &#39;&#39;)
-gauge_rmt_mv032_fb = Gauge(&#39;GSRON_VALVE_RMT_MV032&#39;, &#39;&#39;)
-gauge_rmt_mv042_fb = Gauge(&#39;GSRON_VALVE_RMT_MV042&#39;, &#39;&#39;)
-gauge_rmt_mv002_fb = Gauge(&#39;GSRON_VALVE_RMT_MV002&#39;, &#39;&#39;)
-gauge_rmt_mv001_fb = Gauge(&#39;GSRON_VALVE_RMT_MV001&#39;, &#39;&#39;)
-
-gauge_oc_mv011_fb = Gauge(&#39;GSRON_VALVE_OC_MV011&#39;, &#39;&#39;)
-gauge_oc_mv021_fb = Gauge(&#39;GSRON_VALVE_OC_MV021&#39;, &#39;&#39;)
-gauge_oc_mv031_fb = Gauge(&#39;GSRON_VALVE_OC_MV031&#39;, &#39;&#39;)
-gauge_oc_mv041_fb = Gauge(&#39;GSRON_VALVE_OC_MV041&#39;, &#39;&#39;)
-gauge_oc_mv012_fb = Gauge(&#39;GSRON_VALVE_OC_MV012&#39;, &#39;&#39;)
-gauge_oc_mv022_fb = Gauge(&#39;GSRON_VALVE_OC_MV022&#39;, &#39;&#39;)
-gauge_oc_mv032_fb = Gauge(&#39;GSRON_VALVE_OC_MV032&#39;, &#39;&#39;)
-gauge_oc_mv042_fb = Gauge(&#39;GSRON_VALVE_OC_MV042&#39;, &#39;&#39;)
-gauge_oc_mv002_fb = Gauge(&#39;GSRON_VALVE_OC_MV002&#39;, &#39;&#39;)
-
-gauge_open_mv001_fb = Gauge(&#39;GSRON_VALVE_OPEN_MV001&#39;, &#39;&#39;)
-gauge_close_mv001_fb = Gauge(&#39;GSRON_VALVE_CLOSE_MV001&#39;, &#39;&#39;)
-gauge_intrlck_door_fb = Gauge(&#39;GSRON_VALVE_INTERLOCK_DOOR&#39;, &#39;&#39;)
-
-
 class BeagleboneProtocol(CommandProtocol):
     def __init__(self, control_server:ControlServer):
         super().__init__()
@@ -87,6 +59,34 @@ class BeagleboneProtocol(CommandProtocol):
         self.load_commands(COMMAND_SETTINGS.Commands, BeagleboneCommand, BeagleboneInterface)
 
         self.build_device_method_lookup_table(self.beaglebone)
+        
+        self.gauge_rmt_mv011_fb = Gauge(&#39;GSRON_VALVE_RMT_MV011&#39;, &#39;&#39;)
+        self.gauge_rmt_mv021_fb = Gauge(&#39;GSRON_VALVE_RMT_MV012&#39;, &#39;&#39;)
+        self.gauge_rmt_mv031_fb = Gauge(&#39;GSRON_VALVE_RMT_MV013&#39;, &#39;&#39;)
+        self.gauge_rmt_mv041_fb = Gauge(&#39;GSRON_VALVE_RMT_MV014&#39;, &#39;&#39;)
+        self.gauge_rmt_mv012_fb = Gauge(&#39;GSRON_VALVE_RMT_MV021&#39;, &#39;&#39;)
+        self.gauge_rmt_mv022_fb = Gauge(&#39;GSRON_VALVE_RMT_MV022&#39;, &#39;&#39;)
+        self.gauge_rmt_mv032_fb = Gauge(&#39;GSRON_VALVE_RMT_MV023&#39;, &#39;&#39;)
+        self.gauge_rmt_mv042_fb = Gauge(&#39;GSRON_VALVE_RMT_MV024&#39;, &#39;&#39;)
+        self.gauge_rmt_mv002_fb = Gauge(&#39;GSRON_VALVE_RMT_MV002&#39;, &#39;&#39;)
+        self.gauge_rmt_mv001_fb = Gauge(&#39;GSRON_VALVE_RMT_MV001&#39;, &#39;&#39;)
+
+        self.gauge_oc_mv011_fb = Gauge(&#39;GSRON_VALVE_OC_MV011&#39;, &#39;&#39;)
+        self.gauge_oc_mv021_fb = Gauge(&#39;GSRON_VALVE_OC_MV012&#39;, &#39;&#39;)
+        self.gauge_oc_mv031_fb = Gauge(&#39;GSRON_VALVE_OC_MV013&#39;, &#39;&#39;)
+        self.gauge_oc_mv041_fb = Gauge(&#39;GSRON_VALVE_OC_MV014&#39;, &#39;&#39;)
+        self.gauge_oc_mv012_fb = Gauge(&#39;GSRON_VALVE_OC_MV021&#39;, &#39;&#39;)
+        self.gauge_oc_mv022_fb = Gauge(&#39;GSRON_VALVE_OC_MV022&#39;, &#39;&#39;)
+        self.gauge_oc_mv032_fb = Gauge(&#39;GSRON_VALVE_OC_MV023&#39;, &#39;&#39;)
+        self.gauge_oc_mv042_fb = Gauge(&#39;GSRON_VALVE_OC_MV024&#39;, &#39;&#39;)
+        self.gauge_oc_mv002_fb = Gauge(&#39;GSRON_VALVE_OC_MV002&#39;, &#39;&#39;)
+
+        self.gauge_open_mv001_fb = Gauge(&#39;GSRON_VALVE_OPEN_MV001&#39;, &#39;&#39;)
+        self.gauge_close_mv001_fb = Gauge(&#39;GSRON_VALVE_CLOSE_MV001&#39;, &#39;&#39;)
+        self.gauge_intrlck_door_fb = Gauge(&#39;GSRON_VALVE_INTERLOCK_DOOR&#39;, &#39;&#39;)
+        
+        self.cache = {&#39;feedback&#39; : {},
+                      &#39;remote&#39;   : {}}
 
 
     def get_bind_address(self):
@@ -95,102 +95,128 @@ class BeagleboneProtocol(CommandProtocol):
 
     def get_status(self):
         status_info = super().get_status()
-        remote = {
-            f&#39;GSRON_VALVE_RMT_MV011&#39;: self.beaglebone.get_valve(&#39;LN2_SHROUD_RMT&#39;),
-            f&#39;GSRON_VALVE_RMT_MV021&#39;: self.beaglebone.get_valve(&#39;LN2_TEB-FEE_RMT&#39;),
-            f&#39;GSRON_VALVE_RMT_MV031&#39;: self.beaglebone.get_valve(&#39;LN2_TEB-TOU_RMT&#39;),
-            f&#39;GSRON_VALVE_RMT_MV041&#39;: self.beaglebone.get_valve(&#39;LN2_TRAP_RMT&#39;),
-            f&#39;GSRON_VALVE_RMT_MV012&#39;: self.beaglebone.get_valve(&#39;N2_SHROUD_RMT&#39;),
-            f&#39;GSRON_VALVE_RMT_MV022&#39;: self.beaglebone.get_valve(&#39;N2_TEB-FEE_RMT&#39;),
-            f&#39;GSRON_VALVE_RMT_MV032&#39;: self.beaglebone.get_valve(&#39;N2_TEB-TOU_RMT&#39;),
-            f&#39;GSRON_VALVE_RMT_MV042&#39;: self.beaglebone.get_valve(&#39;N2_TRAP_RMT&#39;),
-            f&#39;GSRON_VALVE_RMT_MV002&#39;: self.beaglebone.get_valve(&#39;VENT_VALVE_RMT&#39;),
-            f&#39;GSRON_VALVE_RMT_MV001&#39;: self.beaglebone.get_valve(&#39;GATE_VALVE_RMT&#39;)
-        }
-
-        feedback = {
-            f&#39;GSRON_VALVE_OC_MV011&#39;: self.beaglebone.get_valve(&#39;LN2_SHROUD_FB&#39;),
-            f&#39;GSRON_VALVE_OC_MV021&#39;: self.beaglebone.get_valve(&#39;LN2_TEB-FEE_FB&#39;),
-            f&#39;GSRON_VALVE_OC_MV031&#39;: self.beaglebone.get_valve(&#39;LN2_TEB-TOU_FB&#39;),
-            f&#39;GSRON_VALVE_OC_MV041&#39;: self.beaglebone.get_valve(&#39;LN2_TRAP_FB&#39;),
-            f&#39;GSRON_VALVE_OC_MV012&#39;: self.beaglebone.get_valve(&#39;N2_SHROUD_FB&#39;),
-            f&#39;GSRON_VALVE_OC_MV022&#39;: self.beaglebone.get_valve(&#39;N2_TEB-FEE_FB&#39;),
-            f&#39;GSRON_VALVE_OC_MV032&#39;: self.beaglebone.get_valve(&#39;N2_TEB-TOU_FB&#39;),
-            f&#39;GSRON_VALVE_OC_MV042&#39;: self.beaglebone.get_valve(&#39;N2_TRAP_FB&#39;),
-            f&#39;GSRON_VALVE_OC_MV002&#39;: self.beaglebone.get_valve(&#39;VENT_VALVE_FB&#39;),
-            f&#39;GSRON_VALVE_OPEN_MV001&#39;: self.beaglebone.get_valve(&#39;GATE_OPEN_FB&#39;),
-            f&#39;GSRON_VALVE_CLOSE_MV001&#39;: self.beaglebone.get_valve(&#39;GATE_CLOSE_FB&#39;),
-            f&#39;GSRON_VALVE_INTERLOCK_DOOR&#39;: self.beaglebone.get_valve(&#39;INTRLCK_DOOR_FB&#39;)
-        }
-
-        status_info[&#39;Remote&#39;]   = remote
-        status_info[&#39;Feedback&#39;] = feedback
-
-        return status_info
-
-
-    def get_housekeeping(self) -&gt; dict:
-        hk_dict = dict()
         try:
-            hk_dict = {
-                &#39;timestamp&#39;: format_datetime(),
+            remote = {
                 f&#39;GSRON_VALVE_RMT_MV011&#39;: self.beaglebone.get_valve(&#39;LN2_SHROUD_RMT&#39;),
-                f&#39;GSRON_VALVE_RMT_MV021&#39;: self.beaglebone.get_valve(&#39;LN2_TEB-FEE_RMT&#39;),
-                f&#39;GSRON_VALVE_RMT_MV031&#39;: self.beaglebone.get_valve(&#39;LN2_TEB-TOU_RMT&#39;),
-                f&#39;GSRON_VALVE_RMT_MV041&#39;: self.beaglebone.get_valve(&#39;LN2_TRAP_RMT&#39;),
-                f&#39;GSRON_VALVE_RMT_MV012&#39;: self.beaglebone.get_valve(&#39;N2_SHROUD_RMT&#39;),
+                f&#39;GSRON_VALVE_RMT_MV012&#39;: self.beaglebone.get_valve(&#39;LN2_TEB-FEE_RMT&#39;),
+                f&#39;GSRON_VALVE_RMT_MV013&#39;: self.beaglebone.get_valve(&#39;LN2_TEB-TOU_RMT&#39;),
+                f&#39;GSRON_VALVE_RMT_MV014&#39;: self.beaglebone.get_valve(&#39;LN2_TRAP_RMT&#39;),
+                f&#39;GSRON_VALVE_RMT_MV021&#39;: self.beaglebone.get_valve(&#39;N2_SHROUD_RMT&#39;),
                 f&#39;GSRON_VALVE_RMT_MV022&#39;: self.beaglebone.get_valve(&#39;N2_TEB-FEE_RMT&#39;),
-                f&#39;GSRON_VALVE_RMT_MV032&#39;: self.beaglebone.get_valve(&#39;N2_TEB-TOU_RMT&#39;),
-                f&#39;GSRON_VALVE_RMT_MV042&#39;: self.beaglebone.get_valve(&#39;N2_TRAP_RMT&#39;),
+                f&#39;GSRON_VALVE_RMT_MV023&#39;: self.beaglebone.get_valve(&#39;N2_TEB-TOU_RMT&#39;),
+                f&#39;GSRON_VALVE_RMT_MV024&#39;: self.beaglebone.get_valve(&#39;N2_TRAP_RMT&#39;),
                 f&#39;GSRON_VALVE_RMT_MV002&#39;: self.beaglebone.get_valve(&#39;VENT_VALVE_RMT&#39;),
-                f&#39;GSRON_VALVE_RMT_MV001&#39;: self.beaglebone.get_valve(&#39;GATE_VALVE_RMT&#39;),
+                f&#39;GSRON_VALVE_RMT_MV001&#39;: self.beaglebone.get_valve(&#39;GATE_VALVE_RMT&#39;)
+            }
+
+            feedback = {
                 f&#39;GSRON_VALVE_OC_MV011&#39;: self.beaglebone.get_valve(&#39;LN2_SHROUD_FB&#39;),
-                f&#39;GSRON_VALVE_OC_MV021&#39;: self.beaglebone.get_valve(&#39;LN2_TEB-FEE_FB&#39;),
-                f&#39;GSRON_VALVE_OC_MV031&#39;: self.beaglebone.get_valve(&#39;LN2_TEB-TOU_FB&#39;),
-                f&#39;GSRON_VALVE_OC_MV041&#39;: self.beaglebone.get_valve(&#39;LN2_TRAP_FB&#39;),
-                f&#39;GSRON_VALVE_OC_MV012&#39;: self.beaglebone.get_valve(&#39;N2_SHROUD_FB&#39;),
+                f&#39;GSRON_VALVE_OC_MV012&#39;: self.beaglebone.get_valve(&#39;LN2_TEB-FEE_FB&#39;),
+                f&#39;GSRON_VALVE_OC_MV013&#39;: self.beaglebone.get_valve(&#39;LN2_TEB-TOU_FB&#39;),
+                f&#39;GSRON_VALVE_OC_MV014&#39;: self.beaglebone.get_valve(&#39;LN2_TRAP_FB&#39;),
+                f&#39;GSRON_VALVE_OC_MV021&#39;: self.beaglebone.get_valve(&#39;N2_SHROUD_FB&#39;),
                 f&#39;GSRON_VALVE_OC_MV022&#39;: self.beaglebone.get_valve(&#39;N2_TEB-FEE_FB&#39;),
-                f&#39;GSRON_VALVE_OC_MV032&#39;: self.beaglebone.get_valve(&#39;N2_TEB-TOU_FB&#39;),
-                f&#39;GSRON_VALVE_OC_MV042&#39;: self.beaglebone.get_valve(&#39;N2_TRAP_FB&#39;),
+                f&#39;GSRON_VALVE_OC_MV023&#39;: self.beaglebone.get_valve(&#39;N2_TEB-TOU_FB&#39;),
+                f&#39;GSRON_VALVE_OC_MV024&#39;: self.beaglebone.get_valve(&#39;N2_TRAP_FB&#39;),
                 f&#39;GSRON_VALVE_OC_MV002&#39;: self.beaglebone.get_valve(&#39;VENT_VALVE_FB&#39;),
                 f&#39;GSRON_VALVE_OPEN_MV001&#39;: self.beaglebone.get_valve(&#39;GATE_OPEN_FB&#39;),
                 f&#39;GSRON_VALVE_CLOSE_MV001&#39;: self.beaglebone.get_valve(&#39;GATE_CLOSE_FB&#39;),
                 f&#39;GSRON_VALVE_INTERLOCK_DOOR&#39;: self.beaglebone.get_valve(&#39;INTRLCK_DOOR_FB&#39;)
             }
+            
+            
+            # Remember state, even in manual mode
+            if feedback != self.cache[&#39;feedback&#39;]:
+                for key, value in feedback.items():
+                    code = key.split(&#39;_&#39;)[-1]
+
+                    if &#39;DOOR&#39; in key:
+                        continue
+                    elif &#39;MV001&#39; in key:
+                        if not remote[f&#39;GSRON_VALVE_RMT_{code}&#39;]:
+                            if &#39;OPEN&#39; in key:
+                                if value:
+                                    self.beaglebone.set_valve(code, False)
+                                else:
+                                    self.beaglebone.set_valve(code, True)
+                            if &#39;CLOSE&#39; in key:
+                                if value:
+                                    self.beaglebone.set_valve(code, True)
+                                else:
+                                    self.beaglebone.set_valve(code, False)
+                    else:
+                        if not remote[f&#39;GSRON_VALVE_RMT_{code}&#39;]:
+                            self.beaglebone.set_valve(code, value)
+                        
+            self.cache[&#39;feedback&#39;] = feedback
+            self.cache[&#39;remote&#39;]   = remote
+            
+            status_info[&#39;Remote&#39;]   = remote
+            status_info[&#39;Feedback&#39;] = feedback
+
+        except Exception as exc:
+            logger.info(&#34;Status omitted&#34;)
+            raise exc 
+        return status_info
+
+
+    def get_housekeeping(self) -&gt; dict:
+        hk_dict = {&#39;timestamp&#39;: format_datetime()}
+        try:
+            hk_dict = {
+                &#39;timestamp&#39;: format_datetime(),
+                f&#39;GSRON_VALVE_RMT_MV011&#39;     : self.cache[&#39;remote&#39;][&#39;GSRON_VALVE_RMT_MV011&#39;],
+                f&#39;GSRON_VALVE_RMT_MV012&#39;     : self.cache[&#39;remote&#39;][&#39;GSRON_VALVE_RMT_MV012&#39;],
+                f&#39;GSRON_VALVE_RMT_MV013&#39;     : self.cache[&#39;remote&#39;][&#39;GSRON_VALVE_RMT_MV013&#39;],
+                f&#39;GSRON_VALVE_RMT_MV014&#39;     : self.cache[&#39;remote&#39;][&#39;GSRON_VALVE_RMT_MV014&#39;],
+                f&#39;GSRON_VALVE_RMT_MV021&#39;     : self.cache[&#39;remote&#39;][&#39;GSRON_VALVE_RMT_MV021&#39;],
+                f&#39;GSRON_VALVE_RMT_MV022&#39;     : self.cache[&#39;remote&#39;][&#39;GSRON_VALVE_RMT_MV022&#39;],
+                f&#39;GSRON_VALVE_RMT_MV023&#39;     : self.cache[&#39;remote&#39;][&#39;GSRON_VALVE_RMT_MV023&#39;],
+                f&#39;GSRON_VALVE_RMT_MV024&#39;     : self.cache[&#39;remote&#39;][&#39;GSRON_VALVE_RMT_MV024&#39;],
+                f&#39;GSRON_VALVE_RMT_MV002&#39;     : self.cache[&#39;remote&#39;][&#39;GSRON_VALVE_RMT_MV002&#39;],
+                f&#39;GSRON_VALVE_RMT_MV001&#39;     : self.cache[&#39;remote&#39;][&#39;GSRON_VALVE_RMT_MV001&#39;],
+                f&#39;GSRON_VALVE_OC_MV011&#39;      : self.cache[&#39;feedback&#39;][&#39;GSRON_VALVE_OC_MV011&#39;],
+                f&#39;GSRON_VALVE_OC_MV012&#39;      : self.cache[&#39;feedback&#39;][&#39;GSRON_VALVE_OC_MV012&#39;],
+                f&#39;GSRON_VALVE_OC_MV013&#39;      : self.cache[&#39;feedback&#39;][&#39;GSRON_VALVE_OC_MV013&#39;],
+                f&#39;GSRON_VALVE_OC_MV014&#39;      : self.cache[&#39;feedback&#39;][&#39;GSRON_VALVE_OC_MV014&#39;],
+                f&#39;GSRON_VALVE_OC_MV021&#39;      : self.cache[&#39;feedback&#39;][&#39;GSRON_VALVE_OC_MV021&#39;],
+                f&#39;GSRON_VALVE_OC_MV022&#39;      : self.cache[&#39;feedback&#39;][&#39;GSRON_VALVE_OC_MV022&#39;],
+                f&#39;GSRON_VALVE_OC_MV023&#39;      : self.cache[&#39;feedback&#39;][&#39;GSRON_VALVE_OC_MV023&#39;],
+                f&#39;GSRON_VALVE_OC_MV024&#39;      : self.cache[&#39;feedback&#39;][&#39;GSRON_VALVE_OC_MV024&#39;],
+                f&#39;GSRON_VALVE_OC_MV002&#39;      : self.cache[&#39;feedback&#39;][&#39;GSRON_VALVE_OC_MV002&#39;],
+                f&#39;GSRON_VALVE_OPEN_MV001&#39;    : self.cache[&#39;feedback&#39;][&#39;GSRON_VALVE_OPEN_MV001&#39;],
+                f&#39;GSRON_VALVE_CLOSE_MV001&#39;   : self.cache[&#39;feedback&#39;][&#39;GSRON_VALVE_CLOSE_MV001&#39;],
+                f&#39;GSRON_VALVE_INTERLOCK_DOOR&#39;: self.cache[&#39;feedback&#39;][&#39;GSRON_VALVE_INTERLOCK_DOOR&#39;]
+            }
         except Exception as exc:
             logger.warning(f&#39;failed to get HK ({exc})&#39;)
 
-            # with FdirManagerProxy() as fdir:
-            #     fdir_code = FDIR_PREFIX + 1
-            #     fdir.signal_fdir(fdir_code)
-            #     logger.warning(f&#39;asserted fdir signal: {fdir_code}&#39;)
-
             return hk_dict
 
-        gauge_rmt_mv011_fb.set(hk_dict[f&#39;GSRON_VALVE_RMT_MV011&#39;])
-        gauge_rmt_mv021_fb.set(hk_dict[f&#39;GSRON_VALVE_RMT_MV021&#39;])
-        gauge_rmt_mv031_fb.set(hk_dict[f&#39;GSRON_VALVE_RMT_MV031&#39;])
-        gauge_rmt_mv041_fb.set(hk_dict[f&#39;GSRON_VALVE_RMT_MV041&#39;])
-        gauge_rmt_mv012_fb.set(hk_dict[f&#39;GSRON_VALVE_RMT_MV012&#39;])
-        gauge_rmt_mv022_fb.set(hk_dict[f&#39;GSRON_VALVE_RMT_MV022&#39;])
-        gauge_rmt_mv032_fb.set(hk_dict[f&#39;GSRON_VALVE_RMT_MV032&#39;])
-        gauge_rmt_mv042_fb.set(hk_dict[f&#39;GSRON_VALVE_RMT_MV042&#39;])
-        gauge_rmt_mv002_fb.set(hk_dict[f&#39;GSRON_VALVE_RMT_MV002&#39;])
-        gauge_rmt_mv001_fb.set(hk_dict[f&#39;GSRON_VALVE_RMT_MV001&#39;])
+        self.gauge_rmt_mv011_fb.set(hk_dict[f&#39;GSRON_VALVE_RMT_MV011&#39;])
+        self.gauge_rmt_mv021_fb.set(hk_dict[f&#39;GSRON_VALVE_RMT_MV012&#39;])
+        self.gauge_rmt_mv031_fb.set(hk_dict[f&#39;GSRON_VALVE_RMT_MV013&#39;])
+        self.gauge_rmt_mv041_fb.set(hk_dict[f&#39;GSRON_VALVE_RMT_MV014&#39;])
+        self.gauge_rmt_mv012_fb.set(hk_dict[f&#39;GSRON_VALVE_RMT_MV021&#39;])
+        self.gauge_rmt_mv022_fb.set(hk_dict[f&#39;GSRON_VALVE_RMT_MV022&#39;])
+        self.gauge_rmt_mv032_fb.set(hk_dict[f&#39;GSRON_VALVE_RMT_MV023&#39;])
+        self.gauge_rmt_mv042_fb.set(hk_dict[f&#39;GSRON_VALVE_RMT_MV024&#39;])
+        self.gauge_rmt_mv002_fb.set(hk_dict[f&#39;GSRON_VALVE_RMT_MV002&#39;])
+        self.gauge_rmt_mv001_fb.set(hk_dict[f&#39;GSRON_VALVE_RMT_MV001&#39;])
 
-        gauge_oc_mv011_fb.set(hk_dict[f&#39;GSRON_VALVE_OC_MV011&#39;])
-        gauge_oc_mv021_fb.set(hk_dict[f&#39;GSRON_VALVE_OC_MV021&#39;])
-        gauge_oc_mv031_fb.set(hk_dict[f&#39;GSRON_VALVE_OC_MV031&#39;])
-        gauge_oc_mv041_fb.set(hk_dict[f&#39;GSRON_VALVE_OC_MV041&#39;])
-        gauge_oc_mv012_fb.set(hk_dict[f&#39;GSRON_VALVE_OC_MV012&#39;])
-        gauge_oc_mv022_fb.set(hk_dict[f&#39;GSRON_VALVE_OC_MV022&#39;])
-        gauge_oc_mv032_fb.set(hk_dict[f&#39;GSRON_VALVE_OC_MV032&#39;])
-        gauge_oc_mv042_fb.set(hk_dict[f&#39;GSRON_VALVE_OC_MV042&#39;])
-        gauge_oc_mv002_fb.set(hk_dict[f&#39;GSRON_VALVE_OC_MV002&#39;])
+        self.gauge_oc_mv011_fb.set(hk_dict[f&#39;GSRON_VALVE_OC_MV011&#39;])
+        self.gauge_oc_mv021_fb.set(hk_dict[f&#39;GSRON_VALVE_OC_MV012&#39;])
+        self.gauge_oc_mv031_fb.set(hk_dict[f&#39;GSRON_VALVE_OC_MV013&#39;])
+        self.gauge_oc_mv041_fb.set(hk_dict[f&#39;GSRON_VALVE_OC_MV014&#39;])
+        self.gauge_oc_mv012_fb.set(hk_dict[f&#39;GSRON_VALVE_OC_MV012&#39;])
+        self.gauge_oc_mv022_fb.set(hk_dict[f&#39;GSRON_VALVE_OC_MV022&#39;])
+        self.gauge_oc_mv032_fb.set(hk_dict[f&#39;GSRON_VALVE_OC_MV023&#39;])
+        self.gauge_oc_mv042_fb.set(hk_dict[f&#39;GSRON_VALVE_OC_MV024&#39;])
+        self.gauge_oc_mv002_fb.set(hk_dict[f&#39;GSRON_VALVE_OC_MV002&#39;])
 
-        gauge_open_mv001_fb.set(hk_dict[f&#39;GSRON_VALVE_OPEN_MV001&#39;])
-        gauge_close_mv001_fb.set(hk_dict[f&#39;GSRON_VALVE_CLOSE_MV001&#39;])
-        gauge_intrlck_door_fb.set(hk_dict[f&#39;GSRON_VALVE_INTERLOCK_DOOR&#39;])
+        self.gauge_open_mv001_fb.set(hk_dict[f&#39;GSRON_VALVE_OPEN_MV001&#39;])
+        self.gauge_close_mv001_fb.set(hk_dict[f&#39;GSRON_VALVE_CLOSE_MV001&#39;])
+        self.gauge_intrlck_door_fb.set(hk_dict[f&#39;GSRON_VALVE_INTERLOCK_DOOR&#39;])
 
         return hk_dict</code></pre>
 </details>
@@ -234,6 +260,34 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
         self.load_commands(COMMAND_SETTINGS.Commands, BeagleboneCommand, BeagleboneInterface)
 
         self.build_device_method_lookup_table(self.beaglebone)
+        
+        self.gauge_rmt_mv011_fb = Gauge(&#39;GSRON_VALVE_RMT_MV011&#39;, &#39;&#39;)
+        self.gauge_rmt_mv021_fb = Gauge(&#39;GSRON_VALVE_RMT_MV012&#39;, &#39;&#39;)
+        self.gauge_rmt_mv031_fb = Gauge(&#39;GSRON_VALVE_RMT_MV013&#39;, &#39;&#39;)
+        self.gauge_rmt_mv041_fb = Gauge(&#39;GSRON_VALVE_RMT_MV014&#39;, &#39;&#39;)
+        self.gauge_rmt_mv012_fb = Gauge(&#39;GSRON_VALVE_RMT_MV021&#39;, &#39;&#39;)
+        self.gauge_rmt_mv022_fb = Gauge(&#39;GSRON_VALVE_RMT_MV022&#39;, &#39;&#39;)
+        self.gauge_rmt_mv032_fb = Gauge(&#39;GSRON_VALVE_RMT_MV023&#39;, &#39;&#39;)
+        self.gauge_rmt_mv042_fb = Gauge(&#39;GSRON_VALVE_RMT_MV024&#39;, &#39;&#39;)
+        self.gauge_rmt_mv002_fb = Gauge(&#39;GSRON_VALVE_RMT_MV002&#39;, &#39;&#39;)
+        self.gauge_rmt_mv001_fb = Gauge(&#39;GSRON_VALVE_RMT_MV001&#39;, &#39;&#39;)
+
+        self.gauge_oc_mv011_fb = Gauge(&#39;GSRON_VALVE_OC_MV011&#39;, &#39;&#39;)
+        self.gauge_oc_mv021_fb = Gauge(&#39;GSRON_VALVE_OC_MV012&#39;, &#39;&#39;)
+        self.gauge_oc_mv031_fb = Gauge(&#39;GSRON_VALVE_OC_MV013&#39;, &#39;&#39;)
+        self.gauge_oc_mv041_fb = Gauge(&#39;GSRON_VALVE_OC_MV014&#39;, &#39;&#39;)
+        self.gauge_oc_mv012_fb = Gauge(&#39;GSRON_VALVE_OC_MV021&#39;, &#39;&#39;)
+        self.gauge_oc_mv022_fb = Gauge(&#39;GSRON_VALVE_OC_MV022&#39;, &#39;&#39;)
+        self.gauge_oc_mv032_fb = Gauge(&#39;GSRON_VALVE_OC_MV023&#39;, &#39;&#39;)
+        self.gauge_oc_mv042_fb = Gauge(&#39;GSRON_VALVE_OC_MV024&#39;, &#39;&#39;)
+        self.gauge_oc_mv002_fb = Gauge(&#39;GSRON_VALVE_OC_MV002&#39;, &#39;&#39;)
+
+        self.gauge_open_mv001_fb = Gauge(&#39;GSRON_VALVE_OPEN_MV001&#39;, &#39;&#39;)
+        self.gauge_close_mv001_fb = Gauge(&#39;GSRON_VALVE_CLOSE_MV001&#39;, &#39;&#39;)
+        self.gauge_intrlck_door_fb = Gauge(&#39;GSRON_VALVE_INTERLOCK_DOOR&#39;, &#39;&#39;)
+        
+        self.cache = {&#39;feedback&#39; : {},
+                      &#39;remote&#39;   : {}}
 
 
     def get_bind_address(self):
@@ -242,102 +296,128 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
 
     def get_status(self):
         status_info = super().get_status()
-        remote = {
-            f&#39;GSRON_VALVE_RMT_MV011&#39;: self.beaglebone.get_valve(&#39;LN2_SHROUD_RMT&#39;),
-            f&#39;GSRON_VALVE_RMT_MV021&#39;: self.beaglebone.get_valve(&#39;LN2_TEB-FEE_RMT&#39;),
-            f&#39;GSRON_VALVE_RMT_MV031&#39;: self.beaglebone.get_valve(&#39;LN2_TEB-TOU_RMT&#39;),
-            f&#39;GSRON_VALVE_RMT_MV041&#39;: self.beaglebone.get_valve(&#39;LN2_TRAP_RMT&#39;),
-            f&#39;GSRON_VALVE_RMT_MV012&#39;: self.beaglebone.get_valve(&#39;N2_SHROUD_RMT&#39;),
-            f&#39;GSRON_VALVE_RMT_MV022&#39;: self.beaglebone.get_valve(&#39;N2_TEB-FEE_RMT&#39;),
-            f&#39;GSRON_VALVE_RMT_MV032&#39;: self.beaglebone.get_valve(&#39;N2_TEB-TOU_RMT&#39;),
-            f&#39;GSRON_VALVE_RMT_MV042&#39;: self.beaglebone.get_valve(&#39;N2_TRAP_RMT&#39;),
-            f&#39;GSRON_VALVE_RMT_MV002&#39;: self.beaglebone.get_valve(&#39;VENT_VALVE_RMT&#39;),
-            f&#39;GSRON_VALVE_RMT_MV001&#39;: self.beaglebone.get_valve(&#39;GATE_VALVE_RMT&#39;)
-        }
-
-        feedback = {
-            f&#39;GSRON_VALVE_OC_MV011&#39;: self.beaglebone.get_valve(&#39;LN2_SHROUD_FB&#39;),
-            f&#39;GSRON_VALVE_OC_MV021&#39;: self.beaglebone.get_valve(&#39;LN2_TEB-FEE_FB&#39;),
-            f&#39;GSRON_VALVE_OC_MV031&#39;: self.beaglebone.get_valve(&#39;LN2_TEB-TOU_FB&#39;),
-            f&#39;GSRON_VALVE_OC_MV041&#39;: self.beaglebone.get_valve(&#39;LN2_TRAP_FB&#39;),
-            f&#39;GSRON_VALVE_OC_MV012&#39;: self.beaglebone.get_valve(&#39;N2_SHROUD_FB&#39;),
-            f&#39;GSRON_VALVE_OC_MV022&#39;: self.beaglebone.get_valve(&#39;N2_TEB-FEE_FB&#39;),
-            f&#39;GSRON_VALVE_OC_MV032&#39;: self.beaglebone.get_valve(&#39;N2_TEB-TOU_FB&#39;),
-            f&#39;GSRON_VALVE_OC_MV042&#39;: self.beaglebone.get_valve(&#39;N2_TRAP_FB&#39;),
-            f&#39;GSRON_VALVE_OC_MV002&#39;: self.beaglebone.get_valve(&#39;VENT_VALVE_FB&#39;),
-            f&#39;GSRON_VALVE_OPEN_MV001&#39;: self.beaglebone.get_valve(&#39;GATE_OPEN_FB&#39;),
-            f&#39;GSRON_VALVE_CLOSE_MV001&#39;: self.beaglebone.get_valve(&#39;GATE_CLOSE_FB&#39;),
-            f&#39;GSRON_VALVE_INTERLOCK_DOOR&#39;: self.beaglebone.get_valve(&#39;INTRLCK_DOOR_FB&#39;)
-        }
-
-        status_info[&#39;Remote&#39;]   = remote
-        status_info[&#39;Feedback&#39;] = feedback
-
-        return status_info
-
-
-    def get_housekeeping(self) -&gt; dict:
-        hk_dict = dict()
         try:
-            hk_dict = {
-                &#39;timestamp&#39;: format_datetime(),
+            remote = {
                 f&#39;GSRON_VALVE_RMT_MV011&#39;: self.beaglebone.get_valve(&#39;LN2_SHROUD_RMT&#39;),
-                f&#39;GSRON_VALVE_RMT_MV021&#39;: self.beaglebone.get_valve(&#39;LN2_TEB-FEE_RMT&#39;),
-                f&#39;GSRON_VALVE_RMT_MV031&#39;: self.beaglebone.get_valve(&#39;LN2_TEB-TOU_RMT&#39;),
-                f&#39;GSRON_VALVE_RMT_MV041&#39;: self.beaglebone.get_valve(&#39;LN2_TRAP_RMT&#39;),
-                f&#39;GSRON_VALVE_RMT_MV012&#39;: self.beaglebone.get_valve(&#39;N2_SHROUD_RMT&#39;),
+                f&#39;GSRON_VALVE_RMT_MV012&#39;: self.beaglebone.get_valve(&#39;LN2_TEB-FEE_RMT&#39;),
+                f&#39;GSRON_VALVE_RMT_MV013&#39;: self.beaglebone.get_valve(&#39;LN2_TEB-TOU_RMT&#39;),
+                f&#39;GSRON_VALVE_RMT_MV014&#39;: self.beaglebone.get_valve(&#39;LN2_TRAP_RMT&#39;),
+                f&#39;GSRON_VALVE_RMT_MV021&#39;: self.beaglebone.get_valve(&#39;N2_SHROUD_RMT&#39;),
                 f&#39;GSRON_VALVE_RMT_MV022&#39;: self.beaglebone.get_valve(&#39;N2_TEB-FEE_RMT&#39;),
-                f&#39;GSRON_VALVE_RMT_MV032&#39;: self.beaglebone.get_valve(&#39;N2_TEB-TOU_RMT&#39;),
-                f&#39;GSRON_VALVE_RMT_MV042&#39;: self.beaglebone.get_valve(&#39;N2_TRAP_RMT&#39;),
+                f&#39;GSRON_VALVE_RMT_MV023&#39;: self.beaglebone.get_valve(&#39;N2_TEB-TOU_RMT&#39;),
+                f&#39;GSRON_VALVE_RMT_MV024&#39;: self.beaglebone.get_valve(&#39;N2_TRAP_RMT&#39;),
                 f&#39;GSRON_VALVE_RMT_MV002&#39;: self.beaglebone.get_valve(&#39;VENT_VALVE_RMT&#39;),
-                f&#39;GSRON_VALVE_RMT_MV001&#39;: self.beaglebone.get_valve(&#39;GATE_VALVE_RMT&#39;),
+                f&#39;GSRON_VALVE_RMT_MV001&#39;: self.beaglebone.get_valve(&#39;GATE_VALVE_RMT&#39;)
+            }
+
+            feedback = {
                 f&#39;GSRON_VALVE_OC_MV011&#39;: self.beaglebone.get_valve(&#39;LN2_SHROUD_FB&#39;),
-                f&#39;GSRON_VALVE_OC_MV021&#39;: self.beaglebone.get_valve(&#39;LN2_TEB-FEE_FB&#39;),
-                f&#39;GSRON_VALVE_OC_MV031&#39;: self.beaglebone.get_valve(&#39;LN2_TEB-TOU_FB&#39;),
-                f&#39;GSRON_VALVE_OC_MV041&#39;: self.beaglebone.get_valve(&#39;LN2_TRAP_FB&#39;),
-                f&#39;GSRON_VALVE_OC_MV012&#39;: self.beaglebone.get_valve(&#39;N2_SHROUD_FB&#39;),
+                f&#39;GSRON_VALVE_OC_MV012&#39;: self.beaglebone.get_valve(&#39;LN2_TEB-FEE_FB&#39;),
+                f&#39;GSRON_VALVE_OC_MV013&#39;: self.beaglebone.get_valve(&#39;LN2_TEB-TOU_FB&#39;),
+                f&#39;GSRON_VALVE_OC_MV014&#39;: self.beaglebone.get_valve(&#39;LN2_TRAP_FB&#39;),
+                f&#39;GSRON_VALVE_OC_MV021&#39;: self.beaglebone.get_valve(&#39;N2_SHROUD_FB&#39;),
                 f&#39;GSRON_VALVE_OC_MV022&#39;: self.beaglebone.get_valve(&#39;N2_TEB-FEE_FB&#39;),
-                f&#39;GSRON_VALVE_OC_MV032&#39;: self.beaglebone.get_valve(&#39;N2_TEB-TOU_FB&#39;),
-                f&#39;GSRON_VALVE_OC_MV042&#39;: self.beaglebone.get_valve(&#39;N2_TRAP_FB&#39;),
+                f&#39;GSRON_VALVE_OC_MV023&#39;: self.beaglebone.get_valve(&#39;N2_TEB-TOU_FB&#39;),
+                f&#39;GSRON_VALVE_OC_MV024&#39;: self.beaglebone.get_valve(&#39;N2_TRAP_FB&#39;),
                 f&#39;GSRON_VALVE_OC_MV002&#39;: self.beaglebone.get_valve(&#39;VENT_VALVE_FB&#39;),
                 f&#39;GSRON_VALVE_OPEN_MV001&#39;: self.beaglebone.get_valve(&#39;GATE_OPEN_FB&#39;),
                 f&#39;GSRON_VALVE_CLOSE_MV001&#39;: self.beaglebone.get_valve(&#39;GATE_CLOSE_FB&#39;),
                 f&#39;GSRON_VALVE_INTERLOCK_DOOR&#39;: self.beaglebone.get_valve(&#39;INTRLCK_DOOR_FB&#39;)
             }
+            
+            
+            # Remember state, even in manual mode
+            if feedback != self.cache[&#39;feedback&#39;]:
+                for key, value in feedback.items():
+                    code = key.split(&#39;_&#39;)[-1]
+
+                    if &#39;DOOR&#39; in key:
+                        continue
+                    elif &#39;MV001&#39; in key:
+                        if not remote[f&#39;GSRON_VALVE_RMT_{code}&#39;]:
+                            if &#39;OPEN&#39; in key:
+                                if value:
+                                    self.beaglebone.set_valve(code, False)
+                                else:
+                                    self.beaglebone.set_valve(code, True)
+                            if &#39;CLOSE&#39; in key:
+                                if value:
+                                    self.beaglebone.set_valve(code, True)
+                                else:
+                                    self.beaglebone.set_valve(code, False)
+                    else:
+                        if not remote[f&#39;GSRON_VALVE_RMT_{code}&#39;]:
+                            self.beaglebone.set_valve(code, value)
+                        
+            self.cache[&#39;feedback&#39;] = feedback
+            self.cache[&#39;remote&#39;]   = remote
+            
+            status_info[&#39;Remote&#39;]   = remote
+            status_info[&#39;Feedback&#39;] = feedback
+
+        except Exception as exc:
+            logger.info(&#34;Status omitted&#34;)
+            raise exc 
+        return status_info
+
+
+    def get_housekeeping(self) -&gt; dict:
+        hk_dict = {&#39;timestamp&#39;: format_datetime()}
+        try:
+            hk_dict = {
+                &#39;timestamp&#39;: format_datetime(),
+                f&#39;GSRON_VALVE_RMT_MV011&#39;     : self.cache[&#39;remote&#39;][&#39;GSRON_VALVE_RMT_MV011&#39;],
+                f&#39;GSRON_VALVE_RMT_MV012&#39;     : self.cache[&#39;remote&#39;][&#39;GSRON_VALVE_RMT_MV012&#39;],
+                f&#39;GSRON_VALVE_RMT_MV013&#39;     : self.cache[&#39;remote&#39;][&#39;GSRON_VALVE_RMT_MV013&#39;],
+                f&#39;GSRON_VALVE_RMT_MV014&#39;     : self.cache[&#39;remote&#39;][&#39;GSRON_VALVE_RMT_MV014&#39;],
+                f&#39;GSRON_VALVE_RMT_MV021&#39;     : self.cache[&#39;remote&#39;][&#39;GSRON_VALVE_RMT_MV021&#39;],
+                f&#39;GSRON_VALVE_RMT_MV022&#39;     : self.cache[&#39;remote&#39;][&#39;GSRON_VALVE_RMT_MV022&#39;],
+                f&#39;GSRON_VALVE_RMT_MV023&#39;     : self.cache[&#39;remote&#39;][&#39;GSRON_VALVE_RMT_MV023&#39;],
+                f&#39;GSRON_VALVE_RMT_MV024&#39;     : self.cache[&#39;remote&#39;][&#39;GSRON_VALVE_RMT_MV024&#39;],
+                f&#39;GSRON_VALVE_RMT_MV002&#39;     : self.cache[&#39;remote&#39;][&#39;GSRON_VALVE_RMT_MV002&#39;],
+                f&#39;GSRON_VALVE_RMT_MV001&#39;     : self.cache[&#39;remote&#39;][&#39;GSRON_VALVE_RMT_MV001&#39;],
+                f&#39;GSRON_VALVE_OC_MV011&#39;      : self.cache[&#39;feedback&#39;][&#39;GSRON_VALVE_OC_MV011&#39;],
+                f&#39;GSRON_VALVE_OC_MV012&#39;      : self.cache[&#39;feedback&#39;][&#39;GSRON_VALVE_OC_MV012&#39;],
+                f&#39;GSRON_VALVE_OC_MV013&#39;      : self.cache[&#39;feedback&#39;][&#39;GSRON_VALVE_OC_MV013&#39;],
+                f&#39;GSRON_VALVE_OC_MV014&#39;      : self.cache[&#39;feedback&#39;][&#39;GSRON_VALVE_OC_MV014&#39;],
+                f&#39;GSRON_VALVE_OC_MV021&#39;      : self.cache[&#39;feedback&#39;][&#39;GSRON_VALVE_OC_MV021&#39;],
+                f&#39;GSRON_VALVE_OC_MV022&#39;      : self.cache[&#39;feedback&#39;][&#39;GSRON_VALVE_OC_MV022&#39;],
+                f&#39;GSRON_VALVE_OC_MV023&#39;      : self.cache[&#39;feedback&#39;][&#39;GSRON_VALVE_OC_MV023&#39;],
+                f&#39;GSRON_VALVE_OC_MV024&#39;      : self.cache[&#39;feedback&#39;][&#39;GSRON_VALVE_OC_MV024&#39;],
+                f&#39;GSRON_VALVE_OC_MV002&#39;      : self.cache[&#39;feedback&#39;][&#39;GSRON_VALVE_OC_MV002&#39;],
+                f&#39;GSRON_VALVE_OPEN_MV001&#39;    : self.cache[&#39;feedback&#39;][&#39;GSRON_VALVE_OPEN_MV001&#39;],
+                f&#39;GSRON_VALVE_CLOSE_MV001&#39;   : self.cache[&#39;feedback&#39;][&#39;GSRON_VALVE_CLOSE_MV001&#39;],
+                f&#39;GSRON_VALVE_INTERLOCK_DOOR&#39;: self.cache[&#39;feedback&#39;][&#39;GSRON_VALVE_INTERLOCK_DOOR&#39;]
+            }
         except Exception as exc:
             logger.warning(f&#39;failed to get HK ({exc})&#39;)
 
-            # with FdirManagerProxy() as fdir:
-            #     fdir_code = FDIR_PREFIX + 1
-            #     fdir.signal_fdir(fdir_code)
-            #     logger.warning(f&#39;asserted fdir signal: {fdir_code}&#39;)
-
             return hk_dict
 
-        gauge_rmt_mv011_fb.set(hk_dict[f&#39;GSRON_VALVE_RMT_MV011&#39;])
-        gauge_rmt_mv021_fb.set(hk_dict[f&#39;GSRON_VALVE_RMT_MV021&#39;])
-        gauge_rmt_mv031_fb.set(hk_dict[f&#39;GSRON_VALVE_RMT_MV031&#39;])
-        gauge_rmt_mv041_fb.set(hk_dict[f&#39;GSRON_VALVE_RMT_MV041&#39;])
-        gauge_rmt_mv012_fb.set(hk_dict[f&#39;GSRON_VALVE_RMT_MV012&#39;])
-        gauge_rmt_mv022_fb.set(hk_dict[f&#39;GSRON_VALVE_RMT_MV022&#39;])
-        gauge_rmt_mv032_fb.set(hk_dict[f&#39;GSRON_VALVE_RMT_MV032&#39;])
-        gauge_rmt_mv042_fb.set(hk_dict[f&#39;GSRON_VALVE_RMT_MV042&#39;])
-        gauge_rmt_mv002_fb.set(hk_dict[f&#39;GSRON_VALVE_RMT_MV002&#39;])
-        gauge_rmt_mv001_fb.set(hk_dict[f&#39;GSRON_VALVE_RMT_MV001&#39;])
+        self.gauge_rmt_mv011_fb.set(hk_dict[f&#39;GSRON_VALVE_RMT_MV011&#39;])
+        self.gauge_rmt_mv021_fb.set(hk_dict[f&#39;GSRON_VALVE_RMT_MV012&#39;])
+        self.gauge_rmt_mv031_fb.set(hk_dict[f&#39;GSRON_VALVE_RMT_MV013&#39;])
+        self.gauge_rmt_mv041_fb.set(hk_dict[f&#39;GSRON_VALVE_RMT_MV014&#39;])
+        self.gauge_rmt_mv012_fb.set(hk_dict[f&#39;GSRON_VALVE_RMT_MV021&#39;])
+        self.gauge_rmt_mv022_fb.set(hk_dict[f&#39;GSRON_VALVE_RMT_MV022&#39;])
+        self.gauge_rmt_mv032_fb.set(hk_dict[f&#39;GSRON_VALVE_RMT_MV023&#39;])
+        self.gauge_rmt_mv042_fb.set(hk_dict[f&#39;GSRON_VALVE_RMT_MV024&#39;])
+        self.gauge_rmt_mv002_fb.set(hk_dict[f&#39;GSRON_VALVE_RMT_MV002&#39;])
+        self.gauge_rmt_mv001_fb.set(hk_dict[f&#39;GSRON_VALVE_RMT_MV001&#39;])
 
-        gauge_oc_mv011_fb.set(hk_dict[f&#39;GSRON_VALVE_OC_MV011&#39;])
-        gauge_oc_mv021_fb.set(hk_dict[f&#39;GSRON_VALVE_OC_MV021&#39;])
-        gauge_oc_mv031_fb.set(hk_dict[f&#39;GSRON_VALVE_OC_MV031&#39;])
-        gauge_oc_mv041_fb.set(hk_dict[f&#39;GSRON_VALVE_OC_MV041&#39;])
-        gauge_oc_mv012_fb.set(hk_dict[f&#39;GSRON_VALVE_OC_MV012&#39;])
-        gauge_oc_mv022_fb.set(hk_dict[f&#39;GSRON_VALVE_OC_MV022&#39;])
-        gauge_oc_mv032_fb.set(hk_dict[f&#39;GSRON_VALVE_OC_MV032&#39;])
-        gauge_oc_mv042_fb.set(hk_dict[f&#39;GSRON_VALVE_OC_MV042&#39;])
-        gauge_oc_mv002_fb.set(hk_dict[f&#39;GSRON_VALVE_OC_MV002&#39;])
+        self.gauge_oc_mv011_fb.set(hk_dict[f&#39;GSRON_VALVE_OC_MV011&#39;])
+        self.gauge_oc_mv021_fb.set(hk_dict[f&#39;GSRON_VALVE_OC_MV012&#39;])
+        self.gauge_oc_mv031_fb.set(hk_dict[f&#39;GSRON_VALVE_OC_MV013&#39;])
+        self.gauge_oc_mv041_fb.set(hk_dict[f&#39;GSRON_VALVE_OC_MV014&#39;])
+        self.gauge_oc_mv012_fb.set(hk_dict[f&#39;GSRON_VALVE_OC_MV012&#39;])
+        self.gauge_oc_mv022_fb.set(hk_dict[f&#39;GSRON_VALVE_OC_MV022&#39;])
+        self.gauge_oc_mv032_fb.set(hk_dict[f&#39;GSRON_VALVE_OC_MV023&#39;])
+        self.gauge_oc_mv042_fb.set(hk_dict[f&#39;GSRON_VALVE_OC_MV024&#39;])
+        self.gauge_oc_mv002_fb.set(hk_dict[f&#39;GSRON_VALVE_OC_MV002&#39;])
 
-        gauge_open_mv001_fb.set(hk_dict[f&#39;GSRON_VALVE_OPEN_MV001&#39;])
-        gauge_close_mv001_fb.set(hk_dict[f&#39;GSRON_VALVE_CLOSE_MV001&#39;])
-        gauge_intrlck_door_fb.set(hk_dict[f&#39;GSRON_VALVE_INTERLOCK_DOOR&#39;])
+        self.gauge_open_mv001_fb.set(hk_dict[f&#39;GSRON_VALVE_OPEN_MV001&#39;])
+        self.gauge_close_mv001_fb.set(hk_dict[f&#39;GSRON_VALVE_CLOSE_MV001&#39;])
+        self.gauge_intrlck_door_fb.set(hk_dict[f&#39;GSRON_VALVE_INTERLOCK_DOOR&#39;])
 
         return hk_dict</code></pre>
 </details>

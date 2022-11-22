@@ -68,7 +68,8 @@ import multiprocessing
 
 import click
 
-from egse.fee import CCD_ID_TO_BIN
+from egse.setup import SetupError
+from egse.state import GlobalState
 
 multiprocessing.current_process().name = &#34;feesim&#34;
 
@@ -498,7 +499,13 @@ class FEESimulator:
                 if (self._IN.digitise_en and
                     self._IN.ccd_mode_config in (n_fee_mode.FULL_IMAGE_PATTERN_MODE,
                                                  n_fee_mode.FULL_IMAGE_MODE,)):
-                    ccd_number = CCD_ID_TO_BIN[self.get_current_ccd_number()]  # N-FEE CCD number [0-3]
+
+                    try:
+                        ccd_id_to_bin = GlobalState.setup.camera.fee.ccd_numbering.CCD_ID_TO_BIN
+                    except AttributeError:
+                        raise SetupError(&#34;No entry in the setup for camera.fee.ccd_numbering.CCD_ID_TO_BIN&#34;)
+
+                    ccd_number = ccd_id_to_bin[self.get_current_ccd_number()]  # N-FEE CCD number [0-3]
                     if self.sensor_sel &amp; sensor_sel.E_SIDE:
                         self.send_data_packets(timecode, ccd_id=ccd_number, ccd_side=n_fee_side.E_SIDE)
                     if self.sensor_sel &amp; sensor_sel.F_SIDE:
@@ -1107,7 +1114,13 @@ if __name__ == &#34;__main__&#34;:
                 if (self._IN.digitise_en and
                     self._IN.ccd_mode_config in (n_fee_mode.FULL_IMAGE_PATTERN_MODE,
                                                  n_fee_mode.FULL_IMAGE_MODE,)):
-                    ccd_number = CCD_ID_TO_BIN[self.get_current_ccd_number()]  # N-FEE CCD number [0-3]
+
+                    try:
+                        ccd_id_to_bin = GlobalState.setup.camera.fee.ccd_numbering.CCD_ID_TO_BIN
+                    except AttributeError:
+                        raise SetupError(&#34;No entry in the setup for camera.fee.ccd_numbering.CCD_ID_TO_BIN&#34;)
+
+                    ccd_number = ccd_id_to_bin[self.get_current_ccd_number()]  # N-FEE CCD number [0-3]
                     if self.sensor_sel &amp; sensor_sel.E_SIDE:
                         self.send_data_packets(timecode, ccd_id=ccd_number, ccd_side=n_fee_side.E_SIDE)
                     if self.sensor_sel &amp; sensor_sel.F_SIDE:
@@ -1466,7 +1479,13 @@ has been initialised.</p></div>
             if (self._IN.digitise_en and
                 self._IN.ccd_mode_config in (n_fee_mode.FULL_IMAGE_PATTERN_MODE,
                                              n_fee_mode.FULL_IMAGE_MODE,)):
-                ccd_number = CCD_ID_TO_BIN[self.get_current_ccd_number()]  # N-FEE CCD number [0-3]
+
+                try:
+                    ccd_id_to_bin = GlobalState.setup.camera.fee.ccd_numbering.CCD_ID_TO_BIN
+                except AttributeError:
+                    raise SetupError(&#34;No entry in the setup for camera.fee.ccd_numbering.CCD_ID_TO_BIN&#34;)
+
+                ccd_number = ccd_id_to_bin[self.get_current_ccd_number()]  # N-FEE CCD number [0-3]
                 if self.sensor_sel &amp; sensor_sel.E_SIDE:
                     self.send_data_packets(timecode, ccd_id=ccd_number, ccd_side=n_fee_side.E_SIDE)
                 if self.sensor_sel &amp; sensor_sel.F_SIDE:

@@ -38,6 +38,7 @@ from egse.hk import read_conversion_dict, convert_hk_names
 from egse.protocol import CommandProtocol
 from egse.settings import Settings
 from egse.setup import load_setup
+from egse.state import GlobalState
 from egse.system import format_datetime, SignalCatcher
 from egse.zmq_ser import bind_address
 
@@ -271,68 +272,66 @@ class CRIOProtocol(AEUProtocol):
 
         hk = super().get_housekeeping()
 
-        if True:
+        if self.state == DeviceConnectionState.DEVICE_CONNECTED or Settings.simulation_mode():
 
-            if self.state == DeviceConnectionState.DEVICE_CONNECTED:
+            crio_data = self.crio.get_data()
+            crio_data = convert_hk_names(crio_data, self.hk_conversion_table)
 
-                crio_data = self.crio.get_data()
-                crio_data = convert_hk_names(crio_data, self.hk_conversion_table)
+            aeu_metrics.GAEU_I_CCD_NFEE.set(crio_data[f&#34;GAEU_I_CCD_NFEE&#34;])
+            aeu_metrics.GAEU_I_CLK_NFEE.set(crio_data[f&#34;GAEU_I_CLK_NFEE&#34;])
+            aeu_metrics.GAEU_I_AN1_NFEE.set(crio_data[f&#34;GAEU_I_AN1_NFEE&#34;])
+            aeu_metrics.GAEU_I_AN2_NFEE.set(crio_data[f&#34;GAEU_I_AN2_NFEE&#34;])
+            aeu_metrics.GAEU_I_AN3_NFEE.set(crio_data[f&#34;GAEU_I_AN3_NFEE&#34;])
+            aeu_metrics.GAEU_I_DIG_NFEE.set(crio_data[f&#34;GAEU_I_DIG_NFEE&#34;])
 
-                aeu_metrics.GAEU_I_CCD_NFEE.set(crio_data[f&#34;GAEU_I_CCD_NFEE&#34;])
-                aeu_metrics.GAEU_I_CLK_NFEE.set(crio_data[f&#34;GAEU_I_CLK_NFEE&#34;])
-                aeu_metrics.GAEU_I_AN1_NFEE.set(crio_data[f&#34;GAEU_I_AN1_NFEE&#34;])
-                aeu_metrics.GAEU_I_AN2_NFEE.set(crio_data[f&#34;GAEU_I_AN2_NFEE&#34;])
-                aeu_metrics.GAEU_I_AN3_NFEE.set(crio_data[f&#34;GAEU_I_AN3_NFEE&#34;])
-                aeu_metrics.GAEU_I_DIG_NFEE.set(crio_data[f&#34;GAEU_I_DIG_NFEE&#34;])
+            aeu_metrics.GAEU_V_CCD_NFEE.set(crio_data[f&#34;GAEU_V_CCD_NFEE&#34;])
+            aeu_metrics.GAEU_V_CLK_NFEE.set(crio_data[f&#34;GAEU_V_CLK_NFEE&#34;])
+            aeu_metrics.GAEU_V_AN1_NFEE.set(crio_data[f&#34;GAEU_V_AN1_NFEE&#34;])
+            aeu_metrics.GAEU_V_AN2_NFEE.set(crio_data[f&#34;GAEU_V_AN2_NFEE&#34;])
+            aeu_metrics.GAEU_V_AN3_NFEE.set(crio_data[f&#34;GAEU_V_AN3_NFEE&#34;])
+            aeu_metrics.GAEU_V_DIG_NFEE.set(crio_data[f&#34;GAEU_V_DIG_NFEE&#34;])
 
-                aeu_metrics.GAEU_V_CCD_NFEE.set(crio_data[f&#34;GAEU_V_CCD_NFEE&#34;])
-                aeu_metrics.GAEU_V_CLK_NFEE.set(crio_data[f&#34;GAEU_V_CLK_NFEE&#34;])
-                aeu_metrics.GAEU_V_AN1_NFEE.set(crio_data[f&#34;GAEU_V_AN1_NFEE&#34;])
-                aeu_metrics.GAEU_V_AN2_NFEE.set(crio_data[f&#34;GAEU_V_AN2_NFEE&#34;])
-                aeu_metrics.GAEU_V_AN3_NFEE.set(crio_data[f&#34;GAEU_V_AN3_NFEE&#34;])
-                aeu_metrics.GAEU_V_DIG_NFEE.set(crio_data[f&#34;GAEU_V_DIG_NFEE&#34;])
+            aeu_metrics.GAEU_I_CCD_FFEE.set(crio_data[f&#34;GAEU_I_CCD_FFEE&#34;])
+            aeu_metrics.GAEU_I_CLK_FFEE.set(crio_data[f&#34;GAEU_I_CLK_FFEE&#34;])
+            aeu_metrics.GAEU_I_AN1_FFEE.set(crio_data[f&#34;GAEU_I_AN1_FFEE&#34;])
+            aeu_metrics.GAEU_I_AN2_FFEE.set(crio_data[f&#34;GAEU_I_AN2_FFEE&#34;])
+            aeu_metrics.GAEU_I_AN3_FFEE.set(crio_data[f&#34;GAEU_I_AN3_FFEE&#34;])
+            aeu_metrics.GAEU_I_DIG_FFEE.set(crio_data[f&#34;GAEU_I_DIG_FFEE&#34;])
 
-                aeu_metrics.GAEU_I_CCD_FFEE.set(crio_data[f&#34;GAEU_I_CCD_FFEE&#34;])
-                aeu_metrics.GAEU_I_CLK_FFEE.set(crio_data[f&#34;GAEU_I_CLK_FFEE&#34;])
-                aeu_metrics.GAEU_I_AN1_FFEE.set(crio_data[f&#34;GAEU_I_AN1_FFEE&#34;])
-                aeu_metrics.GAEU_I_AN2_FFEE.set(crio_data[f&#34;GAEU_I_AN2_FFEE&#34;])
-                aeu_metrics.GAEU_I_AN3_FFEE.set(crio_data[f&#34;GAEU_I_AN3_FFEE&#34;])
-                aeu_metrics.GAEU_I_DIG_FFEE.set(crio_data[f&#34;GAEU_I_DIG_FFEE&#34;])
+            aeu_metrics.GAEU_V_CCD_FFEE.set(crio_data[f&#34;GAEU_V_CCD_FFEE&#34;])
+            aeu_metrics.GAEU_V_CLK_FFEE.set(crio_data[f&#34;GAEU_V_CLK_FFEE&#34;])
+            aeu_metrics.GAEU_V_AN1_FFEE.set(crio_data[f&#34;GAEU_V_AN1_FFEE&#34;])
+            aeu_metrics.GAEU_V_AN2_FFEE.set(crio_data[f&#34;GAEU_V_AN2_FFEE&#34;])
+            aeu_metrics.GAEU_V_AN3_FFEE.set(crio_data[f&#34;GAEU_V_AN3_FFEE&#34;])
+            aeu_metrics.GAEU_V_DIG_FFEE.set(crio_data[f&#34;GAEU_V_DIG_FFEE&#34;])
 
-                aeu_metrics.GAEU_V_CCD_FFEE.set(crio_data[f&#34;GAEU_V_CCD_FFEE&#34;])
-                aeu_metrics.GAEU_V_CLK_FFEE.set(crio_data[f&#34;GAEU_V_CLK_FFEE&#34;])
-                aeu_metrics.GAEU_V_AN1_FFEE.set(crio_data[f&#34;GAEU_V_AN1_FFEE&#34;])
-                aeu_metrics.GAEU_V_AN2_FFEE.set(crio_data[f&#34;GAEU_V_AN2_FFEE&#34;])
-                aeu_metrics.GAEU_V_AN3_FFEE.set(crio_data[f&#34;GAEU_V_AN3_FFEE&#34;])
-                aeu_metrics.GAEU_V_DIG_FFEE.set(crio_data[f&#34;GAEU_V_DIG_FFEE&#34;])
+            aeu_metrics.GAEU_STANDBY.set(int(crio_data[&#34;GAEU_STANDBY&#34;]))
+            aeu_metrics.GAEU_SELFTEST.set(int(crio_data[&#34;GAEU_SELFTEST&#34;]))
+            aeu_metrics.GAEU_FC_TVAC.set(int(crio_data[&#34;GAEU_FC_TVAC&#34;]))
+            aeu_metrics.GAEU_ALIGNMENT.set(int(crio_data[&#34;GAEU_ALIGNMENT&#34;]))
 
-                aeu_metrics.GAEU_STANDBY.set(int(crio_data[&#34;GAEU_STANDBY&#34;]))
-                aeu_metrics.GAEU_SELFTEST.set(int(crio_data[&#34;GAEU_SELFTEST&#34;]))
-                aeu_metrics.GAEU_FC_TVAC.set(int(crio_data[&#34;GAEU_FC_TVAC&#34;]))
-                aeu_metrics.GAEU_ALIGNMENT.set(int(crio_data[&#34;GAEU_ALIGNMENT&#34;]))
+            aeu_metrics.GAEU_PWR_NFEE_STATUS.set(int(crio_data[&#34;GAEU_PWR_NFEE_STATUS&#34;]))
+            aeu_metrics.GAEU_PWR_FFEE_STATUS.set(int(crio_data[&#34;GAEU_PWR_FFEE_STATUS&#34;]))
 
-                aeu_metrics.GAEU_PWR_NFEE_STATUS.set(int(crio_data[&#34;GAEU_PWR_NFEE_STATUS&#34;]))
-                aeu_metrics.GAEU_PWR_FFEE_STATUS.set(int(crio_data[&#34;GAEU_PWR_FFEE_STATUS&#34;]))
+            aeu_metrics.GAEU_PWR_CCD_FEE_STATUS.set(int(crio_data[&#34;GAEU_PWR_CCD_FEE_STATUS&#34;]))
+            aeu_metrics.GAEU_PWR_CLK_FEE_STATUS.set(int(crio_data[&#34;GAEU_PWR_CLK_FEE_STATUS&#34;]))
+            aeu_metrics.GAEU_PWR_AN1_FEE_STATUS.set(int(crio_data[&#34;GAEU_PWR_AN1_FEE_STATUS&#34;]))
+            aeu_metrics.GAEU_PWR_AN2_FEE_STATUS.set(int(crio_data[&#34;GAEU_PWR_AN2_FEE_STATUS&#34;]))
+            aeu_metrics.GAEU_PWR_AN3_FEE_STATUS.set(int(crio_data[&#34;GAEU_PWR_AN3_FEE_STATUS&#34;]))
+            aeu_metrics.GAEU_PWR_DIG_FEE_STATUS.set(int(crio_data[&#34;GAEU_PWR_DIG_FEE_STATUS&#34;]))
 
-                aeu_metrics.GAEU_PWR_CCD_FEE_STATUS.set(int(crio_data[&#34;GAEU_PWR_CCD_FEE_STATUS&#34;]))
-                aeu_metrics.GAEU_PWR_CLK_FEE_STATUS.set(int(crio_data[&#34;GAEU_PWR_CLK_FEE_STATUS&#34;]))
-                aeu_metrics.GAEU_PWR_AN1_FEE_STATUS.set(int(crio_data[&#34;GAEU_PWR_AN1_FEE_STATUS&#34;]))
-                aeu_metrics.GAEU_PWR_AN2_FEE_STATUS.set(int(crio_data[&#34;GAEU_PWR_AN2_FEE_STATUS&#34;]))
-                aeu_metrics.GAEU_PWR_AN3_FEE_STATUS.set(int(crio_data[&#34;GAEU_PWR_AN3_FEE_STATUS&#34;]))
-                aeu_metrics.GAEU_PWR_DIG_FEE_STATUS.set(int(crio_data[&#34;GAEU_PWR_DIG_FEE_STATUS&#34;]))
+            aeu_metrics.GAEU_S_VOLTAGE_OOR.set(int(crio_data[&#34;GAEU_S_VOLTAGE_OOR&#34;]))
+            aeu_metrics.GAEU_S_CURRENT_OOR.set(int(crio_data[&#34;GAEU_S_CURRENT_OOR&#34;]))
+            aeu_metrics.GAEU_SYNC_GF.set(int(crio_data[&#34;GAEU_SYNC_GF&#34;]))
 
-                aeu_metrics.GAEU_S_VOLTAGE_OOR.set(int(crio_data[&#34;GAEU_S_VOLTAGE_OOR&#34;]))
-                aeu_metrics.GAEU_S_CURRENT_OOR.set(int(crio_data[&#34;GAEU_S_CURRENT_OOR&#34;]))
-                aeu_metrics.GAEU_SYNC_GF.set(int(crio_data[&#34;GAEU_SYNC_GF&#34;]))
+            aeu_metrics.GAEU_CLK_PWR_50MHZ.set(int(crio_data[&#34;GAEU_CLK_PWR_50MHZ&#34;]))
+            aeu_metrics.GAEU_CLK_PWR_CCDREAD.set(int(crio_data[&#34;GAEU_CLK_PWR_CCDREAD&#34;]))
+            aeu_metrics.GAEU_CLK_PWR_SVM.set(int(crio_data[&#34;GAEU_CLK_PWR_SVM&#34;]))
+            aeu_metrics.GAEU_CLK_PWR_N_FFEE.set(int(crio_data[&#34;GAEU_CLK_PWR_N_FFEE&#34;]))
+            aeu_metrics.GAEU_CLK_PWR_R_FFEE.set(int(crio_data[&#34;GAEU_CLK_PWR_R_FFEE&#34;]))
+            aeu_metrics.GAEU_TESTPORT.set(int(crio_data[&#34;GAEU_TESTPORT&#34;]))
 
-                aeu_metrics.GAEU_CLK_PWR_50MHZ.set(int(crio_data[&#34;GAEU_CLK_PWR_50MHZ&#34;]))
-                aeu_metrics.GAEU_CLK_PWR_CCDREAD.set(int(crio_data[&#34;GAEU_CLK_PWR_CCDREAD&#34;]))
-                aeu_metrics.GAEU_CLK_PWR_SVM.set(int(crio_data[&#34;GAEU_CLK_PWR_SVM&#34;]))
-                aeu_metrics.GAEU_CLK_PWR_N_FFEE.set(int(crio_data[&#34;GAEU_CLK_PWR_N_FFEE&#34;]))
-                aeu_metrics.GAEU_CLK_PWR_R_FFEE.set(int(crio_data[&#34;GAEU_CLK_PWR_R_FFEE&#34;]))
-                aeu_metrics.GAEU_TESTPORT.set(int(crio_data[&#34;GAEU_TESTPORT&#34;]))
-
-                hk.update(crio_data)
+            hk.update(crio_data)
 
         return hk
 
@@ -450,7 +449,7 @@ class AWGProtocol(AEUProtocol):
 
         self.build_device_method_lookup_table(self.awg)
 
-        self.setup = load_setup()
+        self.setup = GlobalState.setup
 
     def get_housekeeping(self) -&gt; dict:
         &#34;&#34;&#34; Return the housekeeping.
@@ -463,7 +462,7 @@ class AWGProtocol(AEUProtocol):
         # For AWG2, we use ARBDEF1 to configure Clk_ccdread.  The name of ARBDEF1 for AWG2 (CCDREAD&lt;identifier&gt;)
         # contains an identifier, which can be used to determine the image cycle time (for external sync mode).
 
-        if self.awg_index == 2 and self.state == DeviceConnectionState.DEVICE_CONNECTED:
+        if self.awg_index == 2 and (self.state == DeviceConnectionState.DEVICE_CONNECTED or Settings.simulation_mode()):
 
             arbdef_name = self.awg.get_arb1_def()[0]    # Name of ARBDEF1
 
@@ -797,7 +796,7 @@ Returns: Command string for the AWG.</li>
 
         self.build_device_method_lookup_table(self.awg)
 
-        self.setup = load_setup()
+        self.setup = GlobalState.setup
 
     def get_housekeeping(self) -&gt; dict:
         &#34;&#34;&#34; Return the housekeeping.
@@ -810,7 +809,7 @@ Returns: Command string for the AWG.</li>
         # For AWG2, we use ARBDEF1 to configure Clk_ccdread.  The name of ARBDEF1 for AWG2 (CCDREAD&lt;identifier&gt;)
         # contains an identifier, which can be used to determine the image cycle time (for external sync mode).
 
-        if self.awg_index == 2 and self.state == DeviceConnectionState.DEVICE_CONNECTED:
+        if self.awg_index == 2 and (self.state == DeviceConnectionState.DEVICE_CONNECTED or Settings.simulation_mode()):
 
             arbdef_name = self.awg.get_arb1_def()[0]    # Name of ARBDEF1
 
@@ -1046,68 +1045,66 @@ Returns: Command string for the cRIO.</li>
 
         hk = super().get_housekeeping()
 
-        if True:
+        if self.state == DeviceConnectionState.DEVICE_CONNECTED or Settings.simulation_mode():
 
-            if self.state == DeviceConnectionState.DEVICE_CONNECTED:
+            crio_data = self.crio.get_data()
+            crio_data = convert_hk_names(crio_data, self.hk_conversion_table)
 
-                crio_data = self.crio.get_data()
-                crio_data = convert_hk_names(crio_data, self.hk_conversion_table)
+            aeu_metrics.GAEU_I_CCD_NFEE.set(crio_data[f&#34;GAEU_I_CCD_NFEE&#34;])
+            aeu_metrics.GAEU_I_CLK_NFEE.set(crio_data[f&#34;GAEU_I_CLK_NFEE&#34;])
+            aeu_metrics.GAEU_I_AN1_NFEE.set(crio_data[f&#34;GAEU_I_AN1_NFEE&#34;])
+            aeu_metrics.GAEU_I_AN2_NFEE.set(crio_data[f&#34;GAEU_I_AN2_NFEE&#34;])
+            aeu_metrics.GAEU_I_AN3_NFEE.set(crio_data[f&#34;GAEU_I_AN3_NFEE&#34;])
+            aeu_metrics.GAEU_I_DIG_NFEE.set(crio_data[f&#34;GAEU_I_DIG_NFEE&#34;])
 
-                aeu_metrics.GAEU_I_CCD_NFEE.set(crio_data[f&#34;GAEU_I_CCD_NFEE&#34;])
-                aeu_metrics.GAEU_I_CLK_NFEE.set(crio_data[f&#34;GAEU_I_CLK_NFEE&#34;])
-                aeu_metrics.GAEU_I_AN1_NFEE.set(crio_data[f&#34;GAEU_I_AN1_NFEE&#34;])
-                aeu_metrics.GAEU_I_AN2_NFEE.set(crio_data[f&#34;GAEU_I_AN2_NFEE&#34;])
-                aeu_metrics.GAEU_I_AN3_NFEE.set(crio_data[f&#34;GAEU_I_AN3_NFEE&#34;])
-                aeu_metrics.GAEU_I_DIG_NFEE.set(crio_data[f&#34;GAEU_I_DIG_NFEE&#34;])
+            aeu_metrics.GAEU_V_CCD_NFEE.set(crio_data[f&#34;GAEU_V_CCD_NFEE&#34;])
+            aeu_metrics.GAEU_V_CLK_NFEE.set(crio_data[f&#34;GAEU_V_CLK_NFEE&#34;])
+            aeu_metrics.GAEU_V_AN1_NFEE.set(crio_data[f&#34;GAEU_V_AN1_NFEE&#34;])
+            aeu_metrics.GAEU_V_AN2_NFEE.set(crio_data[f&#34;GAEU_V_AN2_NFEE&#34;])
+            aeu_metrics.GAEU_V_AN3_NFEE.set(crio_data[f&#34;GAEU_V_AN3_NFEE&#34;])
+            aeu_metrics.GAEU_V_DIG_NFEE.set(crio_data[f&#34;GAEU_V_DIG_NFEE&#34;])
 
-                aeu_metrics.GAEU_V_CCD_NFEE.set(crio_data[f&#34;GAEU_V_CCD_NFEE&#34;])
-                aeu_metrics.GAEU_V_CLK_NFEE.set(crio_data[f&#34;GAEU_V_CLK_NFEE&#34;])
-                aeu_metrics.GAEU_V_AN1_NFEE.set(crio_data[f&#34;GAEU_V_AN1_NFEE&#34;])
-                aeu_metrics.GAEU_V_AN2_NFEE.set(crio_data[f&#34;GAEU_V_AN2_NFEE&#34;])
-                aeu_metrics.GAEU_V_AN3_NFEE.set(crio_data[f&#34;GAEU_V_AN3_NFEE&#34;])
-                aeu_metrics.GAEU_V_DIG_NFEE.set(crio_data[f&#34;GAEU_V_DIG_NFEE&#34;])
+            aeu_metrics.GAEU_I_CCD_FFEE.set(crio_data[f&#34;GAEU_I_CCD_FFEE&#34;])
+            aeu_metrics.GAEU_I_CLK_FFEE.set(crio_data[f&#34;GAEU_I_CLK_FFEE&#34;])
+            aeu_metrics.GAEU_I_AN1_FFEE.set(crio_data[f&#34;GAEU_I_AN1_FFEE&#34;])
+            aeu_metrics.GAEU_I_AN2_FFEE.set(crio_data[f&#34;GAEU_I_AN2_FFEE&#34;])
+            aeu_metrics.GAEU_I_AN3_FFEE.set(crio_data[f&#34;GAEU_I_AN3_FFEE&#34;])
+            aeu_metrics.GAEU_I_DIG_FFEE.set(crio_data[f&#34;GAEU_I_DIG_FFEE&#34;])
 
-                aeu_metrics.GAEU_I_CCD_FFEE.set(crio_data[f&#34;GAEU_I_CCD_FFEE&#34;])
-                aeu_metrics.GAEU_I_CLK_FFEE.set(crio_data[f&#34;GAEU_I_CLK_FFEE&#34;])
-                aeu_metrics.GAEU_I_AN1_FFEE.set(crio_data[f&#34;GAEU_I_AN1_FFEE&#34;])
-                aeu_metrics.GAEU_I_AN2_FFEE.set(crio_data[f&#34;GAEU_I_AN2_FFEE&#34;])
-                aeu_metrics.GAEU_I_AN3_FFEE.set(crio_data[f&#34;GAEU_I_AN3_FFEE&#34;])
-                aeu_metrics.GAEU_I_DIG_FFEE.set(crio_data[f&#34;GAEU_I_DIG_FFEE&#34;])
+            aeu_metrics.GAEU_V_CCD_FFEE.set(crio_data[f&#34;GAEU_V_CCD_FFEE&#34;])
+            aeu_metrics.GAEU_V_CLK_FFEE.set(crio_data[f&#34;GAEU_V_CLK_FFEE&#34;])
+            aeu_metrics.GAEU_V_AN1_FFEE.set(crio_data[f&#34;GAEU_V_AN1_FFEE&#34;])
+            aeu_metrics.GAEU_V_AN2_FFEE.set(crio_data[f&#34;GAEU_V_AN2_FFEE&#34;])
+            aeu_metrics.GAEU_V_AN3_FFEE.set(crio_data[f&#34;GAEU_V_AN3_FFEE&#34;])
+            aeu_metrics.GAEU_V_DIG_FFEE.set(crio_data[f&#34;GAEU_V_DIG_FFEE&#34;])
 
-                aeu_metrics.GAEU_V_CCD_FFEE.set(crio_data[f&#34;GAEU_V_CCD_FFEE&#34;])
-                aeu_metrics.GAEU_V_CLK_FFEE.set(crio_data[f&#34;GAEU_V_CLK_FFEE&#34;])
-                aeu_metrics.GAEU_V_AN1_FFEE.set(crio_data[f&#34;GAEU_V_AN1_FFEE&#34;])
-                aeu_metrics.GAEU_V_AN2_FFEE.set(crio_data[f&#34;GAEU_V_AN2_FFEE&#34;])
-                aeu_metrics.GAEU_V_AN3_FFEE.set(crio_data[f&#34;GAEU_V_AN3_FFEE&#34;])
-                aeu_metrics.GAEU_V_DIG_FFEE.set(crio_data[f&#34;GAEU_V_DIG_FFEE&#34;])
+            aeu_metrics.GAEU_STANDBY.set(int(crio_data[&#34;GAEU_STANDBY&#34;]))
+            aeu_metrics.GAEU_SELFTEST.set(int(crio_data[&#34;GAEU_SELFTEST&#34;]))
+            aeu_metrics.GAEU_FC_TVAC.set(int(crio_data[&#34;GAEU_FC_TVAC&#34;]))
+            aeu_metrics.GAEU_ALIGNMENT.set(int(crio_data[&#34;GAEU_ALIGNMENT&#34;]))
 
-                aeu_metrics.GAEU_STANDBY.set(int(crio_data[&#34;GAEU_STANDBY&#34;]))
-                aeu_metrics.GAEU_SELFTEST.set(int(crio_data[&#34;GAEU_SELFTEST&#34;]))
-                aeu_metrics.GAEU_FC_TVAC.set(int(crio_data[&#34;GAEU_FC_TVAC&#34;]))
-                aeu_metrics.GAEU_ALIGNMENT.set(int(crio_data[&#34;GAEU_ALIGNMENT&#34;]))
+            aeu_metrics.GAEU_PWR_NFEE_STATUS.set(int(crio_data[&#34;GAEU_PWR_NFEE_STATUS&#34;]))
+            aeu_metrics.GAEU_PWR_FFEE_STATUS.set(int(crio_data[&#34;GAEU_PWR_FFEE_STATUS&#34;]))
 
-                aeu_metrics.GAEU_PWR_NFEE_STATUS.set(int(crio_data[&#34;GAEU_PWR_NFEE_STATUS&#34;]))
-                aeu_metrics.GAEU_PWR_FFEE_STATUS.set(int(crio_data[&#34;GAEU_PWR_FFEE_STATUS&#34;]))
+            aeu_metrics.GAEU_PWR_CCD_FEE_STATUS.set(int(crio_data[&#34;GAEU_PWR_CCD_FEE_STATUS&#34;]))
+            aeu_metrics.GAEU_PWR_CLK_FEE_STATUS.set(int(crio_data[&#34;GAEU_PWR_CLK_FEE_STATUS&#34;]))
+            aeu_metrics.GAEU_PWR_AN1_FEE_STATUS.set(int(crio_data[&#34;GAEU_PWR_AN1_FEE_STATUS&#34;]))
+            aeu_metrics.GAEU_PWR_AN2_FEE_STATUS.set(int(crio_data[&#34;GAEU_PWR_AN2_FEE_STATUS&#34;]))
+            aeu_metrics.GAEU_PWR_AN3_FEE_STATUS.set(int(crio_data[&#34;GAEU_PWR_AN3_FEE_STATUS&#34;]))
+            aeu_metrics.GAEU_PWR_DIG_FEE_STATUS.set(int(crio_data[&#34;GAEU_PWR_DIG_FEE_STATUS&#34;]))
 
-                aeu_metrics.GAEU_PWR_CCD_FEE_STATUS.set(int(crio_data[&#34;GAEU_PWR_CCD_FEE_STATUS&#34;]))
-                aeu_metrics.GAEU_PWR_CLK_FEE_STATUS.set(int(crio_data[&#34;GAEU_PWR_CLK_FEE_STATUS&#34;]))
-                aeu_metrics.GAEU_PWR_AN1_FEE_STATUS.set(int(crio_data[&#34;GAEU_PWR_AN1_FEE_STATUS&#34;]))
-                aeu_metrics.GAEU_PWR_AN2_FEE_STATUS.set(int(crio_data[&#34;GAEU_PWR_AN2_FEE_STATUS&#34;]))
-                aeu_metrics.GAEU_PWR_AN3_FEE_STATUS.set(int(crio_data[&#34;GAEU_PWR_AN3_FEE_STATUS&#34;]))
-                aeu_metrics.GAEU_PWR_DIG_FEE_STATUS.set(int(crio_data[&#34;GAEU_PWR_DIG_FEE_STATUS&#34;]))
+            aeu_metrics.GAEU_S_VOLTAGE_OOR.set(int(crio_data[&#34;GAEU_S_VOLTAGE_OOR&#34;]))
+            aeu_metrics.GAEU_S_CURRENT_OOR.set(int(crio_data[&#34;GAEU_S_CURRENT_OOR&#34;]))
+            aeu_metrics.GAEU_SYNC_GF.set(int(crio_data[&#34;GAEU_SYNC_GF&#34;]))
 
-                aeu_metrics.GAEU_S_VOLTAGE_OOR.set(int(crio_data[&#34;GAEU_S_VOLTAGE_OOR&#34;]))
-                aeu_metrics.GAEU_S_CURRENT_OOR.set(int(crio_data[&#34;GAEU_S_CURRENT_OOR&#34;]))
-                aeu_metrics.GAEU_SYNC_GF.set(int(crio_data[&#34;GAEU_SYNC_GF&#34;]))
+            aeu_metrics.GAEU_CLK_PWR_50MHZ.set(int(crio_data[&#34;GAEU_CLK_PWR_50MHZ&#34;]))
+            aeu_metrics.GAEU_CLK_PWR_CCDREAD.set(int(crio_data[&#34;GAEU_CLK_PWR_CCDREAD&#34;]))
+            aeu_metrics.GAEU_CLK_PWR_SVM.set(int(crio_data[&#34;GAEU_CLK_PWR_SVM&#34;]))
+            aeu_metrics.GAEU_CLK_PWR_N_FFEE.set(int(crio_data[&#34;GAEU_CLK_PWR_N_FFEE&#34;]))
+            aeu_metrics.GAEU_CLK_PWR_R_FFEE.set(int(crio_data[&#34;GAEU_CLK_PWR_R_FFEE&#34;]))
+            aeu_metrics.GAEU_TESTPORT.set(int(crio_data[&#34;GAEU_TESTPORT&#34;]))
 
-                aeu_metrics.GAEU_CLK_PWR_50MHZ.set(int(crio_data[&#34;GAEU_CLK_PWR_50MHZ&#34;]))
-                aeu_metrics.GAEU_CLK_PWR_CCDREAD.set(int(crio_data[&#34;GAEU_CLK_PWR_CCDREAD&#34;]))
-                aeu_metrics.GAEU_CLK_PWR_SVM.set(int(crio_data[&#34;GAEU_CLK_PWR_SVM&#34;]))
-                aeu_metrics.GAEU_CLK_PWR_N_FFEE.set(int(crio_data[&#34;GAEU_CLK_PWR_N_FFEE&#34;]))
-                aeu_metrics.GAEU_CLK_PWR_R_FFEE.set(int(crio_data[&#34;GAEU_CLK_PWR_R_FFEE&#34;]))
-                aeu_metrics.GAEU_TESTPORT.set(int(crio_data[&#34;GAEU_TESTPORT&#34;]))
-
-                hk.update(crio_data)
+            hk.update(crio_data)
 
         return hk</code></pre>
 </details>

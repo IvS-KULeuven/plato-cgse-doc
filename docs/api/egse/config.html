@@ -33,6 +33,8 @@ and to find paths and resources.</p>
 This module provides convenience functions to properly configure the Common-EGSE
 and to find paths and resources.
 &#34;&#34;&#34;
+from __future__ import annotations
+
 import errno
 import fnmatch
 import logging
@@ -49,7 +51,51 @@ from typing import Union
 
 import git
 
+HERE = Path(__file__).parent.resolve()
 MODULE_LOGGER = logging.getLogger(__name__)
+
+
+def find_first_occurrence_of_dir(pattern: str, root: Path | str = None) -&gt; Optional[Path]:
+    &#34;&#34;&#34;
+    Returns the full path of the directory that first matches the pattern. The directory hierarchy is
+    traversed in alphabetical order. The pattern is matched first against all directories in the root
+    folder, if there is no match, the first folder in root is traversed until a match is found. If no
+    match is found, the second folder in root is traversed.
+
+    Note that the pattern may contain parent directories, like `/egse/data/icons` or `egse/*/icons`,
+    in which case the full pattern is matched.
+
+    Args:
+        pattern: a filename pattern
+        root: the root folder to start the hierarchical search
+
+    Returns:
+        The full path of the matched pattern or None if no match could be found.
+    &#34;&#34;&#34;
+    import fnmatch
+
+    root = Path(root).resolve() if root else HERE
+    if not root.is_dir():
+        root = root.parent
+
+    parts = pattern.rsplit(&#34;/&#34;, maxsplit=1)
+    if len(parts) == 2:
+        first_part = parts[0]
+        last_part = parts[1]
+    else:
+        first_part = &#34;&#34;
+        last_part = parts[0]
+
+    dirs = sorted([entry.name for entry in root.iterdir() if entry.is_dir()])
+
+    if root.match(f&#34;*{first_part}&#34;) and (matches := fnmatch.filter(dirs, last_part)):
+        return root / matches[0]
+
+    for d in dirs:
+        if match := find_first_occurrence_of_dir(pattern, root / d):
+            return match
+
+    return None
 
 
 def find_dir(pattern: str, root: str = None) -&gt; Optional[Path]:
@@ -648,8 +694,74 @@ that the path ends with the given string in <code>in_dir</code>.</p>
             yield Path(path) / name</code></pre>
 </details>
 </dd>
+<dt id="egse.config.find_first_occurrence_of_dir"><code class="name flex">
+<span>def <span class="ident">find_first_occurrence_of_dir</span></span>(<span>pattern: str, root: Path | str = None) ‑> Optional[Path]</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Returns the full path of the directory that first matches the pattern. The directory hierarchy is
+traversed in alphabetical order. The pattern is matched first against all directories in the root
+folder, if there is no match, the first folder in root is traversed until a match is found. If no
+match is found, the second folder in root is traversed.</p>
+<p>Note that the pattern may contain parent directories, like <code>/egse/data/icons</code> or <code>egse/*/icons</code>,
+in which case the full pattern is matched.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>pattern</code></strong></dt>
+<dd>a filename pattern</dd>
+<dt><strong><code>root</code></strong></dt>
+<dd>the root folder to start the hierarchical search</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<p>The full path of the matched pattern or None if no match could be found.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def find_first_occurrence_of_dir(pattern: str, root: Path | str = None) -&gt; Optional[Path]:
+    &#34;&#34;&#34;
+    Returns the full path of the directory that first matches the pattern. The directory hierarchy is
+    traversed in alphabetical order. The pattern is matched first against all directories in the root
+    folder, if there is no match, the first folder in root is traversed until a match is found. If no
+    match is found, the second folder in root is traversed.
+
+    Note that the pattern may contain parent directories, like `/egse/data/icons` or `egse/*/icons`,
+    in which case the full pattern is matched.
+
+    Args:
+        pattern: a filename pattern
+        root: the root folder to start the hierarchical search
+
+    Returns:
+        The full path of the matched pattern or None if no match could be found.
+    &#34;&#34;&#34;
+    import fnmatch
+
+    root = Path(root).resolve() if root else HERE
+    if not root.is_dir():
+        root = root.parent
+
+    parts = pattern.rsplit(&#34;/&#34;, maxsplit=1)
+    if len(parts) == 2:
+        first_part = parts[0]
+        last_part = parts[1]
+    else:
+        first_part = &#34;&#34;
+        last_part = parts[0]
+
+    dirs = sorted([entry.name for entry in root.iterdir() if entry.is_dir()])
+
+    if root.match(f&#34;*{first_part}&#34;) and (matches := fnmatch.filter(dirs, last_part)):
+        return root / matches[0]
+
+    for d in dirs:
+        if match := find_first_occurrence_of_dir(pattern, root / d):
+            return match
+
+    return None</code></pre>
+</details>
+</dd>
 <dt id="egse.config.find_root"><code class="name flex">
-<span>def <span class="ident">find_root</span></span>(<span>path: Union[str, pathlib.PurePath], tests: Tuple[str, ...] = (), default: str = None) ‑> Optional[pathlib.PurePath]</span>
+<span>def <span class="ident">find_root</span></span>(<span>path: Union[str, PurePath], tests: Tuple[str, ...] = (), default: str = None) ‑> Optional[pathlib.PurePath]</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Find the root folder based on the files in <code>tests</code>.</p>
@@ -713,7 +825,7 @@ fail and the <code>default</code> parameter will be returned.</p>
 </details>
 </dd>
 <dt id="egse.config.get_common_egse_root"><code class="name flex">
-<span>def <span class="ident">get_common_egse_root</span></span>(<span>path: Union[str, pathlib.PurePath] = None) ‑> Optional[pathlib.PurePath]</span>
+<span>def <span class="ident">get_common_egse_root</span></span>(<span>path: Union[str, PurePath] = None) ‑> Optional[pathlib.PurePath]</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Returns the absolute path to the installation directory for the Common-EGSE.</p>
@@ -801,7 +913,7 @@ def get_common_egse_root(path: Union[str, PurePath] = None) -&gt; Optional[PureP
 </details>
 </dd>
 <dt id="egse.config.get_resource_dirs"><code class="name flex">
-<span>def <span class="ident">get_resource_dirs</span></span>(<span>root_dir: Union[str, pathlib.PurePath] = None) ‑> List[pathlib.Path]</span>
+<span>def <span class="ident">get_resource_dirs</span></span>(<span>root_dir: Union[str, PurePath] = None) ‑> List[pathlib.Path]</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Define directories that contain resources like images, icons, and data files.</p>
@@ -857,7 +969,7 @@ in the <code>root_dir</code> that is given as an argument or in the <code>src/eg
 </details>
 </dd>
 <dt id="egse.config.get_resource_path"><code class="name flex">
-<span>def <span class="ident">get_resource_path</span></span>(<span>name: str, resource_root_dir: Union[str, pathlib.PurePath] = None) ‑> pathlib.PurePath</span>
+<span>def <span class="ident">get_resource_path</span></span>(<span>name: str, resource_root_dir: Union[str, PurePath] = None) ‑> pathlib.PurePath</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Searches for a data file (resource) with the given name.</p>
@@ -905,7 +1017,7 @@ is returned. If no file with the given name or path exists, a FileNotFoundError 
 </details>
 </dd>
 <dt id="egse.config.set_logger_levels"><code class="name flex">
-<span>def <span class="ident">set_logger_levels</span></span>(<span>logger_levels: List[Tuple[]] = None)</span>
+<span>def <span class="ident">set_logger_levels</span></span>(<span>logger_levels: List[Tuple] = None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Set the logging level for the given loggers.</p></div>
@@ -1034,6 +1146,7 @@ def path(self):
 <li><code><a title="egse.config.find_dirs" href="#egse.config.find_dirs">find_dirs</a></code></li>
 <li><code><a title="egse.config.find_file" href="#egse.config.find_file">find_file</a></code></li>
 <li><code><a title="egse.config.find_files" href="#egse.config.find_files">find_files</a></code></li>
+<li><code><a title="egse.config.find_first_occurrence_of_dir" href="#egse.config.find_first_occurrence_of_dir">find_first_occurrence_of_dir</a></code></li>
 <li><code><a title="egse.config.find_root" href="#egse.config.find_root">find_root</a></code></li>
 <li><code><a title="egse.config.get_common_egse_root" href="#egse.config.get_common_egse_root">get_common_egse_root</a></code></li>
 <li><code><a title="egse.config.get_resource_dirs" href="#egse.config.get_resource_dirs">get_resource_dirs</a></code></li>

@@ -34,6 +34,7 @@ from egse.hexapod.symetrie.zonda import ZondaController
 from egse.hexapod.symetrie.zonda import ZondaInterface
 from egse.hexapod.symetrie.zonda import ZondaSimulator
 from egse.hk import read_conversion_dict, convert_hk_names
+from egse.metrics import define_metrics
 from egse.protocol import CommandProtocol
 from egse.settings import Settings
 from egse.system import format_datetime
@@ -67,6 +68,8 @@ class ZondaProtocol(CommandProtocol):
 
         self.build_device_method_lookup_table(self.hexapod)
 
+        self.metrics = define_metrics(&#34;ZONDA&#34;)
+
     def get_bind_address(self):
         return bind_address(
             self.control_server.get_communication_protocol(),
@@ -77,11 +80,11 @@ class ZondaProtocol(CommandProtocol):
 
         status = super().get_status()
 
-        # mach_positions = self.hexapod.get_machine_positions()
-        # user_positions = self.hexapod.get_user_positions()
-        # actuator_length = self.hexapod.get_actuator_length()
-        #
-        # status.update({&#34;mach&#34;: mach_positions, &#34;user&#34;: user_positions, &#34;alength&#34;: actuator_length})
+        mach_positions = self.hexapod.get_machine_positions()
+        user_positions = self.hexapod.get_user_positions()
+        actuator_length = self.hexapod.get_actuator_length()
+
+        status.update({&#34;mach&#34;: mach_positions, &#34;user&#34;: user_positions, &#34;alength&#34;: actuator_length})
 
         return status
 
@@ -120,7 +123,13 @@ class ZondaProtocol(CommandProtocol):
         result[&#34;Homing done&#34;] = self.hexapod.is_homing_done()
         result[&#34;In position&#34;] = self.hexapod.is_in_position()
 
-        return convert_hk_names(result, self.hk_conversion_table)
+        hk_dict = convert_hk_names(result, self.hk_conversion_table)
+
+        for key, value in hk_dict.items():
+            if key != &#34;timestamp&#34;:
+                self.metrics[key].set(value)
+
+        return hk_dict
 
     def is_connected(self):
         # FIXME(rik): There must be another way to check if the socket is still alive...
@@ -209,6 +218,8 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
 
         self.build_device_method_lookup_table(self.hexapod)
 
+        self.metrics = define_metrics(&#34;ZONDA&#34;)
+
     def get_bind_address(self):
         return bind_address(
             self.control_server.get_communication_protocol(),
@@ -219,11 +230,11 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
 
         status = super().get_status()
 
-        # mach_positions = self.hexapod.get_machine_positions()
-        # user_positions = self.hexapod.get_user_positions()
-        # actuator_length = self.hexapod.get_actuator_length()
-        #
-        # status.update({&#34;mach&#34;: mach_positions, &#34;user&#34;: user_positions, &#34;alength&#34;: actuator_length})
+        mach_positions = self.hexapod.get_machine_positions()
+        user_positions = self.hexapod.get_user_positions()
+        actuator_length = self.hexapod.get_actuator_length()
+
+        status.update({&#34;mach&#34;: mach_positions, &#34;user&#34;: user_positions, &#34;alength&#34;: actuator_length})
 
         return status
 
@@ -262,7 +273,13 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
         result[&#34;Homing done&#34;] = self.hexapod.is_homing_done()
         result[&#34;In position&#34;] = self.hexapod.is_in_position()
 
-        return convert_hk_names(result, self.hk_conversion_table)
+        hk_dict = convert_hk_names(result, self.hk_conversion_table)
+
+        for key, value in hk_dict.items():
+            if key != &#34;timestamp&#34;:
+                self.metrics[key].set(value)
+
+        return hk_dict
 
     def is_connected(self):
         # FIXME(rik): There must be another way to check if the socket is still alive...

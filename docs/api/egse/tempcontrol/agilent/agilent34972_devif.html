@@ -70,7 +70,7 @@ class Agilent34972DeviceInterface(SocketDevice):
         self._setup = self._setup[&#39;gse&#39;][f&#39;agilent34972_{device_index}&#39;]
         self._conversions = self._setup[&#39;conversion&#39;]
             
-        super().__init__(hostname=self._host, port=self._port, timeout=100)
+        super().__init__(hostname=self._host, port=self._port, timeout=15)
         self.connect()
         
         self.create_scanlist()
@@ -143,26 +143,28 @@ class Agilent34972DeviceInterface(SocketDevice):
             
         # Save values with unit
         self.send_command(&#34;FORM:READ:UNIT ON\n&#34;)
+        self.send_command(&#34;FORM:READ:CHAN ON\n&#34;)
+
+
 
         # Load scan list
         self.send_command(f&#34;ROUT:SCAN {scan_list}\n&#34;)
+        time.sleep(0.1)
+
         self.send_command(f&#39;SENS:VOLT:DC:NPLC 10\n&#39;)
         self.send_command(&#39;ROUT:CHAN:DEL 0.1\n&#39;)
-       
-        # Configure timed triger
-        # self.send_command(&#34;TRIG:COUNT INF\n&#34;)
-        # self.send_command(&#34;TRIG:SOUR TIMER\n&#34;)
-        # self.send_command(&#34;TRIG:TIM 10\n&#34;)
+
         self.send_command(&#34;INIT\n&#34;)
-        time.sleep(5)
+        time.sleep(15)
 
     def trigger_scan(self):
         self.send_command(&#34;INIT\n&#34;)
     
     def read_resistance_temperature(self):
-         # Fetch values stored in non-volatile memory
-        return_string = self.query(f&#34;R? {len(self.scanlist)}\n&#34;)
-
+        # Fetch values stored in non-volatile memory
+        # return_string = self.query(f&#34;R? {len(self.scanlist)}\n&#34;)
+        return_string = self.query(f&#34;DATA:REMOVE? {len(self.scanlist)}\n&#34;)
+        
         # Check for errors
         if len(return_string) == 0:
             raise ConnectionError(f&#34;No reply from device&#34;)
@@ -170,22 +172,20 @@ class Agilent34972DeviceInterface(SocketDevice):
         if return_string[-1] != &#39;\n&#39;:
             raise ConnectionError(f&#34;Invalid termination character in response: {return_string}&#34;)
         
-        index = return_string.find(&#34;+&#34;)
-        return_string = return_string.strip(&#39;\n&#39;)[index:]
-        
         values = return_string.split(&#39;,&#39;)
-        resistances = []
-        temperatures = []
+        
+        resistances = {}
+        temperatures = {}
 
-        for value in values:
-            value = value.split(&#39; &#39;)
+        for i in range(0, len(values), 2):
+            value = values[i].split(&#39; &#39;)
+            channel = int(values[i+1])
             if &#39;C&#39; in value or &#39;C\r&#39; in value:
-                resistances.append(0)
-                temperatures.append(float(value[0]))                
+                resistances[f&#39;{channel}&#39;] = 0
+                temperatures[f&#39;{channel}&#39;] = float(value[0])          
             elif &#39;OHM&#39; in value or &#39;OHM\r&#39; in value:
-                resistances.append(abs(float(value[0])))
-                temperatures.append(self._convert_resistance(abs(float(value[0]))))
-         
+                resistances[f&#39;{channel}&#39;] = abs(float(value[0]))
+                temperatures[f&#39;{channel}&#39;] = self._convert_resistance(abs(float(value[0])))  
         
         # Return values as list
         return resistances, temperatures
@@ -336,7 +336,7 @@ Arguments can be positional or keyword arguments, not both.</p></div>
         self._setup = self._setup[&#39;gse&#39;][f&#39;agilent34972_{device_index}&#39;]
         self._conversions = self._setup[&#39;conversion&#39;]
             
-        super().__init__(hostname=self._host, port=self._port, timeout=100)
+        super().__init__(hostname=self._host, port=self._port, timeout=15)
         self.connect()
         
         self.create_scanlist()
@@ -409,26 +409,28 @@ Arguments can be positional or keyword arguments, not both.</p></div>
             
         # Save values with unit
         self.send_command(&#34;FORM:READ:UNIT ON\n&#34;)
+        self.send_command(&#34;FORM:READ:CHAN ON\n&#34;)
+
+
 
         # Load scan list
         self.send_command(f&#34;ROUT:SCAN {scan_list}\n&#34;)
+        time.sleep(0.1)
+
         self.send_command(f&#39;SENS:VOLT:DC:NPLC 10\n&#39;)
         self.send_command(&#39;ROUT:CHAN:DEL 0.1\n&#39;)
-       
-        # Configure timed triger
-        # self.send_command(&#34;TRIG:COUNT INF\n&#34;)
-        # self.send_command(&#34;TRIG:SOUR TIMER\n&#34;)
-        # self.send_command(&#34;TRIG:TIM 10\n&#34;)
+
         self.send_command(&#34;INIT\n&#34;)
-        time.sleep(5)
+        time.sleep(15)
 
     def trigger_scan(self):
         self.send_command(&#34;INIT\n&#34;)
     
     def read_resistance_temperature(self):
-         # Fetch values stored in non-volatile memory
-        return_string = self.query(f&#34;R? {len(self.scanlist)}\n&#34;)
-
+        # Fetch values stored in non-volatile memory
+        # return_string = self.query(f&#34;R? {len(self.scanlist)}\n&#34;)
+        return_string = self.query(f&#34;DATA:REMOVE? {len(self.scanlist)}\n&#34;)
+        
         # Check for errors
         if len(return_string) == 0:
             raise ConnectionError(f&#34;No reply from device&#34;)
@@ -436,22 +438,20 @@ Arguments can be positional or keyword arguments, not both.</p></div>
         if return_string[-1] != &#39;\n&#39;:
             raise ConnectionError(f&#34;Invalid termination character in response: {return_string}&#34;)
         
-        index = return_string.find(&#34;+&#34;)
-        return_string = return_string.strip(&#39;\n&#39;)[index:]
-        
         values = return_string.split(&#39;,&#39;)
-        resistances = []
-        temperatures = []
+        
+        resistances = {}
+        temperatures = {}
 
-        for value in values:
-            value = value.split(&#39; &#39;)
+        for i in range(0, len(values), 2):
+            value = values[i].split(&#39; &#39;)
+            channel = int(values[i+1])
             if &#39;C&#39; in value or &#39;C\r&#39; in value:
-                resistances.append(0)
-                temperatures.append(float(value[0]))                
+                resistances[f&#39;{channel}&#39;] = 0
+                temperatures[f&#39;{channel}&#39;] = float(value[0])          
             elif &#39;OHM&#39; in value or &#39;OHM\r&#39; in value:
-                resistances.append(abs(float(value[0])))
-                temperatures.append(self._convert_resistance(abs(float(value[0]))))
-         
+                resistances[f&#39;{channel}&#39;] = abs(float(value[0]))
+                temperatures[f&#39;{channel}&#39;] = self._convert_resistance(abs(float(value[0])))  
         
         # Return values as list
         return resistances, temperatures
@@ -520,18 +520,19 @@ Arguments can be positional or keyword arguments, not both.</p></div>
             
         # Save values with unit
         self.send_command(&#34;FORM:READ:UNIT ON\n&#34;)
+        self.send_command(&#34;FORM:READ:CHAN ON\n&#34;)
+
+
 
         # Load scan list
         self.send_command(f&#34;ROUT:SCAN {scan_list}\n&#34;)
+        time.sleep(0.1)
+
         self.send_command(f&#39;SENS:VOLT:DC:NPLC 10\n&#39;)
         self.send_command(&#39;ROUT:CHAN:DEL 0.1\n&#39;)
-       
-        # Configure timed triger
-        # self.send_command(&#34;TRIG:COUNT INF\n&#34;)
-        # self.send_command(&#34;TRIG:SOUR TIMER\n&#34;)
-        # self.send_command(&#34;TRIG:TIM 10\n&#34;)
+
         self.send_command(&#34;INIT\n&#34;)
-        time.sleep(5)</code></pre>
+        time.sleep(15)</code></pre>
 </details>
 </dd>
 <dt id="egse.tempcontrol.agilent.agilent34972_devif.Agilent34972DeviceInterface.create_scanlist"><code class="name flex">
@@ -588,9 +589,10 @@ Arguments can be positional or keyword arguments, not both.</p></div>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def read_resistance_temperature(self):
-     # Fetch values stored in non-volatile memory
-    return_string = self.query(f&#34;R? {len(self.scanlist)}\n&#34;)
-
+    # Fetch values stored in non-volatile memory
+    # return_string = self.query(f&#34;R? {len(self.scanlist)}\n&#34;)
+    return_string = self.query(f&#34;DATA:REMOVE? {len(self.scanlist)}\n&#34;)
+    
     # Check for errors
     if len(return_string) == 0:
         raise ConnectionError(f&#34;No reply from device&#34;)
@@ -598,22 +600,20 @@ Arguments can be positional or keyword arguments, not both.</p></div>
     if return_string[-1] != &#39;\n&#39;:
         raise ConnectionError(f&#34;Invalid termination character in response: {return_string}&#34;)
     
-    index = return_string.find(&#34;+&#34;)
-    return_string = return_string.strip(&#39;\n&#39;)[index:]
-    
     values = return_string.split(&#39;,&#39;)
-    resistances = []
-    temperatures = []
+    
+    resistances = {}
+    temperatures = {}
 
-    for value in values:
-        value = value.split(&#39; &#39;)
+    for i in range(0, len(values), 2):
+        value = values[i].split(&#39; &#39;)
+        channel = int(values[i+1])
         if &#39;C&#39; in value or &#39;C\r&#39; in value:
-            resistances.append(0)
-            temperatures.append(float(value[0]))                
+            resistances[f&#39;{channel}&#39;] = 0
+            temperatures[f&#39;{channel}&#39;] = float(value[0])          
         elif &#39;OHM&#39; in value or &#39;OHM\r&#39; in value:
-            resistances.append(abs(float(value[0])))
-            temperatures.append(self._convert_resistance(abs(float(value[0]))))
-     
+            resistances[f&#39;{channel}&#39;] = abs(float(value[0]))
+            temperatures[f&#39;{channel}&#39;] = self._convert_resistance(abs(float(value[0])))  
     
     # Return values as list
     return resistances, temperatures</code></pre>

@@ -66,6 +66,7 @@ from egse.reg import RegisterMap
 from egse.settings import Settings
 from egse.setup import load_setup, Setup
 from egse.spw import SpaceWirePacket
+from egse.state import GlobalState
 from egse.storage import is_storage_manager_active
 from egse.storage.persistence import FITS, HDF5
 from egse.synoptics import get_synoptics_table
@@ -159,6 +160,10 @@ class FITSGenerator:
 
         self.hdf5_filename = None
 
+        # The last obsid that was/is being processed
+
+        self.last_processed_obsid = None
+
         # Keep track of what was the N-FEE mode and what were the crucial parameters at the previous long pulse
         # (When we have checked whether a change has been detected, these values will be overwritten with the new ones)
 
@@ -169,7 +174,7 @@ class FITSGenerator:
         self.ccd_readout_order = None
         # self.sensor_sel = None
         self.rows_final_dump = None
-        self.setup = load_setup()
+        self.setup = GlobalState.setup
 
         self.config_slicing_num_cycles = 0   # Configured slicing parameter
         self.processed_num_cycles = 0           # HDF5 files with image data processed for current FITS file
@@ -243,7 +248,8 @@ class FITSGenerator:
                     last_time = time_in_ms()
 
                     monitoring_info = {&#34;hdf5&#34;: self.hdf5_filename,
-                                       &#34;fits&#34;: self.fits_cube_filename or self.fits_images_filename}
+                                       &#34;fits&#34;: self.fits_cube_filename or self.fits_images_filename,
+                                       &#34;last obsid (being) processed&#34;: self.last_processed_obsid}
                     pickle_string = pickle.dumps(monitoring_info)
                     self.monitoring_socket.send(pickle_string)
 
@@ -262,6 +268,8 @@ class FITSGenerator:
         # self.zcontext.term()
 
     def process_queue(self):
+
+        location = os.environ.get(&#39;PLATO_DATA_STORAGE_LOCATION&#39;)
 
         previous_obsid = None
 
@@ -307,9 +315,15 @@ class FITSGenerator:
                             try:
                                 obsid = hdf5_file[&#34;obsid&#34;][()].decode()
                                 obsid = ObservationIdentifier.create_from_string(obsid, order=LAB_SETUP_TEST)
+
+                                self.last_processed_obsid = obsid_from_storage(obsid, data_dir=location)
                             except (KeyError, ValueError):
                                 # Either the obsid is not included in the HDF5 file or it is None
                                 obsid = None
+                            except AttributeError:
+                                LOGGER.error(f&#34;No data present for obsid {str(obsid)} in the obs folder&#34;)
+                                self.keep_processing_queue = False
+                                break
 
                             # Loop over all groups in the current HDF5 file and check whether the &#34;data&#34; group is
                             # present
@@ -1806,7 +1820,7 @@ def from_hdf5(files, location=None, setup_id=None, site_id=None):
     site_id = site_id or SITE.ID
 
     if setup_id is None:
-        setup = load_setup()
+        setup = GlobalState.setup
     else:
         setup = load_setup(setup_id=setup_id, site_id=site_id, from_disk=True)
 
@@ -3753,6 +3767,10 @@ be created as soon as data packet start coming in (when the N-FEE is in full-ima
 
         self.hdf5_filename = None
 
+        # The last obsid that was/is being processed
+
+        self.last_processed_obsid = None
+
         # Keep track of what was the N-FEE mode and what were the crucial parameters at the previous long pulse
         # (When we have checked whether a change has been detected, these values will be overwritten with the new ones)
 
@@ -3763,7 +3781,7 @@ be created as soon as data packet start coming in (when the N-FEE is in full-ima
         self.ccd_readout_order = None
         # self.sensor_sel = None
         self.rows_final_dump = None
-        self.setup = load_setup()
+        self.setup = GlobalState.setup
 
         self.config_slicing_num_cycles = 0   # Configured slicing parameter
         self.processed_num_cycles = 0           # HDF5 files with image data processed for current FITS file
@@ -3837,7 +3855,8 @@ be created as soon as data packet start coming in (when the N-FEE is in full-ima
                     last_time = time_in_ms()
 
                     monitoring_info = {&#34;hdf5&#34;: self.hdf5_filename,
-                                       &#34;fits&#34;: self.fits_cube_filename or self.fits_images_filename}
+                                       &#34;fits&#34;: self.fits_cube_filename or self.fits_images_filename,
+                                       &#34;last obsid (being) processed&#34;: self.last_processed_obsid}
                     pickle_string = pickle.dumps(monitoring_info)
                     self.monitoring_socket.send(pickle_string)
 
@@ -3856,6 +3875,8 @@ be created as soon as data packet start coming in (when the N-FEE is in full-ima
         # self.zcontext.term()
 
     def process_queue(self):
+
+        location = os.environ.get(&#39;PLATO_DATA_STORAGE_LOCATION&#39;)
 
         previous_obsid = None
 
@@ -3901,9 +3922,15 @@ be created as soon as data packet start coming in (when the N-FEE is in full-ima
                             try:
                                 obsid = hdf5_file[&#34;obsid&#34;][()].decode()
                                 obsid = ObservationIdentifier.create_from_string(obsid, order=LAB_SETUP_TEST)
+
+                                self.last_processed_obsid = obsid_from_storage(obsid, data_dir=location)
                             except (KeyError, ValueError):
                                 # Either the obsid is not included in the HDF5 file or it is None
                                 obsid = None
+                            except AttributeError:
+                                LOGGER.error(f&#34;No data present for obsid {str(obsid)} in the obs folder&#34;)
+                                self.keep_processing_queue = False
+                                break
 
                             # Loop over all groups in the current HDF5 file and check whether the &#34;data&#34; group is
                             # present
@@ -4280,6 +4307,8 @@ queue.</p></div>
 </summary>
 <pre><code class="python">def process_queue(self):
 
+    location = os.environ.get(&#39;PLATO_DATA_STORAGE_LOCATION&#39;)
+
     previous_obsid = None
 
     while self.keep_processing_queue:
@@ -4324,9 +4353,15 @@ queue.</p></div>
                         try:
                             obsid = hdf5_file[&#34;obsid&#34;][()].decode()
                             obsid = ObservationIdentifier.create_from_string(obsid, order=LAB_SETUP_TEST)
+
+                            self.last_processed_obsid = obsid_from_storage(obsid, data_dir=location)
                         except (KeyError, ValueError):
                             # Either the obsid is not included in the HDF5 file or it is None
                             obsid = None
+                        except AttributeError:
+                            LOGGER.error(f&#34;No data present for obsid {str(obsid)} in the obs folder&#34;)
+                            self.keep_processing_queue = False
+                            break
 
                         # Loop over all groups in the current HDF5 file and check whether the &#34;data&#34; group is
                         # present
@@ -4461,7 +4496,8 @@ queue.</p></div>
                 last_time = time_in_ms()
 
                 monitoring_info = {&#34;hdf5&#34;: self.hdf5_filename,
-                                   &#34;fits&#34;: self.fits_cube_filename or self.fits_images_filename}
+                                   &#34;fits&#34;: self.fits_cube_filename or self.fits_images_filename,
+                                   &#34;last obsid (being) processed&#34;: self.last_processed_obsid}
                 pickle_string = pickle.dumps(monitoring_info)
                 self.monitoring_socket.send(pickle_string)
 

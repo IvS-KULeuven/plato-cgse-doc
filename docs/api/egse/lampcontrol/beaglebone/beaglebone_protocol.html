@@ -70,7 +70,14 @@ class BeagleboneProtocol(CommandProtocol):
                             self.control_server.get_commanding_port())
 
     def get_status(self):
-        return super().get_status()
+        status_dict = super().get_status()
+        status_dict[&#39;lamp_status&#39;] = {
+            &#39;lamp_state&#39; : self.beaglebone.get_lamp_on(),
+            &#39;laser_state&#39; : self.beaglebone.get_laser_on(),
+            &#39;module_fault&#39; : self.beaglebone.get_lamp_module_fault(),
+            &#39;controller_fault&#39; : self.beaglebone.get_controller_fault()
+        }
+        return status_dict
 
     def get_housekeeping(self) -&gt; dict:
 
@@ -141,7 +148,14 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
                             self.control_server.get_commanding_port())
 
     def get_status(self):
-        return super().get_status()
+        status_dict = super().get_status()
+        status_dict[&#39;lamp_status&#39;] = {
+            &#39;lamp_state&#39; : self.beaglebone.get_lamp_on(),
+            &#39;laser_state&#39; : self.beaglebone.get_laser_on(),
+            &#39;module_fault&#39; : self.beaglebone.get_lamp_module_fault(),
+            &#39;controller_fault&#39; : self.beaglebone.get_controller_fault()
+        }
+        return status_dict
 
     def get_housekeeping(self) -&gt; dict:
 

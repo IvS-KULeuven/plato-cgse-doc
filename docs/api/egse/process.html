@@ -30,6 +30,9 @@
 <pre><code class="python">&#34;&#34;&#34;
 This module provides functions and classes to work with processes and sub-processes.
 &#34;&#34;&#34;
+from __future__ import annotations
+
+import contextlib
 import datetime
 import logging
 import os
@@ -210,18 +213,19 @@ class SubProcess:
 
     &#34;&#34;&#34;
 
-    def __init__(self, name: str, cmd: List, args: List = None):
+    def __init__(self, name: str, cmd: List, args: List = None, shell: bool = True):
         self._popen = None
-        self._sub_process = None
+        self._sub_process: psutil.Process = None
         self._name = name
         self._cmd = cmd
         self._args = args or []
+        self._shell = shell
 
-    def execute(self, detach_from_parent=False):
+    def execute(self, detach_from_parent=False) -&gt; bool:
         &#34;&#34;&#34; Execute the sub-process.
 
         Args:
-            - detach_from_parent: Boolean indicating whether or not the sub-process should be detached from the
+            - detach_from_parent: Boolean indicating whether the sub-process should be detached from the
                                   parent process.  If set to False, the sub-process will be killed whenever the
                                   parent process is interrupted or stopped.
         &#34;&#34;&#34;
@@ -233,25 +237,22 @@ class SubProcess:
             self._popen = subprocess.Popen(
                 &#34; &#34;.join(command),
                 env=os.environ,
-                shell=True,  # executable=&#39;/bin/bash&#39;,
+                shell=self._shell,  # executable=&#39;/bin/bash&#39;,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 stdin=subprocess.DEVNULL,
             )
             self._sub_process = psutil.Process(self._popen.pid)
+
             LOGGER.debug(
                 f&#34;SubProcess started: {command}, pid={self._popen.pid}, sub_process=&#34;
-                f&#34;{self._sub_process}&#34;
+                f&#34;{self._sub_process} [pid={self._sub_process.pid}]&#34;
             )
         except KeyError:
             LOGGER.error(f&#34;Unknown client process: {self._name}&#34;, exc_info=True)
             return False
-        except PermissionError as exc:
-            # This error is raised when the command is not an executable
-            LOGGER.error(f&#34;Could not execute sub-process: {exc}&#34;, exc_info=True)
-            return False
-        except FileNotFoundError as exc:
-            # This error is raised when the command can not be found
+        except (PermissionError, FileNotFoundError) as exc:
+            # This error is raised when the command is not an executable or is not found
             LOGGER.error(f&#34;Could not execute sub-process: {exc}&#34;, exc_info=True)
             return False
         return True
@@ -262,7 +263,16 @@ class SubProcess:
 
     @property
     def pid(self) -&gt; int:
-        return self._popen.pid if self._popen else None
+        return self._sub_process.pid if self._sub_process else None
+
+    def cmdline(self) -&gt; str:
+        return &#34; &#34;.join(self._sub_process.cmdline())
+
+    def children(self, recursive: bool = True) -&gt; List:
+        return self._sub_process.children(recursive=recursive)
+
+    def is_child(self, pid: int):
+        return any(pid == p.pid for p in self._sub_process.children(recursive=True))
 
     def is_running(self):
         &#34;&#34;&#34;
@@ -347,11 +357,127 @@ class SubProcess:
 
     def returncode(self):
         &#34;&#34;&#34;
-        Check if the sub-process is terminated and return its returncode or None when the process
-        is still
-        running.
+        Check if the sub-process is terminated and return its return code or None when the process
+        is still running.
         &#34;&#34;&#34;
-        return self._popen.poll()</code></pre>
+        return self._popen.poll()
+
+
+def is_process_running(items: List[str] | str, contains: bool = True, case_sensitive: bool = False):
+    &#34;&#34;&#34;
+    Check if there is any running process that contains the given items in its commandline.
+
+    Loops over all running processes and tries to match all items in &#39;cmd_line_items&#39; to the command line
+    of the process. If all &#39;cmd_line_items&#39; can be matched to a process, the function returns True.
+
+    Args:
+        items: a string or a list of strings that should match command line parts
+        contains: if True, the match is done with &#39;in&#39; otherwise &#39;==&#39;
+        case_sensitive: if True, the match shall be case-sensitive
+
+    Returns:
+        True if there exists a running process with the given items, False otherwise.
+    &#34;&#34;&#34;
+
+    def lower(x: str) -&gt; str:
+        return x.lower()
+
+    def pass_through(x: str) -&gt; str:
+        return x
+
+    case = pass_through if case_sensitive else lower
+
+    if not items:
+        LOGGER.warning(&#34;Expected at least one item in &#39;items&#39;, none were given. False returned.&#34;)
+        return False
+
+    items = [items] if isinstance(items, str) else items
+
+    for proc in psutil.process_iter():
+        with contextlib.suppress(psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+            # LOGGER.info(f&#34;{proc.name().lower() = }, {proc.cmdline() = }&#34;)
+            if contains:
+                if all(any(case(y) in case(x) for x in proc.cmdline()) for y in items):
+                    return True
+            elif all(any(case(y) == case(x) for x in proc.cmdline()) for y in items):
+                return True
+
+    return False
+
+
+def get_process_info(items: List[str] | str, contains: bool = True, case_sensitive: bool = False) -&gt; List:
+    &#34;&#34;&#34;
+    Loops over all running processes and tries to match each item in &#39;items&#39; to the command line
+    of the process. Any process where all &#39;items&#39; can be matched will end up in the response.
+
+    Returns a list with the process info (PID, cmdline, create_time) for any processes where all &#39;items&#39; match
+    the process command line. An empty list is returned when not &#39;all the items&#39; match for any of the
+    processes.
+
+    Examples:
+        &gt;&gt;&gt; get_process_info(items=[&#34;feesim&#34;])
+        [
+            {
+                &#39;pid&#39;: 10166,
+                &#39;cmdline&#39;: [
+                    &#39;/Library/Frameworks/Python.framework/Versions/3.8/Resources/Python.app/Contents/MacOS/Python&#39;,
+                    &#39;/Users/rik/git/plato-common-egse/venv38/bin/feesim&#39;,
+                    &#39;start&#39;,
+                    &#39;--zeromq&#39;
+                ],
+                &#39;create_time&#39;: 1664898231.915995
+            }
+        ]
+
+        &gt;&gt;&gt; get_process_info(items=[&#34;dpu_cs&#34;, &#34;--zeromq&#34;])
+        [
+            {
+                &#39;pid&#39;: 11595,
+                &#39;cmdline&#39;: [
+                    &#39;/Library/Frameworks/Python.framework/Versions/3.8/Resources/Python.app/Contents/MacOS/Python&#39;,
+                    &#39;/Users/rik/git/plato-common-egse/venv38/bin/dpu_cs&#39;,
+                    &#39;start&#39;,
+                    &#39;--zeromq&#39;
+                ],
+                &#39;create_time&#39;: 1664898973.542281
+            }
+        ]
+
+    Args:
+        items: a string or a list of strings that should match command line items
+        contains: if True, the match is done with &#39;in&#39; otherwise &#39;==&#39;
+        case_sensitive: if True, the match shall be case-sensitive
+
+    Returns:
+        A list of process info entries.
+
+    &#34;&#34;&#34;
+    response = []
+
+    def lower(x: str) -&gt; str:
+        return x.lower()
+
+    def pass_through(x: str) -&gt; str:
+        return x
+
+    case = pass_through if case_sensitive else lower
+
+    if not items:
+        LOGGER.warning(&#34;Expected at least one item in &#39;items&#39;, none were given. Empty list returned.&#34;)
+        return response
+
+    items = [items] if isinstance(items, str) else items
+
+    for proc in psutil.process_iter():
+        with contextlib.suppress(psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+            # LOGGER.info(f&#34;{proc.name().lower() = }, {proc.cmdline() = }&#34;)
+            if contains:
+                if all(any(case(y) in case(x) for x in proc.cmdline()) for y in items):
+                    response.append(proc.as_dict(attrs=[&#39;pid&#39;, &#39;cmdline&#39;, &#39;create_time&#39;]))
+            elif all(any(case(y) == case(x) for x in proc.cmdline()) for y in items):
+                response.append(proc.as_dict(attrs=[&#39;pid&#39;, &#39;cmdline&#39;, &#39;create_time&#39;]))
+
+    return response</code></pre>
 </details>
 </section>
 <section>
@@ -359,6 +485,201 @@ class SubProcess:
 <section>
 </section>
 <section>
+<h2 class="section-title" id="header-functions">Functions</h2>
+<dl>
+<dt id="egse.process.get_process_info"><code class="name flex">
+<span>def <span class="ident">get_process_info</span></span>(<span>items: List[str] | str, contains: bool = True, case_sensitive: bool = False) ‑> List</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Loops over all running processes and tries to match each item in 'items' to the command line
+of the process. Any process where all 'items' can be matched will end up in the response.</p>
+<p>Returns a list with the process info (PID, cmdline, create_time) for any processes where all 'items' match
+the process command line. An empty list is returned when not 'all the items' match for any of the
+processes.</p>
+<h2 id="examples">Examples</h2>
+<pre><code class="language-python-repl">&gt;&gt;&gt; get_process_info(items=[&quot;feesim&quot;])
+[
+    {
+        'pid': 10166,
+        'cmdline': [
+            '/Library/Frameworks/Python.framework/Versions/3.8/Resources/Python.app/Contents/MacOS/Python',
+            '/Users/rik/git/plato-common-egse/venv38/bin/feesim',
+            'start',
+            '--zeromq'
+        ],
+        'create_time': 1664898231.915995
+    }
+]
+</code></pre>
+<pre><code class="language-python-repl">&gt;&gt;&gt; get_process_info(items=[&quot;dpu_cs&quot;, &quot;--zeromq&quot;])
+[
+    {
+        'pid': 11595,
+        'cmdline': [
+            '/Library/Frameworks/Python.framework/Versions/3.8/Resources/Python.app/Contents/MacOS/Python',
+            '/Users/rik/git/plato-common-egse/venv38/bin/dpu_cs',
+            'start',
+            '--zeromq'
+        ],
+        'create_time': 1664898973.542281
+    }
+]
+</code></pre>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>items</code></strong></dt>
+<dd>a string or a list of strings that should match command line items</dd>
+<dt><strong><code>contains</code></strong></dt>
+<dd>if True, the match is done with 'in' otherwise '=='</dd>
+<dt><strong><code>case_sensitive</code></strong></dt>
+<dd>if True, the match shall be case-sensitive</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<p>A list of process info entries.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_process_info(items: List[str] | str, contains: bool = True, case_sensitive: bool = False) -&gt; List:
+    &#34;&#34;&#34;
+    Loops over all running processes and tries to match each item in &#39;items&#39; to the command line
+    of the process. Any process where all &#39;items&#39; can be matched will end up in the response.
+
+    Returns a list with the process info (PID, cmdline, create_time) for any processes where all &#39;items&#39; match
+    the process command line. An empty list is returned when not &#39;all the items&#39; match for any of the
+    processes.
+
+    Examples:
+        &gt;&gt;&gt; get_process_info(items=[&#34;feesim&#34;])
+        [
+            {
+                &#39;pid&#39;: 10166,
+                &#39;cmdline&#39;: [
+                    &#39;/Library/Frameworks/Python.framework/Versions/3.8/Resources/Python.app/Contents/MacOS/Python&#39;,
+                    &#39;/Users/rik/git/plato-common-egse/venv38/bin/feesim&#39;,
+                    &#39;start&#39;,
+                    &#39;--zeromq&#39;
+                ],
+                &#39;create_time&#39;: 1664898231.915995
+            }
+        ]
+
+        &gt;&gt;&gt; get_process_info(items=[&#34;dpu_cs&#34;, &#34;--zeromq&#34;])
+        [
+            {
+                &#39;pid&#39;: 11595,
+                &#39;cmdline&#39;: [
+                    &#39;/Library/Frameworks/Python.framework/Versions/3.8/Resources/Python.app/Contents/MacOS/Python&#39;,
+                    &#39;/Users/rik/git/plato-common-egse/venv38/bin/dpu_cs&#39;,
+                    &#39;start&#39;,
+                    &#39;--zeromq&#39;
+                ],
+                &#39;create_time&#39;: 1664898973.542281
+            }
+        ]
+
+    Args:
+        items: a string or a list of strings that should match command line items
+        contains: if True, the match is done with &#39;in&#39; otherwise &#39;==&#39;
+        case_sensitive: if True, the match shall be case-sensitive
+
+    Returns:
+        A list of process info entries.
+
+    &#34;&#34;&#34;
+    response = []
+
+    def lower(x: str) -&gt; str:
+        return x.lower()
+
+    def pass_through(x: str) -&gt; str:
+        return x
+
+    case = pass_through if case_sensitive else lower
+
+    if not items:
+        LOGGER.warning(&#34;Expected at least one item in &#39;items&#39;, none were given. Empty list returned.&#34;)
+        return response
+
+    items = [items] if isinstance(items, str) else items
+
+    for proc in psutil.process_iter():
+        with contextlib.suppress(psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+            # LOGGER.info(f&#34;{proc.name().lower() = }, {proc.cmdline() = }&#34;)
+            if contains:
+                if all(any(case(y) in case(x) for x in proc.cmdline()) for y in items):
+                    response.append(proc.as_dict(attrs=[&#39;pid&#39;, &#39;cmdline&#39;, &#39;create_time&#39;]))
+            elif all(any(case(y) == case(x) for x in proc.cmdline()) for y in items):
+                response.append(proc.as_dict(attrs=[&#39;pid&#39;, &#39;cmdline&#39;, &#39;create_time&#39;]))
+
+    return response</code></pre>
+</details>
+</dd>
+<dt id="egse.process.is_process_running"><code class="name flex">
+<span>def <span class="ident">is_process_running</span></span>(<span>items: List[str] | str, contains: bool = True, case_sensitive: bool = False)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Check if there is any running process that contains the given items in its commandline.</p>
+<p>Loops over all running processes and tries to match all items in 'cmd_line_items' to the command line
+of the process. If all 'cmd_line_items' can be matched to a process, the function returns True.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>items</code></strong></dt>
+<dd>a string or a list of strings that should match command line parts</dd>
+<dt><strong><code>contains</code></strong></dt>
+<dd>if True, the match is done with 'in' otherwise '=='</dd>
+<dt><strong><code>case_sensitive</code></strong></dt>
+<dd>if True, the match shall be case-sensitive</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<p>True if there exists a running process with the given items, False otherwise.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def is_process_running(items: List[str] | str, contains: bool = True, case_sensitive: bool = False):
+    &#34;&#34;&#34;
+    Check if there is any running process that contains the given items in its commandline.
+
+    Loops over all running processes and tries to match all items in &#39;cmd_line_items&#39; to the command line
+    of the process. If all &#39;cmd_line_items&#39; can be matched to a process, the function returns True.
+
+    Args:
+        items: a string or a list of strings that should match command line parts
+        contains: if True, the match is done with &#39;in&#39; otherwise &#39;==&#39;
+        case_sensitive: if True, the match shall be case-sensitive
+
+    Returns:
+        True if there exists a running process with the given items, False otherwise.
+    &#34;&#34;&#34;
+
+    def lower(x: str) -&gt; str:
+        return x.lower()
+
+    def pass_through(x: str) -&gt; str:
+        return x
+
+    case = pass_through if case_sensitive else lower
+
+    if not items:
+        LOGGER.warning(&#34;Expected at least one item in &#39;items&#39;, none were given. False returned.&#34;)
+        return False
+
+    items = [items] if isinstance(items, str) else items
+
+    for proc in psutil.process_iter():
+        with contextlib.suppress(psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+            # LOGGER.info(f&#34;{proc.name().lower() = }, {proc.cmdline() = }&#34;)
+            if contains:
+                if all(any(case(y) in case(x) for x in proc.cmdline()) for y in items):
+                    return True
+            elif all(any(case(y) == case(x) for x in proc.cmdline()) for y in items):
+                return True
+
+    return False</code></pre>
+</details>
+</dd>
+</dl>
 </section>
 <section>
 <h2 class="section-title" id="header-classes">Classes</h2>
@@ -624,7 +945,7 @@ process execution:</p>
 </dd>
 <dt id="egse.process.SubProcess"><code class="flex name class">
 <span>class <span class="ident">SubProcess</span></span>
-<span>(</span><span>name: str, cmd: List[~T], args: List[~T] = None)</span>
+<span>(</span><span>name: str, cmd: List, args: List = None, shell: bool = True)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>A SubProcess that is usually started by the ProcessManager.</p>
@@ -646,18 +967,19 @@ hexapod_ui.execute()</p></div>
 
     &#34;&#34;&#34;
 
-    def __init__(self, name: str, cmd: List, args: List = None):
+    def __init__(self, name: str, cmd: List, args: List = None, shell: bool = True):
         self._popen = None
-        self._sub_process = None
+        self._sub_process: psutil.Process = None
         self._name = name
         self._cmd = cmd
         self._args = args or []
+        self._shell = shell
 
-    def execute(self, detach_from_parent=False):
+    def execute(self, detach_from_parent=False) -&gt; bool:
         &#34;&#34;&#34; Execute the sub-process.
 
         Args:
-            - detach_from_parent: Boolean indicating whether or not the sub-process should be detached from the
+            - detach_from_parent: Boolean indicating whether the sub-process should be detached from the
                                   parent process.  If set to False, the sub-process will be killed whenever the
                                   parent process is interrupted or stopped.
         &#34;&#34;&#34;
@@ -669,25 +991,22 @@ hexapod_ui.execute()</p></div>
             self._popen = subprocess.Popen(
                 &#34; &#34;.join(command),
                 env=os.environ,
-                shell=True,  # executable=&#39;/bin/bash&#39;,
+                shell=self._shell,  # executable=&#39;/bin/bash&#39;,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 stdin=subprocess.DEVNULL,
             )
             self._sub_process = psutil.Process(self._popen.pid)
+
             LOGGER.debug(
                 f&#34;SubProcess started: {command}, pid={self._popen.pid}, sub_process=&#34;
-                f&#34;{self._sub_process}&#34;
+                f&#34;{self._sub_process} [pid={self._sub_process.pid}]&#34;
             )
         except KeyError:
             LOGGER.error(f&#34;Unknown client process: {self._name}&#34;, exc_info=True)
             return False
-        except PermissionError as exc:
-            # This error is raised when the command is not an executable
-            LOGGER.error(f&#34;Could not execute sub-process: {exc}&#34;, exc_info=True)
-            return False
-        except FileNotFoundError as exc:
-            # This error is raised when the command can not be found
+        except (PermissionError, FileNotFoundError) as exc:
+            # This error is raised when the command is not an executable or is not found
             LOGGER.error(f&#34;Could not execute sub-process: {exc}&#34;, exc_info=True)
             return False
         return True
@@ -698,7 +1017,16 @@ hexapod_ui.execute()</p></div>
 
     @property
     def pid(self) -&gt; int:
-        return self._popen.pid if self._popen else None
+        return self._sub_process.pid if self._sub_process else None
+
+    def cmdline(self) -&gt; str:
+        return &#34; &#34;.join(self._sub_process.cmdline())
+
+    def children(self, recursive: bool = True) -&gt; List:
+        return self._sub_process.children(recursive=recursive)
+
+    def is_child(self, pid: int):
+        return any(pid == p.pid for p in self._sub_process.children(recursive=True))
 
     def is_running(self):
         &#34;&#34;&#34;
@@ -783,9 +1111,8 @@ hexapod_ui.execute()</p></div>
 
     def returncode(self):
         &#34;&#34;&#34;
-        Check if the sub-process is terminated and return its returncode or None when the process
-        is still
-        running.
+        Check if the sub-process is terminated and return its return code or None when the process
+        is still running.
         &#34;&#34;&#34;
         return self._popen.poll()</code></pre>
 </details>
@@ -812,20 +1139,46 @@ def name(self):
 </summary>
 <pre><code class="python">@property
 def pid(self) -&gt; int:
-    return self._popen.pid if self._popen else None</code></pre>
+    return self._sub_process.pid if self._sub_process else None</code></pre>
 </details>
 </dd>
 </dl>
 <h3>Methods</h3>
 <dl>
+<dt id="egse.process.SubProcess.children"><code class="name flex">
+<span>def <span class="ident">children</span></span>(<span>self, recursive: bool = True) ‑> List[~T]</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def children(self, recursive: bool = True) -&gt; List:
+    return self._sub_process.children(recursive=recursive)</code></pre>
+</details>
+</dd>
+<dt id="egse.process.SubProcess.cmdline"><code class="name flex">
+<span>def <span class="ident">cmdline</span></span>(<span>self) ‑> str</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def cmdline(self) -&gt; str:
+    return &#34; &#34;.join(self._sub_process.cmdline())</code></pre>
+</details>
+</dd>
 <dt id="egse.process.SubProcess.execute"><code class="name flex">
-<span>def <span class="ident">execute</span></span>(<span>self, detach_from_parent=False)</span>
+<span>def <span class="ident">execute</span></span>(<span>self, detach_from_parent=False) ‑> bool</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Execute the sub-process.</p>
 <h2 id="args">Args</h2>
 <ul>
-<li>detach_from_parent: Boolean indicating whether or not the sub-process should be detached from the
+<li>detach_from_parent: Boolean indicating whether the sub-process should be detached from the
 parent process.
 If set to False, the sub-process will be killed whenever the
 parent process is interrupted or stopped.</li>
@@ -834,11 +1187,11 @@ parent process is interrupted or stopped.</li>
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def execute(self, detach_from_parent=False):
+<pre><code class="python">def execute(self, detach_from_parent=False) -&gt; bool:
     &#34;&#34;&#34; Execute the sub-process.
 
     Args:
-        - detach_from_parent: Boolean indicating whether or not the sub-process should be detached from the
+        - detach_from_parent: Boolean indicating whether the sub-process should be detached from the
                               parent process.  If set to False, the sub-process will be killed whenever the
                               parent process is interrupted or stopped.
     &#34;&#34;&#34;
@@ -850,25 +1203,22 @@ parent process is interrupted or stopped.</li>
         self._popen = subprocess.Popen(
             &#34; &#34;.join(command),
             env=os.environ,
-            shell=True,  # executable=&#39;/bin/bash&#39;,
+            shell=self._shell,  # executable=&#39;/bin/bash&#39;,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             stdin=subprocess.DEVNULL,
         )
         self._sub_process = psutil.Process(self._popen.pid)
+
         LOGGER.debug(
             f&#34;SubProcess started: {command}, pid={self._popen.pid}, sub_process=&#34;
-            f&#34;{self._sub_process}&#34;
+            f&#34;{self._sub_process} [pid={self._sub_process.pid}]&#34;
         )
     except KeyError:
         LOGGER.error(f&#34;Unknown client process: {self._name}&#34;, exc_info=True)
         return False
-    except PermissionError as exc:
-        # This error is raised when the command is not an executable
-        LOGGER.error(f&#34;Could not execute sub-process: {exc}&#34;, exc_info=True)
-        return False
-    except FileNotFoundError as exc:
-        # This error is raised when the command can not be found
+    except (PermissionError, FileNotFoundError) as exc:
+        # This error is raised when the command is not an executable or is not found
         LOGGER.error(f&#34;Could not execute sub-process: {exc}&#34;, exc_info=True)
         return False
     return True</code></pre>
@@ -893,6 +1243,19 @@ parent process is interrupted or stopped.</li>
         True if the sub-process exists.
     &#34;&#34;&#34;
     return psutil.pid_exists(self.pid)</code></pre>
+</details>
+</dd>
+<dt id="egse.process.SubProcess.is_child"><code class="name flex">
+<span>def <span class="ident">is_child</span></span>(<span>self, pid: int)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def is_child(self, pid: int):
+    return any(pid == p.pid for p in self._sub_process.children(recursive=True))</code></pre>
 </details>
 </dd>
 <dt id="egse.process.SubProcess.is_running"><code class="name flex">
@@ -1012,18 +1375,16 @@ actually ends its execution.</p>
 <span>def <span class="ident">returncode</span></span>(<span>self)</span>
 </code></dt>
 <dd>
-<div class="desc"><p>Check if the sub-process is terminated and return its returncode or None when the process
-is still
-running.</p></div>
+<div class="desc"><p>Check if the sub-process is terminated and return its return code or None when the process
+is still running.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def returncode(self):
     &#34;&#34;&#34;
-    Check if the sub-process is terminated and return its returncode or None when the process
-    is still
-    running.
+    Check if the sub-process is terminated and return its return code or None when the process
+    is still running.
     &#34;&#34;&#34;
     return self._popen.poll()</code></pre>
 </details>
@@ -1044,6 +1405,12 @@ running.</p></div>
 <li><code><a title="egse" href="index.html">egse</a></code></li>
 </ul>
 </li>
+<li><h3><a href="#header-functions">Functions</a></h3>
+<ul class="">
+<li><code><a title="egse.process.get_process_info" href="#egse.process.get_process_info">get_process_info</a></code></li>
+<li><code><a title="egse.process.is_process_running" href="#egse.process.is_process_running">is_process_running</a></code></li>
+</ul>
+</li>
 <li><h3><a href="#header-classes">Classes</a></h3>
 <ul>
 <li>
@@ -1057,8 +1424,11 @@ running.</p></div>
 <li>
 <h4><code><a title="egse.process.SubProcess" href="#egse.process.SubProcess">SubProcess</a></code></h4>
 <ul class="two-column">
+<li><code><a title="egse.process.SubProcess.children" href="#egse.process.SubProcess.children">children</a></code></li>
+<li><code><a title="egse.process.SubProcess.cmdline" href="#egse.process.SubProcess.cmdline">cmdline</a></code></li>
 <li><code><a title="egse.process.SubProcess.execute" href="#egse.process.SubProcess.execute">execute</a></code></li>
 <li><code><a title="egse.process.SubProcess.exists" href="#egse.process.SubProcess.exists">exists</a></code></li>
+<li><code><a title="egse.process.SubProcess.is_child" href="#egse.process.SubProcess.is_child">is_child</a></code></li>
 <li><code><a title="egse.process.SubProcess.is_running" href="#egse.process.SubProcess.is_running">is_running</a></code></li>
 <li><code><a title="egse.process.SubProcess.name" href="#egse.process.SubProcess.name">name</a></code></li>
 <li><code><a title="egse.process.SubProcess.pid" href="#egse.process.SubProcess.pid">pid</a></code></li>

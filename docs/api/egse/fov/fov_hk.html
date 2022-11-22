@@ -43,11 +43,10 @@ from prometheus_client import start_http_server
 from egse.control import is_control_server_active
 from egse.fov import store_actual_fov_position
 from egse.settings import Settings
-from egse.setup import load_setup
+from egse.state import GlobalState
 from egse.storage import is_storage_manager_active
 from egse.storage import register_to_storage_manager
 from egse.storage.persistence import CSV
-from egse.system import format_datetime
 from egse.zmq_ser import connect_address, bind_address
 
 CTRL_SETTINGS = Settings.load(&#34;FOV HK Control Server&#34;)
@@ -138,7 +137,7 @@ class FovHk:
 
     def __init__(self):
 
-        self.setup = load_setup()
+        self.setup = GlobalState.setup
         self.keep_acquiring_fov_hk = True
 
     def run(self, commander, poller):
@@ -379,11 +378,13 @@ class IasFovHk(FovHk):
                     pickle_string = self.monitoring_socket.recv()
                     monitoring_info = pickle.loads(pickle_string)
 
-                    # Retrieve the rotation angles around the y- and z-axis
+                    # Retrieve the rotation angles around the y- and z-axis [degrees]
                     # (the rotation angle around the x-axis and the translation are not needed here)
 
-                    hexapod_rot_y = radians(monitoring_info[&#34;user_r_y&#34;])    # Rotation angle around the x-axis [degrees]
-                    hexapod_rot_z = radians(monitoring_info[&#34;user_r_z&#34;])    # Rotation angle around the y-axis [degrees]
+                    *_, hexapod_rot_y, hexapod_rot_z = monitoring_info[&#34;user&#34;]
+
+                    hexapod_rot_y = radians(hexapod_rot_y)    # Rotation angle around the x-axis [radians]
+                    hexapod_rot_z = radians(hexapod_rot_z)    # Rotation angle around the y-axis [radians]
 
                     theta = degrees(acos(cos(hexapod_rot_y) * cos(hexapod_rot_z)))
                     phi = degrees(-asin(sin(hexapod_rot_z) / sqrt(1 - pow(cos(hexapod_rot_y) * cos(hexapod_rot_z), 2))))
@@ -779,7 +780,7 @@ Returns: Response to the request.</li>
 
     def __init__(self):
 
-        self.setup = load_setup()
+        self.setup = GlobalState.setup
         self.keep_acquiring_fov_hk = True
 
     def run(self, commander, poller):
@@ -946,11 +947,13 @@ Returns: Response to the request.</li>
                     pickle_string = self.monitoring_socket.recv()
                     monitoring_info = pickle.loads(pickle_string)
 
-                    # Retrieve the rotation angles around the y- and z-axis
+                    # Retrieve the rotation angles around the y- and z-axis [degrees]
                     # (the rotation angle around the x-axis and the translation are not needed here)
 
-                    hexapod_rot_y = radians(monitoring_info[&#34;user_r_y&#34;])    # Rotation angle around the x-axis [degrees]
-                    hexapod_rot_z = radians(monitoring_info[&#34;user_r_z&#34;])    # Rotation angle around the y-axis [degrees]
+                    *_, hexapod_rot_y, hexapod_rot_z = monitoring_info[&#34;user&#34;]
+
+                    hexapod_rot_y = radians(hexapod_rot_y)    # Rotation angle around the x-axis [radians]
+                    hexapod_rot_z = radians(hexapod_rot_z)    # Rotation angle around the y-axis [radians]
 
                     theta = degrees(acos(cos(hexapod_rot_y) * cos(hexapod_rot_z)))
                     phi = degrees(-asin(sin(hexapod_rot_z) / sqrt(1 - pow(cos(hexapod_rot_y) * cos(hexapod_rot_z), 2))))
@@ -997,11 +1000,13 @@ Returns: Response to the request.</li>
                 pickle_string = self.monitoring_socket.recv()
                 monitoring_info = pickle.loads(pickle_string)
 
-                # Retrieve the rotation angles around the y- and z-axis
+                # Retrieve the rotation angles around the y- and z-axis [degrees]
                 # (the rotation angle around the x-axis and the translation are not needed here)
 
-                hexapod_rot_y = radians(monitoring_info[&#34;user_r_y&#34;])    # Rotation angle around the x-axis [degrees]
-                hexapod_rot_z = radians(monitoring_info[&#34;user_r_z&#34;])    # Rotation angle around the y-axis [degrees]
+                *_, hexapod_rot_y, hexapod_rot_z = monitoring_info[&#34;user&#34;]
+
+                hexapod_rot_y = radians(hexapod_rot_y)    # Rotation angle around the x-axis [radians]
+                hexapod_rot_z = radians(hexapod_rot_z)    # Rotation angle around the y-axis [radians]
 
                 theta = degrees(acos(cos(hexapod_rot_y) * cos(hexapod_rot_z)))
                 phi = degrees(-asin(sin(hexapod_rot_z) / sqrt(1 - pow(cos(hexapod_rot_y) * cos(hexapod_rot_z), 2))))

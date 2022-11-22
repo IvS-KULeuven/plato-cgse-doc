@@ -75,11 +75,11 @@ from egse.dpu.dpu import command_set_standby_mode
 from egse.dpu.dpu import command_set_vgd
 from egse.dpu.dpu import prio_command_get_mode
 from egse.dpu.dpu import prio_command_get_slicing
+from egse.dpu.dpu import prio_command_get_sync_mode
 from egse.dpu.dpu import prio_command_is_dump_mode
 from egse.dpu.dpu import prio_command_set_slicing
 from egse.dsi.esl import is_timecode
 from egse.exceptions import Abort
-from egse.fee import DEFAULT_CCD_READOUT_ORDER
 from egse.fee import is_hk_data_packet
 from egse.fee import n_fee_mode
 from egse.fee import n_fee_side
@@ -89,6 +89,7 @@ from egse.protocol import CommandProtocol
 from egse.proxy import Proxy
 from egse.reg import RegisterMap
 from egse.settings import Settings
+from egse.setup import SetupError
 from egse.spw import DataDataPacket
 from egse.spw import DataPacket
 from egse.spw import DataPacketType
@@ -98,6 +99,7 @@ from egse.spw import SpaceWireInterface
 from egse.spw import SpaceWirePacket
 from egse.spw import TimecodePacket
 from egse.spw import to_string
+from egse.state import GlobalState
 from egse.storage import StorageProxy
 from egse.storage.persistence import FITS
 from egse.storage.persistence import HDF5
@@ -198,6 +200,13 @@ class DPUInterface:
 
     @dynamic_interface
     def n_fee_get_mode(self):
+        &#34;&#34;&#34;
+        Returns the N-FEE mode.
+        &#34;&#34;&#34;
+        raise NotImplementedError
+
+    @dynamic_interface
+    def n_fee_get_sync_mode(self):
         &#34;&#34;&#34;
         Returns the N-FEE mode.
         &#34;&#34;&#34;
@@ -346,8 +355,11 @@ class DPUInterface:
         raise NotImplementedError
 
     @dynamic_interface
-    def n_fee_set_external_sync(self, n_fee_parameters):
-        &#34;&#34;&#34;Command the N-FEE to go into external sync mode.&#34;&#34;&#34;
+    def n_fee_set_external_sync(self, n_fee_parameters: dict):
+        &#34;&#34;&#34;
+        Command the N-FEE to go into external sync mode.
+        No keys are expected in n_fee_parameters, pass an empty dict.
+        &#34;&#34;&#34;
         raise NotImplementedError
 
     @dynamic_interface
@@ -395,6 +407,9 @@ class DPUSimulator(DPUInterface):
 
     def n_fee_get_mode(self):
         return n_fee_mode.STAND_BY_MODE
+
+    def n_fee_get_sync_mode(self):
+        return NotImplemented
 
     def n_fee_set_on_mode(self):
         pass
@@ -447,6 +462,11 @@ class DPUController(DPUInterface):
         self._command_q = command_queue
         self._response_q = response_queue
 
+        try:
+            self.default_ccd_readout_order = GlobalState.setup.camera.fee.ccd_numbering.DEFAULT_CCD_READOUT_ORDER
+        except AttributeError:
+            raise SetupError(&#34;No entry in the setup for camera.fee.ccd_numbering.DEFAULT_CCD_READOUT_ORDER&#34;)
+
     def marker(self, mark: str):
         LOGGER.info(f&#34;{mark = }&#34;)
 
@@ -483,6 +503,13 @@ class DPUController(DPUInterface):
         LOGGER.debug(&#34;Controller.n_fee_get_mode: Put prio_command_get_mode on the Queue.&#34;)
         (cmd, response) = self._response_q.get()
         LOGGER.debug(f&#34;Controller.n_fee_get_mode returned: ({cmd.__name__}, {response}).&#34;)
+        return response
+
+    def n_fee_get_sync_mode(self):
+        self._priority_q.put((prio_command_get_sync_mode, []))
+        LOGGER.debug(&#34;Controller.n_fee_get_sync_mode: Put prio_command_get_sync_mode on the Queue.&#34;)
+        (cmd, response) = self._response_q.get()
+        LOGGER.debug(f&#34;Controller.n_fee_get_sync_mode returned: ({cmd.__name__}, {response}).&#34;)
         return response
 
     def n_fee_is_dump_mode(self):
@@ -524,7 +551,7 @@ class DPUController(DPUInterface):
         v_start = n_fee_parameters.get(&#34;v_start&#34;, 0)
         v_end = n_fee_parameters.get(&#34;v_end&#34;, 4509)
         sensor_sel_ = n_fee_parameters.get(&#34;sensor_sel&#34;, sensor_sel.BOTH_SIDES)
-        ccd_readout_order = n_fee_parameters.get(&#34;ccd_readout_order&#34;, DEFAULT_CCD_READOUT_ORDER)
+        ccd_readout_order = n_fee_parameters.get(&#34;ccd_readout_order&#34;, self.default_ccd_readout_order)
         n_final_dump = n_fee_parameters.get(&#34;n_final_dump&#34;, 0)
         sync_sel = n_fee_parameters.get(&#34;sync_sel&#34;, 0)
         num_cycles = n_fee_parameters.get(&#34;num_cycles&#34;, 0)
@@ -542,8 +569,8 @@ class DPUController(DPUInterface):
         v_start = n_fee_parameters.get(&#34;v_start&#34;, 0)
         v_end = n_fee_parameters.get(&#34;v_end&#34;, 4509)
         sensor_sel_ = n_fee_parameters.get(&#34;sensor_sel&#34;, sensor_sel.BOTH_SIDES)
-        ccd_readout_order = n_fee_parameters.get(&#34;ccd_readout_order&#34;, DEFAULT_CCD_READOUT_ORDER)
         n_final_dump = n_fee_parameters.get(&#34;n_final_dump&#34;, 0)
+        ccd_readout_order = n_fee_parameters.get(&#34;ccd_readout_order&#34;, self.default_ccd_readout_order)
         sync_sel = n_fee_parameters.get(&#34;sync_sel&#34;, 1)
         int_sync_period = n_fee_parameters.get(&#34;int_sync_period&#34;, 2500)
         num_cycles = n_fee_parameters.get(&#34;num_cycles&#34;, 0)
@@ -564,7 +591,7 @@ class DPUController(DPUInterface):
         v_start = n_fee_parameters.get(&#34;v_start&#34;, 0)
         v_end = n_fee_parameters.get(&#34;v_end&#34;, 1)
         sensor_sel_ = n_fee_parameters.get(&#34;sensor_sel&#34;, sensor_sel.BOTH_SIDES)
-        ccd_readout_order = n_fee_parameters.get(&#34;ccd_readout_order&#34;, DEFAULT_CCD_READOUT_ORDER)
+        ccd_readout_order = n_fee_parameters.get(&#34;ccd_readout_order&#34;, self.default_ccd_readout_order)
         n_final_dump = n_fee_parameters.get(&#34;n_final_dump&#34;, 0)
         num_cycles = n_fee_parameters.get(&#34;num_cycles&#34;, 0)
         dump_mode_int = n_fee_parameters.get(&#34;dump_mode_int&#34;, False)
@@ -582,7 +609,7 @@ class DPUController(DPUInterface):
         v_start = n_fee_parameters.get(&#34;v_start&#34;, 0)
         v_end = n_fee_parameters.get(&#34;v_end&#34;, 1)
         sensor_sel_ = n_fee_parameters.get(&#34;sensor_sel&#34;, sensor_sel.BOTH_SIDES)
-        ccd_readout_order = n_fee_parameters.get(&#34;ccd_readout_order&#34;, DEFAULT_CCD_READOUT_ORDER)
+        ccd_readout_order = n_fee_parameters.get(&#34;ccd_readout_order&#34;, self.default_ccd_readout_order)
         n_final_dump = n_fee_parameters.get(&#34;n_final_dump&#34;, 0)
         int_sync_period = n_fee_parameters.get(&#34;int_sync_period&#34;, 6250)
         num_cycles = n_fee_parameters.get(&#34;num_cycles&#34;, 0)
@@ -687,7 +714,7 @@ class DPUController(DPUInterface):
         v_start = n_fee_parameters.get(&#34;v_start&#34;, 0)
         v_end = n_fee_parameters.get(&#34;v_end&#34;, 4509)
         sensor_sel_ = n_fee_parameters.get(&#34;sensor_sel&#34;, sensor_sel.BOTH_SIDES)
-        ccd_readout_order = n_fee_parameters.get(&#34;ccd_readout_order&#34;, DEFAULT_CCD_READOUT_ORDER)
+        ccd_readout_order = n_fee_parameters.get(&#34;ccd_readout_order&#34;, self.default_ccd_readout_order)
         n_final_dump = n_fee_parameters.get(&#34;n_final_dump&#34;, 0)
         num_cycles = n_fee_parameters.get(&#34;num_cycles&#34;, 0)
         img_clk_dir = n_fee_parameters.get(&#34;img_clk_dir&#34;, 1)
@@ -710,7 +737,7 @@ class DPUController(DPUInterface):
         v_end = n_fee_parameters.get(&#34;v_end&#34;, 4509)
         n_final_dump = n_fee_parameters.get(&#34;n_final_dump&#34;, 0)
         sensor_sel_ = n_fee_parameters.get(&#34;sensor_sel&#34;, sensor_sel.BOTH_SIDES)
-        ccd_readout_order = n_fee_parameters.get(&#34;ccd_readout_order&#34;, DEFAULT_CCD_READOUT_ORDER)
+        ccd_readout_order = n_fee_parameters.get(&#34;ccd_readout_order&#34;, self.default_ccd_readout_order)
         charge_injection_width = n_fee_parameters.get(&#34;charge_injection_width&#34;, 0)
         charge_injection_gap = n_fee_parameters.get(&#34;charge_injection_gap&#34;, 0)
 
@@ -995,21 +1022,26 @@ class DPUMonitoring:
                 if retries &lt;= 0:
                     raise TimeoutError(f&#34;DPUMonitoring timed out after {self._retries * self._timeout} seconds.&#34;)
 
-    def wait_num_cycles(self, num_cycles: int):
+    def wait_number_of_pulses(self, num_pulses: int) -&gt; None:
         &#34;&#34;&#34;
-        Wait for a number of long pulses (cycles), then return.
+        Wait for a number of pulses (long and short), then return.
+
+        When the number of pulses has been received, the function returns right after the timecode synchronisation
+        message. Any command that is sent to the N-FEE immediately after this function returns will be processes within
+        that same readout frame, i.e. before the next sync pulse.
+
+        Args:
+            num_pulses: the number of sync pulses to wait before returning.
 
         Raises:
             A TimeoutError when no sync data was received from the monitoring socket after 30s.
         &#34;&#34;&#34;
         self.unsubscribe_all()
-        self.subscribe(MessageIdentifier.SYNC_HK_PACKET)
+        self.subscribe(MessageIdentifier.SYNC_TIMECODE)
 
         retries = self._retries
 
-        if num_cycles &lt;= 0:
-            LOGGER.debug(f&#34;{num_cycles=}, no cycles waited, returned immediately&#34;)
-            return
+        LOGGER.debug(f&#34;Waiting for {num_pulses} pulses...&#34;)
 
         while True:
             rlist, _, _ = zmq.select([self._socket], [], [], timeout=self._timeout)
@@ -1020,16 +1052,12 @@ class DPUMonitoring:
                 else:
                     sync_id = MessageIdentifier.ALL
                     pickle_string = self._socket.recv()
-                status = pickle.loads(pickle_string)
+                timecode, timestamp = pickle.loads(pickle_string)
 
-                LOGGER.info(f&#34;{MessageIdentifier(sync_id).name}, {to_string(status[0])}&#34;)
-
-                packet: DataPacketType = status[0]
-                if packet and packet.frame_number == 0:
-                    num_cycles -= 1
-                    LOGGER.info(f&#34;NUM_CYCLES={num_cycles}&#34;)
-                    if num_cycles == 0:
-                        return
+                num_pulses -= 1
+                LOGGER.debug(f&#34;{MessageIdentifier(sync_id).name}, {timecode=}, {timestamp=}, {num_pulses=}&#34;)
+                if num_pulses &lt;= 0:
+                    return
 
                 retries = self._retries  # reset the number of retries
             else:
@@ -1037,6 +1065,82 @@ class DPUMonitoring:
                 LOGGER.warning(f&#34;Monitoring timeout, {retries} retries to go&#34;)
                 if retries &lt;= 0:
                     raise TimeoutError(f&#34;DPUMonitoring timed out after {self._retries * self._timeout} seconds.&#34;)
+
+    def wait_num_cycles(self, num_cycles: int, return_on_frame: int = 3) -&gt; int:
+        &#34;&#34;&#34;
+        Wait for a number of long pulses (cycles), then return.
+
+        This method will wait for full cycles, i.e. 4 readouts in external sync mode, 1 readout in internal sync mode,
+        and will return immediately after receiving the HK sync pulse for the last frame in the requested cycle, i.e.
+        frame number == 3 for external sync and frame number == 0 for internal sync. If an RMAP command is then sent
+        when the function returns, it will still be executed within that frame and the changed register settings will
+        become active on the next pulse, which is a long pulse, the start of the next cycle.
+        That way we do not lose a cycle.
+
+        Args:
+            num_cycles: the number of full cycles to wait before returning
+            return_on_frame: choose the readout frame on which to return [default = 3]
+
+        Returns:
+            Zero (0) when no cycles were waited because num_cycles &lt;= 0, otherwise return value &gt; 0.
+
+        Raises:
+            A TimeoutError when no sync data was received from the monitoring socket after 30s.
+        &#34;&#34;&#34;
+        self.unsubscribe_all()
+        self.subscribe(MessageIdentifier.SYNC_HK_PACKET)
+
+        retries = self._retries
+        count = 0
+
+        if num_cycles &lt;= 0:
+            LOGGER.debug(f&#34;{num_cycles=}, no cycles waited, returned immediately&#34;)
+            return count
+
+        LOGGER.debug(f&#34;Waiting for {num_cycles} cycles...&#34;)
+
+        with Timer(&#34;Loop cycles&#34;) as timer, DPUProxy() as dpu_proxy:
+
+            # When we are in external sync mode, we need to skip the current cycle,
+            # because the requested changes in the register -&gt; FPGA will ony occur on
+            # the next long pulse. No need for this when in internal sync mode.
+
+            sync_mode = dpu_proxy.n_fee_get_sync_mode()
+            if sync_mode == 0:
+                num_cycles += 1
+
+            while True:
+                count += 1
+                rlist, _, _ = zmq.select([self._socket], [], [], timeout=self._timeout)
+                if self._socket in rlist:
+                    if self._multipart:
+                        sync_id, pickle_string = self._socket.recv_multipart()
+                        sync_id = int.from_bytes(sync_id, byteorder=&#39;big&#39;)
+                    else:
+                        sync_id = MessageIdentifier.ALL
+                        pickle_string = self._socket.recv()
+                    status = pickle.loads(pickle_string)
+
+                    LOGGER.debug(f&#34;{MessageIdentifier(sync_id).name}, {to_string(status[0])}&#34;)
+
+                    sync_mode = dpu_proxy.n_fee_get_sync_mode()
+
+                    if (sync_mode == 1) or (packet := status[0]) and packet.frame_number == return_on_frame:
+                        num_cycles -= 1
+
+                    LOGGER.debug(f&#34;NUM_CYCLES={num_cycles}, {sync_mode=}&#34;)
+
+                    if num_cycles &lt;= 0:
+                        return count
+
+                    retries = self._retries  # reset the number of retries
+                else:
+                    retries -= 1
+                    LOGGER.warning(f&#34;Monitoring timeout, {retries} retries to go&#34;)
+                    if retries &lt;= 0:
+                        raise TimeoutError(f&#34;DPUMonitoring timed out after {self._retries * self._timeout} seconds.&#34;)
+
+                timer.log_elapsed()
 
     def monitor_all(self):
         self.subscribe()
@@ -1117,7 +1221,26 @@ class DPUMonitoring:
         when the frame_number == 0, i.e. right after a long pulse.
 
         Args:
-            func (Callable): the function to synchronise to the timecode
+            func (Callable): the function to synchronise
+            *args: any arguments to pass to the function
+            **kwargs: any keyword arguments to pass to the function
+
+        Returns:
+            The return value of the called function.
+
+        Raises:
+            A TimeoutError when no sync data was received from the monitoring socket after 30s.
+        &#34;&#34;&#34;
+        return self.on_frame_number_do(0, func, *args, **kwargs)
+
+    def on_frame_number_do(self, frame_number: int, func: Callable, *args, **kwargs):
+        &#34;&#34;&#34;
+        Connects to the monitoring socket of the DPU Processor and executes the given function
+        when the given frame_number is reached. This allows to send N-FEE commands right before the long pulse.
+
+        Args:
+            frame_number: the frame number on which to execute the function
+            func (Callable): the function to synchronise
             *args: any arguments to pass to the function
             **kwargs: any keyword arguments to pass to the function
 
@@ -1146,7 +1269,7 @@ class DPUMonitoring:
                 LOGGER.debug(f&#34;{MessageIdentifier(sync_id).name}, {status[0]}&#34;)
 
                 packet: DataPacketType = status[0]
-                if packet and packet.frame_number == 0:
+                if packet and packet.frame_number == frame_number:
                     return func(*args, **kwargs)
             else:
                 retries -= 1
@@ -1462,10 +1585,7 @@ class DPUProcessor(multiprocessing.Process):
                         LOGGER.debug(&#34;Traceback for NoDataPacketError:&#34;, exc_info=exc)
                     except TimecodeTimeoutError as exc:
                         # LOGGER.debug(&#34;Waiting for the next timecode.&#34;)
-                        process_high_priority_commands(
-                            self._priority_q, self._response_q,
-                            self._n_fee_state.get_state(), self._dpu_internals)
-                        continue
+                        pass
                     except TimeExceededError as exc:
                         LOGGER.warning(
                             &#34;Time to retrieve data packets in this readout cycle exceeded &#34;
@@ -2347,6 +2467,10 @@ the DPU Controller …</p></div>
 <dd>
 <div class="desc"></div>
 </dd>
+<dt><code class="name"><a title="egse.dpu.fitsgen_test" href="fitsgen_test.html">egse.dpu.fitsgen_test</a></code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
 <dt><code class="name"><a title="egse.dpu.fitsgen_ui" href="fitsgen_ui.html">egse.dpu.fitsgen_ui</a></code></dt>
 <dd>
 <div class="desc"></div>
@@ -2671,7 +2795,7 @@ housekeeping=2]</dd>
 </details>
 </dd>
 <dt id="egse.dpu.process_high_priority_commands"><code class="name flex">
-<span>def <span class="ident">process_high_priority_commands</span></span>(<span>priority_q: <bound method BaseContext.Queue of <multiprocessing.context.DefaultContext object at 0x7fabc01f3400>>, response_q: <bound method BaseContext.Queue of <multiprocessing.context.DefaultContext object at 0x7fabc01f3400>>, n_fee_state: tuple, dpu_internals: <a title="egse.dpu.DPUInternals" href="#egse.dpu.DPUInternals">DPUInternals</a>)</span>
+<span>def <span class="ident">process_high_priority_commands</span></span>(<span>priority_q: <bound method BaseContext.Queue of <multiprocessing.context.DefaultContext object at 0x7f823814b880>>, response_q: <bound method BaseContext.Queue of <multiprocessing.context.DefaultContext object at 0x7f823814b880>>, n_fee_state: tuple, dpu_internals: <a title="egse.dpu.DPUInternals" href="#egse.dpu.DPUInternals">DPUInternals</a>)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Execute high priority commands from the DPU Control Server /
@@ -3279,7 +3403,7 @@ the packet and a timestamp is sent to the Storage manager.</p>
 </details>
 </dd>
 <dt id="egse.dpu.send_commands_to_n_fee"><code class="name flex">
-<span>def <span class="ident">send_commands_to_n_fee</span></span>(<span>transport: <a title="egse.spw.SpaceWireInterface" href="../spw.html#egse.spw.SpaceWireInterface">SpaceWireInterface</a>, storage: <a title="egse.storage.StorageProxy" href="../storage/index.html#egse.storage.StorageProxy">StorageProxy</a>, origin: str, register_map: <a title="egse.reg.RegisterMap" href="../reg.html#egse.reg.RegisterMap">RegisterMap</a>, command_q: <bound method BaseContext.Queue of <multiprocessing.context.DefaultContext object at 0x7fabc01f3400>>, response_q: <bound method BaseContext.Queue of <multiprocessing.context.DefaultContext object at 0x7fabc01f3400>>, internals: <a title="egse.dpu.DPUInternals" href="#egse.dpu.DPUInternals">DPUInternals</a>)</span>
+<span>def <span class="ident">send_commands_to_n_fee</span></span>(<span>transport: <a title="egse.spw.SpaceWireInterface" href="../spw.html#egse.spw.SpaceWireInterface">SpaceWireInterface</a>, storage: <a title="egse.storage.StorageProxy" href="../storage/index.html#egse.storage.StorageProxy">StorageProxy</a>, origin: str, register_map: <a title="egse.reg.RegisterMap" href="../reg.html#egse.reg.RegisterMap">RegisterMap</a>, command_q: <bound method BaseContext.Queue of <multiprocessing.context.DefaultContext object at 0x7f823814b880>>, response_q: <bound method BaseContext.Queue of <multiprocessing.context.DefaultContext object at 0x7f823814b880>>, internals: <a title="egse.dpu.DPUInternals" href="#egse.dpu.DPUInternals">DPUInternals</a>)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Send RMAP commands to the N-FEE. The commands are read from the command queue that is shared
@@ -3487,7 +3611,7 @@ Arguments can be positional or keyword arguments, not both.</p></div>
 </dd>
 <dt id="egse.dpu.DPUController"><code class="flex name class">
 <span>class <span class="ident">DPUController</span></span>
-<span>(</span><span>priority_queue: <bound method BaseContext.Queue of <multiprocessing.context.DefaultContext object at 0x7fabc01f3400>>, command_queue: <bound method BaseContext.Queue of <multiprocessing.context.DefaultContext object at 0x7fabc01f3400>>, response_queue: <bound method BaseContext.Queue of <multiprocessing.context.DefaultContext object at 0x7fabc01f3400>>)</span>
+<span>(</span><span>priority_queue: <bound method BaseContext.Queue of <multiprocessing.context.DefaultContext object at 0x7f823814b880>>, command_queue: <bound method BaseContext.Queue of <multiprocessing.context.DefaultContext object at 0x7f823814b880>>, response_queue: <bound method BaseContext.Queue of <multiprocessing.context.DefaultContext object at 0x7f823814b880>>)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>The DPU Controller puts commands on the command queue for processing by the DPU Processor.
@@ -3513,6 +3637,11 @@ DPU Command Protocol.</p></div>
         self._priority_q = priority_queue
         self._command_q = command_queue
         self._response_q = response_queue
+
+        try:
+            self.default_ccd_readout_order = GlobalState.setup.camera.fee.ccd_numbering.DEFAULT_CCD_READOUT_ORDER
+        except AttributeError:
+            raise SetupError(&#34;No entry in the setup for camera.fee.ccd_numbering.DEFAULT_CCD_READOUT_ORDER&#34;)
 
     def marker(self, mark: str):
         LOGGER.info(f&#34;{mark = }&#34;)
@@ -3550,6 +3679,13 @@ DPU Command Protocol.</p></div>
         LOGGER.debug(&#34;Controller.n_fee_get_mode: Put prio_command_get_mode on the Queue.&#34;)
         (cmd, response) = self._response_q.get()
         LOGGER.debug(f&#34;Controller.n_fee_get_mode returned: ({cmd.__name__}, {response}).&#34;)
+        return response
+
+    def n_fee_get_sync_mode(self):
+        self._priority_q.put((prio_command_get_sync_mode, []))
+        LOGGER.debug(&#34;Controller.n_fee_get_sync_mode: Put prio_command_get_sync_mode on the Queue.&#34;)
+        (cmd, response) = self._response_q.get()
+        LOGGER.debug(f&#34;Controller.n_fee_get_sync_mode returned: ({cmd.__name__}, {response}).&#34;)
         return response
 
     def n_fee_is_dump_mode(self):
@@ -3591,7 +3727,7 @@ DPU Command Protocol.</p></div>
         v_start = n_fee_parameters.get(&#34;v_start&#34;, 0)
         v_end = n_fee_parameters.get(&#34;v_end&#34;, 4509)
         sensor_sel_ = n_fee_parameters.get(&#34;sensor_sel&#34;, sensor_sel.BOTH_SIDES)
-        ccd_readout_order = n_fee_parameters.get(&#34;ccd_readout_order&#34;, DEFAULT_CCD_READOUT_ORDER)
+        ccd_readout_order = n_fee_parameters.get(&#34;ccd_readout_order&#34;, self.default_ccd_readout_order)
         n_final_dump = n_fee_parameters.get(&#34;n_final_dump&#34;, 0)
         sync_sel = n_fee_parameters.get(&#34;sync_sel&#34;, 0)
         num_cycles = n_fee_parameters.get(&#34;num_cycles&#34;, 0)
@@ -3609,8 +3745,8 @@ DPU Command Protocol.</p></div>
         v_start = n_fee_parameters.get(&#34;v_start&#34;, 0)
         v_end = n_fee_parameters.get(&#34;v_end&#34;, 4509)
         sensor_sel_ = n_fee_parameters.get(&#34;sensor_sel&#34;, sensor_sel.BOTH_SIDES)
-        ccd_readout_order = n_fee_parameters.get(&#34;ccd_readout_order&#34;, DEFAULT_CCD_READOUT_ORDER)
         n_final_dump = n_fee_parameters.get(&#34;n_final_dump&#34;, 0)
+        ccd_readout_order = n_fee_parameters.get(&#34;ccd_readout_order&#34;, self.default_ccd_readout_order)
         sync_sel = n_fee_parameters.get(&#34;sync_sel&#34;, 1)
         int_sync_period = n_fee_parameters.get(&#34;int_sync_period&#34;, 2500)
         num_cycles = n_fee_parameters.get(&#34;num_cycles&#34;, 0)
@@ -3631,7 +3767,7 @@ DPU Command Protocol.</p></div>
         v_start = n_fee_parameters.get(&#34;v_start&#34;, 0)
         v_end = n_fee_parameters.get(&#34;v_end&#34;, 1)
         sensor_sel_ = n_fee_parameters.get(&#34;sensor_sel&#34;, sensor_sel.BOTH_SIDES)
-        ccd_readout_order = n_fee_parameters.get(&#34;ccd_readout_order&#34;, DEFAULT_CCD_READOUT_ORDER)
+        ccd_readout_order = n_fee_parameters.get(&#34;ccd_readout_order&#34;, self.default_ccd_readout_order)
         n_final_dump = n_fee_parameters.get(&#34;n_final_dump&#34;, 0)
         num_cycles = n_fee_parameters.get(&#34;num_cycles&#34;, 0)
         dump_mode_int = n_fee_parameters.get(&#34;dump_mode_int&#34;, False)
@@ -3649,7 +3785,7 @@ DPU Command Protocol.</p></div>
         v_start = n_fee_parameters.get(&#34;v_start&#34;, 0)
         v_end = n_fee_parameters.get(&#34;v_end&#34;, 1)
         sensor_sel_ = n_fee_parameters.get(&#34;sensor_sel&#34;, sensor_sel.BOTH_SIDES)
-        ccd_readout_order = n_fee_parameters.get(&#34;ccd_readout_order&#34;, DEFAULT_CCD_READOUT_ORDER)
+        ccd_readout_order = n_fee_parameters.get(&#34;ccd_readout_order&#34;, self.default_ccd_readout_order)
         n_final_dump = n_fee_parameters.get(&#34;n_final_dump&#34;, 0)
         int_sync_period = n_fee_parameters.get(&#34;int_sync_period&#34;, 6250)
         num_cycles = n_fee_parameters.get(&#34;num_cycles&#34;, 0)
@@ -3754,7 +3890,7 @@ DPU Command Protocol.</p></div>
         v_start = n_fee_parameters.get(&#34;v_start&#34;, 0)
         v_end = n_fee_parameters.get(&#34;v_end&#34;, 4509)
         sensor_sel_ = n_fee_parameters.get(&#34;sensor_sel&#34;, sensor_sel.BOTH_SIDES)
-        ccd_readout_order = n_fee_parameters.get(&#34;ccd_readout_order&#34;, DEFAULT_CCD_READOUT_ORDER)
+        ccd_readout_order = n_fee_parameters.get(&#34;ccd_readout_order&#34;, self.default_ccd_readout_order)
         n_final_dump = n_fee_parameters.get(&#34;n_final_dump&#34;, 0)
         num_cycles = n_fee_parameters.get(&#34;num_cycles&#34;, 0)
         img_clk_dir = n_fee_parameters.get(&#34;img_clk_dir&#34;, 1)
@@ -3777,7 +3913,7 @@ DPU Command Protocol.</p></div>
         v_end = n_fee_parameters.get(&#34;v_end&#34;, 4509)
         n_final_dump = n_fee_parameters.get(&#34;n_final_dump&#34;, 0)
         sensor_sel_ = n_fee_parameters.get(&#34;sensor_sel&#34;, sensor_sel.BOTH_SIDES)
-        ccd_readout_order = n_fee_parameters.get(&#34;ccd_readout_order&#34;, DEFAULT_CCD_READOUT_ORDER)
+        ccd_readout_order = n_fee_parameters.get(&#34;ccd_readout_order&#34;, self.default_ccd_readout_order)
         charge_injection_width = n_fee_parameters.get(&#34;charge_injection_width&#34;, 0)
         charge_injection_gap = n_fee_parameters.get(&#34;charge_injection_gap&#34;, 0)
 
@@ -3877,7 +4013,7 @@ DPU Command Protocol.</p></div>
     v_end = n_fee_parameters.get(&#34;v_end&#34;, 4509)
     n_final_dump = n_fee_parameters.get(&#34;n_final_dump&#34;, 0)
     sensor_sel_ = n_fee_parameters.get(&#34;sensor_sel&#34;, sensor_sel.BOTH_SIDES)
-    ccd_readout_order = n_fee_parameters.get(&#34;ccd_readout_order&#34;, DEFAULT_CCD_READOUT_ORDER)
+    ccd_readout_order = n_fee_parameters.get(&#34;ccd_readout_order&#34;, self.default_ccd_readout_order)
     charge_injection_width = n_fee_parameters.get(&#34;charge_injection_width&#34;, 0)
     charge_injection_gap = n_fee_parameters.get(&#34;charge_injection_gap&#34;, 0)
 
@@ -3911,7 +4047,7 @@ DPU Command Protocol.</p></div>
     v_start = n_fee_parameters.get(&#34;v_start&#34;, 0)
     v_end = n_fee_parameters.get(&#34;v_end&#34;, 4509)
     sensor_sel_ = n_fee_parameters.get(&#34;sensor_sel&#34;, sensor_sel.BOTH_SIDES)
-    ccd_readout_order = n_fee_parameters.get(&#34;ccd_readout_order&#34;, DEFAULT_CCD_READOUT_ORDER)
+    ccd_readout_order = n_fee_parameters.get(&#34;ccd_readout_order&#34;, self.default_ccd_readout_order)
     n_final_dump = n_fee_parameters.get(&#34;n_final_dump&#34;, 0)
     num_cycles = n_fee_parameters.get(&#34;num_cycles&#34;, 0)
     img_clk_dir = n_fee_parameters.get(&#34;img_clk_dir&#34;, 1)
@@ -3981,6 +4117,7 @@ DPU Command Protocol.</p></div>
 <ul class="hlist">
 <li><code><a title="egse.dpu.DPUInterface.n_fee_get_full_register" href="#egse.dpu.DPUInterface.n_fee_get_full_register">n_fee_get_full_register</a></code></li>
 <li><code><a title="egse.dpu.DPUInterface.n_fee_get_mode" href="#egse.dpu.DPUInterface.n_fee_get_mode">n_fee_get_mode</a></code></li>
+<li><code><a title="egse.dpu.DPUInterface.n_fee_get_sync_mode" href="#egse.dpu.DPUInterface.n_fee_get_sync_mode">n_fee_get_sync_mode</a></code></li>
 <li><code><a title="egse.dpu.DPUInterface.n_fee_high_precision_hk_mode" href="#egse.dpu.DPUInterface.n_fee_high_precision_hk_mode">n_fee_high_precision_hk_mode</a></code></li>
 <li><code><a title="egse.dpu.DPUInterface.n_fee_is_dump_mode" href="#egse.dpu.DPUInterface.n_fee_is_dump_mode">n_fee_is_dump_mode</a></code></li>
 <li><code><a title="egse.dpu.DPUInterface.n_fee_reset" href="#egse.dpu.DPUInterface.n_fee_reset">n_fee_reset</a></code></li>
@@ -4049,6 +4186,13 @@ a <code><a title="egse.dpu.DPUSimulator" href="#egse.dpu.DPUSimulator">DPUSimula
 
     @dynamic_interface
     def n_fee_get_mode(self):
+        &#34;&#34;&#34;
+        Returns the N-FEE mode.
+        &#34;&#34;&#34;
+        raise NotImplementedError
+
+    @dynamic_interface
+    def n_fee_get_sync_mode(self):
         &#34;&#34;&#34;
         Returns the N-FEE mode.
         &#34;&#34;&#34;
@@ -4197,8 +4341,11 @@ a <code><a title="egse.dpu.DPUSimulator" href="#egse.dpu.DPUSimulator">DPUSimula
         raise NotImplementedError
 
     @dynamic_interface
-    def n_fee_set_external_sync(self, n_fee_parameters):
-        &#34;&#34;&#34;Command the N-FEE to go into external sync mode.&#34;&#34;&#34;
+    def n_fee_set_external_sync(self, n_fee_parameters: dict):
+        &#34;&#34;&#34;
+        Command the N-FEE to go into external sync mode.
+        No keys are expected in n_fee_parameters, pass an empty dict.
+        &#34;&#34;&#34;
         raise NotImplementedError
 
     @dynamic_interface
@@ -4316,6 +4463,23 @@ def n_fee_get_full_register(self):
 </summary>
 <pre><code class="python">@dynamic_interface
 def n_fee_get_mode(self):
+    &#34;&#34;&#34;
+    Returns the N-FEE mode.
+    &#34;&#34;&#34;
+    raise NotImplementedError</code></pre>
+</details>
+</dd>
+<dt id="egse.dpu.DPUInterface.n_fee_get_sync_mode"><code class="name flex">
+<span>def <span class="ident">n_fee_get_sync_mode</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Returns the N-FEE mode.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@dynamic_interface
+def n_fee_get_sync_mode(self):
     &#34;&#34;&#34;
     Returns the N-FEE mode.
     &#34;&#34;&#34;
@@ -4505,17 +4669,21 @@ def n_fee_set_dump_mode_int_sync(self, n_fee_parameters: dict):
 </details>
 </dd>
 <dt id="egse.dpu.DPUInterface.n_fee_set_external_sync"><code class="name flex">
-<span>def <span class="ident">n_fee_set_external_sync</span></span>(<span>self, n_fee_parameters)</span>
+<span>def <span class="ident">n_fee_set_external_sync</span></span>(<span>self, n_fee_parameters: dict)</span>
 </code></dt>
 <dd>
-<div class="desc"><p>Command the N-FEE to go into external sync mode.</p></div>
+<div class="desc"><p>Command the N-FEE to go into external sync mode.
+No keys are expected in n_fee_parameters, pass an empty dict.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">@dynamic_interface
-def n_fee_set_external_sync(self, n_fee_parameters):
-    &#34;&#34;&#34;Command the N-FEE to go into external sync mode.&#34;&#34;&#34;
+def n_fee_set_external_sync(self, n_fee_parameters: dict):
+    &#34;&#34;&#34;
+    Command the N-FEE to go into external sync mode.
+    No keys are expected in n_fee_parameters, pass an empty dict.
+    &#34;&#34;&#34;
     raise NotImplementedError</code></pre>
 </details>
 </dd>
@@ -5131,21 +5299,26 @@ timecode or a housekeeping packet from the N-FEE.</p>
                 if retries &lt;= 0:
                     raise TimeoutError(f&#34;DPUMonitoring timed out after {self._retries * self._timeout} seconds.&#34;)
 
-    def wait_num_cycles(self, num_cycles: int):
+    def wait_number_of_pulses(self, num_pulses: int) -&gt; None:
         &#34;&#34;&#34;
-        Wait for a number of long pulses (cycles), then return.
+        Wait for a number of pulses (long and short), then return.
+
+        When the number of pulses has been received, the function returns right after the timecode synchronisation
+        message. Any command that is sent to the N-FEE immediately after this function returns will be processes within
+        that same readout frame, i.e. before the next sync pulse.
+
+        Args:
+            num_pulses: the number of sync pulses to wait before returning.
 
         Raises:
             A TimeoutError when no sync data was received from the monitoring socket after 30s.
         &#34;&#34;&#34;
         self.unsubscribe_all()
-        self.subscribe(MessageIdentifier.SYNC_HK_PACKET)
+        self.subscribe(MessageIdentifier.SYNC_TIMECODE)
 
         retries = self._retries
 
-        if num_cycles &lt;= 0:
-            LOGGER.debug(f&#34;{num_cycles=}, no cycles waited, returned immediately&#34;)
-            return
+        LOGGER.debug(f&#34;Waiting for {num_pulses} pulses...&#34;)
 
         while True:
             rlist, _, _ = zmq.select([self._socket], [], [], timeout=self._timeout)
@@ -5156,16 +5329,12 @@ timecode or a housekeeping packet from the N-FEE.</p>
                 else:
                     sync_id = MessageIdentifier.ALL
                     pickle_string = self._socket.recv()
-                status = pickle.loads(pickle_string)
+                timecode, timestamp = pickle.loads(pickle_string)
 
-                LOGGER.info(f&#34;{MessageIdentifier(sync_id).name}, {to_string(status[0])}&#34;)
-
-                packet: DataPacketType = status[0]
-                if packet and packet.frame_number == 0:
-                    num_cycles -= 1
-                    LOGGER.info(f&#34;NUM_CYCLES={num_cycles}&#34;)
-                    if num_cycles == 0:
-                        return
+                num_pulses -= 1
+                LOGGER.debug(f&#34;{MessageIdentifier(sync_id).name}, {timecode=}, {timestamp=}, {num_pulses=}&#34;)
+                if num_pulses &lt;= 0:
+                    return
 
                 retries = self._retries  # reset the number of retries
             else:
@@ -5173,6 +5342,82 @@ timecode or a housekeeping packet from the N-FEE.</p>
                 LOGGER.warning(f&#34;Monitoring timeout, {retries} retries to go&#34;)
                 if retries &lt;= 0:
                     raise TimeoutError(f&#34;DPUMonitoring timed out after {self._retries * self._timeout} seconds.&#34;)
+
+    def wait_num_cycles(self, num_cycles: int, return_on_frame: int = 3) -&gt; int:
+        &#34;&#34;&#34;
+        Wait for a number of long pulses (cycles), then return.
+
+        This method will wait for full cycles, i.e. 4 readouts in external sync mode, 1 readout in internal sync mode,
+        and will return immediately after receiving the HK sync pulse for the last frame in the requested cycle, i.e.
+        frame number == 3 for external sync and frame number == 0 for internal sync. If an RMAP command is then sent
+        when the function returns, it will still be executed within that frame and the changed register settings will
+        become active on the next pulse, which is a long pulse, the start of the next cycle.
+        That way we do not lose a cycle.
+
+        Args:
+            num_cycles: the number of full cycles to wait before returning
+            return_on_frame: choose the readout frame on which to return [default = 3]
+
+        Returns:
+            Zero (0) when no cycles were waited because num_cycles &lt;= 0, otherwise return value &gt; 0.
+
+        Raises:
+            A TimeoutError when no sync data was received from the monitoring socket after 30s.
+        &#34;&#34;&#34;
+        self.unsubscribe_all()
+        self.subscribe(MessageIdentifier.SYNC_HK_PACKET)
+
+        retries = self._retries
+        count = 0
+
+        if num_cycles &lt;= 0:
+            LOGGER.debug(f&#34;{num_cycles=}, no cycles waited, returned immediately&#34;)
+            return count
+
+        LOGGER.debug(f&#34;Waiting for {num_cycles} cycles...&#34;)
+
+        with Timer(&#34;Loop cycles&#34;) as timer, DPUProxy() as dpu_proxy:
+
+            # When we are in external sync mode, we need to skip the current cycle,
+            # because the requested changes in the register -&gt; FPGA will ony occur on
+            # the next long pulse. No need for this when in internal sync mode.
+
+            sync_mode = dpu_proxy.n_fee_get_sync_mode()
+            if sync_mode == 0:
+                num_cycles += 1
+
+            while True:
+                count += 1
+                rlist, _, _ = zmq.select([self._socket], [], [], timeout=self._timeout)
+                if self._socket in rlist:
+                    if self._multipart:
+                        sync_id, pickle_string = self._socket.recv_multipart()
+                        sync_id = int.from_bytes(sync_id, byteorder=&#39;big&#39;)
+                    else:
+                        sync_id = MessageIdentifier.ALL
+                        pickle_string = self._socket.recv()
+                    status = pickle.loads(pickle_string)
+
+                    LOGGER.debug(f&#34;{MessageIdentifier(sync_id).name}, {to_string(status[0])}&#34;)
+
+                    sync_mode = dpu_proxy.n_fee_get_sync_mode()
+
+                    if (sync_mode == 1) or (packet := status[0]) and packet.frame_number == return_on_frame:
+                        num_cycles -= 1
+
+                    LOGGER.debug(f&#34;NUM_CYCLES={num_cycles}, {sync_mode=}&#34;)
+
+                    if num_cycles &lt;= 0:
+                        return count
+
+                    retries = self._retries  # reset the number of retries
+                else:
+                    retries -= 1
+                    LOGGER.warning(f&#34;Monitoring timeout, {retries} retries to go&#34;)
+                    if retries &lt;= 0:
+                        raise TimeoutError(f&#34;DPUMonitoring timed out after {self._retries * self._timeout} seconds.&#34;)
+
+                timer.log_elapsed()
 
     def monitor_all(self):
         self.subscribe()
@@ -5253,7 +5498,26 @@ timecode or a housekeeping packet from the N-FEE.</p>
         when the frame_number == 0, i.e. right after a long pulse.
 
         Args:
-            func (Callable): the function to synchronise to the timecode
+            func (Callable): the function to synchronise
+            *args: any arguments to pass to the function
+            **kwargs: any keyword arguments to pass to the function
+
+        Returns:
+            The return value of the called function.
+
+        Raises:
+            A TimeoutError when no sync data was received from the monitoring socket after 30s.
+        &#34;&#34;&#34;
+        return self.on_frame_number_do(0, func, *args, **kwargs)
+
+    def on_frame_number_do(self, frame_number: int, func: Callable, *args, **kwargs):
+        &#34;&#34;&#34;
+        Connects to the monitoring socket of the DPU Processor and executes the given function
+        when the given frame_number is reached. This allows to send N-FEE commands right before the long pulse.
+
+        Args:
+            frame_number: the frame number on which to execute the function
+            func (Callable): the function to synchronise
             *args: any arguments to pass to the function
             **kwargs: any keyword arguments to pass to the function
 
@@ -5282,7 +5546,7 @@ timecode or a housekeeping packet from the N-FEE.</p>
                 LOGGER.debug(f&#34;{MessageIdentifier(sync_id).name}, {status[0]}&#34;)
 
                 packet: DataPacketType = status[0]
-                if packet and packet.frame_number == 0:
+                if packet and packet.frame_number == frame_number:
                     return func(*args, **kwargs)
             else:
                 retries -= 1
@@ -5379,16 +5643,18 @@ timecode or a housekeeping packet from the N-FEE.</p>
                 raise TimeoutError(f&#34;DPUMonitoring timed out after {self._retries * self._timeout} seconds.&#34;)</code></pre>
 </details>
 </dd>
-<dt id="egse.dpu.DPUMonitoring.on_long_pulse_do"><code class="name flex">
-<span>def <span class="ident">on_long_pulse_do</span></span>(<span>self, func: Callable, *args, **kwargs)</span>
+<dt id="egse.dpu.DPUMonitoring.on_frame_number_do"><code class="name flex">
+<span>def <span class="ident">on_frame_number_do</span></span>(<span>self, frame_number: int, func: Callable, *args, **kwargs)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Connects to the monitoring socket of the DPU Processor and executes the given function
-when the frame_number == 0, i.e. right after a long pulse.</p>
+when the given frame_number is reached. This allows to send N-FEE commands right before the long pulse.</p>
 <h2 id="args">Args</h2>
 <dl>
+<dt><strong><code>frame_number</code></strong></dt>
+<dd>the frame number on which to execute the function</dd>
 <dt><strong><code>func</code></strong> :&ensp;<code>Callable</code></dt>
-<dd>the function to synchronise to the timecode</dd>
+<dd>the function to synchronise</dd>
 <dt><strong><code>*args</code></strong></dt>
 <dd>any arguments to pass to the function</dd>
 <dt><strong><code>**kwargs</code></strong></dt>
@@ -5402,13 +5668,14 @@ when the frame_number == 0, i.e. right after a long pulse.</p>
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def on_long_pulse_do(self, func: Callable, *args, **kwargs):
+<pre><code class="python">def on_frame_number_do(self, frame_number: int, func: Callable, *args, **kwargs):
     &#34;&#34;&#34;
     Connects to the monitoring socket of the DPU Processor and executes the given function
-    when the frame_number == 0, i.e. right after a long pulse.
+    when the given frame_number is reached. This allows to send N-FEE commands right before the long pulse.
 
     Args:
-        func (Callable): the function to synchronise to the timecode
+        frame_number: the frame number on which to execute the function
+        func (Callable): the function to synchronise
         *args: any arguments to pass to the function
         **kwargs: any keyword arguments to pass to the function
 
@@ -5437,13 +5704,55 @@ when the frame_number == 0, i.e. right after a long pulse.</p>
             LOGGER.debug(f&#34;{MessageIdentifier(sync_id).name}, {status[0]}&#34;)
 
             packet: DataPacketType = status[0]
-            if packet and packet.frame_number == 0:
+            if packet and packet.frame_number == frame_number:
                 return func(*args, **kwargs)
         else:
             retries -= 1
             LOGGER.warning(f&#34;Monitoring timeout, {retries} retries to go&#34;)
             if retries &lt;= 0:
                 raise TimeoutError(f&#34;DPUMonitoring timed out after {self._retries * self._timeout} seconds.&#34;)</code></pre>
+</details>
+</dd>
+<dt id="egse.dpu.DPUMonitoring.on_long_pulse_do"><code class="name flex">
+<span>def <span class="ident">on_long_pulse_do</span></span>(<span>self, func: Callable, *args, **kwargs)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Connects to the monitoring socket of the DPU Processor and executes the given function
+when the frame_number == 0, i.e. right after a long pulse.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>func</code></strong> :&ensp;<code>Callable</code></dt>
+<dd>the function to synchronise</dd>
+<dt><strong><code>*args</code></strong></dt>
+<dd>any arguments to pass to the function</dd>
+<dt><strong><code>**kwargs</code></strong></dt>
+<dd>any keyword arguments to pass to the function</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<p>The return value of the called function.</p>
+<h2 id="raises">Raises</h2>
+<p>A TimeoutError when no sync data was received from the monitoring socket after 30s.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def on_long_pulse_do(self, func: Callable, *args, **kwargs):
+    &#34;&#34;&#34;
+    Connects to the monitoring socket of the DPU Processor and executes the given function
+    when the frame_number == 0, i.e. right after a long pulse.
+
+    Args:
+        func (Callable): the function to synchronise
+        *args: any arguments to pass to the function
+        **kwargs: any keyword arguments to pass to the function
+
+    Returns:
+        The return value of the called function.
+
+    Raises:
+        A TimeoutError when no sync data was received from the monitoring socket after 30s.
+    &#34;&#34;&#34;
+    return self.on_frame_number_do(0, func, *args, **kwargs)</code></pre>
 </details>
 </dd>
 <dt id="egse.dpu.DPUMonitoring.subscribe"><code class="name flex">
@@ -5615,19 +5924,48 @@ synchronisation message is received.</p>
 </details>
 </dd>
 <dt id="egse.dpu.DPUMonitoring.wait_num_cycles"><code class="name flex">
-<span>def <span class="ident">wait_num_cycles</span></span>(<span>self, num_cycles: int)</span>
+<span>def <span class="ident">wait_num_cycles</span></span>(<span>self, num_cycles: int, return_on_frame: int = 3) ‑> int</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Wait for a number of long pulses (cycles), then return.</p>
+<p>This method will wait for full cycles, i.e. 4 readouts in external sync mode, 1 readout in internal sync mode,
+and will return immediately after receiving the HK sync pulse for the last frame in the requested cycle, i.e.
+frame number == 3 for external sync and frame number == 0 for internal sync. If an RMAP command is then sent
+when the function returns, it will still be executed within that frame and the changed register settings will
+become active on the next pulse, which is a long pulse, the start of the next cycle.
+That way we do not lose a cycle.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>num_cycles</code></strong></dt>
+<dd>the number of full cycles to wait before returning</dd>
+<dt><strong><code>return_on_frame</code></strong></dt>
+<dd>choose the readout frame on which to return [default = 3]</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<p>Zero (0) when no cycles were waited because num_cycles &lt;= 0, otherwise return value &gt; 0.</p>
 <h2 id="raises">Raises</h2>
 <p>A TimeoutError when no sync data was received from the monitoring socket after 30s.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def wait_num_cycles(self, num_cycles: int):
+<pre><code class="python">def wait_num_cycles(self, num_cycles: int, return_on_frame: int = 3) -&gt; int:
     &#34;&#34;&#34;
     Wait for a number of long pulses (cycles), then return.
+
+    This method will wait for full cycles, i.e. 4 readouts in external sync mode, 1 readout in internal sync mode,
+    and will return immediately after receiving the HK sync pulse for the last frame in the requested cycle, i.e.
+    frame number == 3 for external sync and frame number == 0 for internal sync. If an RMAP command is then sent
+    when the function returns, it will still be executed within that frame and the changed register settings will
+    become active on the next pulse, which is a long pulse, the start of the next cycle.
+    That way we do not lose a cycle.
+
+    Args:
+        num_cycles: the number of full cycles to wait before returning
+        return_on_frame: choose the readout frame on which to return [default = 3]
+
+    Returns:
+        Zero (0) when no cycles were waited because num_cycles &lt;= 0, otherwise return value &gt; 0.
 
     Raises:
         A TimeoutError when no sync data was received from the monitoring socket after 30s.
@@ -5636,10 +5974,97 @@ synchronisation message is received.</p>
     self.subscribe(MessageIdentifier.SYNC_HK_PACKET)
 
     retries = self._retries
+    count = 0
 
     if num_cycles &lt;= 0:
         LOGGER.debug(f&#34;{num_cycles=}, no cycles waited, returned immediately&#34;)
-        return
+        return count
+
+    LOGGER.debug(f&#34;Waiting for {num_cycles} cycles...&#34;)
+
+    with Timer(&#34;Loop cycles&#34;) as timer, DPUProxy() as dpu_proxy:
+
+        # When we are in external sync mode, we need to skip the current cycle,
+        # because the requested changes in the register -&gt; FPGA will ony occur on
+        # the next long pulse. No need for this when in internal sync mode.
+
+        sync_mode = dpu_proxy.n_fee_get_sync_mode()
+        if sync_mode == 0:
+            num_cycles += 1
+
+        while True:
+            count += 1
+            rlist, _, _ = zmq.select([self._socket], [], [], timeout=self._timeout)
+            if self._socket in rlist:
+                if self._multipart:
+                    sync_id, pickle_string = self._socket.recv_multipart()
+                    sync_id = int.from_bytes(sync_id, byteorder=&#39;big&#39;)
+                else:
+                    sync_id = MessageIdentifier.ALL
+                    pickle_string = self._socket.recv()
+                status = pickle.loads(pickle_string)
+
+                LOGGER.debug(f&#34;{MessageIdentifier(sync_id).name}, {to_string(status[0])}&#34;)
+
+                sync_mode = dpu_proxy.n_fee_get_sync_mode()
+
+                if (sync_mode == 1) or (packet := status[0]) and packet.frame_number == return_on_frame:
+                    num_cycles -= 1
+
+                LOGGER.debug(f&#34;NUM_CYCLES={num_cycles}, {sync_mode=}&#34;)
+
+                if num_cycles &lt;= 0:
+                    return count
+
+                retries = self._retries  # reset the number of retries
+            else:
+                retries -= 1
+                LOGGER.warning(f&#34;Monitoring timeout, {retries} retries to go&#34;)
+                if retries &lt;= 0:
+                    raise TimeoutError(f&#34;DPUMonitoring timed out after {self._retries * self._timeout} seconds.&#34;)
+
+            timer.log_elapsed()</code></pre>
+</details>
+</dd>
+<dt id="egse.dpu.DPUMonitoring.wait_number_of_pulses"><code class="name flex">
+<span>def <span class="ident">wait_number_of_pulses</span></span>(<span>self, num_pulses: int) ‑> None</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Wait for a number of pulses (long and short), then return.</p>
+<p>When the number of pulses has been received, the function returns right after the timecode synchronisation
+message. Any command that is sent to the N-FEE immediately after this function returns will be processes within
+that same readout frame, i.e. before the next sync pulse.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>num_pulses</code></strong></dt>
+<dd>the number of sync pulses to wait before returning.</dd>
+</dl>
+<h2 id="raises">Raises</h2>
+<p>A TimeoutError when no sync data was received from the monitoring socket after 30s.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def wait_number_of_pulses(self, num_pulses: int) -&gt; None:
+    &#34;&#34;&#34;
+    Wait for a number of pulses (long and short), then return.
+
+    When the number of pulses has been received, the function returns right after the timecode synchronisation
+    message. Any command that is sent to the N-FEE immediately after this function returns will be processes within
+    that same readout frame, i.e. before the next sync pulse.
+
+    Args:
+        num_pulses: the number of sync pulses to wait before returning.
+
+    Raises:
+        A TimeoutError when no sync data was received from the monitoring socket after 30s.
+    &#34;&#34;&#34;
+    self.unsubscribe_all()
+    self.subscribe(MessageIdentifier.SYNC_TIMECODE)
+
+    retries = self._retries
+
+    LOGGER.debug(f&#34;Waiting for {num_pulses} pulses...&#34;)
 
     while True:
         rlist, _, _ = zmq.select([self._socket], [], [], timeout=self._timeout)
@@ -5650,16 +6075,12 @@ synchronisation message is received.</p>
             else:
                 sync_id = MessageIdentifier.ALL
                 pickle_string = self._socket.recv()
-            status = pickle.loads(pickle_string)
+            timecode, timestamp = pickle.loads(pickle_string)
 
-            LOGGER.info(f&#34;{MessageIdentifier(sync_id).name}, {to_string(status[0])}&#34;)
-
-            packet: DataPacketType = status[0]
-            if packet and packet.frame_number == 0:
-                num_cycles -= 1
-                LOGGER.info(f&#34;NUM_CYCLES={num_cycles}&#34;)
-                if num_cycles == 0:
-                    return
+            num_pulses -= 1
+            LOGGER.debug(f&#34;{MessageIdentifier(sync_id).name}, {timecode=}, {timestamp=}, {num_pulses=}&#34;)
+            if num_pulses &lt;= 0:
+                return
 
             retries = self._retries  # reset the number of retries
         else:
@@ -5725,7 +6146,7 @@ DPU Processor on every 400ms pulse.</p>
 </dd>
 <dt id="egse.dpu.DPUProcessor"><code class="flex name class">
 <span>class <span class="ident">DPUProcessor</span></span>
-<span>(</span><span>transport: <a title="egse.spw.SpaceWireInterface" href="../spw.html#egse.spw.SpaceWireInterface">SpaceWireInterface</a>, priority_queue: <bound method BaseContext.Queue of <multiprocessing.context.DefaultContext object at 0x7fabc01f3400>>, command_queue: <bound method BaseContext.Queue of <multiprocessing.context.DefaultContext object at 0x7fabc01f3400>>, response_queue: <bound method BaseContext.Queue of <multiprocessing.context.DefaultContext object at 0x7fabc01f3400>>)</span>
+<span>(</span><span>transport: <a title="egse.spw.SpaceWireInterface" href="../spw.html#egse.spw.SpaceWireInterface">SpaceWireInterface</a>, priority_queue: <bound method BaseContext.Queue of <multiprocessing.context.DefaultContext object at 0x7f823814b880>>, command_queue: <bound method BaseContext.Queue of <multiprocessing.context.DefaultContext object at 0x7f823814b880>>, response_queue: <bound method BaseContext.Queue of <multiprocessing.context.DefaultContext object at 0x7f823814b880>>)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>The DPU Processor handles all interactions with the FEE. It reads the packets from the FEE
@@ -5984,10 +6405,7 @@ communication with the FEE Simulator.</p></div>
                         LOGGER.debug(&#34;Traceback for NoDataPacketError:&#34;, exc_info=exc)
                     except TimecodeTimeoutError as exc:
                         # LOGGER.debug(&#34;Waiting for the next timecode.&#34;)
-                        process_high_priority_commands(
-                            self._priority_q, self._response_q,
-                            self._n_fee_state.get_state(), self._dpu_internals)
-                        continue
+                        pass
                     except TimeExceededError as exc:
                         LOGGER.warning(
                             &#34;Time to retrieve data packets in this readout cycle exceeded &#34;
@@ -6399,10 +6817,7 @@ communication with the FEE Simulator.</p></div>
                     LOGGER.debug(&#34;Traceback for NoDataPacketError:&#34;, exc_info=exc)
                 except TimecodeTimeoutError as exc:
                     # LOGGER.debug(&#34;Waiting for the next timecode.&#34;)
-                    process_high_priority_commands(
-                        self._priority_q, self._response_q,
-                        self._n_fee_state.get_state(), self._dpu_internals)
-                    continue
+                    pass
                 except TimeExceededError as exc:
                     LOGGER.warning(
                         &#34;Time to retrieve data packets in this readout cycle exceeded &#34;
@@ -6677,6 +7092,7 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
 <ul class="hlist">
 <li><code><a title="egse.dpu.DPUInterface.n_fee_get_full_register" href="#egse.dpu.DPUInterface.n_fee_get_full_register">n_fee_get_full_register</a></code></li>
 <li><code><a title="egse.dpu.DPUInterface.n_fee_get_mode" href="#egse.dpu.DPUInterface.n_fee_get_mode">n_fee_get_mode</a></code></li>
+<li><code><a title="egse.dpu.DPUInterface.n_fee_get_sync_mode" href="#egse.dpu.DPUInterface.n_fee_get_sync_mode">n_fee_get_sync_mode</a></code></li>
 <li><code><a title="egse.dpu.DPUInterface.n_fee_high_precision_hk_mode" href="#egse.dpu.DPUInterface.n_fee_high_precision_hk_mode">n_fee_high_precision_hk_mode</a></code></li>
 <li><code><a title="egse.dpu.DPUInterface.n_fee_is_dump_mode" href="#egse.dpu.DPUInterface.n_fee_is_dump_mode">n_fee_is_dump_mode</a></code></li>
 <li><code><a title="egse.dpu.DPUInterface.n_fee_reset" href="#egse.dpu.DPUInterface.n_fee_reset">n_fee_reset</a></code></li>
@@ -6716,6 +7132,9 @@ a <code><a title="egse.dpu.DPUSimulator" href="#egse.dpu.DPUSimulator">DPUSimula
 
     def n_fee_get_mode(self):
         return n_fee_mode.STAND_BY_MODE
+
+    def n_fee_get_sync_mode(self):
+        return NotImplemented
 
     def n_fee_set_on_mode(self):
         pass
@@ -6761,6 +7180,7 @@ a <code><a title="egse.dpu.DPUSimulator" href="#egse.dpu.DPUSimulator">DPUSimula
 <ul class="hlist">
 <li><code><a title="egse.dpu.DPUInterface.n_fee_get_full_register" href="#egse.dpu.DPUInterface.n_fee_get_full_register">n_fee_get_full_register</a></code></li>
 <li><code><a title="egse.dpu.DPUInterface.n_fee_get_mode" href="#egse.dpu.DPUInterface.n_fee_get_mode">n_fee_get_mode</a></code></li>
+<li><code><a title="egse.dpu.DPUInterface.n_fee_get_sync_mode" href="#egse.dpu.DPUInterface.n_fee_get_sync_mode">n_fee_get_sync_mode</a></code></li>
 <li><code><a title="egse.dpu.DPUInterface.n_fee_high_precision_hk_mode" href="#egse.dpu.DPUInterface.n_fee_high_precision_hk_mode">n_fee_high_precision_hk_mode</a></code></li>
 <li><code><a title="egse.dpu.DPUInterface.n_fee_is_dump_mode" href="#egse.dpu.DPUInterface.n_fee_is_dump_mode">n_fee_is_dump_mode</a></code></li>
 <li><code><a title="egse.dpu.DPUInterface.n_fee_reset" href="#egse.dpu.DPUInterface.n_fee_reset">n_fee_reset</a></code></li>
@@ -6941,6 +7361,7 @@ a <code><a title="egse.dpu.DPUSimulator" href="#egse.dpu.DPUSimulator">DPUSimula
 <li><code><a title="egse.dpu.dpu_cs" href="dpu_cs.html">egse.dpu.dpu_cs</a></code></li>
 <li><code><a title="egse.dpu.dpu_ui" href="dpu_ui.html">egse.dpu.dpu_ui</a></code></li>
 <li><code><a title="egse.dpu.fitsgen" href="fitsgen.html">egse.dpu.fitsgen</a></code></li>
+<li><code><a title="egse.dpu.fitsgen_test" href="fitsgen_test.html">egse.dpu.fitsgen_test</a></code></li>
 <li><code><a title="egse.dpu.fitsgen_ui" href="fitsgen_ui.html">egse.dpu.fitsgen_ui</a></code></li>
 <li><code><a title="egse.dpu.hdf5_model" href="hdf5_model.html">egse.dpu.hdf5_model</a></code></li>
 <li><code><a title="egse.dpu.hdf5_ui" href="hdf5_ui.html">egse.dpu.hdf5_ui</a></code></li>
@@ -6997,6 +7418,7 @@ a <code><a title="egse.dpu.DPUSimulator" href="#egse.dpu.DPUSimulator">DPUSimula
 <li><code><a title="egse.dpu.DPUInterface.marker" href="#egse.dpu.DPUInterface.marker">marker</a></code></li>
 <li><code><a title="egse.dpu.DPUInterface.n_fee_get_full_register" href="#egse.dpu.DPUInterface.n_fee_get_full_register">n_fee_get_full_register</a></code></li>
 <li><code><a title="egse.dpu.DPUInterface.n_fee_get_mode" href="#egse.dpu.DPUInterface.n_fee_get_mode">n_fee_get_mode</a></code></li>
+<li><code><a title="egse.dpu.DPUInterface.n_fee_get_sync_mode" href="#egse.dpu.DPUInterface.n_fee_get_sync_mode">n_fee_get_sync_mode</a></code></li>
 <li><code><a title="egse.dpu.DPUInterface.n_fee_high_precision_hk_mode" href="#egse.dpu.DPUInterface.n_fee_high_precision_hk_mode">n_fee_high_precision_hk_mode</a></code></li>
 <li><code><a title="egse.dpu.DPUInterface.n_fee_is_dump_mode" href="#egse.dpu.DPUInterface.n_fee_is_dump_mode">n_fee_is_dump_mode</a></code></li>
 <li><code><a title="egse.dpu.DPUInterface.n_fee_reset" href="#egse.dpu.DPUInterface.n_fee_reset">n_fee_reset</a></code></li>
@@ -7043,6 +7465,7 @@ a <code><a title="egse.dpu.DPUSimulator" href="#egse.dpu.DPUSimulator">DPUSimula
 <li><code><a title="egse.dpu.DPUMonitoring.disconnect" href="#egse.dpu.DPUMonitoring.disconnect">disconnect</a></code></li>
 <li><code><a title="egse.dpu.DPUMonitoring.do" href="#egse.dpu.DPUMonitoring.do">do</a></code></li>
 <li><code><a title="egse.dpu.DPUMonitoring.monitor_all" href="#egse.dpu.DPUMonitoring.monitor_all">monitor_all</a></code></li>
+<li><code><a title="egse.dpu.DPUMonitoring.on_frame_number_do" href="#egse.dpu.DPUMonitoring.on_frame_number_do">on_frame_number_do</a></code></li>
 <li><code><a title="egse.dpu.DPUMonitoring.on_long_pulse_do" href="#egse.dpu.DPUMonitoring.on_long_pulse_do">on_long_pulse_do</a></code></li>
 <li><code><a title="egse.dpu.DPUMonitoring.subscribe" href="#egse.dpu.DPUMonitoring.subscribe">subscribe</a></code></li>
 <li><code><a title="egse.dpu.DPUMonitoring.unsubscribe" href="#egse.dpu.DPUMonitoring.unsubscribe">unsubscribe</a></code></li>
@@ -7050,6 +7473,7 @@ a <code><a title="egse.dpu.DPUSimulator" href="#egse.dpu.DPUSimulator">DPUSimula
 <li><code><a title="egse.dpu.DPUMonitoring.wait_for_hdf5_filename" href="#egse.dpu.DPUMonitoring.wait_for_hdf5_filename">wait_for_hdf5_filename</a></code></li>
 <li><code><a title="egse.dpu.DPUMonitoring.wait_for_timecode" href="#egse.dpu.DPUMonitoring.wait_for_timecode">wait_for_timecode</a></code></li>
 <li><code><a title="egse.dpu.DPUMonitoring.wait_num_cycles" href="#egse.dpu.DPUMonitoring.wait_num_cycles">wait_num_cycles</a></code></li>
+<li><code><a title="egse.dpu.DPUMonitoring.wait_number_of_pulses" href="#egse.dpu.DPUMonitoring.wait_number_of_pulses">wait_number_of_pulses</a></code></li>
 <li><code><a title="egse.dpu.DPUMonitoring.wait_until_synced_num_cycles_is_zero" href="#egse.dpu.DPUMonitoring.wait_until_synced_num_cycles_is_zero">wait_until_synced_num_cycles_is_zero</a></code></li>
 </ul>
 </li>

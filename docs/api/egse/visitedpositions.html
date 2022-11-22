@@ -73,14 +73,15 @@ switch between coordinate system (used in the plot) with the combobox
 below the plot window (focal-plane coordinates, pixel coordinates, and
 field angles).
 &#34;&#34;&#34;
-import os
 import pickle
-import sys
 import threading
+from pathlib import Path
 
+import sys
 import zmq
-from PyQt5.QtGui import (QPixmap, QFont)
-from PyQt5.QtWidgets import (QApplication, QMainWindow, QFrame, QVBoxLayout, QLabel, QStatusBar)
+from PyQt5.QtCore import QLockFile
+from PyQt5.QtGui import (QFont, QIcon)
+from PyQt5.QtWidgets import (QApplication, QMainWindow, QFrame, QVBoxLayout, QStatusBar, QMessageBox)
 
 from egse.coordinates import ccd_to_focal_plane_coordinates, angles_to_focal_plane_coordinates, \
     focal_plane_coordinates_to_angles
@@ -418,17 +419,29 @@ def visit_ccd_position(row, column, ccd_code):
 def main():
     &#34;&#34;&#34; Main method to launch the Process Manager GUI.&#34;&#34;&#34;
 
+    lock_file = QLockFile(str(Path(&#34;~/visited_positions_ui.app.lock&#34;).expanduser()))
+
     app = QApplication(sys.argv)
+    app.setWindowIcon(QIcon(str(get_resource(&#34;:/icons/radar.svg&#34;))))
 
-    # Check whether the Process Manager CS is running
-    # (show a warning in a pop-up window if it&#39;s not)
+    if lock_file.tryLock(100):
+        # Check whether the Process Manager CS is running
+        # (show a warning in a pop-up window if it&#39;s not)
 
-    view = VisitedPositionsUIView()
-    controller = VisitedPositionsUIController(view)
+        view = VisitedPositionsUIView()
+        controller = VisitedPositionsUIController(view)
 
-    view.show()
+        view.show()
 
-    return app.exec_()
+        return app.exec_()
+    else:
+        error_message = QMessageBox()
+        error_message.setIcon(QMessageBox.Warning)
+        error_message.setWindowTitle(&#34;Error&#34;)
+        error_message.setText(&#34;The Visited-Positions GUI application is already running!&#34;)
+        error_message.setStandardButtons(QMessageBox.Ok)
+
+        return error_message.exec()
 
 
 if __name__ == &#39;__main__&#39;:
@@ -470,17 +483,29 @@ if __name__ == &#39;__main__&#39;:
 <pre><code class="python">def main():
     &#34;&#34;&#34; Main method to launch the Process Manager GUI.&#34;&#34;&#34;
 
+    lock_file = QLockFile(str(Path(&#34;~/visited_positions_ui.app.lock&#34;).expanduser()))
+
     app = QApplication(sys.argv)
+    app.setWindowIcon(QIcon(str(get_resource(&#34;:/icons/radar.svg&#34;))))
 
-    # Check whether the Process Manager CS is running
-    # (show a warning in a pop-up window if it&#39;s not)
+    if lock_file.tryLock(100):
+        # Check whether the Process Manager CS is running
+        # (show a warning in a pop-up window if it&#39;s not)
 
-    view = VisitedPositionsUIView()
-    controller = VisitedPositionsUIController(view)
+        view = VisitedPositionsUIView()
+        controller = VisitedPositionsUIController(view)
 
-    view.show()
+        view.show()
 
-    return app.exec_()</code></pre>
+        return app.exec_()
+    else:
+        error_message = QMessageBox()
+        error_message.setIcon(QMessageBox.Warning)
+        error_message.setWindowTitle(&#34;Error&#34;)
+        error_message.setText(&#34;The Visited-Positions GUI application is already running!&#34;)
+        error_message.setStandardButtons(QMessageBox.Ok)
+
+        return error_message.exec()</code></pre>
 </details>
 </dd>
 <dt id="egse.visitedpositions.start_visited_positions_gui"><code class="name flex">

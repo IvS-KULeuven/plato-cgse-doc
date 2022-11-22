@@ -39,12 +39,12 @@ from QLed import QLed
 Qt imports for the View class
 &#34;&#34;&#34;
 
-from PyQt5.QtWidgets import QApplication
+from PyQt5.QtWidgets import QApplication, QMessageBox
 import pyqtgraph as pg
 from PyQt5.QtGui import (QFont, QIcon, QPalette, QPixmap)
 from PyQt5.QtWidgets import (QAction, QFrame, QGridLayout, QGroupBox, QHBoxLayout, QLabel, QMainWindow, QVBoxLayout,
                              QWidget, QRadioButton, QPushButton, QSpinBox, QDoubleSpinBox, QSizePolicy)
-from PyQt5.QtCore import QTimer, Qt, QSize
+from PyQt5.QtCore import QTimer, Qt, QSize, QLockFile
 
 from egse.settings import Settings
 from egse.observer import Observable, Observer
@@ -880,48 +880,54 @@ def parse_arguments():
 
 
 def main():
-
+    lock_file = QLockFile(str(Path(&#34;~/ptc10_ui.app.lock&#34;).expanduser()))
     styles_location = find_file(&#34;styles.qss&#34;, in_dir=&#34;egse/gui&#34;)
 
     args = list(sys.argv)
     args[1:1] = [&#34;-stylesheet&#34;, str(styles_location)]
-
-    process_status = ProcessStatus()
-
-    timer_thread = threading.Thread(target=do_every, args=(10, process_status.update))
-    timer_thread.daemon = True
-    timer_thread.start()
-
     app = QApplication(args)
 
-    args = parse_arguments()
+    if lock_file.tryLock(100):
+        process_status = ProcessStatus()
 
+        timer_thread = threading.Thread(target=do_every, args=(10, process_status.update))
+        timer_thread.daemon = True
+        timer_thread.start()
 
-    if args.profile:
-        Settings.set_profiling(True)
+        args = parse_arguments()
 
-    if args.type == &#34;proxy&#34;:
-        proxy = ptc10Proxy()
-        if not proxy.ping():
-            description = &#34;Could not connect to SRS PTC10 Control Server&#34;
-            info_text = (
-                &#34;The GUI will start, but the connection button will show a disconnected state. &#34;
-                &#34;Please check if the Control Server is running and start the server if needed. &#34;
-                &#34;Otherwise, check if the correct HOSTNAME for the control server is set in the &#34;
-                &#34;Settings.yaml &#34;
-                &#34;configuration file.&#34;
-            )
+        if args.profile:
+            Settings.set_profiling(True)
 
-            show_warning_message(description, info_text)
+        if args.type == &#34;proxy&#34;:
+            proxy = ptc10Proxy()
+            if not proxy.ping():
+                description = &#34;Could not connect to SRS PTC10 Control Server&#34;
+                info_text = (
+                    &#34;The GUI will start, but the connection button will show a disconnected state. &#34;
+                    &#34;Please check if the Control Server is running and start the server if needed. &#34;
+                    &#34;Otherwise, check if the correct HOSTNAME for the control server is set in the &#34;
+                    &#34;Settings.yaml &#34;
+                    &#34;configuration file.&#34;
+                )
 
-    view = ptc10UIView()
-    model = ptc10UIModel(args.type)
-    controller = ptc10UIController(model, view)
+                show_warning_message(description, info_text)
 
+        view = ptc10UIView()
+        model = ptc10UIModel(args.type)
+        controller = ptc10UIController(model, view)
 
-    view.show()
+        view.show()
 
-    return app.exec_()
+        return app.exec_()
+    else:
+        error_message = QMessageBox()
+        error_message.setIcon(QMessageBox.Warning)
+        error_message.setWindowTitle(&#34;Error&#34;)
+        error_message.setText(&#34;The PTC10 tempcontrol GUI application is already running!&#34;)
+        error_message.setStandardButtons(QMessageBox.Ok)
+
+        return error_message.exec()
 
 
 if __name__ == &#34;__main__&#34;:
@@ -945,48 +951,54 @@ if __name__ == &#34;__main__&#34;:
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def main():
-
+    lock_file = QLockFile(str(Path(&#34;~/ptc10_ui.app.lock&#34;).expanduser()))
     styles_location = find_file(&#34;styles.qss&#34;, in_dir=&#34;egse/gui&#34;)
 
     args = list(sys.argv)
     args[1:1] = [&#34;-stylesheet&#34;, str(styles_location)]
-
-    process_status = ProcessStatus()
-
-    timer_thread = threading.Thread(target=do_every, args=(10, process_status.update))
-    timer_thread.daemon = True
-    timer_thread.start()
-
     app = QApplication(args)
 
-    args = parse_arguments()
+    if lock_file.tryLock(100):
+        process_status = ProcessStatus()
 
+        timer_thread = threading.Thread(target=do_every, args=(10, process_status.update))
+        timer_thread.daemon = True
+        timer_thread.start()
 
-    if args.profile:
-        Settings.set_profiling(True)
+        args = parse_arguments()
 
-    if args.type == &#34;proxy&#34;:
-        proxy = ptc10Proxy()
-        if not proxy.ping():
-            description = &#34;Could not connect to SRS PTC10 Control Server&#34;
-            info_text = (
-                &#34;The GUI will start, but the connection button will show a disconnected state. &#34;
-                &#34;Please check if the Control Server is running and start the server if needed. &#34;
-                &#34;Otherwise, check if the correct HOSTNAME for the control server is set in the &#34;
-                &#34;Settings.yaml &#34;
-                &#34;configuration file.&#34;
-            )
+        if args.profile:
+            Settings.set_profiling(True)
 
-            show_warning_message(description, info_text)
+        if args.type == &#34;proxy&#34;:
+            proxy = ptc10Proxy()
+            if not proxy.ping():
+                description = &#34;Could not connect to SRS PTC10 Control Server&#34;
+                info_text = (
+                    &#34;The GUI will start, but the connection button will show a disconnected state. &#34;
+                    &#34;Please check if the Control Server is running and start the server if needed. &#34;
+                    &#34;Otherwise, check if the correct HOSTNAME for the control server is set in the &#34;
+                    &#34;Settings.yaml &#34;
+                    &#34;configuration file.&#34;
+                )
 
-    view = ptc10UIView()
-    model = ptc10UIModel(args.type)
-    controller = ptc10UIController(model, view)
+                show_warning_message(description, info_text)
 
+        view = ptc10UIView()
+        model = ptc10UIModel(args.type)
+        controller = ptc10UIController(model, view)
 
-    view.show()
+        view.show()
 
-    return app.exec_()</code></pre>
+        return app.exec_()
+    else:
+        error_message = QMessageBox()
+        error_message.setIcon(QMessageBox.Warning)
+        error_message.setWindowTitle(&#34;Error&#34;)
+        error_message.setText(&#34;The PTC10 tempcontrol GUI application is already running!&#34;)
+        error_message.setStandardButtons(QMessageBox.Ok)
+
+        return error_message.exec()</code></pre>
 </details>
 </dd>
 <dt id="egse.tempcontrol.srs.ptc10_ui.parse_arguments"><code class="name flex">

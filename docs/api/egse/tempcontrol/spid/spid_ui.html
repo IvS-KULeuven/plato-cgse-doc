@@ -26,33 +26,33 @@
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">import argparse
-from subprocess import check_output
-import multiprocessing
-import os
-from signal import SIGKILL
-import logging
-import pickle
+<pre><code class="python">from pathlib import Path
+
 import sys
+import argparse
+import logging
+import multiprocessing
 import zmq
+import pickle
+
 from zmq import ZMQError
-from PyQt5.QtCore import QThread, QObject, pyqtSignal, pyqtSlot, Qt
-
-from PyQt5.QtGui import QCloseEvent, QIntValidator
-from PyQt5.QtWidgets import QMainWindow, QApplication, QLabel, QFrame, QHBoxLayout, QVBoxLayout, QGroupBox, QVBoxLayout, QGridLayout, \
-    QLineEdit
-
 from datetime import datetime
+
+from PyQt5.QtCore import QThread, QObject, pyqtSignal, pyqtSlot, Qt, QSize, QLockFile
+
+from PyQt5.QtGui import QCloseEvent
+from PyQt5.QtWidgets import QMainWindow, QApplication, QLabel, QFrame, QHBoxLayout, QVBoxLayout, QGroupBox, QVBoxLayout, QGridLayout, \
+    QLineEdit, QSizePolicy, QSpacerItem, QPushButton, QDoubleSpinBox, QScrollArea, QMessageBox
 
 from egse.tempcontrol.spid.spid import PidProxy, PidSimulator
 from egse.tempcontrol.spid.spid import CTRL_SETTINGS as PID_CTRL_SETTINGS
 
 from egse.setup import get_setup
+from egse.gui.led import LED
 from egse.gui.buttons import ToggleButton
-from egse.gui.led import Led, Indic as LedIndic
-from egse.observer import Observer, Observable
-from egse.zmq_ser import connect_address
 from egse.resource import get_resource
+from egse.zmq_ser import connect_address
+from egse.observer import Observer, Observable
 
 multiprocessing.current_process().name = &#39;spid_ui&#39;
 
@@ -64,7 +64,7 @@ class PidMonitoringWorker(QObject):
     pid_update_status_signal = pyqtSignal(list)
     pid_enabled_status_signal = pyqtSignal(dict)
     pid_setpoint_status_signal = pyqtSignal(list)
-    # pid_constants_status_signal = pyqtSignal(list)
+    pid_constants_status_signal = pyqtSignal(list)
     
     def __init__(self):
         super(PidMonitoringWorker, self).__init__()
@@ -82,7 +82,7 @@ class PidMonitoringWorker(QObject):
         self.previous_pid_timestamp_status_signal = []
         self.previous_pid_setpoint = []
         self.previous_pid_enabled_status_signal = []
-        # self.previous_pid_constants_status_signal = []
+        self.previous_pid_constants_status_signal = []
         
     def connect_socket(self):
         &#34;&#34;&#34; Create a socket and connect to the monitoring port.
@@ -152,7 +152,7 @@ class PidMonitoringWorker(QObject):
                     pid_isum        = monitoring_info[&#39;Isum&#39;]
                     pid_input       = monitoring_info[&#39;Input&#39;]
                     pid_output      = monitoring_info[&#39;Output&#39;]
-                    # pid_const       = monitoring_info[&#39;PidConst&#39;]
+                    pid_const       = monitoring_info[&#39;PidConst&#39;]
                     pid_state       = [pid_error, pid_isum, pid_input, pid_output]
                     
                     if pid_timestamp != self.previous_pid_timestamp_status_signal:
@@ -175,206 +175,231 @@ class PidMonitoringWorker(QObject):
                     
                     self.previous_pid_update_status_signal = pid_state
                     
-                    # if pid_const != self.previous_pid_constants_status_signal:
-                        # self.pid_update_constants_signal.emit(pid_const)
+                    if pid_const != self.previous_pid_constants_status_signal:
+                        self.pid_constants_status_signal.emit(pid_const)
                     
-                    # self.previous_pid_constants_status_signal = pid_const
+                    self.previous_pid_constants_status_signal = pid_const
                              
             except ZMQError as exc:
                 raise exc
-        
-        
-class ChannelWidget(QGroupBox):
-    
-    def __init__(self, channel_info):
-        super().__init__()
 
-        self.layout = QGridLayout()
+
+
+class pidChannelWidget(QGroupBox):
+    def __init__(self, channel_info, parent=None):
+        super().__init__(parent=parent)
+     
+        
         self.pid = channel_info[0]
         self.htr = channel_info[3]
-        self.ch = channel_info[4]
-        textbox_width = 60
-        self.switch = ToggleButton(
+        self.ch  = channel_info[4]
+        self.setObjectName(&#34;PID channel {} widget&#34;.format(self.ch))
+        self.setMinimumWidth(380)
+        sizePolicy = QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Maximum)
+        sizePolicy.setHorizontalStretch(0)
+        sizePolicy.setVerticalStretch(0)
+        sizePolicy.setHeightForWidth(self.sizePolicy().hasHeightForWidth())
+        self.setSizePolicy(sizePolicy)
+        self.verticalLayout = QVBoxLayout(self)
+        self.verticalLayout.setObjectName(&#34;verticalLayout&#34;)
+        self.gridLayout = QGridLayout()
+        self.gridLayout.setContentsMargins(0, -1, 0, -1)
+        self.gridLayout.setObjectName(&#34;gridLayout&#34;)
+        
+        self.widget = ToggleButton(
             name=&#34;Turn On\Off PID Channel&#34;,
             status_tip=f&#34;Heater {self.htr} Channel {self.ch} On\Off&#34;,
             selected=get_resource(&#34;:/icons/switch-on.svg&#34;),
             not_selected=get_resource(&#34;:/icons/switch-off.svg&#34;),
         )
-        self.switch.setObjectName(f&#34;{self.pid} {self.htr} {self.ch} Switch&#34;)
-        
-        self.more = ToggleButton(
+        self.widget.setMinimumSize(QSize(35, 35))
+        self.widget.setObjectName(&#34;widget&#34;)    
+        self.gridLayout.addWidget(self.widget, 0, 0)
+        self.label = QLabel(self)
+        self.label.setMinimumSize(QSize(0, 0))
+        self.label.setObjectName(&#34;label&#34;)
+        self.label.setText(&#34;Heater {} Channel {}&#34;.format(int(self.htr + 1), chr(int(self.ch) + 65)))
+        self.gridLayout.addWidget(self.label, 0, 1, 1, 5)
+        self.label_2 = QLabel(self)
+        self.label_2.setAlignment(Qt.AlignRight|Qt.AlignTrailing|Qt.AlignVCenter)
+        self.label_2.setObjectName(&#34;label_2&#34;)
+        self.label_2.setText(&#34;Setpoint:&#34;)
+        self.gridLayout.addWidget(self.label_2, 2, 0, 1, 1)
+        self.label_3 = QLabel(self)
+        self.label_3.setAlignment(Qt.AlignRight|Qt.AlignTrailing|Qt.AlignVCenter)
+        self.label_3.setObjectName(&#34;label_3&#34;)
+        self.label_3.setText(&#34;Input:&#34;)
+        self.gridLayout.addWidget(self.label_3, 3, 0, 1, 1)
+        self.label_6 = QLabel(self)
+        self.label_6.setObjectName(&#34;label_6&#34;)
+        self.label_6.setText(&#34;Err:&#34;)
+        self.gridLayout.addWidget(self.label_6, 2, 2, 1, 1)
+        self.doubleSpinBox = QDoubleSpinBox(self)
+        self.doubleSpinBox.setMinimumSize(QSize(90, 0))
+        self.doubleSpinBox.setProperty(&#34;value&#34;, 21.0)
+        self.doubleSpinBox.setObjectName(&#34;doubleSpinBox&#34;)
+        self.doubleSpinBox.setMinimum(-250)
+        self.gridLayout.addWidget(self.doubleSpinBox, 2, 1, 1, 1)
+        self.label_13 = QLabel(self)
+        self.label_13.setObjectName(&#34;label_13&#34;)
+        self.label_13.setText(&#34;Timestamp:&#34;)
+        self.gridLayout.addWidget(self.label_13, 5, 1, 1, 2)
+        self.label_12 = QLabel(self)
+        self.label_12.setAlignment(Qt.AlignRight|Qt.AlignTrailing|Qt.AlignVCenter)
+        self.label_12.setObjectName(&#34;label_12&#34;)
+        self.label_12.setText(&#34;Out:&#34;)
+        self.gridLayout.addWidget(self.label_12, 4, 0, 1, 1)
+        self.label_7 = QLabel(self)
+        self.label_7.setObjectName(&#34;label_7&#34;)
+        self.label_7.setText(&#34;I:&#34;)
+        self.gridLayout.addWidget(self.label_7, 3, 2, 1, 1)
+        self.label_14 = QLabel(self)
+        self.label_14.setObjectName(&#34;label_14&#34;)
+        self.gridLayout.addWidget(self.label_14, 6, 1, 1, 4)
+        self.lineEdit_3 = QLineEdit(self)
+        self.lineEdit_3.setMinimumSize(QSize(90, 0))
+        self.lineEdit_3.setReadOnly(True)
+        self.lineEdit_3.setObjectName(&#34;lineEdit_3&#34;)
+        self.gridLayout.addWidget(self.lineEdit_3, 3, 3, 1, 1)
+        self.lineEdit_4 = QLineEdit(self)
+        self.lineEdit_4.setMinimumSize(QSize(90, 0))
+        self.lineEdit_4.setReadOnly(True)
+        self.lineEdit_4.setObjectName(&#34;lineEdit_4&#34;)
+        self.gridLayout.addWidget(self.lineEdit_4, 4, 1, 1, 1)
+        self.lineEdit_2 = QLineEdit(self)
+        self.lineEdit_2.setMinimumSize(QSize(90, 0))
+        self.lineEdit_2.setReadOnly(True)
+        self.lineEdit_2.setObjectName(&#34;lineEdit_2&#34;)
+        self.gridLayout.addWidget(self.lineEdit_2, 3, 1, 1, 1)
+        self.lineEdit = QLineEdit(self)
+        self.lineEdit.setMinimumSize(QSize(90, 0))
+        self.lineEdit.setReadOnly(True)
+        self.lineEdit.setObjectName(&#34;lineEdit&#34;)
+        self.gridLayout.addWidget(self.lineEdit, 2, 3, 1, 1)
+        self.pushButton = QPushButton(self)
+        self.pushButton.setMaximumSize(QSize(50, 16777215))
+        self.pushButton.setObjectName(&#34;pushButton&#34;)
+        self.pushButton.setText(&#34;Set&#34;)
+        self.gridLayout.addWidget(self.pushButton, 2, 4, 1, 1)
+        self.widget_2 = ToggleButton(
             width=10,
             height=10,
             name=&#34;More PID information&#34;,
-            status_tip=f&#34;Show more information about pid channel {self.ch}&#34;,
+            status_tip=f&#34;Show more information about pid channel&#34;,
             selected=get_resource(&#34;:/icons/more.svg&#34;),
             not_selected=get_resource(&#34;:/icons/arrow-up.svg&#34;)
         )
-        self.more.setObjectName(f&#34;{self.pid} {self.htr} {self.ch} More&#34;)
-        
-        self.labels = [QLabel(f&#34;Heater {self.htr} Channel {self.ch}&#34;), QLabel(&#34;SP (°C)&#34;), QLabel(&#34;Err&#34;), QLabel(&#34;ISum&#34;), QLabel(&#34;Timestamp:&#34;), QLabel(&#34;In  (°C)&#34;), QLabel(&#34;Out&#34;)]
-        
-        self.sp_text_box        = QLineEdit(self)
-        self.sp_text_box.setValidator(QIntValidator(-300, 50))
-        self.sp_text_box.setMinimumWidth(textbox_width)
-        self.sp_text_box.setObjectName(f&#34;{self.pid} {self.htr} {self.ch} SetpointTextBox&#34;)
-        
-        self.pid_const = [QLabel(&#34;Kp:&#34;), QLabel(&#34;Ki:&#34;), QLabel(&#34;Kd:&#34;)]
-        self.pid_val = [QLabel(&#34;0&#34;), QLabel(&#34;0&#34;), QLabel(&#34;0&#34;)]
-        
-        self.err_text_box       = QLineEdit(self)
-        self.err_text_box.setValidator(QIntValidator(-1000, 1000))
-        self.err_text_box.setReadOnly(True)
-        self.err_text_box.setMinimumWidth(textbox_width)
-        
-        self.in_text_box       = QLineEdit(self)
-        self.in_text_box.setValidator(QIntValidator(-1000, 1000))
-        self.in_text_box.setReadOnly(True)
-        self.in_text_box.setMinimumWidth(textbox_width)
-        
-        self.out_text_box       = QLineEdit(self)
-        self.out_text_box.setValidator(QIntValidator(-1000, 1000))
-        self.out_text_box.setReadOnly(True)
-        self.out_text_box.setMinimumWidth(textbox_width)
-        
-        self.isum_text_box      = QLineEdit(self)
-        self.isum_text_box.setValidator(QIntValidator(-1000, 1000))
-        self.isum_text_box.setReadOnly(True)
-        self.isum_text_box.setMinimumWidth(textbox_width)
-        
-        self.last_sample_time   = QLabel(&#34;DUMM-YD:DATET:IM:EX.XXX+XXXX&#34;)
-        
-        self.layout.addWidget(self.switch, 0, 0)
-        self.layout.addWidget(self.labels[0], 0, 1, 1, 5)
-        
-        self.layout.addWidget(self.pid_const[0], 1, 1)
-        self.layout.addWidget(self.pid_val[0], 1, 2)
-        self.layout.addWidget(self.pid_const[1], 1, 3)
-        self.layout.addWidget(self.pid_val[1], 1, 4)
-        self.layout.addWidget(self.pid_const[2], 1, 5)
-        self.layout.addWidget(self.pid_val[2], 1, 6)  
-             
-        self.layout.addWidget(self.labels[1], 2, 0)
-        self.layout.addWidget(self.sp_text_box, 2, 1)
-        self.layout.addWidget(self.labels[2], 2, 2)
-        self.layout.addWidget(self.err_text_box, 2, 3)
-        self.layout.addWidget(self.labels[3], 2, 4)
-        self.layout.addWidget(self.isum_text_box, 2, 5)
-        self.layout.addWidget(self.in_text_box, 3, 1)
-        self.layout.addWidget(self.labels[5], 3, 0)
-        self.layout.addWidget(self.labels[6], 3, 4)
-        self.layout.addWidget(self.out_text_box, 3, 5)
-        self.layout.addWidget(self.labels[4], 4, 1, 1, 5)
-        self.layout.addWidget(self.last_sample_time, 5, 1, 1, 5)
-        self.layout.addWidget(self.more, 5, 6)
+        self.widget_2.setObjectName(&#34;widget_2&#34;)
+        self.gridLayout.addWidget(self.widget_2, 6, 5, 1, 1)
+        self.horizontalLayout_2 = QHBoxLayout()
+        self.horizontalLayout_2.setObjectName(&#34;horizontalLayout_2&#34;)
+        self.label_4 = QLabel(self)
+        self.label_4.setObjectName(&#34;label_4&#34;)
+        self.label_4.setText(&#34;Kp:&#34;)
+        self.horizontalLayout_2.addWidget(self.label_4)
+        self.label_5 = QLabel(self)
+        self.label_5.setObjectName(&#34;label_5&#34;)
+        self.label_5.setText(&#34;0&#34;)
+        self.horizontalLayout_2.addWidget(self.label_5)
+        self.label_8 = QLabel(self)
+        self.label_8.setObjectName(&#34;label_8&#34;)
+        self.label_8.setText(&#34;Ki:&#34;)
+        self.horizontalLayout_2.addWidget(self.label_8)
+        self.label_9 = QLabel(self)
+        self.label_9.setObjectName(&#34;label_9&#34;)
+        self.label_9.setText(&#34;0&#34;)
+        self.horizontalLayout_2.addWidget(self.label_9)
+        self.label_10 =QLabel(self)
+        self.label_10.setObjectName(&#34;label_10&#34;)
+        self.label_10.setText(&#34;Kd:&#34;)
+        self.horizontalLayout_2.addWidget(self.label_10)
+        self.label_11 = QLabel(self)
+        self.label_11.setObjectName(&#34;label_11&#34;)
+        self.label_11.setText(&#34;0&#34;)
+        self.horizontalLayout_2.addWidget(self.label_11)
+        self.gridLayout.addLayout(self.horizontalLayout_2, 1, 0, 1, 6)
+        self.verticalLayout.addLayout(self.gridLayout)
+
+        self.widget_2.clicked.connect(self.show_more_less)
         
         self.show_less()
-        self.more.show_more = self.show_more
-        self.more.show_less = self.show_less
-        
-        self.setLayout(self.layout)
-        
-    def show_more(self):
-        [const.show() for const in self.pid_const]
-        [val.show() for val in self.pid_val]
-        [lab.show() for lab in self.labels[5:7]]
-        self.out_text_box.show()
-        self.in_text_box.show()
         
     def show_less(self):
-        [const.hide() for const in self.pid_const]
-        [val.hide() for val in self.pid_val]
-        [lab.hide() for lab in self.labels[5:7]]
-        self.out_text_box.hide()
-        self.in_text_box.hide()
+        self.lineEdit_3.hide()
+        self.lineEdit_4.hide()
+        self.label_4.hide()
+        self.label_5.hide()
+        self.label_7.hide()
+        self.label_8.hide()
+        self.label_9.hide()
+        self.label_10.hide()
+        self.label_11.hide()
+        self.label_12.hide()
+    
+    def show_more(self):
+        self.lineEdit_3.show()
+        self.lineEdit_4.show()
+        self.label_4.show()
+        self.label_5.show()
+        self.label_7.show()
+        self.label_8.show()
+        self.label_9.show()
+        self.label_10.show()
+        self.label_11.show()
+        self.label_12.show()
+    
+    def show_more_less(self):
+        if not self.widget_2.is_selected():
+            self.show_more()
+        else:
+            self.show_less()
 
-class PIDWidget(QGroupBox):
-    def __init__(self, pid_name):
-        super().__init__()
-        
-        self.name = QLabel(pid_name)
-        self.led = Led(self)
-        layout = QHBoxLayout()
-        
-        layout.addWidget(self.name)
-        layout.addWidget(self.led)
-        
-        self.setLayout(layout)        
-
-class ToolbarWidget(QGroupBox):
-    def __init__(self):
-        super().__init__()
-        
-        self.layout = QHBoxLayout()
-        
-        self.kill_button = ToggleButton(
-            height=42,
-            width=42,
-            name=&#34;Kill SPID processes&#34;,
-            status_tip=&#34;Kill every SPID process that is currently running&#34;,
-            selected=get_resource(&#34;:/icons/stop-button.svg&#34;),
-            not_selected=get_resource(&#34;:/icons/stop-button-disabled.svg&#34;)
-        )
-        
-        self.release_control = ToggleButton(
-            height=42,
-            width=42,
-            name=&#34;Stop all PID control&#34;,
-            status_tip=&#34;Release the PID control of all running heaters&#34;,
-            selected=get_resource(&#34;:/icons/remote-control-on.svg&#34;),
-            not_selected=get_resource(&#34;:/icons/remote-control-off.svg&#34;)
-        )
-        
-        self.layout.addWidget(self.release_control )
-        self.layout.addWidget(self.kill_button)
-        self.layout.setAlignment(Qt.AlignRight)
-        self.setLayout(self.layout)
-        
-        
-        
-class PIDWindow(QGroupBox):
-    def __init__(self, pid_name, channels):
-        super().__init__()
-        
-
-        self.layout = QGridLayout()
-        # self.layout = QVBoxLayout()
-        # self.layout.setSpacing(0)
-        self.name = QLabel(pid_name)
-        self.led = Led(self)
-        pid_layout = QHBoxLayout()
-        
-        pid_layout.addWidget(self.name)
-        pid_layout.addWidget(self.led)
-        self.layout.addLayout(pid_layout, 0, 0, 1, 0)
+class pidGroupbox(QGroupBox):
+    def __init__(self, pid_name, channels, parent=None):
+        super().__init__(parent=parent)
+        self.setObjectName(&#34;{}&#34;.format(pid_name))
+        self.setMaximumWidth(400)
+        self.verticalLayout = QVBoxLayout(self)
+        self.verticalLayout.setObjectName(&#34;verticalLayout&#34;)
+        self.horizontalLayout = QHBoxLayout()
+        self.horizontalLayout.setObjectName(&#34;horizontalLayout&#34;)
+        self.label = QLabel(self)
+        self.label.setText(pid_name)
+        sizePolicy = QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Maximum)
+        sizePolicy.setHorizontalStretch(0)
+        sizePolicy.setVerticalStretch(0)
+        sizePolicy.setHeightForWidth(self.label.sizePolicy().hasHeightForWidth())
+        self.label.setSizePolicy(sizePolicy)
+        self.label.setObjectName(&#34;label&#34;)
+        self.horizontalLayout.addWidget(self.label)
+        spacerItem =QSpacerItem(40, 20, QSizePolicy.Expanding, QSizePolicy.Minimum)
+        self.horizontalLayout.addItem(spacerItem)
+        self.widget = LED()
+        self.widget.setMinimumSize(QSize(25, 25))
+        self.widget.setObjectName(&#34;widget&#34;)
+        self.horizontalLayout.addWidget(self.widget)
+        self.verticalLayout.addLayout(self.horizontalLayout)
         self.channels = [None] * len(channels)
-        self.chan_layout = QVBoxLayout()
-        self.chan_layout.setSpacing(0)
         for idx, channel in enumerate(channels):
             if (channel[1] == 0 and channel[2] == 0):
                 continue
-            self.channels[idx] = ChannelWidget(channel)
-            self.channels[idx].setMaximumHeight(180)
-            self.chan_layout.addWidget(self.channels[idx])
-            
-        self.layout.addLayout(self.chan_layout, 1, 0)
-        self.layout.setRowStretch(2, 1)
-        self.setLayout(self.layout)  
+            self.channels[idx] = pidChannelWidget(channel)
+            self.verticalLayout.addWidget(self.channels[idx])
+        spacerItem_2 =QSpacerItem(40, 20, QSizePolicy.Minimum, QSizePolicy.Expanding)
+        self.verticalLayout.addItem(spacerItem_2)
 
-
-class PIDUIView(QMainWindow, Observable):
-    def __init__(self):
-        super().__init__()
-        
+class pidMainWindow(QMainWindow, Observable):
+    def __init__(self, parent=None):
+        super().__init__(parent=parent)
         self.setWindowTitle(&#34;Beaglebone PID Controller&#34;)
+        self.setGeometry(600, 100, 1250, 670)
+        self.setMaximumWidth(1250)
         
         setup = get_setup()
         self.pid_configuration = setup.gse.spid.configuration.heaters
         self.pid_configuration[&#39;MaRi&#39;] = self.pid_configuration[&#39;TRP2&#39;] + self.pid_configuration[&#39;TRP3&#39;] + self.pid_configuration[&#39;TRP4&#39;]
         del self.pid_configuration[&#39;TRP2&#39;], self.pid_configuration[&#39;TRP3&#39;], self.pid_configuration[&#39;TRP4&#39;]
 
-        self.initUI()
-        
         self.pid_monitoring_thread = QThread(self)
         self.pid_monitoring_worker = PidMonitoringWorker()
         self.pid_monitoring_worker.moveToThread(self.pid_monitoring_thread)
@@ -388,6 +413,8 @@ class PIDUIView(QMainWindow, Observable):
         self.pid_monitoring_thread.started.connect(self.pid_monitoring_worker.start_process)
         self.pid_monitoring_thread.start()
         
+        self.initUI()
+
     def on_pid_enabled_status_signal(self, monitoring_info:dict):
         monitoring_info = list(monitoring_info.values())
         
@@ -398,39 +425,38 @@ class PIDUIView(QMainWindow, Observable):
                 if (ch[1] == 0 and ch[2] == 0):
                     state_lin -= 1
                     continue
-                self.pid_channels[idx].channels[ch_idx].switch.set_selected(bool(monitoring_info[ch[0]]))
-                ch_enabled = self.pid_channels[idx].channels[ch_idx].switch.is_selected()
+                self.pid_channels[idx].channels[ch_idx].widget.set_selected(bool(monitoring_info[ch[0]]))
+                ch_enabled = self.pid_channels[idx].channels[ch_idx].widget.is_selected()
                 pid_state += 1 if int(ch_enabled) else 0
-            # print(pid_state)
             if pid_state == state_lin:
-                self.pid_channels[idx].led.set_color(1)
+                self.pid_channels[idx].widget.set_color(1)
             elif  0 &lt; pid_state &lt; state_lin:
-                self.pid_channels[idx].led.set_color(2)
+                self.pid_channels[idx].widget.set_color(2)
             else:
-                self.pid_channels[idx].led.set_color(0)
+                self.pid_channels[idx].widget.set_color(0)
     
     def on_pid_constant_status_signal(self, monitoring_info):
         for idx, (_, configuration) in enumerate(self.pid_configuration.items()):
             for ch_idx, ch in enumerate(configuration):
                 if (ch[1] == 0 and ch[2] == 0):
                     continue                
-                self.pid_channels[idx].channels[ch_idx].pid_val[0].setText(f&#34;{monitoring_info[0]:.4f}&#34;)
-                self.pid_channels[idx].channels[ch_idx].pid_val[1].setText(f&#34;{monitoring_info[1]:.4f}&#34;)  
-                self.pid_channels[idx].channels[ch_idx].pid_val[2].setText(f&#34;{monitoring_info[2]:.4f}&#34;)  
+                self.pid_channels[idx].channels[ch_idx].label_5.setText(f&#34;{monitoring_info[idx][0]:.2e}&#34;)
+                self.pid_channels[idx].channels[ch_idx].label_9.setText(f&#34;{monitoring_info[idx][1]:.2e}&#34;)  
+                self.pid_channels[idx].channels[ch_idx].label_11.setText(f&#34;{monitoring_info[idx][2]:.2e}&#34;)  
     
     def on_pid_setpoint_status_signal(self, monitoring_info):
         for idx, (_, configuration) in enumerate(self.pid_configuration.items()):
             for ch_idx, ch in enumerate(configuration):
                 if (ch[1] == 0 and ch[2] == 0):
                     continue                
-                self.pid_channels[idx].channels[ch_idx].sp_text_box.setText(f&#34;{monitoring_info[ch[0]]:.1f}&#34;)
+                self.pid_channels[idx].channels[ch_idx].doubleSpinBox.setValue(float(monitoring_info[ch[0]]))
     
     def on_pid_timestamp_status_signal(self, monitoring_info):
         for idx, (_, configuration) in enumerate(self.pid_configuration.items()):
             for ch_idx, ch in enumerate(configuration):
                 if (ch[1] == 0 and ch[2] == 0):
                     continue
-                self.pid_channels[idx].channels[ch_idx].last_sample_time.setText(str(datetime.fromtimestamp(monitoring_info[int(ch[0])])))
+                self.pid_channels[idx].channels[ch_idx].label_14.setText(str(datetime.fromtimestamp(monitoring_info[int(ch[0])])))
     
     def on_pid_update_status_signal(self, monitoring_info):
         channels = 0
@@ -438,88 +464,71 @@ class PIDUIView(QMainWindow, Observable):
             for ch_idx, ch in enumerate(configuration):
                 if (ch[1] == 0 and ch[2] == 0):
                     continue
-                self.pid_channels[idx].channels[ch_idx].err_text_box.setText(f&#34;{monitoring_info[0][channels]:.1f}&#34;)
-                self.pid_channels[idx].channels[ch_idx].isum_text_box.setText(f&#34;{monitoring_info[1][channels]:.1f}&#34;)
-                self.pid_channels[idx].channels[ch_idx].in_text_box.setText(f&#34;{monitoring_info[2][channels]:.1f}&#34;)
-                self.pid_channels[idx].channels[ch_idx].out_text_box.setText(f&#34;{monitoring_info[3][channels]:.1f}&#34;)
+                self.pid_channels[idx].channels[ch_idx].lineEdit.setText(f&#34;{monitoring_info[0][channels]:.2e}&#34;)
+                self.pid_channels[idx].channels[ch_idx].lineEdit_3.setText(f&#34;{monitoring_info[1][channels]:.2e}&#34;)
+                self.pid_channels[idx].channels[ch_idx].lineEdit_2.setText(f&#34;{monitoring_info[2][channels]:.2e}&#34;)
+                self.pid_channels[idx].channels[ch_idx].lineEdit_4.setText(f&#34;{monitoring_info[3][channels]:.2e}&#34;)
                 channels += 1
-                
-                
-        
+
     def initUI(self):
+        scroll_frame = QScrollArea()
+        scroll_frame.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll_frame.setWidgetResizable(True)
         app_frame = QFrame()
-        app_frame.setObjectName(&#34;AppFrame&#34;)
-        full_layout = QVBoxLayout()
-        toolbar_widget = ToolbarWidget()
-        toolbar_widget.kill_button.clicked.connect(self.kill_all_pid_processes)
-        # body_layout = QHBoxLayout()
-        body_layout = QGridLayout()
+        grid_layout = QGridLayout()
         self.pid_channels = [None] * len(self.pid_configuration)
         for idx, (pid, configuration) in enumerate(self.pid_configuration.items()):
             configuration.sort( key = lambda configuration: (configuration[3], configuration[4]))
-            self.pid_channels[idx] = PIDWindow(pid, configuration)
-            # body_layout.addWidget(self.pid_channels[idx])
-            body_layout.addWidget(self.pid_channels[idx], 0 if idx &lt; 4 else 1, idx if idx &lt; 4 else idx - 4)
+            self.pid_channels[idx] = pidGroupbox(pid, configuration)
+            grid_layout.addWidget(self.pid_channels[idx], int(idx / 3), idx % 3)
             for ch_idx, ch in enumerate(configuration):
                 if (ch[1] == 0 and ch[2] == 0):
                     continue
-                self.pid_channels[idx].channels[ch_idx].switch.clicked.connect(self.set_pid_control)
-                self.pid_channels[idx].channels[ch_idx].more.clicked.connect(self.show_more_information)
-                self.pid_channels[idx].channels[ch_idx].sp_text_box.returnPressed.connect(self.set_pid_setpoint)
-        full_layout.addWidget(toolbar_widget)
-        full_layout.addLayout(body_layout)
-        app_frame.setLayout(full_layout)
-        self.setCentralWidget(app_frame)
-
-    def kill_all_pid_processes(self):
-        sender = self.sender()
-        state = sender.is_selected()
-        if not state:
-            ProcessId = map(int, check_output([&#39;pgrep&#39;, &#34;-f&#34;, &#34;spid_cs&#34;]).split())
-            logger.info(f&#34;Killing all PID processes - {list(ProcessId)}&#34;)
-            for pid in list(ProcessId):
-                try:
-                    os.kill(pid, 9)
-                except Exception as exc:
-                    logger.info(f&#34;{exc}&#34;)
-
-            ProcessId = map(int, check_output([&#39;pgrep&#39;, &#34;-f&#34;, &#34;spid&#34;]).split())     
-            logger.info(f&#34;Remaining PID Processes - {list(ProcessId)}&#34;)       
-    
-    def show_more_information(self):
-        sender = self.sender()
-        state = sender.is_selected()
-        if state:
-            sender.show_less()
-        else:
-            sender.show_more()
-        
+                self.pid_channels[idx].channels[ch_idx].widget.clicked.connect(self.set_pid_control)
+                self.pid_channels[idx].channels[ch_idx].pushButton.clicked.connect(self.set_pid_setpoint)
+        app_frame.setLayout(grid_layout)
+        scroll_frame.setWidget(app_frame)
+        self.setCentralWidget(scroll_frame)
 
     def set_pid_control(self):
         sender = self.sender()
-        command = sender.objectName().split(&#34; &#34;)
         state = sender.is_selected()
         new_state = state
         sender.set_selected(on=new_state)
-        pid = command[0]
-        htr = command[1]
-        ch = command[2]
-        logger.info(f&#39;PID channel {pid} Heater {htr} Channel {ch} has been set to: {new_state}&#39;)
-        self.actionObservers({&#34;set_pid_control&#34; : [pid, bool(new_state)]})
+        pid = sender.parent().pid
+        htr = sender.parent().htr
+        ch  = sender.parent().ch
+
+        try:
+            self.actionObservers({&#34;set_pid_control&#34; : [pid, bool(new_state)]})
+        except Exception as e:
+            warning_popup(&#34;set_pid_control : Channel {} {}&#34;.format(pid, &#34;Enabled&#34; 
+                                                                   if new_state else &#34;Disabled&#34;), e)
     
     def set_pid_setpoint(self):
         sender = self.sender()
-        command = sender.objectName().split(&#34; &#34;)
-        setpoint = int(sender.text())
-        pid = command[0]
-        htr = command[1]
-        ch = command[2]
-        logger.info(f&#39;PID channel {pid} Heater {htr} Channel {ch} setpoint has been set to: {setpoint}&#39;)
-        self.actionObservers({&#34;set_pid_setpoint&#34; : [pid, float(setpoint)]})
+        setpoint = float(sender.parent().doubleSpinBox.value())
+        pid = sender.parent().pid
+        htr = sender.parent().htr
+        ch  = sender.parent().ch
 
+        try:
+            self.actionObservers({&#34;set_pid_setpoint&#34; : [pid, float(setpoint)]})
+        except Exception as e:
+            warning_popup(&#34;set_pid_setpoint : PID Channel {} to {} C&#34;.format(pid, setpoint), e)      
+              
     def closeEvent(self, close_Event: QCloseEvent) -&gt; None:
         self.pid_monitoring_thread.quit()
         self.pid_monitoring_worker.stop()
+
+def warning_popup(command, error):
+    msgBox = QMessageBox()
+    msgBox.setWindowTitle(&#34;OGSE error occured&#34;)
+    msgBox.setIcon(QMessageBox.Warning)
+    msgBox.setText(f&#34;An error occured while executing: {command}&#34;)
+    msgBox.setInformativeText(f&#34;{error}&#34;)
+    msgBox.setStandardButtons(QMessageBox.Ok)
+    msgBox.exec_()
 
 class PIDUIModel:
     def __init__(self, mode):
@@ -590,7 +599,7 @@ class PIDUIModel:
 
 
 class PIDUIController(Observer):
-    def __init__(self, model: PIDUIModel, view: PIDUIView):
+    def __init__(self, model: PIDUIModel, view: pidMainWindow):
         self.model  = model
         self.view   = view
         self.view.addObserver(self)
@@ -654,23 +663,42 @@ def parse_arguments():
     args = parser.parse_args()
     return args
 
-if __name__ == &#39;__main__&#39;:
+
+def main():
+
+    lock_file = QLockFile(str(Path(&#34;~/spid_ui.app.lock&#34;).expanduser()))
+
     args = list(sys.argv)
     app = QApplication(args)
 
-    args = parse_arguments()
-    
-    if args.type == &#39;proxy&#39;:
-        try:
-            proxy = PidProxy()
-        except Exception:
-            raise Exception
-        
-    view        = PIDUIView()
-    model       = PIDUIModel(args.type)
-    controller  = PIDUIController(model, view)
-    view.show()
-    sys.exit(app.exec_())</code></pre>
+    if lock_file.tryLock(100):
+
+        args = parse_arguments()
+
+        if args.type == &#39;proxy&#39;:
+            try:
+                proxy = PidProxy()
+            except Exception:
+                raise Exception
+
+        view = pidMainWindow()
+        model = PIDUIModel(args.type)
+        controller = PIDUIController(model, view)
+        view.show()
+        app.exec_()
+    else:
+        error_message = QMessageBox()
+        error_message.setIcon(QMessageBox.Warning)
+        error_message.setWindowTitle(&#34;Error&#34;)
+        error_message.setText(&#34;The SPID tempcontrol GUI application is already running!&#34;)
+        error_message.setStandardButtons(QMessageBox.Ok)
+
+        return error_message.exec()
+
+
+if __name__ == &#34;__main__&#34;:
+    main()
+        </code></pre>
 </details>
 </section>
 <section>
@@ -680,6 +708,47 @@ if __name__ == &#39;__main__&#39;:
 <section>
 <h2 class="section-title" id="header-functions">Functions</h2>
 <dl>
+<dt id="egse.tempcontrol.spid.spid_ui.main"><code class="name flex">
+<span>def <span class="ident">main</span></span>(<span>)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def main():
+
+    lock_file = QLockFile(str(Path(&#34;~/spid_ui.app.lock&#34;).expanduser()))
+
+    args = list(sys.argv)
+    app = QApplication(args)
+
+    if lock_file.tryLock(100):
+
+        args = parse_arguments()
+
+        if args.type == &#39;proxy&#39;:
+            try:
+                proxy = PidProxy()
+            except Exception:
+                raise Exception
+
+        view = pidMainWindow()
+        model = PIDUIModel(args.type)
+        controller = PIDUIController(model, view)
+        view.show()
+        app.exec_()
+    else:
+        error_message = QMessageBox()
+        error_message.setIcon(QMessageBox.Warning)
+        error_message.setWindowTitle(&#34;Error&#34;)
+        error_message.setText(&#34;The SPID tempcontrol GUI application is already running!&#34;)
+        error_message.setStandardButtons(QMessageBox.Ok)
+
+        return error_message.exec()</code></pre>
+</details>
+</dd>
 <dt id="egse.tempcontrol.spid.spid_ui.parse_arguments"><code class="name flex">
 <span>def <span class="ident">parse_arguments</span></span>(<span>)</span>
 </code></dt>
@@ -707,176 +776,33 @@ if __name__ == &#39;__main__&#39;:
     return args</code></pre>
 </details>
 </dd>
+<dt id="egse.tempcontrol.spid.spid_ui.warning_popup"><code class="name flex">
+<span>def <span class="ident">warning_popup</span></span>(<span>command, error)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def warning_popup(command, error):
+    msgBox = QMessageBox()
+    msgBox.setWindowTitle(&#34;OGSE error occured&#34;)
+    msgBox.setIcon(QMessageBox.Warning)
+    msgBox.setText(f&#34;An error occured while executing: {command}&#34;)
+    msgBox.setInformativeText(f&#34;{error}&#34;)
+    msgBox.setStandardButtons(QMessageBox.Ok)
+    msgBox.exec_()</code></pre>
+</details>
+</dd>
 </dl>
 </section>
 <section>
 <h2 class="section-title" id="header-classes">Classes</h2>
 <dl>
-<dt id="egse.tempcontrol.spid.spid_ui.ChannelWidget"><code class="flex name class">
-<span>class <span class="ident">ChannelWidget</span></span>
-<span>(</span><span>channel_info)</span>
-</code></dt>
-<dd>
-<div class="desc"><p>QGroupBox(parent: QWidget = None)
-QGroupBox(str, parent: QWidget = None)</p></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">class ChannelWidget(QGroupBox):
-    
-    def __init__(self, channel_info):
-        super().__init__()
-
-        self.layout = QGridLayout()
-        self.pid = channel_info[0]
-        self.htr = channel_info[3]
-        self.ch = channel_info[4]
-        textbox_width = 60
-        self.switch = ToggleButton(
-            name=&#34;Turn On\Off PID Channel&#34;,
-            status_tip=f&#34;Heater {self.htr} Channel {self.ch} On\Off&#34;,
-            selected=get_resource(&#34;:/icons/switch-on.svg&#34;),
-            not_selected=get_resource(&#34;:/icons/switch-off.svg&#34;),
-        )
-        self.switch.setObjectName(f&#34;{self.pid} {self.htr} {self.ch} Switch&#34;)
-        
-        self.more = ToggleButton(
-            width=10,
-            height=10,
-            name=&#34;More PID information&#34;,
-            status_tip=f&#34;Show more information about pid channel {self.ch}&#34;,
-            selected=get_resource(&#34;:/icons/more.svg&#34;),
-            not_selected=get_resource(&#34;:/icons/arrow-up.svg&#34;)
-        )
-        self.more.setObjectName(f&#34;{self.pid} {self.htr} {self.ch} More&#34;)
-        
-        self.labels = [QLabel(f&#34;Heater {self.htr} Channel {self.ch}&#34;), QLabel(&#34;SP (°C)&#34;), QLabel(&#34;Err&#34;), QLabel(&#34;ISum&#34;), QLabel(&#34;Timestamp:&#34;), QLabel(&#34;In  (°C)&#34;), QLabel(&#34;Out&#34;)]
-        
-        self.sp_text_box        = QLineEdit(self)
-        self.sp_text_box.setValidator(QIntValidator(-300, 50))
-        self.sp_text_box.setMinimumWidth(textbox_width)
-        self.sp_text_box.setObjectName(f&#34;{self.pid} {self.htr} {self.ch} SetpointTextBox&#34;)
-        
-        self.pid_const = [QLabel(&#34;Kp:&#34;), QLabel(&#34;Ki:&#34;), QLabel(&#34;Kd:&#34;)]
-        self.pid_val = [QLabel(&#34;0&#34;), QLabel(&#34;0&#34;), QLabel(&#34;0&#34;)]
-        
-        self.err_text_box       = QLineEdit(self)
-        self.err_text_box.setValidator(QIntValidator(-1000, 1000))
-        self.err_text_box.setReadOnly(True)
-        self.err_text_box.setMinimumWidth(textbox_width)
-        
-        self.in_text_box       = QLineEdit(self)
-        self.in_text_box.setValidator(QIntValidator(-1000, 1000))
-        self.in_text_box.setReadOnly(True)
-        self.in_text_box.setMinimumWidth(textbox_width)
-        
-        self.out_text_box       = QLineEdit(self)
-        self.out_text_box.setValidator(QIntValidator(-1000, 1000))
-        self.out_text_box.setReadOnly(True)
-        self.out_text_box.setMinimumWidth(textbox_width)
-        
-        self.isum_text_box      = QLineEdit(self)
-        self.isum_text_box.setValidator(QIntValidator(-1000, 1000))
-        self.isum_text_box.setReadOnly(True)
-        self.isum_text_box.setMinimumWidth(textbox_width)
-        
-        self.last_sample_time   = QLabel(&#34;DUMM-YD:DATET:IM:EX.XXX+XXXX&#34;)
-        
-        self.layout.addWidget(self.switch, 0, 0)
-        self.layout.addWidget(self.labels[0], 0, 1, 1, 5)
-        
-        self.layout.addWidget(self.pid_const[0], 1, 1)
-        self.layout.addWidget(self.pid_val[0], 1, 2)
-        self.layout.addWidget(self.pid_const[1], 1, 3)
-        self.layout.addWidget(self.pid_val[1], 1, 4)
-        self.layout.addWidget(self.pid_const[2], 1, 5)
-        self.layout.addWidget(self.pid_val[2], 1, 6)  
-             
-        self.layout.addWidget(self.labels[1], 2, 0)
-        self.layout.addWidget(self.sp_text_box, 2, 1)
-        self.layout.addWidget(self.labels[2], 2, 2)
-        self.layout.addWidget(self.err_text_box, 2, 3)
-        self.layout.addWidget(self.labels[3], 2, 4)
-        self.layout.addWidget(self.isum_text_box, 2, 5)
-        self.layout.addWidget(self.in_text_box, 3, 1)
-        self.layout.addWidget(self.labels[5], 3, 0)
-        self.layout.addWidget(self.labels[6], 3, 4)
-        self.layout.addWidget(self.out_text_box, 3, 5)
-        self.layout.addWidget(self.labels[4], 4, 1, 1, 5)
-        self.layout.addWidget(self.last_sample_time, 5, 1, 1, 5)
-        self.layout.addWidget(self.more, 5, 6)
-        
-        self.show_less()
-        self.more.show_more = self.show_more
-        self.more.show_less = self.show_less
-        
-        self.setLayout(self.layout)
-        
-    def show_more(self):
-        [const.show() for const in self.pid_const]
-        [val.show() for val in self.pid_val]
-        [lab.show() for lab in self.labels[5:7]]
-        self.out_text_box.show()
-        self.in_text_box.show()
-        
-    def show_less(self):
-        [const.hide() for const in self.pid_const]
-        [val.hide() for val in self.pid_val]
-        [lab.hide() for lab in self.labels[5:7]]
-        self.out_text_box.hide()
-        self.in_text_box.hide()</code></pre>
-</details>
-<h3>Ancestors</h3>
-<ul class="hlist">
-<li>PyQt5.QtWidgets.QGroupBox</li>
-<li>PyQt5.QtWidgets.QWidget</li>
-<li>PyQt5.QtCore.QObject</li>
-<li>sip.wrapper</li>
-<li>PyQt5.QtGui.QPaintDevice</li>
-<li>sip.simplewrapper</li>
-</ul>
-<h3>Methods</h3>
-<dl>
-<dt id="egse.tempcontrol.spid.spid_ui.ChannelWidget.show_less"><code class="name flex">
-<span>def <span class="ident">show_less</span></span>(<span>self)</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def show_less(self):
-    [const.hide() for const in self.pid_const]
-    [val.hide() for val in self.pid_val]
-    [lab.hide() for lab in self.labels[5:7]]
-    self.out_text_box.hide()
-    self.in_text_box.hide()</code></pre>
-</details>
-</dd>
-<dt id="egse.tempcontrol.spid.spid_ui.ChannelWidget.show_more"><code class="name flex">
-<span>def <span class="ident">show_more</span></span>(<span>self)</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def show_more(self):
-    [const.show() for const in self.pid_const]
-    [val.show() for val in self.pid_val]
-    [lab.show() for lab in self.labels[5:7]]
-    self.out_text_box.show()
-    self.in_text_box.show()</code></pre>
-</details>
-</dd>
-</dl>
-</dd>
 <dt id="egse.tempcontrol.spid.spid_ui.PIDUIController"><code class="flex name class">
 <span>class <span class="ident">PIDUIController</span></span>
-<span>(</span><span>model: <a title="egse.tempcontrol.spid.spid_ui.PIDUIModel" href="#egse.tempcontrol.spid.spid_ui.PIDUIModel">PIDUIModel</a>, view: <a title="egse.tempcontrol.spid.spid_ui.PIDUIView" href="#egse.tempcontrol.spid.spid_ui.PIDUIView">PIDUIView</a>)</span>
+<span>(</span><span>model: <a title="egse.tempcontrol.spid.spid_ui.PIDUIModel" href="#egse.tempcontrol.spid.spid_ui.PIDUIModel">PIDUIModel</a>, view: <a title="egse.tempcontrol.spid.spid_ui.pidMainWindow" href="#egse.tempcontrol.spid.spid_ui.pidMainWindow">pidMainWindow</a>)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Helper class that provides a standard way to create an ABC using
@@ -886,7 +812,7 @@ inheritance.</p></div>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">class PIDUIController(Observer):
-    def __init__(self, model: PIDUIModel, view: PIDUIView):
+    def __init__(self, model: PIDUIModel, view: pidMainWindow):
         self.model  = model
         self.view   = view
         self.view.addObserver(self)
@@ -1211,512 +1137,6 @@ inheritance.</p></div>
 </dd>
 </dl>
 </dd>
-<dt id="egse.tempcontrol.spid.spid_ui.PIDUIView"><code class="flex name class">
-<span>class <span class="ident">PIDUIView</span></span>
-</code></dt>
-<dd>
-<div class="desc"><p>QMainWindow(parent: QWidget = None, flags: Union[Qt.WindowFlags, Qt.WindowType] = Qt.WindowFlags())</p></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">class PIDUIView(QMainWindow, Observable):
-    def __init__(self):
-        super().__init__()
-        
-        self.setWindowTitle(&#34;Beaglebone PID Controller&#34;)
-        
-        setup = get_setup()
-        self.pid_configuration = setup.gse.spid.configuration.heaters
-        self.pid_configuration[&#39;MaRi&#39;] = self.pid_configuration[&#39;TRP2&#39;] + self.pid_configuration[&#39;TRP3&#39;] + self.pid_configuration[&#39;TRP4&#39;]
-        del self.pid_configuration[&#39;TRP2&#39;], self.pid_configuration[&#39;TRP3&#39;], self.pid_configuration[&#39;TRP4&#39;]
-
-        self.initUI()
-        
-        self.pid_monitoring_thread = QThread(self)
-        self.pid_monitoring_worker = PidMonitoringWorker()
-        self.pid_monitoring_worker.moveToThread(self.pid_monitoring_thread)
-        
-        self.pid_monitoring_worker.pid_enabled_status_signal.connect(self.on_pid_enabled_status_signal)
-        self.pid_monitoring_worker.pid_setpoint_status_signal.connect(self.on_pid_setpoint_status_signal)
-        self.pid_monitoring_worker.pid_timestamp_status_signal.connect(self.on_pid_timestamp_status_signal)
-        self.pid_monitoring_worker.pid_update_status_signal.connect(self.on_pid_update_status_signal)
-        self.pid_monitoring_worker.pid_constants_status_signal.connect(self.on_pid_constant_status_signal)
-        
-        self.pid_monitoring_thread.started.connect(self.pid_monitoring_worker.start_process)
-        self.pid_monitoring_thread.start()
-        
-    def on_pid_enabled_status_signal(self, monitoring_info:dict):
-        monitoring_info = list(monitoring_info.values())
-        
-        for idx, (_, configuration) in enumerate(self.pid_configuration.items()):
-            state_lin = len(self.pid_channels[idx].channels)
-            pid_state = 0
-            for ch_idx, ch in enumerate(configuration):
-                if (ch[1] == 0 and ch[2] == 0):
-                    state_lin -= 1
-                    continue
-                self.pid_channels[idx].channels[ch_idx].switch.set_selected(bool(monitoring_info[ch[0]]))
-                ch_enabled = self.pid_channels[idx].channels[ch_idx].switch.is_selected()
-                pid_state += 1 if int(ch_enabled) else 0
-            # print(pid_state)
-            if pid_state == state_lin:
-                self.pid_channels[idx].led.set_color(1)
-            elif  0 &lt; pid_state &lt; state_lin:
-                self.pid_channels[idx].led.set_color(2)
-            else:
-                self.pid_channels[idx].led.set_color(0)
-    
-    def on_pid_constant_status_signal(self, monitoring_info):
-        for idx, (_, configuration) in enumerate(self.pid_configuration.items()):
-            for ch_idx, ch in enumerate(configuration):
-                if (ch[1] == 0 and ch[2] == 0):
-                    continue                
-                self.pid_channels[idx].channels[ch_idx].pid_val[0].setText(f&#34;{monitoring_info[0]:.4f}&#34;)
-                self.pid_channels[idx].channels[ch_idx].pid_val[1].setText(f&#34;{monitoring_info[1]:.4f}&#34;)  
-                self.pid_channels[idx].channels[ch_idx].pid_val[2].setText(f&#34;{monitoring_info[2]:.4f}&#34;)  
-    
-    def on_pid_setpoint_status_signal(self, monitoring_info):
-        for idx, (_, configuration) in enumerate(self.pid_configuration.items()):
-            for ch_idx, ch in enumerate(configuration):
-                if (ch[1] == 0 and ch[2] == 0):
-                    continue                
-                self.pid_channels[idx].channels[ch_idx].sp_text_box.setText(f&#34;{monitoring_info[ch[0]]:.1f}&#34;)
-    
-    def on_pid_timestamp_status_signal(self, monitoring_info):
-        for idx, (_, configuration) in enumerate(self.pid_configuration.items()):
-            for ch_idx, ch in enumerate(configuration):
-                if (ch[1] == 0 and ch[2] == 0):
-                    continue
-                self.pid_channels[idx].channels[ch_idx].last_sample_time.setText(str(datetime.fromtimestamp(monitoring_info[int(ch[0])])))
-    
-    def on_pid_update_status_signal(self, monitoring_info):
-        channels = 0
-        for idx, (pid, configuration) in enumerate(self.pid_configuration.items()):
-            for ch_idx, ch in enumerate(configuration):
-                if (ch[1] == 0 and ch[2] == 0):
-                    continue
-                self.pid_channels[idx].channels[ch_idx].err_text_box.setText(f&#34;{monitoring_info[0][channels]:.1f}&#34;)
-                self.pid_channels[idx].channels[ch_idx].isum_text_box.setText(f&#34;{monitoring_info[1][channels]:.1f}&#34;)
-                self.pid_channels[idx].channels[ch_idx].in_text_box.setText(f&#34;{monitoring_info[2][channels]:.1f}&#34;)
-                self.pid_channels[idx].channels[ch_idx].out_text_box.setText(f&#34;{monitoring_info[3][channels]:.1f}&#34;)
-                channels += 1
-                
-                
-        
-    def initUI(self):
-        app_frame = QFrame()
-        app_frame.setObjectName(&#34;AppFrame&#34;)
-        full_layout = QVBoxLayout()
-        toolbar_widget = ToolbarWidget()
-        toolbar_widget.kill_button.clicked.connect(self.kill_all_pid_processes)
-        # body_layout = QHBoxLayout()
-        body_layout = QGridLayout()
-        self.pid_channels = [None] * len(self.pid_configuration)
-        for idx, (pid, configuration) in enumerate(self.pid_configuration.items()):
-            configuration.sort( key = lambda configuration: (configuration[3], configuration[4]))
-            self.pid_channels[idx] = PIDWindow(pid, configuration)
-            # body_layout.addWidget(self.pid_channels[idx])
-            body_layout.addWidget(self.pid_channels[idx], 0 if idx &lt; 4 else 1, idx if idx &lt; 4 else idx - 4)
-            for ch_idx, ch in enumerate(configuration):
-                if (ch[1] == 0 and ch[2] == 0):
-                    continue
-                self.pid_channels[idx].channels[ch_idx].switch.clicked.connect(self.set_pid_control)
-                self.pid_channels[idx].channels[ch_idx].more.clicked.connect(self.show_more_information)
-                self.pid_channels[idx].channels[ch_idx].sp_text_box.returnPressed.connect(self.set_pid_setpoint)
-        full_layout.addWidget(toolbar_widget)
-        full_layout.addLayout(body_layout)
-        app_frame.setLayout(full_layout)
-        self.setCentralWidget(app_frame)
-
-    def kill_all_pid_processes(self):
-        sender = self.sender()
-        state = sender.is_selected()
-        if not state:
-            ProcessId = map(int, check_output([&#39;pgrep&#39;, &#34;-f&#34;, &#34;spid_cs&#34;]).split())
-            logger.info(f&#34;Killing all PID processes - {list(ProcessId)}&#34;)
-            for pid in list(ProcessId):
-                try:
-                    os.kill(pid, 9)
-                except Exception as exc:
-                    logger.info(f&#34;{exc}&#34;)
-
-            ProcessId = map(int, check_output([&#39;pgrep&#39;, &#34;-f&#34;, &#34;spid&#34;]).split())     
-            logger.info(f&#34;Remaining PID Processes - {list(ProcessId)}&#34;)       
-    
-    def show_more_information(self):
-        sender = self.sender()
-        state = sender.is_selected()
-        if state:
-            sender.show_less()
-        else:
-            sender.show_more()
-        
-
-    def set_pid_control(self):
-        sender = self.sender()
-        command = sender.objectName().split(&#34; &#34;)
-        state = sender.is_selected()
-        new_state = state
-        sender.set_selected(on=new_state)
-        pid = command[0]
-        htr = command[1]
-        ch = command[2]
-        logger.info(f&#39;PID channel {pid} Heater {htr} Channel {ch} has been set to: {new_state}&#39;)
-        self.actionObservers({&#34;set_pid_control&#34; : [pid, bool(new_state)]})
-    
-    def set_pid_setpoint(self):
-        sender = self.sender()
-        command = sender.objectName().split(&#34; &#34;)
-        setpoint = int(sender.text())
-        pid = command[0]
-        htr = command[1]
-        ch = command[2]
-        logger.info(f&#39;PID channel {pid} Heater {htr} Channel {ch} setpoint has been set to: {setpoint}&#39;)
-        self.actionObservers({&#34;set_pid_setpoint&#34; : [pid, float(setpoint)]})
-
-    def closeEvent(self, close_Event: QCloseEvent) -&gt; None:
-        self.pid_monitoring_thread.quit()
-        self.pid_monitoring_worker.stop()</code></pre>
-</details>
-<h3>Ancestors</h3>
-<ul class="hlist">
-<li>PyQt5.QtWidgets.QMainWindow</li>
-<li>PyQt5.QtWidgets.QWidget</li>
-<li>PyQt5.QtCore.QObject</li>
-<li>sip.wrapper</li>
-<li>PyQt5.QtGui.QPaintDevice</li>
-<li>sip.simplewrapper</li>
-<li><a title="egse.observer.Observable" href="../../observer.html#egse.observer.Observable">Observable</a></li>
-</ul>
-<h3>Methods</h3>
-<dl>
-<dt id="egse.tempcontrol.spid.spid_ui.PIDUIView.closeEvent"><code class="name flex">
-<span>def <span class="ident">closeEvent</span></span>(<span>self, close_Event: PyQt5.QtGui.QCloseEvent) ‑> None</span>
-</code></dt>
-<dd>
-<div class="desc"><p>closeEvent(self, QCloseEvent)</p></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def closeEvent(self, close_Event: QCloseEvent) -&gt; None:
-    self.pid_monitoring_thread.quit()
-    self.pid_monitoring_worker.stop()</code></pre>
-</details>
-</dd>
-<dt id="egse.tempcontrol.spid.spid_ui.PIDUIView.initUI"><code class="name flex">
-<span>def <span class="ident">initUI</span></span>(<span>self)</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def initUI(self):
-    app_frame = QFrame()
-    app_frame.setObjectName(&#34;AppFrame&#34;)
-    full_layout = QVBoxLayout()
-    toolbar_widget = ToolbarWidget()
-    toolbar_widget.kill_button.clicked.connect(self.kill_all_pid_processes)
-    # body_layout = QHBoxLayout()
-    body_layout = QGridLayout()
-    self.pid_channels = [None] * len(self.pid_configuration)
-    for idx, (pid, configuration) in enumerate(self.pid_configuration.items()):
-        configuration.sort( key = lambda configuration: (configuration[3], configuration[4]))
-        self.pid_channels[idx] = PIDWindow(pid, configuration)
-        # body_layout.addWidget(self.pid_channels[idx])
-        body_layout.addWidget(self.pid_channels[idx], 0 if idx &lt; 4 else 1, idx if idx &lt; 4 else idx - 4)
-        for ch_idx, ch in enumerate(configuration):
-            if (ch[1] == 0 and ch[2] == 0):
-                continue
-            self.pid_channels[idx].channels[ch_idx].switch.clicked.connect(self.set_pid_control)
-            self.pid_channels[idx].channels[ch_idx].more.clicked.connect(self.show_more_information)
-            self.pid_channels[idx].channels[ch_idx].sp_text_box.returnPressed.connect(self.set_pid_setpoint)
-    full_layout.addWidget(toolbar_widget)
-    full_layout.addLayout(body_layout)
-    app_frame.setLayout(full_layout)
-    self.setCentralWidget(app_frame)</code></pre>
-</details>
-</dd>
-<dt id="egse.tempcontrol.spid.spid_ui.PIDUIView.kill_all_pid_processes"><code class="name flex">
-<span>def <span class="ident">kill_all_pid_processes</span></span>(<span>self)</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def kill_all_pid_processes(self):
-    sender = self.sender()
-    state = sender.is_selected()
-    if not state:
-        ProcessId = map(int, check_output([&#39;pgrep&#39;, &#34;-f&#34;, &#34;spid_cs&#34;]).split())
-        logger.info(f&#34;Killing all PID processes - {list(ProcessId)}&#34;)
-        for pid in list(ProcessId):
-            try:
-                os.kill(pid, 9)
-            except Exception as exc:
-                logger.info(f&#34;{exc}&#34;)
-
-        ProcessId = map(int, check_output([&#39;pgrep&#39;, &#34;-f&#34;, &#34;spid&#34;]).split())     
-        logger.info(f&#34;Remaining PID Processes - {list(ProcessId)}&#34;)       </code></pre>
-</details>
-</dd>
-<dt id="egse.tempcontrol.spid.spid_ui.PIDUIView.on_pid_constant_status_signal"><code class="name flex">
-<span>def <span class="ident">on_pid_constant_status_signal</span></span>(<span>self, monitoring_info)</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def on_pid_constant_status_signal(self, monitoring_info):
-    for idx, (_, configuration) in enumerate(self.pid_configuration.items()):
-        for ch_idx, ch in enumerate(configuration):
-            if (ch[1] == 0 and ch[2] == 0):
-                continue                
-            self.pid_channels[idx].channels[ch_idx].pid_val[0].setText(f&#34;{monitoring_info[0]:.4f}&#34;)
-            self.pid_channels[idx].channels[ch_idx].pid_val[1].setText(f&#34;{monitoring_info[1]:.4f}&#34;)  
-            self.pid_channels[idx].channels[ch_idx].pid_val[2].setText(f&#34;{monitoring_info[2]:.4f}&#34;)  </code></pre>
-</details>
-</dd>
-<dt id="egse.tempcontrol.spid.spid_ui.PIDUIView.on_pid_enabled_status_signal"><code class="name flex">
-<span>def <span class="ident">on_pid_enabled_status_signal</span></span>(<span>self, monitoring_info: dict)</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def on_pid_enabled_status_signal(self, monitoring_info:dict):
-    monitoring_info = list(monitoring_info.values())
-    
-    for idx, (_, configuration) in enumerate(self.pid_configuration.items()):
-        state_lin = len(self.pid_channels[idx].channels)
-        pid_state = 0
-        for ch_idx, ch in enumerate(configuration):
-            if (ch[1] == 0 and ch[2] == 0):
-                state_lin -= 1
-                continue
-            self.pid_channels[idx].channels[ch_idx].switch.set_selected(bool(monitoring_info[ch[0]]))
-            ch_enabled = self.pid_channels[idx].channels[ch_idx].switch.is_selected()
-            pid_state += 1 if int(ch_enabled) else 0
-        # print(pid_state)
-        if pid_state == state_lin:
-            self.pid_channels[idx].led.set_color(1)
-        elif  0 &lt; pid_state &lt; state_lin:
-            self.pid_channels[idx].led.set_color(2)
-        else:
-            self.pid_channels[idx].led.set_color(0)</code></pre>
-</details>
-</dd>
-<dt id="egse.tempcontrol.spid.spid_ui.PIDUIView.on_pid_setpoint_status_signal"><code class="name flex">
-<span>def <span class="ident">on_pid_setpoint_status_signal</span></span>(<span>self, monitoring_info)</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def on_pid_setpoint_status_signal(self, monitoring_info):
-    for idx, (_, configuration) in enumerate(self.pid_configuration.items()):
-        for ch_idx, ch in enumerate(configuration):
-            if (ch[1] == 0 and ch[2] == 0):
-                continue                
-            self.pid_channels[idx].channels[ch_idx].sp_text_box.setText(f&#34;{monitoring_info[ch[0]]:.1f}&#34;)</code></pre>
-</details>
-</dd>
-<dt id="egse.tempcontrol.spid.spid_ui.PIDUIView.on_pid_timestamp_status_signal"><code class="name flex">
-<span>def <span class="ident">on_pid_timestamp_status_signal</span></span>(<span>self, monitoring_info)</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def on_pid_timestamp_status_signal(self, monitoring_info):
-    for idx, (_, configuration) in enumerate(self.pid_configuration.items()):
-        for ch_idx, ch in enumerate(configuration):
-            if (ch[1] == 0 and ch[2] == 0):
-                continue
-            self.pid_channels[idx].channels[ch_idx].last_sample_time.setText(str(datetime.fromtimestamp(monitoring_info[int(ch[0])])))</code></pre>
-</details>
-</dd>
-<dt id="egse.tempcontrol.spid.spid_ui.PIDUIView.on_pid_update_status_signal"><code class="name flex">
-<span>def <span class="ident">on_pid_update_status_signal</span></span>(<span>self, monitoring_info)</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def on_pid_update_status_signal(self, monitoring_info):
-    channels = 0
-    for idx, (pid, configuration) in enumerate(self.pid_configuration.items()):
-        for ch_idx, ch in enumerate(configuration):
-            if (ch[1] == 0 and ch[2] == 0):
-                continue
-            self.pid_channels[idx].channels[ch_idx].err_text_box.setText(f&#34;{monitoring_info[0][channels]:.1f}&#34;)
-            self.pid_channels[idx].channels[ch_idx].isum_text_box.setText(f&#34;{monitoring_info[1][channels]:.1f}&#34;)
-            self.pid_channels[idx].channels[ch_idx].in_text_box.setText(f&#34;{monitoring_info[2][channels]:.1f}&#34;)
-            self.pid_channels[idx].channels[ch_idx].out_text_box.setText(f&#34;{monitoring_info[3][channels]:.1f}&#34;)
-            channels += 1</code></pre>
-</details>
-</dd>
-<dt id="egse.tempcontrol.spid.spid_ui.PIDUIView.set_pid_control"><code class="name flex">
-<span>def <span class="ident">set_pid_control</span></span>(<span>self)</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def set_pid_control(self):
-    sender = self.sender()
-    command = sender.objectName().split(&#34; &#34;)
-    state = sender.is_selected()
-    new_state = state
-    sender.set_selected(on=new_state)
-    pid = command[0]
-    htr = command[1]
-    ch = command[2]
-    logger.info(f&#39;PID channel {pid} Heater {htr} Channel {ch} has been set to: {new_state}&#39;)
-    self.actionObservers({&#34;set_pid_control&#34; : [pid, bool(new_state)]})</code></pre>
-</details>
-</dd>
-<dt id="egse.tempcontrol.spid.spid_ui.PIDUIView.set_pid_setpoint"><code class="name flex">
-<span>def <span class="ident">set_pid_setpoint</span></span>(<span>self)</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def set_pid_setpoint(self):
-    sender = self.sender()
-    command = sender.objectName().split(&#34; &#34;)
-    setpoint = int(sender.text())
-    pid = command[0]
-    htr = command[1]
-    ch = command[2]
-    logger.info(f&#39;PID channel {pid} Heater {htr} Channel {ch} setpoint has been set to: {setpoint}&#39;)
-    self.actionObservers({&#34;set_pid_setpoint&#34; : [pid, float(setpoint)]})</code></pre>
-</details>
-</dd>
-<dt id="egse.tempcontrol.spid.spid_ui.PIDUIView.show_more_information"><code class="name flex">
-<span>def <span class="ident">show_more_information</span></span>(<span>self)</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def show_more_information(self):
-    sender = self.sender()
-    state = sender.is_selected()
-    if state:
-        sender.show_less()
-    else:
-        sender.show_more()</code></pre>
-</details>
-</dd>
-</dl>
-</dd>
-<dt id="egse.tempcontrol.spid.spid_ui.PIDWidget"><code class="flex name class">
-<span>class <span class="ident">PIDWidget</span></span>
-<span>(</span><span>pid_name)</span>
-</code></dt>
-<dd>
-<div class="desc"><p>QGroupBox(parent: QWidget = None)
-QGroupBox(str, parent: QWidget = None)</p></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">class PIDWidget(QGroupBox):
-    def __init__(self, pid_name):
-        super().__init__()
-        
-        self.name = QLabel(pid_name)
-        self.led = Led(self)
-        layout = QHBoxLayout()
-        
-        layout.addWidget(self.name)
-        layout.addWidget(self.led)
-        
-        self.setLayout(layout)        </code></pre>
-</details>
-<h3>Ancestors</h3>
-<ul class="hlist">
-<li>PyQt5.QtWidgets.QGroupBox</li>
-<li>PyQt5.QtWidgets.QWidget</li>
-<li>PyQt5.QtCore.QObject</li>
-<li>sip.wrapper</li>
-<li>PyQt5.QtGui.QPaintDevice</li>
-<li>sip.simplewrapper</li>
-</ul>
-</dd>
-<dt id="egse.tempcontrol.spid.spid_ui.PIDWindow"><code class="flex name class">
-<span>class <span class="ident">PIDWindow</span></span>
-<span>(</span><span>pid_name, channels)</span>
-</code></dt>
-<dd>
-<div class="desc"><p>QGroupBox(parent: QWidget = None)
-QGroupBox(str, parent: QWidget = None)</p></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">class PIDWindow(QGroupBox):
-    def __init__(self, pid_name, channels):
-        super().__init__()
-        
-
-        self.layout = QGridLayout()
-        # self.layout = QVBoxLayout()
-        # self.layout.setSpacing(0)
-        self.name = QLabel(pid_name)
-        self.led = Led(self)
-        pid_layout = QHBoxLayout()
-        
-        pid_layout.addWidget(self.name)
-        pid_layout.addWidget(self.led)
-        self.layout.addLayout(pid_layout, 0, 0, 1, 0)
-        self.channels = [None] * len(channels)
-        self.chan_layout = QVBoxLayout()
-        self.chan_layout.setSpacing(0)
-        for idx, channel in enumerate(channels):
-            if (channel[1] == 0 and channel[2] == 0):
-                continue
-            self.channels[idx] = ChannelWidget(channel)
-            self.channels[idx].setMaximumHeight(180)
-            self.chan_layout.addWidget(self.channels[idx])
-            
-        self.layout.addLayout(self.chan_layout, 1, 0)
-        self.layout.setRowStretch(2, 1)
-        self.setLayout(self.layout)  </code></pre>
-</details>
-<h3>Ancestors</h3>
-<ul class="hlist">
-<li>PyQt5.QtWidgets.QGroupBox</li>
-<li>PyQt5.QtWidgets.QWidget</li>
-<li>PyQt5.QtCore.QObject</li>
-<li>sip.wrapper</li>
-<li>PyQt5.QtGui.QPaintDevice</li>
-<li>sip.simplewrapper</li>
-</ul>
-</dd>
 <dt id="egse.tempcontrol.spid.spid_ui.PidMonitoringWorker"><code class="flex name class">
 <span>class <span class="ident">PidMonitoringWorker</span></span>
 </code></dt>
@@ -1732,7 +1152,7 @@ QGroupBox(str, parent: QWidget = None)</p></div>
     pid_update_status_signal = pyqtSignal(list)
     pid_enabled_status_signal = pyqtSignal(dict)
     pid_setpoint_status_signal = pyqtSignal(list)
-    # pid_constants_status_signal = pyqtSignal(list)
+    pid_constants_status_signal = pyqtSignal(list)
     
     def __init__(self):
         super(PidMonitoringWorker, self).__init__()
@@ -1750,7 +1170,7 @@ QGroupBox(str, parent: QWidget = None)</p></div>
         self.previous_pid_timestamp_status_signal = []
         self.previous_pid_setpoint = []
         self.previous_pid_enabled_status_signal = []
-        # self.previous_pid_constants_status_signal = []
+        self.previous_pid_constants_status_signal = []
         
     def connect_socket(self):
         &#34;&#34;&#34; Create a socket and connect to the monitoring port.
@@ -1820,7 +1240,7 @@ QGroupBox(str, parent: QWidget = None)</p></div>
                     pid_isum        = monitoring_info[&#39;Isum&#39;]
                     pid_input       = monitoring_info[&#39;Input&#39;]
                     pid_output      = monitoring_info[&#39;Output&#39;]
-                    # pid_const       = monitoring_info[&#39;PidConst&#39;]
+                    pid_const       = monitoring_info[&#39;PidConst&#39;]
                     pid_state       = [pid_error, pid_isum, pid_input, pid_output]
                     
                     if pid_timestamp != self.previous_pid_timestamp_status_signal:
@@ -1843,10 +1263,10 @@ QGroupBox(str, parent: QWidget = None)</p></div>
                     
                     self.previous_pid_update_status_signal = pid_state
                     
-                    # if pid_const != self.previous_pid_constants_status_signal:
-                        # self.pid_update_constants_signal.emit(pid_const)
+                    if pid_const != self.previous_pid_constants_status_signal:
+                        self.pid_constants_status_signal.emit(pid_const)
                     
-                    # self.previous_pid_constants_status_signal = pid_const
+                    self.previous_pid_constants_status_signal = pid_const
                              
             except ZMQError as exc:
                 raise exc</code></pre>
@@ -1891,6 +1311,12 @@ QGroupBox(str, parent: QWidget = None)</p></div>
     except:
         self.is_socket_connected = False</code></pre>
 </details>
+</dd>
+<dt id="egse.tempcontrol.spid.spid_ui.PidMonitoringWorker.pid_constants_status_signal"><code class="name flex">
+<span>def <span class="ident">pid_constants_status_signal</span></span>(<span>...)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
 </dd>
 <dt id="egse.tempcontrol.spid.spid_ui.PidMonitoringWorker.pid_enabled_status_signal"><code class="name flex">
 <span>def <span class="ident">pid_enabled_status_signal</span></span>(<span>...)</span>
@@ -1961,7 +1387,7 @@ def run(self):
                 pid_isum        = monitoring_info[&#39;Isum&#39;]
                 pid_input       = monitoring_info[&#39;Input&#39;]
                 pid_output      = monitoring_info[&#39;Output&#39;]
-                # pid_const       = monitoring_info[&#39;PidConst&#39;]
+                pid_const       = monitoring_info[&#39;PidConst&#39;]
                 pid_state       = [pid_error, pid_isum, pid_input, pid_output]
                 
                 if pid_timestamp != self.previous_pid_timestamp_status_signal:
@@ -1984,10 +1410,10 @@ def run(self):
                 
                 self.previous_pid_update_status_signal = pid_state
                 
-                # if pid_const != self.previous_pid_constants_status_signal:
-                    # self.pid_update_constants_signal.emit(pid_const)
+                if pid_const != self.previous_pid_constants_status_signal:
+                    self.pid_constants_status_signal.emit(pid_const)
                 
-                # self.previous_pid_constants_status_signal = pid_const
+                self.previous_pid_constants_status_signal = pid_const
                          
         except ZMQError as exc:
             raise exc</code></pre>
@@ -2031,8 +1457,9 @@ The monitoring socket is disconnected from the monitoring port and is then close
 </dd>
 </dl>
 </dd>
-<dt id="egse.tempcontrol.spid.spid_ui.ToolbarWidget"><code class="flex name class">
-<span>class <span class="ident">ToolbarWidget</span></span>
+<dt id="egse.tempcontrol.spid.spid_ui.pidChannelWidget"><code class="flex name class">
+<span>class <span class="ident">pidChannelWidget</span></span>
+<span>(</span><span>channel_info, parent=None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>QGroupBox(parent: QWidget = None)
@@ -2041,34 +1468,174 @@ QGroupBox(str, parent: QWidget = None)</p></div>
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">class ToolbarWidget(QGroupBox):
-    def __init__(self):
-        super().__init__()
+<pre><code class="python">class pidChannelWidget(QGroupBox):
+    def __init__(self, channel_info, parent=None):
+        super().__init__(parent=parent)
+     
         
-        self.layout = QHBoxLayout()
+        self.pid = channel_info[0]
+        self.htr = channel_info[3]
+        self.ch  = channel_info[4]
+        self.setObjectName(&#34;PID channel {} widget&#34;.format(self.ch))
+        self.setMinimumWidth(380)
+        sizePolicy = QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Maximum)
+        sizePolicy.setHorizontalStretch(0)
+        sizePolicy.setVerticalStretch(0)
+        sizePolicy.setHeightForWidth(self.sizePolicy().hasHeightForWidth())
+        self.setSizePolicy(sizePolicy)
+        self.verticalLayout = QVBoxLayout(self)
+        self.verticalLayout.setObjectName(&#34;verticalLayout&#34;)
+        self.gridLayout = QGridLayout()
+        self.gridLayout.setContentsMargins(0, -1, 0, -1)
+        self.gridLayout.setObjectName(&#34;gridLayout&#34;)
         
-        self.kill_button = ToggleButton(
-            height=42,
-            width=42,
-            name=&#34;Kill SPID processes&#34;,
-            status_tip=&#34;Kill every SPID process that is currently running&#34;,
-            selected=get_resource(&#34;:/icons/stop-button.svg&#34;),
-            not_selected=get_resource(&#34;:/icons/stop-button-disabled.svg&#34;)
+        self.widget = ToggleButton(
+            name=&#34;Turn On\Off PID Channel&#34;,
+            status_tip=f&#34;Heater {self.htr} Channel {self.ch} On\Off&#34;,
+            selected=get_resource(&#34;:/icons/switch-on.svg&#34;),
+            not_selected=get_resource(&#34;:/icons/switch-off.svg&#34;),
         )
-        
-        self.release_control = ToggleButton(
-            height=42,
-            width=42,
-            name=&#34;Stop all PID control&#34;,
-            status_tip=&#34;Release the PID control of all running heaters&#34;,
-            selected=get_resource(&#34;:/icons/remote-control-on.svg&#34;),
-            not_selected=get_resource(&#34;:/icons/remote-control-off.svg&#34;)
+        self.widget.setMinimumSize(QSize(35, 35))
+        self.widget.setObjectName(&#34;widget&#34;)    
+        self.gridLayout.addWidget(self.widget, 0, 0)
+        self.label = QLabel(self)
+        self.label.setMinimumSize(QSize(0, 0))
+        self.label.setObjectName(&#34;label&#34;)
+        self.label.setText(&#34;Heater {} Channel {}&#34;.format(int(self.htr + 1), chr(int(self.ch) + 65)))
+        self.gridLayout.addWidget(self.label, 0, 1, 1, 5)
+        self.label_2 = QLabel(self)
+        self.label_2.setAlignment(Qt.AlignRight|Qt.AlignTrailing|Qt.AlignVCenter)
+        self.label_2.setObjectName(&#34;label_2&#34;)
+        self.label_2.setText(&#34;Setpoint:&#34;)
+        self.gridLayout.addWidget(self.label_2, 2, 0, 1, 1)
+        self.label_3 = QLabel(self)
+        self.label_3.setAlignment(Qt.AlignRight|Qt.AlignTrailing|Qt.AlignVCenter)
+        self.label_3.setObjectName(&#34;label_3&#34;)
+        self.label_3.setText(&#34;Input:&#34;)
+        self.gridLayout.addWidget(self.label_3, 3, 0, 1, 1)
+        self.label_6 = QLabel(self)
+        self.label_6.setObjectName(&#34;label_6&#34;)
+        self.label_6.setText(&#34;Err:&#34;)
+        self.gridLayout.addWidget(self.label_6, 2, 2, 1, 1)
+        self.doubleSpinBox = QDoubleSpinBox(self)
+        self.doubleSpinBox.setMinimumSize(QSize(90, 0))
+        self.doubleSpinBox.setProperty(&#34;value&#34;, 21.0)
+        self.doubleSpinBox.setObjectName(&#34;doubleSpinBox&#34;)
+        self.doubleSpinBox.setMinimum(-250)
+        self.gridLayout.addWidget(self.doubleSpinBox, 2, 1, 1, 1)
+        self.label_13 = QLabel(self)
+        self.label_13.setObjectName(&#34;label_13&#34;)
+        self.label_13.setText(&#34;Timestamp:&#34;)
+        self.gridLayout.addWidget(self.label_13, 5, 1, 1, 2)
+        self.label_12 = QLabel(self)
+        self.label_12.setAlignment(Qt.AlignRight|Qt.AlignTrailing|Qt.AlignVCenter)
+        self.label_12.setObjectName(&#34;label_12&#34;)
+        self.label_12.setText(&#34;Out:&#34;)
+        self.gridLayout.addWidget(self.label_12, 4, 0, 1, 1)
+        self.label_7 = QLabel(self)
+        self.label_7.setObjectName(&#34;label_7&#34;)
+        self.label_7.setText(&#34;I:&#34;)
+        self.gridLayout.addWidget(self.label_7, 3, 2, 1, 1)
+        self.label_14 = QLabel(self)
+        self.label_14.setObjectName(&#34;label_14&#34;)
+        self.gridLayout.addWidget(self.label_14, 6, 1, 1, 4)
+        self.lineEdit_3 = QLineEdit(self)
+        self.lineEdit_3.setMinimumSize(QSize(90, 0))
+        self.lineEdit_3.setReadOnly(True)
+        self.lineEdit_3.setObjectName(&#34;lineEdit_3&#34;)
+        self.gridLayout.addWidget(self.lineEdit_3, 3, 3, 1, 1)
+        self.lineEdit_4 = QLineEdit(self)
+        self.lineEdit_4.setMinimumSize(QSize(90, 0))
+        self.lineEdit_4.setReadOnly(True)
+        self.lineEdit_4.setObjectName(&#34;lineEdit_4&#34;)
+        self.gridLayout.addWidget(self.lineEdit_4, 4, 1, 1, 1)
+        self.lineEdit_2 = QLineEdit(self)
+        self.lineEdit_2.setMinimumSize(QSize(90, 0))
+        self.lineEdit_2.setReadOnly(True)
+        self.lineEdit_2.setObjectName(&#34;lineEdit_2&#34;)
+        self.gridLayout.addWidget(self.lineEdit_2, 3, 1, 1, 1)
+        self.lineEdit = QLineEdit(self)
+        self.lineEdit.setMinimumSize(QSize(90, 0))
+        self.lineEdit.setReadOnly(True)
+        self.lineEdit.setObjectName(&#34;lineEdit&#34;)
+        self.gridLayout.addWidget(self.lineEdit, 2, 3, 1, 1)
+        self.pushButton = QPushButton(self)
+        self.pushButton.setMaximumSize(QSize(50, 16777215))
+        self.pushButton.setObjectName(&#34;pushButton&#34;)
+        self.pushButton.setText(&#34;Set&#34;)
+        self.gridLayout.addWidget(self.pushButton, 2, 4, 1, 1)
+        self.widget_2 = ToggleButton(
+            width=10,
+            height=10,
+            name=&#34;More PID information&#34;,
+            status_tip=f&#34;Show more information about pid channel&#34;,
+            selected=get_resource(&#34;:/icons/more.svg&#34;),
+            not_selected=get_resource(&#34;:/icons/arrow-up.svg&#34;)
         )
+        self.widget_2.setObjectName(&#34;widget_2&#34;)
+        self.gridLayout.addWidget(self.widget_2, 6, 5, 1, 1)
+        self.horizontalLayout_2 = QHBoxLayout()
+        self.horizontalLayout_2.setObjectName(&#34;horizontalLayout_2&#34;)
+        self.label_4 = QLabel(self)
+        self.label_4.setObjectName(&#34;label_4&#34;)
+        self.label_4.setText(&#34;Kp:&#34;)
+        self.horizontalLayout_2.addWidget(self.label_4)
+        self.label_5 = QLabel(self)
+        self.label_5.setObjectName(&#34;label_5&#34;)
+        self.label_5.setText(&#34;0&#34;)
+        self.horizontalLayout_2.addWidget(self.label_5)
+        self.label_8 = QLabel(self)
+        self.label_8.setObjectName(&#34;label_8&#34;)
+        self.label_8.setText(&#34;Ki:&#34;)
+        self.horizontalLayout_2.addWidget(self.label_8)
+        self.label_9 = QLabel(self)
+        self.label_9.setObjectName(&#34;label_9&#34;)
+        self.label_9.setText(&#34;0&#34;)
+        self.horizontalLayout_2.addWidget(self.label_9)
+        self.label_10 =QLabel(self)
+        self.label_10.setObjectName(&#34;label_10&#34;)
+        self.label_10.setText(&#34;Kd:&#34;)
+        self.horizontalLayout_2.addWidget(self.label_10)
+        self.label_11 = QLabel(self)
+        self.label_11.setObjectName(&#34;label_11&#34;)
+        self.label_11.setText(&#34;0&#34;)
+        self.horizontalLayout_2.addWidget(self.label_11)
+        self.gridLayout.addLayout(self.horizontalLayout_2, 1, 0, 1, 6)
+        self.verticalLayout.addLayout(self.gridLayout)
+
+        self.widget_2.clicked.connect(self.show_more_less)
         
-        self.layout.addWidget(self.release_control )
-        self.layout.addWidget(self.kill_button)
-        self.layout.setAlignment(Qt.AlignRight)
-        self.setLayout(self.layout)</code></pre>
+        self.show_less()
+        
+    def show_less(self):
+        self.lineEdit_3.hide()
+        self.lineEdit_4.hide()
+        self.label_4.hide()
+        self.label_5.hide()
+        self.label_7.hide()
+        self.label_8.hide()
+        self.label_9.hide()
+        self.label_10.hide()
+        self.label_11.hide()
+        self.label_12.hide()
+    
+    def show_more(self):
+        self.lineEdit_3.show()
+        self.lineEdit_4.show()
+        self.label_4.show()
+        self.label_5.show()
+        self.label_7.show()
+        self.label_8.show()
+        self.label_9.show()
+        self.label_10.show()
+        self.label_11.show()
+        self.label_12.show()
+    
+    def show_more_less(self):
+        if not self.widget_2.is_selected():
+            self.show_more()
+        else:
+            self.show_less()</code></pre>
 </details>
 <h3>Ancestors</h3>
 <ul class="hlist">
@@ -2079,6 +1646,477 @@ QGroupBox(str, parent: QWidget = None)</p></div>
 <li>PyQt5.QtGui.QPaintDevice</li>
 <li>sip.simplewrapper</li>
 </ul>
+<h3>Methods</h3>
+<dl>
+<dt id="egse.tempcontrol.spid.spid_ui.pidChannelWidget.show_less"><code class="name flex">
+<span>def <span class="ident">show_less</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def show_less(self):
+    self.lineEdit_3.hide()
+    self.lineEdit_4.hide()
+    self.label_4.hide()
+    self.label_5.hide()
+    self.label_7.hide()
+    self.label_8.hide()
+    self.label_9.hide()
+    self.label_10.hide()
+    self.label_11.hide()
+    self.label_12.hide()</code></pre>
+</details>
+</dd>
+<dt id="egse.tempcontrol.spid.spid_ui.pidChannelWidget.show_more"><code class="name flex">
+<span>def <span class="ident">show_more</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def show_more(self):
+    self.lineEdit_3.show()
+    self.lineEdit_4.show()
+    self.label_4.show()
+    self.label_5.show()
+    self.label_7.show()
+    self.label_8.show()
+    self.label_9.show()
+    self.label_10.show()
+    self.label_11.show()
+    self.label_12.show()</code></pre>
+</details>
+</dd>
+<dt id="egse.tempcontrol.spid.spid_ui.pidChannelWidget.show_more_less"><code class="name flex">
+<span>def <span class="ident">show_more_less</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def show_more_less(self):
+    if not self.widget_2.is_selected():
+        self.show_more()
+    else:
+        self.show_less()</code></pre>
+</details>
+</dd>
+</dl>
+</dd>
+<dt id="egse.tempcontrol.spid.spid_ui.pidGroupbox"><code class="flex name class">
+<span>class <span class="ident">pidGroupbox</span></span>
+<span>(</span><span>pid_name, channels, parent=None)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>QGroupBox(parent: QWidget = None)
+QGroupBox(str, parent: QWidget = None)</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class pidGroupbox(QGroupBox):
+    def __init__(self, pid_name, channels, parent=None):
+        super().__init__(parent=parent)
+        self.setObjectName(&#34;{}&#34;.format(pid_name))
+        self.setMaximumWidth(400)
+        self.verticalLayout = QVBoxLayout(self)
+        self.verticalLayout.setObjectName(&#34;verticalLayout&#34;)
+        self.horizontalLayout = QHBoxLayout()
+        self.horizontalLayout.setObjectName(&#34;horizontalLayout&#34;)
+        self.label = QLabel(self)
+        self.label.setText(pid_name)
+        sizePolicy = QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Maximum)
+        sizePolicy.setHorizontalStretch(0)
+        sizePolicy.setVerticalStretch(0)
+        sizePolicy.setHeightForWidth(self.label.sizePolicy().hasHeightForWidth())
+        self.label.setSizePolicy(sizePolicy)
+        self.label.setObjectName(&#34;label&#34;)
+        self.horizontalLayout.addWidget(self.label)
+        spacerItem =QSpacerItem(40, 20, QSizePolicy.Expanding, QSizePolicy.Minimum)
+        self.horizontalLayout.addItem(spacerItem)
+        self.widget = LED()
+        self.widget.setMinimumSize(QSize(25, 25))
+        self.widget.setObjectName(&#34;widget&#34;)
+        self.horizontalLayout.addWidget(self.widget)
+        self.verticalLayout.addLayout(self.horizontalLayout)
+        self.channels = [None] * len(channels)
+        for idx, channel in enumerate(channels):
+            if (channel[1] == 0 and channel[2] == 0):
+                continue
+            self.channels[idx] = pidChannelWidget(channel)
+            self.verticalLayout.addWidget(self.channels[idx])
+        spacerItem_2 =QSpacerItem(40, 20, QSizePolicy.Minimum, QSizePolicy.Expanding)
+        self.verticalLayout.addItem(spacerItem_2)</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>PyQt5.QtWidgets.QGroupBox</li>
+<li>PyQt5.QtWidgets.QWidget</li>
+<li>PyQt5.QtCore.QObject</li>
+<li>sip.wrapper</li>
+<li>PyQt5.QtGui.QPaintDevice</li>
+<li>sip.simplewrapper</li>
+</ul>
+</dd>
+<dt id="egse.tempcontrol.spid.spid_ui.pidMainWindow"><code class="flex name class">
+<span>class <span class="ident">pidMainWindow</span></span>
+<span>(</span><span>parent=None)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>QMainWindow(parent: QWidget = None, flags: Union[Qt.WindowFlags, Qt.WindowType] = Qt.WindowFlags())</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class pidMainWindow(QMainWindow, Observable):
+    def __init__(self, parent=None):
+        super().__init__(parent=parent)
+        self.setWindowTitle(&#34;Beaglebone PID Controller&#34;)
+        self.setGeometry(600, 100, 1250, 670)
+        self.setMaximumWidth(1250)
+        
+        setup = get_setup()
+        self.pid_configuration = setup.gse.spid.configuration.heaters
+        self.pid_configuration[&#39;MaRi&#39;] = self.pid_configuration[&#39;TRP2&#39;] + self.pid_configuration[&#39;TRP3&#39;] + self.pid_configuration[&#39;TRP4&#39;]
+        del self.pid_configuration[&#39;TRP2&#39;], self.pid_configuration[&#39;TRP3&#39;], self.pid_configuration[&#39;TRP4&#39;]
+
+        self.pid_monitoring_thread = QThread(self)
+        self.pid_monitoring_worker = PidMonitoringWorker()
+        self.pid_monitoring_worker.moveToThread(self.pid_monitoring_thread)
+        
+        self.pid_monitoring_worker.pid_enabled_status_signal.connect(self.on_pid_enabled_status_signal)
+        self.pid_monitoring_worker.pid_setpoint_status_signal.connect(self.on_pid_setpoint_status_signal)
+        self.pid_monitoring_worker.pid_timestamp_status_signal.connect(self.on_pid_timestamp_status_signal)
+        self.pid_monitoring_worker.pid_update_status_signal.connect(self.on_pid_update_status_signal)
+        self.pid_monitoring_worker.pid_constants_status_signal.connect(self.on_pid_constant_status_signal)
+        
+        self.pid_monitoring_thread.started.connect(self.pid_monitoring_worker.start_process)
+        self.pid_monitoring_thread.start()
+        
+        self.initUI()
+
+    def on_pid_enabled_status_signal(self, monitoring_info:dict):
+        monitoring_info = list(monitoring_info.values())
+        
+        for idx, (_, configuration) in enumerate(self.pid_configuration.items()):
+            state_lin = len(self.pid_channels[idx].channels)
+            pid_state = 0
+            for ch_idx, ch in enumerate(configuration):
+                if (ch[1] == 0 and ch[2] == 0):
+                    state_lin -= 1
+                    continue
+                self.pid_channels[idx].channels[ch_idx].widget.set_selected(bool(monitoring_info[ch[0]]))
+                ch_enabled = self.pid_channels[idx].channels[ch_idx].widget.is_selected()
+                pid_state += 1 if int(ch_enabled) else 0
+            if pid_state == state_lin:
+                self.pid_channels[idx].widget.set_color(1)
+            elif  0 &lt; pid_state &lt; state_lin:
+                self.pid_channels[idx].widget.set_color(2)
+            else:
+                self.pid_channels[idx].widget.set_color(0)
+    
+    def on_pid_constant_status_signal(self, monitoring_info):
+        for idx, (_, configuration) in enumerate(self.pid_configuration.items()):
+            for ch_idx, ch in enumerate(configuration):
+                if (ch[1] == 0 and ch[2] == 0):
+                    continue                
+                self.pid_channels[idx].channels[ch_idx].label_5.setText(f&#34;{monitoring_info[idx][0]:.2e}&#34;)
+                self.pid_channels[idx].channels[ch_idx].label_9.setText(f&#34;{monitoring_info[idx][1]:.2e}&#34;)  
+                self.pid_channels[idx].channels[ch_idx].label_11.setText(f&#34;{monitoring_info[idx][2]:.2e}&#34;)  
+    
+    def on_pid_setpoint_status_signal(self, monitoring_info):
+        for idx, (_, configuration) in enumerate(self.pid_configuration.items()):
+            for ch_idx, ch in enumerate(configuration):
+                if (ch[1] == 0 and ch[2] == 0):
+                    continue                
+                self.pid_channels[idx].channels[ch_idx].doubleSpinBox.setValue(float(monitoring_info[ch[0]]))
+    
+    def on_pid_timestamp_status_signal(self, monitoring_info):
+        for idx, (_, configuration) in enumerate(self.pid_configuration.items()):
+            for ch_idx, ch in enumerate(configuration):
+                if (ch[1] == 0 and ch[2] == 0):
+                    continue
+                self.pid_channels[idx].channels[ch_idx].label_14.setText(str(datetime.fromtimestamp(monitoring_info[int(ch[0])])))
+    
+    def on_pid_update_status_signal(self, monitoring_info):
+        channels = 0
+        for idx, (pid, configuration) in enumerate(self.pid_configuration.items()):
+            for ch_idx, ch in enumerate(configuration):
+                if (ch[1] == 0 and ch[2] == 0):
+                    continue
+                self.pid_channels[idx].channels[ch_idx].lineEdit.setText(f&#34;{monitoring_info[0][channels]:.2e}&#34;)
+                self.pid_channels[idx].channels[ch_idx].lineEdit_3.setText(f&#34;{monitoring_info[1][channels]:.2e}&#34;)
+                self.pid_channels[idx].channels[ch_idx].lineEdit_2.setText(f&#34;{monitoring_info[2][channels]:.2e}&#34;)
+                self.pid_channels[idx].channels[ch_idx].lineEdit_4.setText(f&#34;{monitoring_info[3][channels]:.2e}&#34;)
+                channels += 1
+
+    def initUI(self):
+        scroll_frame = QScrollArea()
+        scroll_frame.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll_frame.setWidgetResizable(True)
+        app_frame = QFrame()
+        grid_layout = QGridLayout()
+        self.pid_channels = [None] * len(self.pid_configuration)
+        for idx, (pid, configuration) in enumerate(self.pid_configuration.items()):
+            configuration.sort( key = lambda configuration: (configuration[3], configuration[4]))
+            self.pid_channels[idx] = pidGroupbox(pid, configuration)
+            grid_layout.addWidget(self.pid_channels[idx], int(idx / 3), idx % 3)
+            for ch_idx, ch in enumerate(configuration):
+                if (ch[1] == 0 and ch[2] == 0):
+                    continue
+                self.pid_channels[idx].channels[ch_idx].widget.clicked.connect(self.set_pid_control)
+                self.pid_channels[idx].channels[ch_idx].pushButton.clicked.connect(self.set_pid_setpoint)
+        app_frame.setLayout(grid_layout)
+        scroll_frame.setWidget(app_frame)
+        self.setCentralWidget(scroll_frame)
+
+    def set_pid_control(self):
+        sender = self.sender()
+        state = sender.is_selected()
+        new_state = state
+        sender.set_selected(on=new_state)
+        pid = sender.parent().pid
+        htr = sender.parent().htr
+        ch  = sender.parent().ch
+
+        try:
+            self.actionObservers({&#34;set_pid_control&#34; : [pid, bool(new_state)]})
+        except Exception as e:
+            warning_popup(&#34;set_pid_control : Channel {} {}&#34;.format(pid, &#34;Enabled&#34; 
+                                                                   if new_state else &#34;Disabled&#34;), e)
+    
+    def set_pid_setpoint(self):
+        sender = self.sender()
+        setpoint = float(sender.parent().doubleSpinBox.value())
+        pid = sender.parent().pid
+        htr = sender.parent().htr
+        ch  = sender.parent().ch
+
+        try:
+            self.actionObservers({&#34;set_pid_setpoint&#34; : [pid, float(setpoint)]})
+        except Exception as e:
+            warning_popup(&#34;set_pid_setpoint : PID Channel {} to {} C&#34;.format(pid, setpoint), e)      
+              
+    def closeEvent(self, close_Event: QCloseEvent) -&gt; None:
+        self.pid_monitoring_thread.quit()
+        self.pid_monitoring_worker.stop()</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>PyQt5.QtWidgets.QMainWindow</li>
+<li>PyQt5.QtWidgets.QWidget</li>
+<li>PyQt5.QtCore.QObject</li>
+<li>sip.wrapper</li>
+<li>PyQt5.QtGui.QPaintDevice</li>
+<li>sip.simplewrapper</li>
+<li><a title="egse.observer.Observable" href="../../observer.html#egse.observer.Observable">Observable</a></li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="egse.tempcontrol.spid.spid_ui.pidMainWindow.closeEvent"><code class="name flex">
+<span>def <span class="ident">closeEvent</span></span>(<span>self, close_Event: PyQt5.QtGui.QCloseEvent) ‑> None</span>
+</code></dt>
+<dd>
+<div class="desc"><p>closeEvent(self, QCloseEvent)</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def closeEvent(self, close_Event: QCloseEvent) -&gt; None:
+    self.pid_monitoring_thread.quit()
+    self.pid_monitoring_worker.stop()</code></pre>
+</details>
+</dd>
+<dt id="egse.tempcontrol.spid.spid_ui.pidMainWindow.initUI"><code class="name flex">
+<span>def <span class="ident">initUI</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def initUI(self):
+    scroll_frame = QScrollArea()
+    scroll_frame.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+    scroll_frame.setWidgetResizable(True)
+    app_frame = QFrame()
+    grid_layout = QGridLayout()
+    self.pid_channels = [None] * len(self.pid_configuration)
+    for idx, (pid, configuration) in enumerate(self.pid_configuration.items()):
+        configuration.sort( key = lambda configuration: (configuration[3], configuration[4]))
+        self.pid_channels[idx] = pidGroupbox(pid, configuration)
+        grid_layout.addWidget(self.pid_channels[idx], int(idx / 3), idx % 3)
+        for ch_idx, ch in enumerate(configuration):
+            if (ch[1] == 0 and ch[2] == 0):
+                continue
+            self.pid_channels[idx].channels[ch_idx].widget.clicked.connect(self.set_pid_control)
+            self.pid_channels[idx].channels[ch_idx].pushButton.clicked.connect(self.set_pid_setpoint)
+    app_frame.setLayout(grid_layout)
+    scroll_frame.setWidget(app_frame)
+    self.setCentralWidget(scroll_frame)</code></pre>
+</details>
+</dd>
+<dt id="egse.tempcontrol.spid.spid_ui.pidMainWindow.on_pid_constant_status_signal"><code class="name flex">
+<span>def <span class="ident">on_pid_constant_status_signal</span></span>(<span>self, monitoring_info)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def on_pid_constant_status_signal(self, monitoring_info):
+    for idx, (_, configuration) in enumerate(self.pid_configuration.items()):
+        for ch_idx, ch in enumerate(configuration):
+            if (ch[1] == 0 and ch[2] == 0):
+                continue                
+            self.pid_channels[idx].channels[ch_idx].label_5.setText(f&#34;{monitoring_info[idx][0]:.2e}&#34;)
+            self.pid_channels[idx].channels[ch_idx].label_9.setText(f&#34;{monitoring_info[idx][1]:.2e}&#34;)  
+            self.pid_channels[idx].channels[ch_idx].label_11.setText(f&#34;{monitoring_info[idx][2]:.2e}&#34;)  </code></pre>
+</details>
+</dd>
+<dt id="egse.tempcontrol.spid.spid_ui.pidMainWindow.on_pid_enabled_status_signal"><code class="name flex">
+<span>def <span class="ident">on_pid_enabled_status_signal</span></span>(<span>self, monitoring_info: dict)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def on_pid_enabled_status_signal(self, monitoring_info:dict):
+    monitoring_info = list(monitoring_info.values())
+    
+    for idx, (_, configuration) in enumerate(self.pid_configuration.items()):
+        state_lin = len(self.pid_channels[idx].channels)
+        pid_state = 0
+        for ch_idx, ch in enumerate(configuration):
+            if (ch[1] == 0 and ch[2] == 0):
+                state_lin -= 1
+                continue
+            self.pid_channels[idx].channels[ch_idx].widget.set_selected(bool(monitoring_info[ch[0]]))
+            ch_enabled = self.pid_channels[idx].channels[ch_idx].widget.is_selected()
+            pid_state += 1 if int(ch_enabled) else 0
+        if pid_state == state_lin:
+            self.pid_channels[idx].widget.set_color(1)
+        elif  0 &lt; pid_state &lt; state_lin:
+            self.pid_channels[idx].widget.set_color(2)
+        else:
+            self.pid_channels[idx].widget.set_color(0)</code></pre>
+</details>
+</dd>
+<dt id="egse.tempcontrol.spid.spid_ui.pidMainWindow.on_pid_setpoint_status_signal"><code class="name flex">
+<span>def <span class="ident">on_pid_setpoint_status_signal</span></span>(<span>self, monitoring_info)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def on_pid_setpoint_status_signal(self, monitoring_info):
+    for idx, (_, configuration) in enumerate(self.pid_configuration.items()):
+        for ch_idx, ch in enumerate(configuration):
+            if (ch[1] == 0 and ch[2] == 0):
+                continue                
+            self.pid_channels[idx].channels[ch_idx].doubleSpinBox.setValue(float(monitoring_info[ch[0]]))</code></pre>
+</details>
+</dd>
+<dt id="egse.tempcontrol.spid.spid_ui.pidMainWindow.on_pid_timestamp_status_signal"><code class="name flex">
+<span>def <span class="ident">on_pid_timestamp_status_signal</span></span>(<span>self, monitoring_info)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def on_pid_timestamp_status_signal(self, monitoring_info):
+    for idx, (_, configuration) in enumerate(self.pid_configuration.items()):
+        for ch_idx, ch in enumerate(configuration):
+            if (ch[1] == 0 and ch[2] == 0):
+                continue
+            self.pid_channels[idx].channels[ch_idx].label_14.setText(str(datetime.fromtimestamp(monitoring_info[int(ch[0])])))</code></pre>
+</details>
+</dd>
+<dt id="egse.tempcontrol.spid.spid_ui.pidMainWindow.on_pid_update_status_signal"><code class="name flex">
+<span>def <span class="ident">on_pid_update_status_signal</span></span>(<span>self, monitoring_info)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def on_pid_update_status_signal(self, monitoring_info):
+    channels = 0
+    for idx, (pid, configuration) in enumerate(self.pid_configuration.items()):
+        for ch_idx, ch in enumerate(configuration):
+            if (ch[1] == 0 and ch[2] == 0):
+                continue
+            self.pid_channels[idx].channels[ch_idx].lineEdit.setText(f&#34;{monitoring_info[0][channels]:.2e}&#34;)
+            self.pid_channels[idx].channels[ch_idx].lineEdit_3.setText(f&#34;{monitoring_info[1][channels]:.2e}&#34;)
+            self.pid_channels[idx].channels[ch_idx].lineEdit_2.setText(f&#34;{monitoring_info[2][channels]:.2e}&#34;)
+            self.pid_channels[idx].channels[ch_idx].lineEdit_4.setText(f&#34;{monitoring_info[3][channels]:.2e}&#34;)
+            channels += 1</code></pre>
+</details>
+</dd>
+<dt id="egse.tempcontrol.spid.spid_ui.pidMainWindow.set_pid_control"><code class="name flex">
+<span>def <span class="ident">set_pid_control</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def set_pid_control(self):
+    sender = self.sender()
+    state = sender.is_selected()
+    new_state = state
+    sender.set_selected(on=new_state)
+    pid = sender.parent().pid
+    htr = sender.parent().htr
+    ch  = sender.parent().ch
+
+    try:
+        self.actionObservers({&#34;set_pid_control&#34; : [pid, bool(new_state)]})
+    except Exception as e:
+        warning_popup(&#34;set_pid_control : Channel {} {}&#34;.format(pid, &#34;Enabled&#34; 
+                                                               if new_state else &#34;Disabled&#34;), e)</code></pre>
+</details>
+</dd>
+<dt id="egse.tempcontrol.spid.spid_ui.pidMainWindow.set_pid_setpoint"><code class="name flex">
+<span>def <span class="ident">set_pid_setpoint</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def set_pid_setpoint(self):
+    sender = self.sender()
+    setpoint = float(sender.parent().doubleSpinBox.value())
+    pid = sender.parent().pid
+    htr = sender.parent().htr
+    ch  = sender.parent().ch
+
+    try:
+        self.actionObservers({&#34;set_pid_setpoint&#34; : [pid, float(setpoint)]})
+    except Exception as e:
+        warning_popup(&#34;set_pid_setpoint : PID Channel {} to {} C&#34;.format(pid, setpoint), e)      </code></pre>
+</details>
+</dd>
+</dl>
 </dd>
 </dl>
 </section>
@@ -2096,18 +2134,13 @@ QGroupBox(str, parent: QWidget = None)</p></div>
 </li>
 <li><h3><a href="#header-functions">Functions</a></h3>
 <ul class="">
+<li><code><a title="egse.tempcontrol.spid.spid_ui.main" href="#egse.tempcontrol.spid.spid_ui.main">main</a></code></li>
 <li><code><a title="egse.tempcontrol.spid.spid_ui.parse_arguments" href="#egse.tempcontrol.spid.spid_ui.parse_arguments">parse_arguments</a></code></li>
+<li><code><a title="egse.tempcontrol.spid.spid_ui.warning_popup" href="#egse.tempcontrol.spid.spid_ui.warning_popup">warning_popup</a></code></li>
 </ul>
 </li>
 <li><h3><a href="#header-classes">Classes</a></h3>
 <ul>
-<li>
-<h4><code><a title="egse.tempcontrol.spid.spid_ui.ChannelWidget" href="#egse.tempcontrol.spid.spid_ui.ChannelWidget">ChannelWidget</a></code></h4>
-<ul class="">
-<li><code><a title="egse.tempcontrol.spid.spid_ui.ChannelWidget.show_less" href="#egse.tempcontrol.spid.spid_ui.ChannelWidget.show_less">show_less</a></code></li>
-<li><code><a title="egse.tempcontrol.spid.spid_ui.ChannelWidget.show_more" href="#egse.tempcontrol.spid.spid_ui.ChannelWidget.show_more">show_more</a></code></li>
-</ul>
-</li>
 <li>
 <h4><code><a title="egse.tempcontrol.spid.spid_ui.PIDUIController" href="#egse.tempcontrol.spid.spid_ui.PIDUIController">PIDUIController</a></code></h4>
 <ul class="">
@@ -2129,31 +2162,10 @@ QGroupBox(str, parent: QWidget = None)</p></div>
 </ul>
 </li>
 <li>
-<h4><code><a title="egse.tempcontrol.spid.spid_ui.PIDUIView" href="#egse.tempcontrol.spid.spid_ui.PIDUIView">PIDUIView</a></code></h4>
-<ul class="">
-<li><code><a title="egse.tempcontrol.spid.spid_ui.PIDUIView.closeEvent" href="#egse.tempcontrol.spid.spid_ui.PIDUIView.closeEvent">closeEvent</a></code></li>
-<li><code><a title="egse.tempcontrol.spid.spid_ui.PIDUIView.initUI" href="#egse.tempcontrol.spid.spid_ui.PIDUIView.initUI">initUI</a></code></li>
-<li><code><a title="egse.tempcontrol.spid.spid_ui.PIDUIView.kill_all_pid_processes" href="#egse.tempcontrol.spid.spid_ui.PIDUIView.kill_all_pid_processes">kill_all_pid_processes</a></code></li>
-<li><code><a title="egse.tempcontrol.spid.spid_ui.PIDUIView.on_pid_constant_status_signal" href="#egse.tempcontrol.spid.spid_ui.PIDUIView.on_pid_constant_status_signal">on_pid_constant_status_signal</a></code></li>
-<li><code><a title="egse.tempcontrol.spid.spid_ui.PIDUIView.on_pid_enabled_status_signal" href="#egse.tempcontrol.spid.spid_ui.PIDUIView.on_pid_enabled_status_signal">on_pid_enabled_status_signal</a></code></li>
-<li><code><a title="egse.tempcontrol.spid.spid_ui.PIDUIView.on_pid_setpoint_status_signal" href="#egse.tempcontrol.spid.spid_ui.PIDUIView.on_pid_setpoint_status_signal">on_pid_setpoint_status_signal</a></code></li>
-<li><code><a title="egse.tempcontrol.spid.spid_ui.PIDUIView.on_pid_timestamp_status_signal" href="#egse.tempcontrol.spid.spid_ui.PIDUIView.on_pid_timestamp_status_signal">on_pid_timestamp_status_signal</a></code></li>
-<li><code><a title="egse.tempcontrol.spid.spid_ui.PIDUIView.on_pid_update_status_signal" href="#egse.tempcontrol.spid.spid_ui.PIDUIView.on_pid_update_status_signal">on_pid_update_status_signal</a></code></li>
-<li><code><a title="egse.tempcontrol.spid.spid_ui.PIDUIView.set_pid_control" href="#egse.tempcontrol.spid.spid_ui.PIDUIView.set_pid_control">set_pid_control</a></code></li>
-<li><code><a title="egse.tempcontrol.spid.spid_ui.PIDUIView.set_pid_setpoint" href="#egse.tempcontrol.spid.spid_ui.PIDUIView.set_pid_setpoint">set_pid_setpoint</a></code></li>
-<li><code><a title="egse.tempcontrol.spid.spid_ui.PIDUIView.show_more_information" href="#egse.tempcontrol.spid.spid_ui.PIDUIView.show_more_information">show_more_information</a></code></li>
-</ul>
-</li>
-<li>
-<h4><code><a title="egse.tempcontrol.spid.spid_ui.PIDWidget" href="#egse.tempcontrol.spid.spid_ui.PIDWidget">PIDWidget</a></code></h4>
-</li>
-<li>
-<h4><code><a title="egse.tempcontrol.spid.spid_ui.PIDWindow" href="#egse.tempcontrol.spid.spid_ui.PIDWindow">PIDWindow</a></code></h4>
-</li>
-<li>
 <h4><code><a title="egse.tempcontrol.spid.spid_ui.PidMonitoringWorker" href="#egse.tempcontrol.spid.spid_ui.PidMonitoringWorker">PidMonitoringWorker</a></code></h4>
 <ul class="">
 <li><code><a title="egse.tempcontrol.spid.spid_ui.PidMonitoringWorker.connect_socket" href="#egse.tempcontrol.spid.spid_ui.PidMonitoringWorker.connect_socket">connect_socket</a></code></li>
+<li><code><a title="egse.tempcontrol.spid.spid_ui.PidMonitoringWorker.pid_constants_status_signal" href="#egse.tempcontrol.spid.spid_ui.PidMonitoringWorker.pid_constants_status_signal">pid_constants_status_signal</a></code></li>
 <li><code><a title="egse.tempcontrol.spid.spid_ui.PidMonitoringWorker.pid_enabled_status_signal" href="#egse.tempcontrol.spid.spid_ui.PidMonitoringWorker.pid_enabled_status_signal">pid_enabled_status_signal</a></code></li>
 <li><code><a title="egse.tempcontrol.spid.spid_ui.PidMonitoringWorker.pid_setpoint_status_signal" href="#egse.tempcontrol.spid.spid_ui.PidMonitoringWorker.pid_setpoint_status_signal">pid_setpoint_status_signal</a></code></li>
 <li><code><a title="egse.tempcontrol.spid.spid_ui.PidMonitoringWorker.pid_timestamp_status_signal" href="#egse.tempcontrol.spid.spid_ui.PidMonitoringWorker.pid_timestamp_status_signal">pid_timestamp_status_signal</a></code></li>
@@ -2164,7 +2176,29 @@ QGroupBox(str, parent: QWidget = None)</p></div>
 </ul>
 </li>
 <li>
-<h4><code><a title="egse.tempcontrol.spid.spid_ui.ToolbarWidget" href="#egse.tempcontrol.spid.spid_ui.ToolbarWidget">ToolbarWidget</a></code></h4>
+<h4><code><a title="egse.tempcontrol.spid.spid_ui.pidChannelWidget" href="#egse.tempcontrol.spid.spid_ui.pidChannelWidget">pidChannelWidget</a></code></h4>
+<ul class="">
+<li><code><a title="egse.tempcontrol.spid.spid_ui.pidChannelWidget.show_less" href="#egse.tempcontrol.spid.spid_ui.pidChannelWidget.show_less">show_less</a></code></li>
+<li><code><a title="egse.tempcontrol.spid.spid_ui.pidChannelWidget.show_more" href="#egse.tempcontrol.spid.spid_ui.pidChannelWidget.show_more">show_more</a></code></li>
+<li><code><a title="egse.tempcontrol.spid.spid_ui.pidChannelWidget.show_more_less" href="#egse.tempcontrol.spid.spid_ui.pidChannelWidget.show_more_less">show_more_less</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="egse.tempcontrol.spid.spid_ui.pidGroupbox" href="#egse.tempcontrol.spid.spid_ui.pidGroupbox">pidGroupbox</a></code></h4>
+</li>
+<li>
+<h4><code><a title="egse.tempcontrol.spid.spid_ui.pidMainWindow" href="#egse.tempcontrol.spid.spid_ui.pidMainWindow">pidMainWindow</a></code></h4>
+<ul class="">
+<li><code><a title="egse.tempcontrol.spid.spid_ui.pidMainWindow.closeEvent" href="#egse.tempcontrol.spid.spid_ui.pidMainWindow.closeEvent">closeEvent</a></code></li>
+<li><code><a title="egse.tempcontrol.spid.spid_ui.pidMainWindow.initUI" href="#egse.tempcontrol.spid.spid_ui.pidMainWindow.initUI">initUI</a></code></li>
+<li><code><a title="egse.tempcontrol.spid.spid_ui.pidMainWindow.on_pid_constant_status_signal" href="#egse.tempcontrol.spid.spid_ui.pidMainWindow.on_pid_constant_status_signal">on_pid_constant_status_signal</a></code></li>
+<li><code><a title="egse.tempcontrol.spid.spid_ui.pidMainWindow.on_pid_enabled_status_signal" href="#egse.tempcontrol.spid.spid_ui.pidMainWindow.on_pid_enabled_status_signal">on_pid_enabled_status_signal</a></code></li>
+<li><code><a title="egse.tempcontrol.spid.spid_ui.pidMainWindow.on_pid_setpoint_status_signal" href="#egse.tempcontrol.spid.spid_ui.pidMainWindow.on_pid_setpoint_status_signal">on_pid_setpoint_status_signal</a></code></li>
+<li><code><a title="egse.tempcontrol.spid.spid_ui.pidMainWindow.on_pid_timestamp_status_signal" href="#egse.tempcontrol.spid.spid_ui.pidMainWindow.on_pid_timestamp_status_signal">on_pid_timestamp_status_signal</a></code></li>
+<li><code><a title="egse.tempcontrol.spid.spid_ui.pidMainWindow.on_pid_update_status_signal" href="#egse.tempcontrol.spid.spid_ui.pidMainWindow.on_pid_update_status_signal">on_pid_update_status_signal</a></code></li>
+<li><code><a title="egse.tempcontrol.spid.spid_ui.pidMainWindow.set_pid_control" href="#egse.tempcontrol.spid.spid_ui.pidMainWindow.set_pid_control">set_pid_control</a></code></li>
+<li><code><a title="egse.tempcontrol.spid.spid_ui.pidMainWindow.set_pid_setpoint" href="#egse.tempcontrol.spid.spid_ui.pidMainWindow.set_pid_setpoint">set_pid_setpoint</a></code></li>
+</ul>
 </li>
 </ul>
 </li>

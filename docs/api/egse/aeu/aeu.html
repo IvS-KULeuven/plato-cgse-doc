@@ -30,10 +30,10 @@
 import re
 from enum import Enum
 from enum import IntEnum
-from math import fabs
 from typing import Union
 
 import numpy as np
+from math import fabs
 
 from egse.aeu import aeu_metrics
 from egse.aeu.aeu_devif import AEUError
@@ -51,7 +51,7 @@ from egse.mixin import dynamic_command
 from egse.proxy import Proxy
 from egse.resource import get_resource
 from egse.settings import Settings
-from egse.setup import load_setup
+from egse.state import GlobalState
 from egse.system import find_class, SignalCatcher
 from egse.zmq_ser import connect_address
 
@@ -358,11 +358,16 @@ def parse_psu_error_info(response: bytes) -&gt; (int, str):
         - Description of the oldest error in the error queue.
     &#34;&#34;&#34;
 
-    response = unpack_response(response)
+    # response = unpack_response(response)
 
-    # response[0] = int(response[0])
+    if len(response) == 0:
+        return None
 
-    return tuple(response)
+    else:
+        return tuple(response.decode(encoding=&#34;latin1&#34;, errors=&#34;ignore&#34;).replace(&#34;\r&#34;, &#34;&#34;).replace(&#34;\n&#34;, &#34;&#34;).split(&#34;,&#34;))
+
+    # # response[0] = int(response[0])
+    # return tuple(response)
 
 
 def parse_arb_data_response(response: bytes) -&gt; str:
@@ -4980,10 +4985,10 @@ class AWGSimulator(AWGInterface):
         self.arb = [None, None]
 
         self.arbs = {
-            ARB.ARB1: [&#34;no name&#34;, Switch.OFF, 0],
-            ARB.ARB2: [&#34;no name&#34;, Switch.OFF, 0],
-            ARB.ARB3: [&#34;no name&#34;, Switch.OFF, 0],
-            ARB.ARB4: [&#34;no name&#34;, Switch.OFF, 0]
+            ARB.ARB1: [&#34;A&#34;, Switch.OFF, 0],
+            ARB.ARB2: [&#34;B&#34;, Switch.OFF, 0],
+            ARB.ARB3: [&#34;C&#34;, Switch.OFF, 0],
+            ARB.ARB4: [&#34;D&#34;, Switch.OFF, 0]
         }
 
         self.arb1 = None
@@ -5237,9 +5242,8 @@ def get_n_cam_cycle_time():
     with AWGProxy(2) as awg2:
 
         identifier = awg2.get_arb1_def()[0][-1]
-        setup = load_setup()
 
-        awg2_cal = setup.gse.aeu.awg2.calibration
+        awg2_cal = GlobalState.setup.gse.aeu.awg2.calibration
         sync_data_string = awg2_cal.n_cam_sync_data[identifier]
 
         return float(SyncData(sync_data_string).image_cycle_time)
@@ -5251,9 +5255,7 @@ def get_f_cam_cycle_time():
     Returns: F-CAM cycle time [s].
     &#34;&#34;&#34;
 
-    setup = load_setup()
-
-    awg2_cal = setup.gse.aeu.awg2.calibration
+    awg2_cal = GlobalState.setup.gse.aeu.awg2.calibration
     sync_data_string = awg2_cal.n_cam_sync_data[&#34;F&#34;]
 
     return float(SyncData(sync_data_string).image_cycle_time)</code></pre>
@@ -5447,9 +5449,7 @@ Returns: Quality of the given current w.r.t. the given protection.</li>
     Returns: F-CAM cycle time [s].
     &#34;&#34;&#34;
 
-    setup = load_setup()
-
-    awg2_cal = setup.gse.aeu.awg2.calibration
+    awg2_cal = GlobalState.setup.gse.aeu.awg2.calibration
     sync_data_string = awg2_cal.n_cam_sync_data[&#34;F&#34;]
 
     return float(SyncData(sync_data_string).image_cycle_time)</code></pre>
@@ -5474,9 +5474,8 @@ Returns: Quality of the given current w.r.t. the given protection.</li>
     with AWGProxy(2) as awg2:
 
         identifier = awg2.get_arb1_def()[0][-1]
-        setup = load_setup()
 
-        awg2_cal = setup.gse.aeu.awg2.calibration
+        awg2_cal = GlobalState.setup.gse.aeu.awg2.calibration
         sync_data_string = awg2_cal.n_cam_sync_data[identifier]
 
         return float(SyncData(sync_data_string).image_cycle_time)</code></pre>
@@ -6078,11 +6077,16 @@ Returns: Dictionary with the cRIO led status</li>
         - Description of the oldest error in the error queue.
     &#34;&#34;&#34;
 
-    response = unpack_response(response)
+    # response = unpack_response(response)
 
-    # response[0] = int(response[0])
+    if len(response) == 0:
+        return None
 
-    return tuple(response)</code></pre>
+    else:
+        return tuple(response.decode(encoding=&#34;latin1&#34;, errors=&#34;ignore&#34;).replace(&#34;\r&#34;, &#34;&#34;).replace(&#34;\n&#34;, &#34;&#34;).split(&#34;,&#34;))
+
+    # # response[0] = int(response[0])
+    # return tuple(response)</code></pre>
 </details>
 </dd>
 <dt id="egse.aeu.aeu.parse_psu_instrument_id"><code class="name flex">
@@ -9342,10 +9346,10 @@ def set_waveform_type(self, waveform_type: Waveform) -&gt; None:
         self.arb = [None, None]
 
         self.arbs = {
-            ARB.ARB1: [&#34;no name&#34;, Switch.OFF, 0],
-            ARB.ARB2: [&#34;no name&#34;, Switch.OFF, 0],
-            ARB.ARB3: [&#34;no name&#34;, Switch.OFF, 0],
-            ARB.ARB4: [&#34;no name&#34;, Switch.OFF, 0]
+            ARB.ARB1: [&#34;A&#34;, Switch.OFF, 0],
+            ARB.ARB2: [&#34;B&#34;, Switch.OFF, 0],
+            ARB.ARB3: [&#34;C&#34;, Switch.OFF, 0],
+            ARB.ARB4: [&#34;D&#34;, Switch.OFF, 0]
         }
 
         self.arb1 = None

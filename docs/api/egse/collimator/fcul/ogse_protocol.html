@@ -27,11 +27,16 @@
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">import logging
+import sys
+import time
 
 from egse.collimator.fcul.ogse import OGSEController
-from egse.collimator.fcul.ogse import OGSESimulator
+from egse.collimator.fcul.ogse import OGSEInterface
 from egse.control import ControlServer
 from egse.control import Failure
+from egse.device import DeviceConnectionError
+from egse.device import DeviceTimeoutError
+from egse.process import SubProcess
 from egse.protocol import DynamicCommandProtocol
 from egse.settings import Settings
 from egse.state import GlobalState
@@ -48,17 +53,46 @@ class OGSEProtocol(DynamicCommandProtocol):
     def __init__(self, control_server: ControlServer):
         super().__init__(control_server)
 
-        GlobalState.load_setup()
+        self.ogse_sim: SubProcess
+        self.device = OGSEInterface
+
         self.fwc_calibration = GlobalState.setup.gse.ogse.calibration.fwc_calibration
 
         if Settings.simulation_mode():
-            self.device = OGSESimulator()
+            # In simulation mode, we start the simulator process and have the control server
+            # connect to that process instead of the hardware.
+            self.ogse_sim = SubProcess(&#34;OGSE Simulator&#34;,
+                                       [sys.executable, &#34;-m&#34;, &#34;egse.collimator.fcul.ogse_sim&#34;, &#34;start&#34;])
+            self.ogse_sim.execute(detach_from_parent=True)
+            time.sleep(2.0)  # Allow the simulator time to start up
+            self.device = OGSEController(hostname=&#34;localhost&#34;)
         else:
+            self.ogse_sim = None
             self.device = OGSEController()
 
-        self.device.connect()
+        self.device.add_observer(self)
+
+        try:
+            self.device.connect()
+        except DeviceConnectionError as exc:
+            MODULE_LOGGER.warning(
+                &#34;Couldn&#39;t establish a connection to the OGSE, check the log messages.&#34;)
+            MODULE_LOGGER.debug(f&#34;{exc = }&#34;)
+        except ValueError as exc:
+            MODULE_LOGGER.warning(exc)
+        except DeviceTimeoutError as exc:
+            MODULE_LOGGER.warning(exc)
 
         self.synoptics = SynopticsManagerProxy()
+
+    def quit(self):
+        if self.synoptics is not None:
+            MODULE_LOGGER.info(&#34;Disconnecting from Synoptics Manager...&#34;)
+            self.synoptics.disconnect_cs()
+
+        if self.ogse_sim is not None:
+            MODULE_LOGGER.info(&#34;Terminating the OGSE Simulator...&#34;)
+            self.ogse_sim.quit()
 
     def get_device(self):
         return self.device
@@ -80,41 +114,39 @@ class OGSEProtocol(DynamicCommandProtocol):
             MODULE_LOGGER.error(f&#34;Failure: {ogse_status}&#34;, exc_info=False)
             return hk
 
-        hk[f&#34;G{SITE.ID}_OGSE_LDLS_LAMP&#34;] = ogse_status[&#34;lamp&#34;] == &#34;ON&#34;  # LDLS lamp on
-        hk[f&#34;G{SITE.ID}_OGSE_LDLS_LASER&#34;] = self.device.get_laser() == &#34;laser: ON&#34;  # LDLS laser on
-        hk[f&#34;G{SITE.ID}_OGSE_PM_CH1_PWR&#34;] = ogse_status[&#34;power1&#34;]  # Powermeter channel 1 power
-        hk[f&#34;G{SITE.ID}_OGSE_PM_CH2_PWR&#34;] = ogse_status[&#34;power2&#34;]  # Powermeter channel 2 power
-        hk[f&#34;G{SITE.ID}_OGSE_REL_INTENSITY&#34;] = ogse_status[
-            &#34;att_factor&#34;]  # Relative intensity (0..1)
-        hk[f&#34;G{SITE.ID}_OGSE_FWC_FRACTION&#34;] = ogse_status[
-                                                  &#34;att_factor&#34;] / self.fwc_calibration  # FWC fraction
+        ogse_laser = self.device.get_laser()
+
+        hk[f&#34;G{SITE.ID}_OGSE_LDLS_LAMP&#34;] = ogse_status[&#34;lamp&#34;] == &#34;ON&#34;
+        hk[f&#34;G{SITE.ID}_OGSE_LDLS_LASER&#34;] = ogse_laser == &#34;laser: ON&#34;
+        hk[f&#34;G{SITE.ID}_OGSE_PM_CH1_PWR&#34;] = ogse_status[&#34;power1&#34;]
+        hk[f&#34;G{SITE.ID}_OGSE_PM_CH2_PWR&#34;] = ogse_status[&#34;power2&#34;]
+        hk[f&#34;G{SITE.ID}_OGSE_REL_INTENSITY&#34;] = ogse_status[&#34;att_factor&#34;]
+        hk[f&#34;G{SITE.ID}_OGSE_FWC_FRACTION&#34;] = ogse_status[&#34;att_factor&#34;] / self.fwc_calibration
 
         # Send the HK acquired so far to the Synoptics Manager
+
         hk_for_synoptics = hk.copy()
+
         # The GOGSE_SHUTTER_OPEN parameter is not in the CSL OGSE HK but is included in the synoptics
+
         if &#34;CSL&#34; in SITE.ID:
             hk_for_synoptics[f&#34;G{SITE.ID}_OGSE_SHUTTER_OPEN&#34;] = True
+
         self.synoptics.store_th_synoptics(hk_for_synoptics)
 
-        hk[f&#34;G{SITE.ID}_OGSE_LDLS_INTERLOCK&#34;] = ogse_status[
-                                                    &#34;interlock&#34;] == &#34;ON&#34;  # LDLS power interlock on
-        hk[f&#34;G{SITE.ID}_OGSE_LDLS_POWER&#34;] = ogse_status[&#34;power&#34;] == &#34;ON&#34;  # LDLS power on
-        hk[f&#34;G{SITE.ID}_OGSE_LDLS_PSU&#34;] = ogse_status[&#34;psu&#34;] == &#34;ON&#34;  # PSU on`
-        hk[f&#34;G{SITE.ID}_OGSE_PM_CH1_TEMP&#34;] = ogse_status[
-            &#34;temp1&#34;]  # Powermeter channel 1 temperature
-        hk[f&#34;G{SITE.ID}_OGSE_PM_CH2_TEMP&#34;] = ogse_status[
-            &#34;temp2&#34;]  # Powermeter channel 2 temperature
-        hk[
-            f&#34;G{SITE.ID}_OGSE_LDLS_LAMP_FAULT&#34;] = self.device.get_lamp_fault() == &#34;lamp-fault: NO-ERROR&#34;  # LDLS lap fault
-        hk[
-            f&#34;G{SITE.ID}_OGSE_LDLS_CTRL_FAULT&#34;] = self.device.get_controller_fault() == &#34;controller-fault: NO-ERROR&#34;  # LDLS controller fault
-        hk[
-            f&#34;G{SITE.ID}_OGSE_LDLS_OPERATE&#34;] = self.device.get_operate() == &#34;operate: ON&#34;  # LDLS operate status on
+        hk[f&#34;G{SITE.ID}_OGSE_LDLS_INTERLOCK&#34;] = ogse_status[&#34;interlock&#34;] == &#34;ON&#34;
+        hk[f&#34;G{SITE.ID}_OGSE_LDLS_POWER&#34;] = ogse_status[&#34;power&#34;] == &#34;ON&#34;
+        hk[f&#34;G{SITE.ID}_OGSE_LDLS_PSU&#34;] = ogse_status[&#34;psu&#34;] == &#34;ON&#34;
+        hk[f&#34;G{SITE.ID}_OGSE_PM_CH1_TEMP&#34;] = ogse_status[&#34;temp1&#34;]
+        hk[f&#34;G{SITE.ID}_OGSE_PM_CH2_TEMP&#34;] = ogse_status[&#34;temp2&#34;]
+        hk[f&#34;G{SITE.ID}_OGSE_LDLS_LAMP_FAULT&#34;] = self.device.get_lamp_fault() == &#34;lamp-fault: NO-ERROR&#34;
+        hk[f&#34;G{SITE.ID}_OGSE_LDLS_CTRL_FAULT&#34;] = self.device.get_controller_fault() == &#34;controller-fault: NO-ERROR&#34;
+        hk[f&#34;G{SITE.ID}_OGSE_LDLS_OPERATE&#34;] = self.device.get_operate() == &#34;operate: ON&#34;
 
         pm_status = self.device.pm_status()
 
-        hk[f&#34;G{SITE.ID}_OGSE_PM_CH1_STATUS&#34;] = pm_status[&#34;pm1&#34;] == &#34;OK&#34;  # Powermeter channel 1 on
-        hk[f&#34;G{SITE.ID}_OGSE_PM_CH2_STATUS&#34;] = pm_status[&#34;pm2&#34;] == &#34;OK&#34;  # Powermeter channel 2 on
+        hk[f&#34;G{SITE.ID}_OGSE_PM_CH1_STATUS&#34;] = pm_status[&#34;pm1&#34;] == &#34;OK&#34;
+        hk[f&#34;G{SITE.ID}_OGSE_PM_CH2_STATUS&#34;] = pm_status[&#34;pm2&#34;] == &#34;OK&#34;
 
         return hk</code></pre>
 </details>
@@ -144,17 +176,46 @@ update of its state by calling the <code>update_connection_state()</code> method
     def __init__(self, control_server: ControlServer):
         super().__init__(control_server)
 
-        GlobalState.load_setup()
+        self.ogse_sim: SubProcess
+        self.device = OGSEInterface
+
         self.fwc_calibration = GlobalState.setup.gse.ogse.calibration.fwc_calibration
 
         if Settings.simulation_mode():
-            self.device = OGSESimulator()
+            # In simulation mode, we start the simulator process and have the control server
+            # connect to that process instead of the hardware.
+            self.ogse_sim = SubProcess(&#34;OGSE Simulator&#34;,
+                                       [sys.executable, &#34;-m&#34;, &#34;egse.collimator.fcul.ogse_sim&#34;, &#34;start&#34;])
+            self.ogse_sim.execute(detach_from_parent=True)
+            time.sleep(2.0)  # Allow the simulator time to start up
+            self.device = OGSEController(hostname=&#34;localhost&#34;)
         else:
+            self.ogse_sim = None
             self.device = OGSEController()
 
-        self.device.connect()
+        self.device.add_observer(self)
+
+        try:
+            self.device.connect()
+        except DeviceConnectionError as exc:
+            MODULE_LOGGER.warning(
+                &#34;Couldn&#39;t establish a connection to the OGSE, check the log messages.&#34;)
+            MODULE_LOGGER.debug(f&#34;{exc = }&#34;)
+        except ValueError as exc:
+            MODULE_LOGGER.warning(exc)
+        except DeviceTimeoutError as exc:
+            MODULE_LOGGER.warning(exc)
 
         self.synoptics = SynopticsManagerProxy()
+
+    def quit(self):
+        if self.synoptics is not None:
+            MODULE_LOGGER.info(&#34;Disconnecting from Synoptics Manager...&#34;)
+            self.synoptics.disconnect_cs()
+
+        if self.ogse_sim is not None:
+            MODULE_LOGGER.info(&#34;Terminating the OGSE Simulator...&#34;)
+            self.ogse_sim.quit()
 
     def get_device(self):
         return self.device
@@ -176,41 +237,39 @@ update of its state by calling the <code>update_connection_state()</code> method
             MODULE_LOGGER.error(f&#34;Failure: {ogse_status}&#34;, exc_info=False)
             return hk
 
-        hk[f&#34;G{SITE.ID}_OGSE_LDLS_LAMP&#34;] = ogse_status[&#34;lamp&#34;] == &#34;ON&#34;  # LDLS lamp on
-        hk[f&#34;G{SITE.ID}_OGSE_LDLS_LASER&#34;] = self.device.get_laser() == &#34;laser: ON&#34;  # LDLS laser on
-        hk[f&#34;G{SITE.ID}_OGSE_PM_CH1_PWR&#34;] = ogse_status[&#34;power1&#34;]  # Powermeter channel 1 power
-        hk[f&#34;G{SITE.ID}_OGSE_PM_CH2_PWR&#34;] = ogse_status[&#34;power2&#34;]  # Powermeter channel 2 power
-        hk[f&#34;G{SITE.ID}_OGSE_REL_INTENSITY&#34;] = ogse_status[
-            &#34;att_factor&#34;]  # Relative intensity (0..1)
-        hk[f&#34;G{SITE.ID}_OGSE_FWC_FRACTION&#34;] = ogse_status[
-                                                  &#34;att_factor&#34;] / self.fwc_calibration  # FWC fraction
+        ogse_laser = self.device.get_laser()
+
+        hk[f&#34;G{SITE.ID}_OGSE_LDLS_LAMP&#34;] = ogse_status[&#34;lamp&#34;] == &#34;ON&#34;
+        hk[f&#34;G{SITE.ID}_OGSE_LDLS_LASER&#34;] = ogse_laser == &#34;laser: ON&#34;
+        hk[f&#34;G{SITE.ID}_OGSE_PM_CH1_PWR&#34;] = ogse_status[&#34;power1&#34;]
+        hk[f&#34;G{SITE.ID}_OGSE_PM_CH2_PWR&#34;] = ogse_status[&#34;power2&#34;]
+        hk[f&#34;G{SITE.ID}_OGSE_REL_INTENSITY&#34;] = ogse_status[&#34;att_factor&#34;]
+        hk[f&#34;G{SITE.ID}_OGSE_FWC_FRACTION&#34;] = ogse_status[&#34;att_factor&#34;] / self.fwc_calibration
 
         # Send the HK acquired so far to the Synoptics Manager
+
         hk_for_synoptics = hk.copy()
+
         # The GOGSE_SHUTTER_OPEN parameter is not in the CSL OGSE HK but is included in the synoptics
+
         if &#34;CSL&#34; in SITE.ID:
             hk_for_synoptics[f&#34;G{SITE.ID}_OGSE_SHUTTER_OPEN&#34;] = True
+
         self.synoptics.store_th_synoptics(hk_for_synoptics)
 
-        hk[f&#34;G{SITE.ID}_OGSE_LDLS_INTERLOCK&#34;] = ogse_status[
-                                                    &#34;interlock&#34;] == &#34;ON&#34;  # LDLS power interlock on
-        hk[f&#34;G{SITE.ID}_OGSE_LDLS_POWER&#34;] = ogse_status[&#34;power&#34;] == &#34;ON&#34;  # LDLS power on
-        hk[f&#34;G{SITE.ID}_OGSE_LDLS_PSU&#34;] = ogse_status[&#34;psu&#34;] == &#34;ON&#34;  # PSU on`
-        hk[f&#34;G{SITE.ID}_OGSE_PM_CH1_TEMP&#34;] = ogse_status[
-            &#34;temp1&#34;]  # Powermeter channel 1 temperature
-        hk[f&#34;G{SITE.ID}_OGSE_PM_CH2_TEMP&#34;] = ogse_status[
-            &#34;temp2&#34;]  # Powermeter channel 2 temperature
-        hk[
-            f&#34;G{SITE.ID}_OGSE_LDLS_LAMP_FAULT&#34;] = self.device.get_lamp_fault() == &#34;lamp-fault: NO-ERROR&#34;  # LDLS lap fault
-        hk[
-            f&#34;G{SITE.ID}_OGSE_LDLS_CTRL_FAULT&#34;] = self.device.get_controller_fault() == &#34;controller-fault: NO-ERROR&#34;  # LDLS controller fault
-        hk[
-            f&#34;G{SITE.ID}_OGSE_LDLS_OPERATE&#34;] = self.device.get_operate() == &#34;operate: ON&#34;  # LDLS operate status on
+        hk[f&#34;G{SITE.ID}_OGSE_LDLS_INTERLOCK&#34;] = ogse_status[&#34;interlock&#34;] == &#34;ON&#34;
+        hk[f&#34;G{SITE.ID}_OGSE_LDLS_POWER&#34;] = ogse_status[&#34;power&#34;] == &#34;ON&#34;
+        hk[f&#34;G{SITE.ID}_OGSE_LDLS_PSU&#34;] = ogse_status[&#34;psu&#34;] == &#34;ON&#34;
+        hk[f&#34;G{SITE.ID}_OGSE_PM_CH1_TEMP&#34;] = ogse_status[&#34;temp1&#34;]
+        hk[f&#34;G{SITE.ID}_OGSE_PM_CH2_TEMP&#34;] = ogse_status[&#34;temp2&#34;]
+        hk[f&#34;G{SITE.ID}_OGSE_LDLS_LAMP_FAULT&#34;] = self.device.get_lamp_fault() == &#34;lamp-fault: NO-ERROR&#34;
+        hk[f&#34;G{SITE.ID}_OGSE_LDLS_CTRL_FAULT&#34;] = self.device.get_controller_fault() == &#34;controller-fault: NO-ERROR&#34;
+        hk[f&#34;G{SITE.ID}_OGSE_LDLS_OPERATE&#34;] = self.device.get_operate() == &#34;operate: ON&#34;
 
         pm_status = self.device.pm_status()
 
-        hk[f&#34;G{SITE.ID}_OGSE_PM_CH1_STATUS&#34;] = pm_status[&#34;pm1&#34;] == &#34;OK&#34;  # Powermeter channel 1 on
-        hk[f&#34;G{SITE.ID}_OGSE_PM_CH2_STATUS&#34;] = pm_status[&#34;pm2&#34;] == &#34;OK&#34;  # Powermeter channel 2 on
+        hk[f&#34;G{SITE.ID}_OGSE_PM_CH1_STATUS&#34;] = pm_status[&#34;pm1&#34;] == &#34;OK&#34;
+        hk[f&#34;G{SITE.ID}_OGSE_PM_CH2_STATUS&#34;] = pm_status[&#34;pm2&#34;] == &#34;OK&#34;
 
         return hk</code></pre>
 </details>

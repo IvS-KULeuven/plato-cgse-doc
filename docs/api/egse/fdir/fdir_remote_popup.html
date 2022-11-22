@@ -27,12 +27,15 @@
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">import logging
-
+import sys
 from argparse import ArgumentParser
 
-from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog, QLabel, QVBoxLayout
+from egse.control import Response
+from PyQt5.QtCore import Qt
+from PyQt5.QtWidgets import QMessageBox, QApplication, QDialog, QLabel, QVBoxLayout
 from PyQt5.QtGui import QFont
 
+from egse.fdir import generate_popup
 
 # This function can be used generates a pop-up window when an FDIR situation was triggered.
 # This is put into a separate module to avoid having to run the QT thread in the control server
@@ -46,31 +49,14 @@ def main():
     parser.add_argument(&#39;success&#39;, type=str, help=&#39;recovery script success&#39;)
     parser.add_argument(&#39;actions&#39;, type=str, help=&#39;actions taken&#39;)
     args = parser.parse_args()
-
-    app = QApplication([])
-
-    dialog = QDialog()
-    layout = QVBoxLayout()
-    font_large = QFont(&#39;Arial&#39;, 20)
-    font_small = QFont(&#39;Arial&#39;, 16)
-    dialog.setLayout(layout)
-    dialog.setWindowTitle(&#34;FDIR signal caught!&#34;)
-    signal_label = QLabel(f&#34;FDIR code: {args.code}&#34;)
-    signal_label.setFont(font_large)
-    layout.addWidget(signal_label)
-    success_label = QLabel(f&#34;recovery script ran:\n{args.actions}&#34;)
-    success_label.setFont(font_small)
-    layout.addWidget(success_label)
-    actions_label = QLabel(f&#34;Actions taken:\n{args.success}&#34;)
-    actions_label.setFont(font_small)
-    layout.addWidget(actions_label)
-    dialog.show()
-
-    app.exec_()
+    
+    generate_popup(args.code, args.success, args.actions)
+    
 
 
 if __name__ == &#39;__main__&#39;:
-    main()</code></pre>
+    main()
+    sys.exit()</code></pre>
 </details>
 </section>
 <section>
@@ -98,27 +84,8 @@ if __name__ == &#39;__main__&#39;:
     parser.add_argument(&#39;success&#39;, type=str, help=&#39;recovery script success&#39;)
     parser.add_argument(&#39;actions&#39;, type=str, help=&#39;actions taken&#39;)
     args = parser.parse_args()
-
-    app = QApplication([])
-
-    dialog = QDialog()
-    layout = QVBoxLayout()
-    font_large = QFont(&#39;Arial&#39;, 20)
-    font_small = QFont(&#39;Arial&#39;, 16)
-    dialog.setLayout(layout)
-    dialog.setWindowTitle(&#34;FDIR signal caught!&#34;)
-    signal_label = QLabel(f&#34;FDIR code: {args.code}&#34;)
-    signal_label.setFont(font_large)
-    layout.addWidget(signal_label)
-    success_label = QLabel(f&#34;recovery script ran:\n{args.actions}&#34;)
-    success_label.setFont(font_small)
-    layout.addWidget(success_label)
-    actions_label = QLabel(f&#34;Actions taken:\n{args.success}&#34;)
-    actions_label.setFont(font_small)
-    layout.addWidget(actions_label)
-    dialog.show()
-
-    app.exec_()</code></pre>
+    
+    generate_popup(args.code, args.success, args.actions)</code></pre>
 </details>
 </dd>
 </dl>

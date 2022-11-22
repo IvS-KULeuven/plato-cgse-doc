@@ -68,7 +68,6 @@ class Fw8Smc5Protocol(CommandProtocol):
         super().__init__()
         self.control_server = control_server
 
-        GlobalState.load_setup()
         self.fwc_calibration = GlobalState.setup.gse.ogse.calibration.fwc_calibration
 
         if Settings.simulation_mode():
@@ -92,7 +91,13 @@ class Fw8Smc5Protocol(CommandProtocol):
 
     def get_status(self):
         status_dict = super().get_status()
-
+        status = {
+            &#39;RelativeIntensity&#39;: self.dev.get_relative_intensity(),
+            &#39;FullWellCapacity&#39;: self.dev.get_relative_intensity() / self.fwc_calibration,
+            &#39;FW1Position&#39; : self.dev.get_position_steps(0),
+            &#39;FW2Position&#39; : self.dev.get_position_steps(1)
+        }
+        status_dict[&#39;fw8smc5_status&#39;] = status
         # need to get the channel from somewhere
         # status_dict[&#39;device_status&#39;] = self.dev.get_status(channel)
 
@@ -200,7 +205,6 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
         super().__init__()
         self.control_server = control_server
 
-        GlobalState.load_setup()
         self.fwc_calibration = GlobalState.setup.gse.ogse.calibration.fwc_calibration
 
         if Settings.simulation_mode():
@@ -224,7 +228,13 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
 
     def get_status(self):
         status_dict = super().get_status()
-
+        status = {
+            &#39;RelativeIntensity&#39;: self.dev.get_relative_intensity(),
+            &#39;FullWellCapacity&#39;: self.dev.get_relative_intensity() / self.fwc_calibration,
+            &#39;FW1Position&#39; : self.dev.get_position_steps(0),
+            &#39;FW2Position&#39; : self.dev.get_position_steps(1)
+        }
+        status_dict[&#39;fw8smc5_status&#39;] = status
         # need to get the channel from somewhere
         # status_dict[&#39;device_status&#39;] = self.dev.get_status(channel)
 

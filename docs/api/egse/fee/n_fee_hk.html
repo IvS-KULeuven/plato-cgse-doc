@@ -31,8 +31,6 @@ import multiprocessing
 import os
 import pickle
 import signal
-import sys
-import time
 from typing import List
 
 import click
@@ -40,6 +38,8 @@ import invoke
 import numpy as np
 import pandas
 import rich
+import sys
+import time
 import zmq
 from PyQt5 import QtCore
 from PyQt5.QtCore import QObject
@@ -63,7 +63,7 @@ from egse.metrics import define_metrics
 from egse.resource import get_resource
 from egse.settings import Settings
 from egse.setup import NavigableDict, SetupError
-from egse.setup import load_setup
+from egse.state import GlobalState
 from egse.storage import StorageProxy
 from egse.storage import register_to_storage_manager
 from egse.storage import unregister_from_storage_manager
@@ -345,8 +345,7 @@ class HousekeepingGenerator:
         Returns: N-FEE temperature calibration as a NavigableDict.
         &#34;&#34;&#34;
 
-        setup = load_setup()
-        return setup.camera.fee.calibration
+        return GlobalState.setup.camera.fee.calibration
 
     def run(self):
         self.start_pulling_data()
@@ -1513,8 +1512,7 @@ def run(self):
         Returns: N-FEE temperature calibration as a NavigableDict.
         &#34;&#34;&#34;
 
-        setup = load_setup()
-        return setup.camera.fee.calibration
+        return GlobalState.setup.camera.fee.calibration
 
     def run(self):
         self.start_pulling_data()
@@ -1630,8 +1628,7 @@ def run(self):
     Returns: N-FEE temperature calibration as a NavigableDict.
     &#34;&#34;&#34;
 
-    setup = load_setup()
-    return setup.camera.fee.calibration</code></pre>
+    return GlobalState.setup.camera.fee.calibration</code></pre>
 </details>
 </dd>
 <dt id="egse.fee.n_fee_hk.HousekeepingGenerator.run"><code class="name flex">

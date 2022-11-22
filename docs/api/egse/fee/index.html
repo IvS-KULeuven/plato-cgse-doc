@@ -47,19 +47,8 @@ from egse.fee.fee import is_hk_data_packet
 from egse.fee.fee import is_last_packet
 from egse.fee.fee import is_overscan_data_packet
 
-# The default order of the CCD readout as defined in the N-FEE register (new FPA numbering).
-
-# DEFAULT_CCD_READOUT_ORDER = 0b11100100  # old convention
-DEFAULT_CCD_READOUT_ORDER = 0b01001110  # new convention
-
-# The mapping of the CCD number to the binary representation in the N-FEE (new FPA numbering).
-# Note that CCD numbering is from 1 to 4, while the binary representation is 2 bit.
-# Note that CCD idx is used for accessing a list or array using the ccd number
-
-CCD_BIN_TO_ID = [3, 4, 1, 2]  # convert N-FEE CCD number to CGSE CCD Number
-CCD_BIN_TO_IDX = [2, 3, 0, 1]  # convert N-FEE CCD number to array index
-CCD_ID_TO_BIN = [0, 0b10, 0b11, 0b00, 0b01]  # CCD_ID is [1-4]
-CCD_IDX_TO_BIN = [0b10, 0b11, 0b00, 0b01]  # CCD index is [0-3]
+from egse.setup import SetupError
+from egse.state import GlobalState
 
 
 def convert_ccd_order_list(value: List[int]):
@@ -84,7 +73,11 @@ def convert_ccd_order_list(value: List[int]):
         raise ValueError(f&#34;Expected a list of four CCD numbers, got {value}&#34;)
     if min(value) &lt; 1 or max(value) &gt; 4:
         raise ValueError(f&#34;Expected all CCD numbers in the range [1-4], got {value}&#34;)
-    return sum(CCD_ID_TO_BIN[ccd] &lt;&lt; idx * 2 for idx, ccd in enumerate(value))
+    try:
+        return sum(GlobalState.setup.camera.fee.ccd_numbering.CCD_ID_TO_BIN[ccd] &lt;&lt; idx * 2
+                   for idx, ccd in enumerate(value))
+    except AttributeError:
+        raise SetupError(&#34;No entry in the setup for camera.fee.ccd_numbering.CCD_ID_TO_BIN&#34;)
 
 
 def convert_ccd_order_value(value: int):
@@ -104,7 +97,11 @@ def convert_ccd_order_value(value: int):
     Returns:
         A list of CCD numbers.
     &#34;&#34;&#34;
-    return [CCD_BIN_TO_ID[(value &gt;&gt; x) &amp; 0b11] for x in [0, 2, 4, 6]]
+
+    try:
+        return [GlobalState.setup.camera.fee.ccd_numbering.CCD_BIN_TO_ID[(value &gt;&gt; x) &amp; 0b11] for x in [0, 2, 4, 6]]
+    except AttributeError:
+        raise SetupError(&#34;No entry in the setup for camera.fee.ccd_numbering.CCD_BIN_TO_ID&#34;)
 
 
 # The name of the of the enum class `fee_mode` is deliberately chosen in snake case,
@@ -133,6 +130,16 @@ class fee_side(IntEnum):
 
 
 n_fee_side = f_fee_side = fee_side
+
+
+# noinspection PyPep8Naming
+class fee_sync_mode(IntEnum):
+    &#34;&#34;&#34;
+    The sync mode defines if the FEE is using external or internal synchronisation signals.
+    &#34;&#34;&#34;
+
+    EXTERNAL = 0
+    INTERNAL = 1
 
 
 # noinspection PyPep8Naming
@@ -246,7 +253,11 @@ register map of the N-FEE.</p>
         raise ValueError(f&#34;Expected a list of four CCD numbers, got {value}&#34;)
     if min(value) &lt; 1 or max(value) &gt; 4:
         raise ValueError(f&#34;Expected all CCD numbers in the range [1-4], got {value}&#34;)
-    return sum(CCD_ID_TO_BIN[ccd] &lt;&lt; idx * 2 for idx, ccd in enumerate(value))</code></pre>
+    try:
+        return sum(GlobalState.setup.camera.fee.ccd_numbering.CCD_ID_TO_BIN[ccd] &lt;&lt; idx * 2
+                   for idx, ccd in enumerate(value))
+    except AttributeError:
+        raise SetupError(&#34;No entry in the setup for camera.fee.ccd_numbering.CCD_ID_TO_BIN&#34;)</code></pre>
 </details>
 </dd>
 <dt id="egse.fee.convert_ccd_order_value"><code class="name flex">
@@ -289,7 +300,11 @@ of CCD numbers.</p>
     Returns:
         A list of CCD numbers.
     &#34;&#34;&#34;
-    return [CCD_BIN_TO_ID[(value &gt;&gt; x) &amp; 0b11] for x in [0, 2, 4, 6]]</code></pre>
+
+    try:
+        return [GlobalState.setup.camera.fee.ccd_numbering.CCD_BIN_TO_ID[(value &gt;&gt; x) &amp; 0b11] for x in [0, 2, 4, 6]]
+    except AttributeError:
+        raise SetupError(&#34;No entry in the setup for camera.fee.ccd_numbering.CCD_BIN_TO_ID&#34;)</code></pre>
 </details>
 </dd>
 </dl>
@@ -478,6 +493,42 @@ of CCD numbers.</p>
 <div class="desc"></div>
 </dd>
 <dt id="egse.fee.fee_side.RIGHT_SIDE"><code class="name">var <span class="ident">RIGHT_SIDE</span></code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+</dl>
+</dd>
+<dt id="egse.fee.fee_sync_mode"><code class="flex name class">
+<span>class <span class="ident">fee_sync_mode</span></span>
+<span>(</span><span>value, names=None, *, module=None, qualname=None, type=None, start=1)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>The sync mode defines if the FEE is using external or internal synchronisation signals.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class fee_sync_mode(IntEnum):
+    &#34;&#34;&#34;
+    The sync mode defines if the FEE is using external or internal synchronisation signals.
+    &#34;&#34;&#34;
+
+    EXTERNAL = 0
+    INTERNAL = 1</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>enum.IntEnum</li>
+<li>builtins.int</li>
+<li>enum.Enum</li>
+</ul>
+<h3>Class variables</h3>
+<dl>
+<dt id="egse.fee.fee_sync_mode.EXTERNAL"><code class="name">var <span class="ident">EXTERNAL</span></code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="egse.fee.fee_sync_mode.INTERNAL"><code class="name">var <span class="ident">INTERNAL</span></code></dt>
 <dd>
 <div class="desc"></div>
 </dd>
@@ -704,6 +755,13 @@ map. Left and right side are assigned as defined in the N-FEE IRD.</p></div>
 <li><code><a title="egse.fee.fee_side.F_SIDE" href="#egse.fee.fee_side.F_SIDE">F_SIDE</a></code></li>
 <li><code><a title="egse.fee.fee_side.LEFT_SIDE" href="#egse.fee.fee_side.LEFT_SIDE">LEFT_SIDE</a></code></li>
 <li><code><a title="egse.fee.fee_side.RIGHT_SIDE" href="#egse.fee.fee_side.RIGHT_SIDE">RIGHT_SIDE</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="egse.fee.fee_sync_mode" href="#egse.fee.fee_sync_mode">fee_sync_mode</a></code></h4>
+<ul class="">
+<li><code><a title="egse.fee.fee_sync_mode.EXTERNAL" href="#egse.fee.fee_sync_mode.EXTERNAL">EXTERNAL</a></code></li>
+<li><code><a title="egse.fee.fee_sync_mode.INTERNAL" href="#egse.fee.fee_sync_mode.INTERNAL">INTERNAL</a></code></li>
 </ul>
 </li>
 <li>

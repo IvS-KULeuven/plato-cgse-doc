@@ -53,13 +53,19 @@ platform that supports Python and Qt5.
 import argparse
 import logging
 import multiprocessing
+from pathlib import Path
+
 import sys
 import threading
+
+from PyQt5.QtCore import QLockFile
+
+from egse.hexapod.symetrie.puna import get_endpoint_hexapod_controller
 
 multiprocessing.current_process().name = &#34;puna_ui&#34;
 
 from PyQt5.QtGui import QIcon
-from PyQt5.QtWidgets import QApplication
+from PyQt5.QtWidgets import QApplication, QMessageBox
 from PyQt5.QtWidgets import QFrame
 from PyQt5.QtWidgets import QHBoxLayout
 from PyQt5.QtWidgets import QVBoxLayout
@@ -268,7 +274,8 @@ class PunaUIModel(HexapodUIModel):
         if connection_type == &#34;proxy&#34;:
             device = PunaProxy()
         elif connection_type == &#34;direct&#34;:
-            device = PunaController()
+            hostname, port = get_endpoint_hexapod_controller()
+            device = PunaController(hostname=hostname, port=port)
             device.connect()
         elif connection_type == &#34;simulator&#34;:
             device = PunaSimulator()
@@ -321,50 +328,60 @@ def parse_arguments():
 
 
 def main():
+    lock_file = QLockFile(str(Path(&#34;~/puna_ui.app.lock&#34;).expanduser()))
 
     styles_location = get_resource(&#34;:/styles/default.qss&#34;)
     app_logo = get_resource(&#34;:/icons/logo-puna.svg&#34;)
 
     args = list(sys.argv)
     args[1:1] = [&#34;-stylesheet&#34;, str(styles_location)]
-
-    process_status = ProcessStatus()
-
-    timer_thread = threading.Thread(target=do_every, args=(10, process_status.update))
-    timer_thread.daemon = True
-    timer_thread.start()
-
-    start_http_server(GUI_SETTINGS.METRICS_PORT)
-
     app = QApplication(args)
     app.setWindowIcon(QIcon(str(app_logo)))
 
-    args = parse_arguments()
+    if lock_file.tryLock(100):
 
-    if args.profile:
-        Settings.set_profiling(True)
+        process_status = ProcessStatus()
 
-    if args.type == &#34;proxy&#34;:
-        proxy = PunaProxy()
-        if not proxy.ping():
-            description = &#34;Could not connect to Hexapod Control Server&#34;
-            info_text = (
-                &#34;The GUI will start, but the connection button will show a disconnected state. &#34;
-                &#34;Please check if the Control Server is running and start the server if needed. &#34;
-                &#34;Otherwise, check if the correct HOSTNAME for the control server is set in the &#34;
-                &#34;Settings.yaml &#34;
-                &#34;configuration file.&#34;
-            )
+        timer_thread = threading.Thread(target=do_every, args=(10, process_status.update))
+        timer_thread.daemon = True
+        timer_thread.start()
 
-            show_warning_message(description, info_text)
+        start_http_server(GUI_SETTINGS.METRICS_PORT)
 
-    view = PunaUIView()
-    model = PunaUIModel(args.type)
-    PunaUIController(model, view)
+        args = parse_arguments()
 
-    view.show()
+        if args.profile:
+            Settings.set_profiling(True)
 
-    return app.exec_()
+        if args.type == &#34;proxy&#34;:
+            proxy = PunaProxy()
+            if not proxy.ping():
+                description = &#34;Could not connect to Hexapod Control Server&#34;
+                info_text = (
+                    &#34;The GUI will start, but the connection button will show a disconnected state. &#34;
+                    &#34;Please check if the Control Server is running and start the server if needed. &#34;
+                    &#34;Otherwise, check if the correct HOSTNAME for the control server is set in the &#34;
+                    &#34;Settings.yaml &#34;
+                    &#34;configuration file.&#34;
+                )
+
+                show_warning_message(description, info_text)
+
+        view = PunaUIView()
+        model = PunaUIModel(args.type)
+        PunaUIController(model, view)
+
+        view.show()
+
+        return app.exec_()
+    else:
+        error_message = QMessageBox()
+        error_message.setIcon(QMessageBox.Warning)
+        error_message.setWindowTitle(&#34;Error&#34;)
+        error_message.setText(&#34;The Puna GUI application is already running!&#34;)
+        error_message.setStandardButtons(QMessageBox.Ok)
+
+        return error_message.exec()
 
 
 if __name__ == &#34;__main__&#34;:
@@ -391,50 +408,60 @@ if __name__ == &#34;__main__&#34;:
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def main():
+    lock_file = QLockFile(str(Path(&#34;~/puna_ui.app.lock&#34;).expanduser()))
 
     styles_location = get_resource(&#34;:/styles/default.qss&#34;)
     app_logo = get_resource(&#34;:/icons/logo-puna.svg&#34;)
 
     args = list(sys.argv)
     args[1:1] = [&#34;-stylesheet&#34;, str(styles_location)]
-
-    process_status = ProcessStatus()
-
-    timer_thread = threading.Thread(target=do_every, args=(10, process_status.update))
-    timer_thread.daemon = True
-    timer_thread.start()
-
-    start_http_server(GUI_SETTINGS.METRICS_PORT)
-
     app = QApplication(args)
     app.setWindowIcon(QIcon(str(app_logo)))
 
-    args = parse_arguments()
+    if lock_file.tryLock(100):
 
-    if args.profile:
-        Settings.set_profiling(True)
+        process_status = ProcessStatus()
 
-    if args.type == &#34;proxy&#34;:
-        proxy = PunaProxy()
-        if not proxy.ping():
-            description = &#34;Could not connect to Hexapod Control Server&#34;
-            info_text = (
-                &#34;The GUI will start, but the connection button will show a disconnected state. &#34;
-                &#34;Please check if the Control Server is running and start the server if needed. &#34;
-                &#34;Otherwise, check if the correct HOSTNAME for the control server is set in the &#34;
-                &#34;Settings.yaml &#34;
-                &#34;configuration file.&#34;
-            )
+        timer_thread = threading.Thread(target=do_every, args=(10, process_status.update))
+        timer_thread.daemon = True
+        timer_thread.start()
 
-            show_warning_message(description, info_text)
+        start_http_server(GUI_SETTINGS.METRICS_PORT)
 
-    view = PunaUIView()
-    model = PunaUIModel(args.type)
-    PunaUIController(model, view)
+        args = parse_arguments()
 
-    view.show()
+        if args.profile:
+            Settings.set_profiling(True)
 
-    return app.exec_()</code></pre>
+        if args.type == &#34;proxy&#34;:
+            proxy = PunaProxy()
+            if not proxy.ping():
+                description = &#34;Could not connect to Hexapod Control Server&#34;
+                info_text = (
+                    &#34;The GUI will start, but the connection button will show a disconnected state. &#34;
+                    &#34;Please check if the Control Server is running and start the server if needed. &#34;
+                    &#34;Otherwise, check if the correct HOSTNAME for the control server is set in the &#34;
+                    &#34;Settings.yaml &#34;
+                    &#34;configuration file.&#34;
+                )
+
+                show_warning_message(description, info_text)
+
+        view = PunaUIView()
+        model = PunaUIModel(args.type)
+        PunaUIController(model, view)
+
+        view.show()
+
+        return app.exec_()
+    else:
+        error_message = QMessageBox()
+        error_message.setIcon(QMessageBox.Warning)
+        error_message.setWindowTitle(&#34;Error&#34;)
+        error_message.setText(&#34;The Puna GUI application is already running!&#34;)
+        error_message.setStandardButtons(QMessageBox.Ok)
+
+        return error_message.exec()</code></pre>
 </details>
 </dd>
 <dt id="egse.hexapod.symetrie.puna_ui.parse_arguments"><code class="name flex">
@@ -528,7 +555,8 @@ inheritance.</p></div>
         if connection_type == &#34;proxy&#34;:
             device = PunaProxy()
         elif connection_type == &#34;direct&#34;:
-            device = PunaController()
+            hostname, port = get_endpoint_hexapod_controller()
+            device = PunaController(hostname=hostname, port=port)
             device.connect()
         elif connection_type == &#34;simulator&#34;:
             device = PunaSimulator()

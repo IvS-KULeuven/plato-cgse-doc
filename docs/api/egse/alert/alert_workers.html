@@ -92,14 +92,13 @@ class limitAlertMonitoringWorker():
                 try:
                     
                     triggered = None
-                    
                     # Retrieve the values within a specific window, if the rate of change needs to be evaluated
                     if &#39;rate_of_change&#39; in configuration:
                         value = calculate_roc(configuration[&#39;sensor&#39;], configuration[&#39;rate_of_change&#39;][&#39;time_window&#39;])
                         
                         roc_exceeded = True if float(value) &gt; float(configuration[&#39;rate_of_change&#39;][&#39;limit&#39;]) else False
                         self.cur_alerts[alert][&#39;rate_of_change&#39;] = roc_exceeded
-
+                        triggered = roc_exceeded
                         
                     # Retrieve the last value and compare to the limits, if the operational limit needs to be evaluated
                     elif &#39;operational_limit&#39; in configuration:
@@ -110,10 +109,13 @@ class limitAlertMonitoringWorker():
                         if &#39;min&#39; in configuration[&#39;operational_limit&#39;]:
                             min_limit_exceeded = True if float(configuration[&#39;operational_limit&#39;][&#39;min&#39;] &gt; float(value)) else False
                             self.cur_alerts[alert][&#39;operational_limits&#39;][0] = min_limit_exceeded
+                            triggered = min_limit_exceeded
                         if &#39;max&#39; in configuration[&#39;operational_limit&#39;]:
                             max_limit_exceeded = True if float(configuration[&#39;operational_limit&#39;][&#39;max&#39;] &lt; float(value)) else False
                             self.cur_alerts[alert][&#39;operational_limits&#39;][1] = max_limit_exceeded
-                            
+                            triggered = max_limit_exceeded
+                        
+                        
                     # Retieve the last value and mask it to evaluate a specific flag, if it needs to be evaluated
                     elif &#39;mask&#39; in configuration:
                         timestamp, value = get_housekeeping(f&#39;{configuration[&#34;sensor&#34;]}&#39;)
@@ -122,32 +124,39 @@ class limitAlertMonitoringWorker():
                             raise Exception(f&#34;HK value {configuration[&#39;sensor&#39;]} is more than 20 seconds old&#34;)
                         flag = True if (int(value) &gt;&gt; configuration[&#39;mask&#39;]) &amp; 0b1 else False
                         self.cur_alerts[alert][&#39;mask&#39;] = flag
+                        triggered = flag
                         
                     # Retrieve the last value and compare it to the configured setpoint, if it needs to be evaluated
                     elif &#39;setpoint&#39; in configuration:
                         timestamp, value = get_housekeeping(f&#39;{configuration[&#34;sensor&#34;]}&#39;)
                         
-                        if time() - (timestamp - EPOCH_1958_1970) &gt; 20 or time() - (int(sp_timestamp) - EPOCH_1958_1970) &gt; 20:
-                            raise Exception(f&#34;HK value {configuration[&#39;sensor&#39;]} is more than 20 seconds old&#34;)
                         if configuration[&#39;setpoint&#39;][&#39;value&#39;]:
                             sp_timestamp = time() + EPOCH_1958_1970
                             sp_limit = configuration[&#39;setpoint&#39;][&#39;value&#39;]
                         elif configuration[&#39;setpoint&#39;][&#39;sensor&#39;]:
                             sp_timestamp, sp_limit = get_housekeeping(f&#39;{configuration[&#34;setpoint&#34;][&#34;sensor&#34;]}&#39;)
+                        if time() - (timestamp - EPOCH_1958_1970) &gt; 20 or time() - (int(sp_timestamp) - EPOCH_1958_1970) &gt; 20:
+                            raise Exception(f&#34;HK value {configuration[&#39;sensor&#39;]} is more than 20 seconds old&#34;)
                         setpoint_exceeded = False if (float(sp_limit) - configuration[&#39;setpoint&#39;][&#39;offset&#39;]) &lt;= float(value) &lt;= (float(sp_limit) + configuration[&#39;setpoint&#39;][&#39;offset&#39;]) else True
                         self.cur_alerts[alert][&#39;setpoint&#39;] = setpoint_exceeded
+                        triggered = setpoint_exceeded
                     
-                    triggered = roc_exceeded or min_limit_exceeded or max_limit_exceeded or flag or setpoint_exceeded
+                    # triggered = roc_exceeded or min_limit_exceeded or max_limit_exceeded or flag or setpoint_exceeded
+                    self.cur_value[alert] = value
                     
                     if triggered:
                         if self._prev_alerts[alert][&#39;timeout&#39;] != None:
                             configured_timeout = configuration[&#39;timeout&#39;] if configuration[&#39;timeout&#39;] else 5
                             if (time() - self._prev_alerts[alert][&#39;timeout&#39;] &gt; configured_timeout):
-                                self.cur_value[alert] = value
                                 if self.cur_alerts[alert] != self._prev_alerts[alert]:
                                     if any(self.cur_alerts[alert]):
                                         if any(self.cur_alerts[alert][&#39;operational_limits&#39;]):
-                                            limit_text += f&#34;\t-  {alert} exceeded its operational limits of {configuration[&#39;operational_limit&#39;][&#39;min&#39;]}, {configuration[&#39;operational_limit&#39;][&#39;max&#39;]}: {value}\n&#34;
+                                            if &#39;min&#39; in configuration[&#39;operational_limit&#39;] and &#39;max&#39; in configuration[&#39;operational_limit&#39;]:
+                                                limit_text += f&#34;\t-  {alert} exceeded its operational limits of {configuration[&#39;operational_limit&#39;][&#39;min&#39;]}, {configuration[&#39;operational_limit&#39;][&#39;max&#39;]}: {value}\n&#34;
+                                            if &#39;min&#39; in configuration[&#39;operational_limit&#39;]:
+                                                limit_text += f&#34;\t-  {alert} exceeded its operational limits of {configuration[&#39;operational_limit&#39;][&#39;min&#39;]}: {value}\n&#34;     
+                                            if &#39;max&#39; in configuration[&#39;operational_limit&#39;]:
+                                                limit_text += f&#34;\t-  {alert} exceeded its operational limits of {configuration[&#39;operational_limit&#39;][&#39;max&#39;]}: {value}\n&#34; 
                                             actions += f&#34;\t-  ({alert}): {configuration[&#39;actions&#39;]}\n&#34;
                                         if self.cur_alerts[alert][&#39;rate_of_change&#39;]:
                                             limit_text += f&#34;\t-  {alert} has exceeded its RoC limit of {configuration[&#39;rate_of_change&#39;][&#39;limit&#39;]}. Current RoC: {value}\n&#34;     
@@ -160,19 +169,21 @@ class limitAlertMonitoringWorker():
                                             actions += f&#34;\t-  ({alert}): {configuration[&#39;actions&#39;]}\n&#34;
                                             
                                         # Signal FDIR Manager if there is an associated FDIR code
-                                        if &#39;fdir_code&#39; in configuration:
-                                            fdir_text += f&#34;FDIR code &#39;{configuration[&#39;fdir_code&#39;]}&#39; was fired\n&#34;
+                                        if &#39;fdir&#39; in configuration:
+                                            fdir_text += f&#34;FDIR code &#39;{configuration[&#39;fdir&#39;]}&#39; was fired\n&#34;
                                             with FdirManagerProxy() as fdir:
                                                 if fdir.is_cs_connected():
-                                                    fdir.signal_fdir(configuration[&#39;fdir_code&#39;])
+                                                    logger.info(f&#34;Firing FDIR code: {configuration[&#39;fdir&#39;]}&#34;)
+                                                    fdir.signal_fdir(configuration[&#39;fdir&#39;], configuration[&#39;sensor&#39;])
                                                 else:
-                                                    logger.critical(f&#34;Could not pass FDIR code: {configuration[&#39;fdir_code&#39;]}. Please check if FDIR manager is online!&#34;)
-                                    self._prev_alerts[alert] = deepcopy(self.cur_alerts[alert])
+                                                    logger.critical(f&#34;Could not pass FDIR code: {configuration[&#39;fdir&#39;]}. Please check if FDIR manager is online!&#34;)
                         else:
                             self._prev_alerts[alert][&#39;timeout&#39;] = time()
                     else:
                         self._prev_alerts[&#39;timeout&#39;] = None     
-                                                       
+                    
+                    self._prev_alerts[alert] = deepcopy(self.cur_alerts[alert])                           
+                
                 except Exception as exc:
                     logger.warning(f&#34;{exc}&#34;)
 
@@ -229,13 +240,20 @@ class csAlertMonitoringWorker():
                     if self.cur_alerts[cs] != self._prev_alerts[cs]:
                         if not self.cur_alerts[cs]:
                             cs_text += f&#34;\t- {cs} is offline!&#34;
+                            
+                            try:
+                                with FdirManagerProxy() as fdir:
+                                    fdir.signal_fdir(&#39;FDIR_CS_STOPPED&#39;, [cs])
+                            except Exception as e:
+                                logger.critical(f&#34;Could not fire FDIR signal: {e}&#34;)
+                            
                 
                 if cs_text != &#34;&#34;:
                     if any([not alert for alert in self.cur_alerts.values()]):
-                        # logger.info(f&#34;{cs_text}&#34;)
                         send_email(subject=&#34;PLATO Control Server notification&#34;, message=cs_intro+cs_text, recipients=replace_environment_variable(CTRL_SETTINGS.EMAIL_CS_RECIPIENTS))
-
-                 # Copy latest measurements for comparison in the nexy cycle                           
+                        send_sms(level=1)
+                        
+                 # Copy latest measurements for comparison in the nexy cycle           
                 self._prev_alerts = deepcopy(self.cur_alerts)
     
             except Exception as exc:
@@ -307,13 +325,20 @@ class csAlertMonitoringWorker():
                     if self.cur_alerts[cs] != self._prev_alerts[cs]:
                         if not self.cur_alerts[cs]:
                             cs_text += f&#34;\t- {cs} is offline!&#34;
+                            
+                            try:
+                                with FdirManagerProxy() as fdir:
+                                    fdir.signal_fdir(&#39;FDIR_CS_STOPPED&#39;, [cs])
+                            except Exception as e:
+                                logger.critical(f&#34;Could not fire FDIR signal: {e}&#34;)
+                            
                 
                 if cs_text != &#34;&#34;:
                     if any([not alert for alert in self.cur_alerts.values()]):
-                        # logger.info(f&#34;{cs_text}&#34;)
                         send_email(subject=&#34;PLATO Control Server notification&#34;, message=cs_intro+cs_text, recipients=replace_environment_variable(CTRL_SETTINGS.EMAIL_CS_RECIPIENTS))
-
-                 # Copy latest measurements for comparison in the nexy cycle                           
+                        send_sms(level=1)
+                        
+                 # Copy latest measurements for comparison in the nexy cycle           
                 self._prev_alerts = deepcopy(self.cur_alerts)
     
             except Exception as exc:
@@ -354,13 +379,20 @@ class csAlertMonitoringWorker():
                 if self.cur_alerts[cs] != self._prev_alerts[cs]:
                     if not self.cur_alerts[cs]:
                         cs_text += f&#34;\t- {cs} is offline!&#34;
+                        
+                        try:
+                            with FdirManagerProxy() as fdir:
+                                fdir.signal_fdir(&#39;FDIR_CS_STOPPED&#39;, [cs])
+                        except Exception as e:
+                            logger.critical(f&#34;Could not fire FDIR signal: {e}&#34;)
+                        
             
             if cs_text != &#34;&#34;:
                 if any([not alert for alert in self.cur_alerts.values()]):
-                    # logger.info(f&#34;{cs_text}&#34;)
                     send_email(subject=&#34;PLATO Control Server notification&#34;, message=cs_intro+cs_text, recipients=replace_environment_variable(CTRL_SETTINGS.EMAIL_CS_RECIPIENTS))
-
-             # Copy latest measurements for comparison in the nexy cycle                           
+                    send_sms(level=1)
+                    
+             # Copy latest measurements for comparison in the nexy cycle           
             self._prev_alerts = deepcopy(self.cur_alerts)
 
         except Exception as exc:
@@ -455,14 +487,13 @@ class csAlertMonitoringWorker():
                 try:
                     
                     triggered = None
-                    
                     # Retrieve the values within a specific window, if the rate of change needs to be evaluated
                     if &#39;rate_of_change&#39; in configuration:
                         value = calculate_roc(configuration[&#39;sensor&#39;], configuration[&#39;rate_of_change&#39;][&#39;time_window&#39;])
                         
                         roc_exceeded = True if float(value) &gt; float(configuration[&#39;rate_of_change&#39;][&#39;limit&#39;]) else False
                         self.cur_alerts[alert][&#39;rate_of_change&#39;] = roc_exceeded
-
+                        triggered = roc_exceeded
                         
                     # Retrieve the last value and compare to the limits, if the operational limit needs to be evaluated
                     elif &#39;operational_limit&#39; in configuration:
@@ -473,10 +504,13 @@ class csAlertMonitoringWorker():
                         if &#39;min&#39; in configuration[&#39;operational_limit&#39;]:
                             min_limit_exceeded = True if float(configuration[&#39;operational_limit&#39;][&#39;min&#39;] &gt; float(value)) else False
                             self.cur_alerts[alert][&#39;operational_limits&#39;][0] = min_limit_exceeded
+                            triggered = min_limit_exceeded
                         if &#39;max&#39; in configuration[&#39;operational_limit&#39;]:
                             max_limit_exceeded = True if float(configuration[&#39;operational_limit&#39;][&#39;max&#39;] &lt; float(value)) else False
                             self.cur_alerts[alert][&#39;operational_limits&#39;][1] = max_limit_exceeded
-                            
+                            triggered = max_limit_exceeded
+                        
+                        
                     # Retieve the last value and mask it to evaluate a specific flag, if it needs to be evaluated
                     elif &#39;mask&#39; in configuration:
                         timestamp, value = get_housekeeping(f&#39;{configuration[&#34;sensor&#34;]}&#39;)
@@ -485,32 +519,39 @@ class csAlertMonitoringWorker():
                             raise Exception(f&#34;HK value {configuration[&#39;sensor&#39;]} is more than 20 seconds old&#34;)
                         flag = True if (int(value) &gt;&gt; configuration[&#39;mask&#39;]) &amp; 0b1 else False
                         self.cur_alerts[alert][&#39;mask&#39;] = flag
+                        triggered = flag
                         
                     # Retrieve the last value and compare it to the configured setpoint, if it needs to be evaluated
                     elif &#39;setpoint&#39; in configuration:
                         timestamp, value = get_housekeeping(f&#39;{configuration[&#34;sensor&#34;]}&#39;)
                         
-                        if time() - (timestamp - EPOCH_1958_1970) &gt; 20 or time() - (int(sp_timestamp) - EPOCH_1958_1970) &gt; 20:
-                            raise Exception(f&#34;HK value {configuration[&#39;sensor&#39;]} is more than 20 seconds old&#34;)
                         if configuration[&#39;setpoint&#39;][&#39;value&#39;]:
                             sp_timestamp = time() + EPOCH_1958_1970
                             sp_limit = configuration[&#39;setpoint&#39;][&#39;value&#39;]
                         elif configuration[&#39;setpoint&#39;][&#39;sensor&#39;]:
                             sp_timestamp, sp_limit = get_housekeeping(f&#39;{configuration[&#34;setpoint&#34;][&#34;sensor&#34;]}&#39;)
+                        if time() - (timestamp - EPOCH_1958_1970) &gt; 20 or time() - (int(sp_timestamp) - EPOCH_1958_1970) &gt; 20:
+                            raise Exception(f&#34;HK value {configuration[&#39;sensor&#39;]} is more than 20 seconds old&#34;)
                         setpoint_exceeded = False if (float(sp_limit) - configuration[&#39;setpoint&#39;][&#39;offset&#39;]) &lt;= float(value) &lt;= (float(sp_limit) + configuration[&#39;setpoint&#39;][&#39;offset&#39;]) else True
                         self.cur_alerts[alert][&#39;setpoint&#39;] = setpoint_exceeded
+                        triggered = setpoint_exceeded
                     
-                    triggered = roc_exceeded or min_limit_exceeded or max_limit_exceeded or flag or setpoint_exceeded
+                    # triggered = roc_exceeded or min_limit_exceeded or max_limit_exceeded or flag or setpoint_exceeded
+                    self.cur_value[alert] = value
                     
                     if triggered:
                         if self._prev_alerts[alert][&#39;timeout&#39;] != None:
                             configured_timeout = configuration[&#39;timeout&#39;] if configuration[&#39;timeout&#39;] else 5
                             if (time() - self._prev_alerts[alert][&#39;timeout&#39;] &gt; configured_timeout):
-                                self.cur_value[alert] = value
                                 if self.cur_alerts[alert] != self._prev_alerts[alert]:
                                     if any(self.cur_alerts[alert]):
                                         if any(self.cur_alerts[alert][&#39;operational_limits&#39;]):
-                                            limit_text += f&#34;\t-  {alert} exceeded its operational limits of {configuration[&#39;operational_limit&#39;][&#39;min&#39;]}, {configuration[&#39;operational_limit&#39;][&#39;max&#39;]}: {value}\n&#34;
+                                            if &#39;min&#39; in configuration[&#39;operational_limit&#39;] and &#39;max&#39; in configuration[&#39;operational_limit&#39;]:
+                                                limit_text += f&#34;\t-  {alert} exceeded its operational limits of {configuration[&#39;operational_limit&#39;][&#39;min&#39;]}, {configuration[&#39;operational_limit&#39;][&#39;max&#39;]}: {value}\n&#34;
+                                            if &#39;min&#39; in configuration[&#39;operational_limit&#39;]:
+                                                limit_text += f&#34;\t-  {alert} exceeded its operational limits of {configuration[&#39;operational_limit&#39;][&#39;min&#39;]}: {value}\n&#34;     
+                                            if &#39;max&#39; in configuration[&#39;operational_limit&#39;]:
+                                                limit_text += f&#34;\t-  {alert} exceeded its operational limits of {configuration[&#39;operational_limit&#39;][&#39;max&#39;]}: {value}\n&#34; 
                                             actions += f&#34;\t-  ({alert}): {configuration[&#39;actions&#39;]}\n&#34;
                                         if self.cur_alerts[alert][&#39;rate_of_change&#39;]:
                                             limit_text += f&#34;\t-  {alert} has exceeded its RoC limit of {configuration[&#39;rate_of_change&#39;][&#39;limit&#39;]}. Current RoC: {value}\n&#34;     
@@ -523,19 +564,21 @@ class csAlertMonitoringWorker():
                                             actions += f&#34;\t-  ({alert}): {configuration[&#39;actions&#39;]}\n&#34;
                                             
                                         # Signal FDIR Manager if there is an associated FDIR code
-                                        if &#39;fdir_code&#39; in configuration:
-                                            fdir_text += f&#34;FDIR code &#39;{configuration[&#39;fdir_code&#39;]}&#39; was fired\n&#34;
+                                        if &#39;fdir&#39; in configuration:
+                                            fdir_text += f&#34;FDIR code &#39;{configuration[&#39;fdir&#39;]}&#39; was fired\n&#34;
                                             with FdirManagerProxy() as fdir:
                                                 if fdir.is_cs_connected():
-                                                    fdir.signal_fdir(configuration[&#39;fdir_code&#39;])
+                                                    logger.info(f&#34;Firing FDIR code: {configuration[&#39;fdir&#39;]}&#34;)
+                                                    fdir.signal_fdir(configuration[&#39;fdir&#39;], configuration[&#39;sensor&#39;])
                                                 else:
-                                                    logger.critical(f&#34;Could not pass FDIR code: {configuration[&#39;fdir_code&#39;]}. Please check if FDIR manager is online!&#34;)
-                                    self._prev_alerts[alert] = deepcopy(self.cur_alerts[alert])
+                                                    logger.critical(f&#34;Could not pass FDIR code: {configuration[&#39;fdir&#39;]}. Please check if FDIR manager is online!&#34;)
                         else:
                             self._prev_alerts[alert][&#39;timeout&#39;] = time()
                     else:
                         self._prev_alerts[&#39;timeout&#39;] = None     
-                                                       
+                    
+                    self._prev_alerts[alert] = deepcopy(self.cur_alerts[alert])                           
+                
                 except Exception as exc:
                     logger.warning(f&#34;{exc}&#34;)
 
@@ -573,14 +616,13 @@ class csAlertMonitoringWorker():
             try:
                 
                 triggered = None
-                
                 # Retrieve the values within a specific window, if the rate of change needs to be evaluated
                 if &#39;rate_of_change&#39; in configuration:
                     value = calculate_roc(configuration[&#39;sensor&#39;], configuration[&#39;rate_of_change&#39;][&#39;time_window&#39;])
                     
                     roc_exceeded = True if float(value) &gt; float(configuration[&#39;rate_of_change&#39;][&#39;limit&#39;]) else False
                     self.cur_alerts[alert][&#39;rate_of_change&#39;] = roc_exceeded
-
+                    triggered = roc_exceeded
                     
                 # Retrieve the last value and compare to the limits, if the operational limit needs to be evaluated
                 elif &#39;operational_limit&#39; in configuration:
@@ -591,10 +633,13 @@ class csAlertMonitoringWorker():
                     if &#39;min&#39; in configuration[&#39;operational_limit&#39;]:
                         min_limit_exceeded = True if float(configuration[&#39;operational_limit&#39;][&#39;min&#39;] &gt; float(value)) else False
                         self.cur_alerts[alert][&#39;operational_limits&#39;][0] = min_limit_exceeded
+                        triggered = min_limit_exceeded
                     if &#39;max&#39; in configuration[&#39;operational_limit&#39;]:
                         max_limit_exceeded = True if float(configuration[&#39;operational_limit&#39;][&#39;max&#39;] &lt; float(value)) else False
                         self.cur_alerts[alert][&#39;operational_limits&#39;][1] = max_limit_exceeded
-                        
+                        triggered = max_limit_exceeded
+                    
+                    
                 # Retieve the last value and mask it to evaluate a specific flag, if it needs to be evaluated
                 elif &#39;mask&#39; in configuration:
                     timestamp, value = get_housekeeping(f&#39;{configuration[&#34;sensor&#34;]}&#39;)
@@ -603,32 +648,39 @@ class csAlertMonitoringWorker():
                         raise Exception(f&#34;HK value {configuration[&#39;sensor&#39;]} is more than 20 seconds old&#34;)
                     flag = True if (int(value) &gt;&gt; configuration[&#39;mask&#39;]) &amp; 0b1 else False
                     self.cur_alerts[alert][&#39;mask&#39;] = flag
+                    triggered = flag
                     
                 # Retrieve the last value and compare it to the configured setpoint, if it needs to be evaluated
                 elif &#39;setpoint&#39; in configuration:
                     timestamp, value = get_housekeeping(f&#39;{configuration[&#34;sensor&#34;]}&#39;)
                     
-                    if time() - (timestamp - EPOCH_1958_1970) &gt; 20 or time() - (int(sp_timestamp) - EPOCH_1958_1970) &gt; 20:
-                        raise Exception(f&#34;HK value {configuration[&#39;sensor&#39;]} is more than 20 seconds old&#34;)
                     if configuration[&#39;setpoint&#39;][&#39;value&#39;]:
                         sp_timestamp = time() + EPOCH_1958_1970
                         sp_limit = configuration[&#39;setpoint&#39;][&#39;value&#39;]
                     elif configuration[&#39;setpoint&#39;][&#39;sensor&#39;]:
                         sp_timestamp, sp_limit = get_housekeeping(f&#39;{configuration[&#34;setpoint&#34;][&#34;sensor&#34;]}&#39;)
+                    if time() - (timestamp - EPOCH_1958_1970) &gt; 20 or time() - (int(sp_timestamp) - EPOCH_1958_1970) &gt; 20:
+                        raise Exception(f&#34;HK value {configuration[&#39;sensor&#39;]} is more than 20 seconds old&#34;)
                     setpoint_exceeded = False if (float(sp_limit) - configuration[&#39;setpoint&#39;][&#39;offset&#39;]) &lt;= float(value) &lt;= (float(sp_limit) + configuration[&#39;setpoint&#39;][&#39;offset&#39;]) else True
                     self.cur_alerts[alert][&#39;setpoint&#39;] = setpoint_exceeded
+                    triggered = setpoint_exceeded
                 
-                triggered = roc_exceeded or min_limit_exceeded or max_limit_exceeded or flag or setpoint_exceeded
+                # triggered = roc_exceeded or min_limit_exceeded or max_limit_exceeded or flag or setpoint_exceeded
+                self.cur_value[alert] = value
                 
                 if triggered:
                     if self._prev_alerts[alert][&#39;timeout&#39;] != None:
                         configured_timeout = configuration[&#39;timeout&#39;] if configuration[&#39;timeout&#39;] else 5
                         if (time() - self._prev_alerts[alert][&#39;timeout&#39;] &gt; configured_timeout):
-                            self.cur_value[alert] = value
                             if self.cur_alerts[alert] != self._prev_alerts[alert]:
                                 if any(self.cur_alerts[alert]):
                                     if any(self.cur_alerts[alert][&#39;operational_limits&#39;]):
-                                        limit_text += f&#34;\t-  {alert} exceeded its operational limits of {configuration[&#39;operational_limit&#39;][&#39;min&#39;]}, {configuration[&#39;operational_limit&#39;][&#39;max&#39;]}: {value}\n&#34;
+                                        if &#39;min&#39; in configuration[&#39;operational_limit&#39;] and &#39;max&#39; in configuration[&#39;operational_limit&#39;]:
+                                            limit_text += f&#34;\t-  {alert} exceeded its operational limits of {configuration[&#39;operational_limit&#39;][&#39;min&#39;]}, {configuration[&#39;operational_limit&#39;][&#39;max&#39;]}: {value}\n&#34;
+                                        if &#39;min&#39; in configuration[&#39;operational_limit&#39;]:
+                                            limit_text += f&#34;\t-  {alert} exceeded its operational limits of {configuration[&#39;operational_limit&#39;][&#39;min&#39;]}: {value}\n&#34;     
+                                        if &#39;max&#39; in configuration[&#39;operational_limit&#39;]:
+                                            limit_text += f&#34;\t-  {alert} exceeded its operational limits of {configuration[&#39;operational_limit&#39;][&#39;max&#39;]}: {value}\n&#34; 
                                         actions += f&#34;\t-  ({alert}): {configuration[&#39;actions&#39;]}\n&#34;
                                     if self.cur_alerts[alert][&#39;rate_of_change&#39;]:
                                         limit_text += f&#34;\t-  {alert} has exceeded its RoC limit of {configuration[&#39;rate_of_change&#39;][&#39;limit&#39;]}. Current RoC: {value}\n&#34;     
@@ -641,19 +693,21 @@ class csAlertMonitoringWorker():
                                         actions += f&#34;\t-  ({alert}): {configuration[&#39;actions&#39;]}\n&#34;
                                         
                                     # Signal FDIR Manager if there is an associated FDIR code
-                                    if &#39;fdir_code&#39; in configuration:
-                                        fdir_text += f&#34;FDIR code &#39;{configuration[&#39;fdir_code&#39;]}&#39; was fired\n&#34;
+                                    if &#39;fdir&#39; in configuration:
+                                        fdir_text += f&#34;FDIR code &#39;{configuration[&#39;fdir&#39;]}&#39; was fired\n&#34;
                                         with FdirManagerProxy() as fdir:
                                             if fdir.is_cs_connected():
-                                                fdir.signal_fdir(configuration[&#39;fdir_code&#39;])
+                                                logger.info(f&#34;Firing FDIR code: {configuration[&#39;fdir&#39;]}&#34;)
+                                                fdir.signal_fdir(configuration[&#39;fdir&#39;], configuration[&#39;sensor&#39;])
                                             else:
-                                                logger.critical(f&#34;Could not pass FDIR code: {configuration[&#39;fdir_code&#39;]}. Please check if FDIR manager is online!&#34;)
-                                self._prev_alerts[alert] = deepcopy(self.cur_alerts[alert])
+                                                logger.critical(f&#34;Could not pass FDIR code: {configuration[&#39;fdir&#39;]}. Please check if FDIR manager is online!&#34;)
                     else:
                         self._prev_alerts[alert][&#39;timeout&#39;] = time()
                 else:
                     self._prev_alerts[&#39;timeout&#39;] = None     
-                                                   
+                
+                self._prev_alerts[alert] = deepcopy(self.cur_alerts[alert])                           
+            
             except Exception as exc:
                 logger.warning(f&#34;{exc}&#34;)
 

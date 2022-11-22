@@ -32,17 +32,18 @@ import multiprocessing
 import pickle
 import threading
 from enum import Enum
+from pathlib import Path
 
 import sys
 import time
 import zmq
-from PyQt5.QtCore import QObject
+from PyQt5.QtCore import QObject, QLockFile
 from PyQt5.QtCore import QThread
 from PyQt5.QtCore import Qt
 from PyQt5.QtCore import pyqtSignal
 from PyQt5.QtCore import pyqtSlot
-from PyQt5.QtGui import QCloseEvent
-from PyQt5.QtWidgets import QApplication, QScrollArea
+from PyQt5.QtGui import QCloseEvent, QIcon
+from PyQt5.QtWidgets import QApplication, QScrollArea, QAction, QWidget, QSizePolicy, QMessageBox
 from PyQt5.QtWidgets import QFrame
 from PyQt5.QtWidgets import QGridLayout
 from PyQt5.QtWidgets import QGroupBox
@@ -52,19 +53,21 @@ from PyQt5.QtWidgets import QMainWindow
 from PyQt5.QtWidgets import QVBoxLayout
 from prometheus_client import start_http_server
 
-from egse.config import set_logger_levels
 from egse.confman import ConfigurationManagerProxy
 from egse.confman import is_configuration_manager_active
-from egse.control import is_control_server_active
+from egse.control import is_control_server_active, Response, Failure
+from egse.device import DeviceInterface
 from egse.gui import show_info_message
 from egse.gui.buttons import ToggleButton, TouchButton
 from egse.gui.led import Indic
 from egse.gui.led import LED
+from egse.obsid import ObservationIdentifier
 from egse.process import ProcessStatus
 from egse.process import SubProcess
 from egse.procman import ProcessManagerProxy
 from egse.resource import get_resource
 from egse.settings import Settings
+from egse.setup import Setup
 from egse.system import do_every
 from egse.system import find_class
 from egse.zmq_ser import connect_address
@@ -74,7 +77,7 @@ logging.basicConfig(level=logging.INFO, format=Settings.LOG_FORMAT_FULL)
 
 GUI_SETTINGS = Settings.load(&#34;PM GUI&#34;)
 LOGGER = logging.getLogger(__name__)
-
+SITE = Settings.load(&#34;SITE&#34;)
 
 class FILE_GENERATION_PROCESS_NAMES(str, Enum):
 
@@ -208,6 +211,7 @@ class MonitoringWorker(QObject):
 
         self.process_name = process_name
         self.proxy_type = process_info[0]
+        self.proxy_type_as_type = find_class(self.proxy_type[7:])
         self.device_args = process_info[1]
 
         self.monitoring_socket = None
@@ -346,6 +350,9 @@ class MonitoringWorker(QObject):
                     else:
                         process_status[&#34;Color&#34;], process_status[&#34;Simulator&#34;] = self.get_device_process_status()
 
+                        if not issubclass(self.proxy_type_as_type, DeviceInterface):
+                            process_status.pop(&#34;Simulator&#34;)
+
                     if self.previous_state != process_status[&#34;Color&#34;]:
 
                         self.process_status_signal.emit(process_status)
@@ -397,22 +404,32 @@ class MonitoringWorker(QObject):
 
             with find_class(self.proxy_type)(*self.device_args) as process_proxy:
 
-                try:
+                # CS that are supposed to connect to a H/W unit (controller)
 
-                    # CS connected to Controller -&gt; green
+                if isinstance(process_proxy, DeviceInterface):
 
-                    if process_proxy.is_connected():
+                    try:
+
+                        # CS connected to Controller -&gt; green
+
+                        if process_proxy.is_connected():
+                            color = Indic.GREEN
+
+                        # CS not connected to Controller -&gt; orange
+
+                        else:
+                            color = Indic.ORANGE
+
+                    except AttributeError:
                         color = Indic.GREEN
 
-                    # CS not connected to Controller -&gt; orange
+                    is_simulator = process_proxy.is_simulator()
 
-                    else:
-                        color = Indic.ORANGE
+                # CS that do not control any device (e.g. FDIR, alert manager, etc.)
 
-                except AttributeError:
+                else:
                     color = Indic.GREEN
-
-                is_simulator = process_proxy.is_simulator()
+                    is_simulator = False
 
         except ConnectionError:
             pass
@@ -515,8 +532,10 @@ class ProcessWidget(QGroupBox):
 
         self.process_name = process_name
         self.proxy_type = process_info[0]
+        self.proxy_type_as_type = find_class(self.proxy_type[7:])
         self.device_args = process_info[1]
         self.is_simulator_mode = False
+        self.is_device = True
 
         self.parent = parent
 
@@ -564,8 +583,8 @@ class ProcessWidget(QGroupBox):
 
             self.start_stop_button = ToggleButton(name=f&#34;Start / shut down the {self.process_name} control server.&#34;,
                                                   status_tip=f&#34;Start / shut down the {self.process_name} control server.&#34;,
-                                                  selected=get_resource(&#34;:/icons/play-green.svg&#34;),
-                                                  not_selected=get_resource(&#34;:/icons/stop-red.svg&#34;),
+                                                  selected=get_resource(&#34;:/images/play-button.svg&#34;),
+                                                  not_selected=get_resource(&#34;:/images/stop-button.svg&#34;),
                                                   disabled=[get_resource(&#34;:/icons/busy.svg&#34;),
                                                             get_resource(&#34;:/icons/busy.svg&#34;)]
                                                   )
@@ -574,16 +593,27 @@ class ProcessWidget(QGroupBox):
             layout.addWidget(self.start_stop_button, 0, index)
             index += 1
 
-            self.sim_option_button = ToggleButton(name=f&#34;Operational vs. simulator mode&#34;,
-                                                  status_tip=f&#34;Indicate whether you want to start the &#34;
-                                                             f&#34;{self.process_name} Control Server in operational or in &#34;
-                                                             f&#34;simulator mode.&#34;,
-                                                  selected=get_resource(&#34;:/icons/sim-mode.svg&#34;),
-                                                  not_selected=get_resource(&#34;:/icons/ops-mode.svg&#34;),
-                                                  disabled=[get_resource(&#34;:/icons/sim-mode.svg&#34;),
-                                                            get_resource(&#34;:/icons/ops-mode.svg&#34;)]
-                                                  )
-            self.sim_option_button.set_selected(False)  # Default: operational mode
+            if issubclass(self.proxy_type_as_type, DeviceInterface):
+                self.sim_option_button = ToggleButton(name=f&#34;Operational vs. simulator mode&#34;,
+                                                      status_tip=f&#34;Indicate whether you want to start the &#34;
+                                                                 f&#34;{self.process_name} Control Server in operational or in &#34;
+                                                                 f&#34;simulator mode.&#34;,
+                                                      selected=get_resource(&#34;:/icons/sim-mode.svg&#34;),
+                                                      not_selected=get_resource(&#34;:/icons/ops-mode.svg&#34;),
+                                                      disabled=[get_resource(&#34;:/icons/sim-mode.svg&#34;),
+                                                                get_resource(&#34;:/icons/ops-mode.svg&#34;)]
+                                                      )
+                self.sim_option_button.set_selected(False)  # Default: operational mode
+            else:
+                self.sim_option_button = ToggleButton(name=f&#34;Operational vs. simulator mode&#34;,
+                                                      status_tip=f&#34;The {self.process_name} Control Server can only be &#34;
+                                                                 f&#34;started in operational mode.&#34;,
+                                                      selected=get_resource(&#34;:/icons/ops-mode.svg&#34;),
+                                                      not_selected=get_resource(&#34;:/icons/ops-mode.svg&#34;),
+                                                      disabled=[get_resource(&#34;:/icons/ops-mode.svg&#34;),
+                                                                get_resource(&#34;:/icons/ops-mode.svg&#34;)]
+                                                      )
+                self.is_device = False
             self.sim_option_button.clicked.connect(self.set_cs_start_mode)
 
             if self.process_name == &#34;DAQ&#34;:
@@ -593,10 +623,6 @@ class ProcessWidget(QGroupBox):
                 self.sim_option_button.setEnabled(False)    # Only in operational mode
                 self.sim_option_button.setStatusTip(f&#34;The {self.process_name} and its data acquisition can only be&#34;
                                                     f&#34;started in operational mode.&#34;)
-
-            if self.process_name == &#34;DPU&#34;:
-
-                self.sim_option_button.setEnabled(False)    # Only in operational mode
 
             layout.addWidget(self.sim_option_button, 0, index)
             index += 1
@@ -660,21 +686,39 @@ class ProcessWidget(QGroupBox):
 
             with ProcessManagerProxy() as pm:
 
-                try:
-                    pm.start_cs(self.process_name, self.is_simulator_mode)
-                    self.sim_option_button.setDisabled(True)
+                response: Response = pm.start_cs(self.process_name, self.is_simulator_mode)
 
-                except ConnectionError:
-                    LOGGER.info(f&#34;Could not start Control Server for {self.process_name}&#34;)
+                if response.successful:
+                    self.sim_option_button.setDisabled(True)
+                else:
                     self.sim_option_button.setEnabled(True)
 
-        except ConnectionError:
+                    gui_process = SubProcess(&#34;MyApp&#34;, [sys.executable, &#34;-m&#34;, &#34;egse.procman.cannot_start_process_popup&#34;,
+                                                       &#34;--process_name&#34;, f&#34;{self.process_name} Control Server&#34;,
+                                                       &#34;--message&#34;, response.message])
+                    gui_process.execute(detach_from_parent=True)
 
-            LOGGER.critical(f&#34;Lost connection to Process Manager&#34;)
+                return response
+
+        #
+        #         try:
+        #             pm.start_cs(self.process_name, self.is_simulator_mode)
+        #             self.sim_option_button.setDisabled(True)
+        #
+        #         except ConnectionError:
+        #             LOGGER.info(f&#34;Could not start Control Server for {self.process_name}&#34;)
+        #             self.sim_option_button.setEnabled(True)
+        #
+        except ConnectionError as exc:
+
+            message = f&#34;Lost connection to Process Manager&#34;
+            LOGGER.critical(message, exc_info=True)
 
             self.sim_option_button.setEnabled(True)
             self.start_stop_button.setEnabled(True)
             self.start_stop_button.set_selected(True)
+
+            return Failure(message, cause=exc)
 
     def stop_cs(self):
 
@@ -799,8 +843,8 @@ class NonCSProcessWidget(QGroupBox):
 
             self.start_stop_button = ToggleButton(name=f&#34;Start / shut down the {self.process_name}.&#34;,
                                                   status_tip=f&#34;Start / shut down the {self.process_name}.&#34;,
-                                                  selected=get_resource(&#34;:/icons/play-green.svg&#34;),
-                                                  not_selected=get_resource(&#34;:/icons/stop-red.svg&#34;),
+                                                  selected=get_resource(&#34;:/images/play-button.svg&#34;),
+                                                  not_selected=get_resource(&#34;:/images/stop-button.svg&#34;),
                                                   disabled=[get_resource(&#34;:/icons/busy.svg&#34;),
                                                             get_resource(&#34;:/icons/busy.svg&#34;)]
                                                   )
@@ -886,7 +930,12 @@ class FitsgenWidget(NonCSProcessWidget):
 
     def start_service(self):
 
-        start_fitsgen()
+        response: Response = start_fitsgen()
+
+        if not response.successful:
+            gui_process = SubProcess(&#34;MyApp&#34;, [sys.executable, &#34;-m&#34;, &#34;egse.procman.cannot_start_process_popup&#34;,
+                                               &#34;--process_name&#34;, &#34;FITS generation&#34;, &#34;--message&#34;, response.message])
+            gui_process.execute(detach_from_parent=True)
 
     def stop_service(self):
 
@@ -902,7 +951,12 @@ class FovHkWidget(NonCSProcessWidget):
 
     def start_service(self):
 
-        start_fov_hk()
+        response: Response = start_fov_hk()
+
+        if not response.successful:
+            gui_process = SubProcess(&#34;MyApp&#34;, [sys.executable, &#34;-m&#34;, &#34;egse.procman.cannot_start_process_popup&#34;,
+                                               &#34;--process_name&#34;, &#34;FOV HK generation&#34;, &#34;--message&#34;, response.message])
+            gui_process.execute(detach_from_parent=True)
 
     def stop_service(self):
 
@@ -918,7 +972,12 @@ class NFeeHkWidget(NonCSProcessWidget):
 
     def start_service(self):
 
-        start_n_fee_hk()
+        response: Response = start_n_fee_hk()
+
+        if not response.successful:
+            gui_process = SubProcess(&#34;MyApp&#34;, [sys.executable, &#34;-m&#34;, &#34;egse.procman.cannot_start_process_popup&#34;,
+                                               &#34;--process_name&#34;, &#34;N-FEE HK generation&#34;, &#34;--message&#34;, response.message])
+            gui_process.execute(detach_from_parent=True)
 
     def stop_service(self):
 
@@ -929,7 +988,7 @@ def start_fitsgen():
     &#34;&#34;&#34; Start the FITS generation.&#34;&#34;&#34;
 
     with ProcessManagerProxy() as pm:
-        pm.start_fitsgen()
+        return pm.start_fitsgen()
 
 
 def stop_fitsgen():
@@ -943,7 +1002,7 @@ def start_fov_hk():
     &#34;&#34;&#34; Start the generation of FOV HK.&#34;&#34;&#34;
 
     with ProcessManagerProxy() as pm:
-        pm.start_fov_hk()
+        return pm.start_fov_hk()
 
 
 def stop_fov_hk():
@@ -957,7 +1016,7 @@ def start_n_fee_hk():
     &#34;&#34;&#34; Start the generation of N-FEE HK.&#34;&#34;&#34;
 
     with ProcessManagerProxy() as pm:
-        pm.start_n_fee_hk()
+        return pm.start_n_fee_hk()
 
 
 def stop_n_fee_hk():
@@ -981,6 +1040,59 @@ def stop_egse():
         pm.shut_down_egse()
 
 
+def open_contingency_ui():
+    &#34;&#34;&#34; Open the contingency UI.&#34;&#34;&#34;
+
+    gui_process = SubProcess(&#34;MyApp&#34;, [&#34;contingency_ui&#34;])
+    gui_process.execute(detach_from_parent=True)
+
+
+def open_th_ui():
+    &#34;&#34;&#34; Open the TH Operator UI.&#34;&#34;&#34;
+
+    sitehash = {
+        &#34;CSL&#34;: get_csl_ui_process,
+        &#34;CSL1&#34;: get_csl_ui_process,
+        &#34;CSL2&#34;: get_csl_ui_process,
+        &#34;IAS&#34;: get_ias_ui_process,
+        &#34;INTA&#34;: get_inta_ui_process,
+        &#34;SRON&#34;: get_sron_ui_process,
+    }
+
+    gui_process = sitehash[SITE.ID]()
+    gui_process.execute(detach_from_parent=True)
+
+
+def get_csl_ui_process():
+    return SubProcess(&#34;MyApp&#34;, [&#34;csl_ui&#34;])
+
+
+def get_sron_ui_process():
+    return SubProcess(&#34;MyApp&#34;, [&#34;sron_ui&#34;])
+
+
+def get_ias_ui_process():
+    return SubProcess(&#34;MyApp&#34;, [&#34;ias_ui&#34;])
+
+
+def get_inta_ui_process():
+    return SubProcess(&#34;MyApp&#34;, [&#34;inta_ui&#34;])
+
+
+def open_fov_ui():
+    &#34;&#34;&#34; Open the FOV UI.&#34;&#34;&#34;
+
+    gui_process = SubProcess(&#34;MyApp&#34;, [&#34;fov_ui&#34;])
+    gui_process.execute(detach_from_parent=True)
+
+
+def open_visited_positions_ui():
+    &#34;&#34;&#34; Open the visited-positions UI.&#34;&#34;&#34;
+
+    gui_process = SubProcess(&#34;MyApp&#34;, [&#34;visited_positions_ui&#34;])
+    gui_process.execute(detach_from_parent=True)
+
+
 class ProcessManagerUIView(QMainWindow):
 
     def __init__(self):
@@ -992,7 +1104,7 @@ class ProcessManagerUIView(QMainWindow):
 
         super().__init__()
 
-        self.setGeometry(300, 300, 150, 1000)
+        self.setGeometry(300, 300, 1000, 1000)
         self.setWindowTitle(&#34;Process Manager&#34;)
 
         self.processes = {}
@@ -1091,51 +1203,76 @@ class ProcessManagerUIView(QMainWindow):
         self.create_toolbar()
         self.create_statusbar()
 
-        layout = QHBoxLayout()
-        vbox = QVBoxLayout()
+        scroll = QScrollArea()
+        # widget_frame = QFrame()
+
+        hbox = QHBoxLayout()
+        vbox_left = QVBoxLayout()
+        vbox_right = QVBoxLayout()
+        hbox.addLayout(vbox_left)
+        hbox.addLayout(vbox_right)
+
+        vbox_right.addStretch()
+
+        app_frame.setLayout(hbox)
 
         # Obsid
 
+        info_gridbox = QGridLayout()
+
         self.obsid = QLabel(&#34;No observation is running&#34;)
         self.setStyleSheet(&#39;QMainWindow{border: 3px solid green;}&#39;)
-        vbox.addWidget(self.obsid)
-        vbox.addWidget(QLabel())
+        info_gridbox.addWidget(QLabel(&#34;Obsid:&#34;), 0, 0)
+        info_gridbox.addWidget(self.obsid, 0, 1)
 
-        # Left-hand side: one process widget per process
 
-        widget_frame = QFrame()
+        self.setup_id = QLabel(&#34;No setup loaded&#34;)
+        info_gridbox.addWidget(QLabel(&#34;Setup ID:&#34;), 1, 0)
+        info_gridbox.addWidget(self.setup_id, 1, 1)
 
-        self.overview_widget_devices_layout = QVBoxLayout()
-        self.overview_widget_devices_layout.addStretch()
-        self.overview_widget_devices = QGroupBox(&#34;Devices&#34;, self)
-        self.overview_widget_devices.setLayout(self.overview_widget_devices_layout)
-        self.overview_widget_devices.setToolTip(
-            &#34;EGSE device processes:\n&#34; +
+        self.camera_id = QLabel(&#34;Camera ID unknown&#34;)
+        info_gridbox.addWidget(QLabel(&#34;Camera ID:&#34;), 2, 0)
+        info_gridbox.addWidget(self.camera_id, 2, 1)
+
+        self.csl_hexapod_id = QLabel(&#34;Hexapod ID unknown&#34;)
+        if &#34;CSL&#34; in SITE.ID:
+            info_gridbox.addWidget(QLabel(&#34;Hexapod ID:&#34;), 3, 0)
+            info_gridbox.addWidget(self.csl_hexapod_id, 3, 1)
+
+        vbox_left.addLayout(info_gridbox)
+        vbox_left.addWidget(QLabel())
+
+        self.overview_widget_device_cs_layout = QVBoxLayout()
+        self.overview_widget_device_cs_layout.addStretch()
+        self.overview_widget_device_cs = QGroupBox(&#34;Device Control Servers&#34;, self)
+        self.overview_widget_device_cs.setLayout(self.overview_widget_device_cs_layout)
+        self.overview_widget_device_cs.setToolTip(
+            &#34;EGSE device control servers:\n&#34; +
             &#34;can be started in this GUI or on the command line.&#34;)
 
+        self.overview_widget_non_device_cs_layout = QVBoxLayout()
+        self.overview_widget_non_device_cs_layout.addStretch()
+        self.overview_widget_non_device_cs = QGroupBox(&#34;Non-Device Control Servers&#34;, self)
+        self.overview_widget_non_device_cs.setLayout(self.overview_widget_non_device_cs_layout)
+        self.overview_widget_non_device_cs.setToolTip(
+            &#34;EGSE non-device control servers:\n&#34; +
+            &#34;can be started in this GUI or on the command line (operational mode only).&#34;)
+
         self.create_overview_widget_core()
-        vbox.addWidget(self.overview_widget_core)
+        vbox_left.addWidget(self.overview_widget_core)
 
         self.create_overview_widget_file_services()
-        vbox.addWidget(self.overview_widget_file_services)
+        vbox_left.addWidget(self.overview_widget_file_services)
 
-        vbox.addWidget(self.overview_widget_devices)
+        vbox_right.addWidget(self.overview_widget_device_cs)
+        vbox_left.addWidget(self.overview_widget_non_device_cs)
 
-        widget_frame.setLayout(vbox)
-        # layout.addWidget(widget_frame)
-
-        scroll = QScrollArea()
-        scroll.setWidget(widget_frame)
-        scroll.setWidgetResizable(True)
         scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        # scroll.setFixedHeight(400)
-        scroll.setFixedWidth(550)
-        layout.addWidget(scroll)
+        scroll.setWidgetResizable(True)
 
-        app_frame.setLayout(layout)
-
-        self.setCentralWidget(app_frame)
+        scroll.setWidget(app_frame)
+        self.setCentralWidget(scroll)
 
     def start_monitoring(self) -&gt; object:
         &#34;&#34;&#34; Start listening on the monitoring port.
@@ -1161,7 +1298,7 @@ class ProcessManagerUIView(QMainWindow):
 
             self.monitoring_threads[process_name].start()
 
-    def on_setup_changed_signal(self, setup):
+    def on_setup_changed_signal(self, setup: Setup):
         &#34;&#34;&#34; Re-build the GUI after a change in setup.
 
         Args:
@@ -1180,6 +1317,8 @@ class ProcessManagerUIView(QMainWindow):
 
             self.monitoring_workers[process_name].stop()
             self.monitoring_threads[process_name].quit()
+
+        for process_name in self.processes.keys():
             self.monitoring_threads[process_name].wait()
 
         self.monitoring_workers.clear()
@@ -1196,9 +1335,16 @@ class ProcessManagerUIView(QMainWindow):
 
         # Remove the widgets from the layouts
 
-        while self.overview_widget_devices_layout.count():
+        while self.overview_widget_device_cs_layout.count():
 
-            widget = self.overview_widget_devices_layout.takeAt(0).widget()
+            widget = self.overview_widget_device_cs_layout.takeAt(0).widget()
+
+            if widget is not None:
+                widget.deleteLater()
+
+        while self.overview_widget_non_device_cs_layout.count():
+
+            widget = self.overview_widget_non_device_cs_layout.takeAt(0).widget()
 
             if widget is not None:
                 widget.deleteLater()
@@ -1230,13 +1376,17 @@ class ProcessManagerUIView(QMainWindow):
 
             self.process_widgets[process_name] = process_widget
 
-            self.overview_widget_devices_layout.addWidget(process_widget)
+            if process_widget.is_device:
+                self.overview_widget_device_cs_layout.addWidget(process_widget)
+            else:
+                self.overview_widget_non_device_cs_layout.addWidget(process_widget)
 
         self.process_widgets.update(self.process_widgets_core)
 
         # Make sure the boxes stay nicely together when vertically resizing
 
-        self.overview_widget_devices_layout.addStretch()
+        self.overview_widget_device_cs_layout.addStretch()
+        self.overview_widget_non_device_cs_layout.addStretch()
 
         # Start monitoring the process status
 
@@ -1256,7 +1406,22 @@ class ProcessManagerUIView(QMainWindow):
             self.start_aeu_button.setEnabled(False)
             self.stop_aeu_button.setEnabled(False)
 
-    def on_obsid_changed_signal(self, obsid):
+        self.setup_id.setText(f&#34;{setup.get_id()}&#34;)
+
+        try:
+            cam_id = setup.camera.ID
+            if cam_id != &#34;EM&#34;:
+                self.camera_id.setToolTip(&#34;Ah, beer!  The cause of and the solution to all of life&#39;s problems!&#34;)
+            self.camera_id.setText(cam_id)
+        except AttributeError:
+            self.camera_id.setText(&#34;Camera ID unknown&#34;)
+
+        try:
+            self.csl_hexapod_id.setText(str(setup.gse.hexapod.ID))
+        except AttributeError:
+            self.csl_hexapod_id.setText(&#34;Hexapod ID unknown&#34;)
+
+    def on_obsid_changed_signal(self, obsid: ObservationIdentifier):
         &#34;&#34;&#34; Update the GUI for the new obsid.
 
         Args:
@@ -1270,7 +1435,7 @@ class ProcessManagerUIView(QMainWindow):
 
         else:
 
-            self.obsid.setText(f&#34;Observation {obsid} is running&#34;)
+            self.obsid.setText(str(obsid))
             self.setStyleSheet(&#39;QMainWindow{border: 3px solid red;}&#39;)
 
     def on_process_status_signal(self, process_info):
@@ -1404,8 +1569,6 @@ class ProcessManagerUIView(QMainWindow):
                 self.processes.update(self.core)
                 self.processes.update(self.devices)
 
-                print(self.processes)
-
         except ConnectionError:
 
             self.devices = {}
@@ -1452,34 +1615,49 @@ class ProcessManagerUIView(QMainWindow):
                                             )
         self.stop_aeu_button.clicked.connect(self.stop_all_aeu_cs)
 
-        # self.fitsgen_button = ToggleButton(name=&#34;FITS generator&#34;,
-        #                                    selected=get_resource(&#34;:/icons/fitsgen-start.svg&#34;),
-        #                                    not_selected=get_resource(&#34;:/icons/fitsgen-stop.svg&#34;),
-        #                                    status_tip=&#34;Start/stop the FITS generation.&#34;)
-        # self.fitsgen_button.clicked.connect(self.start_stop_fitsgen)
-        #
-        # self.fov_hk_button = ToggleButton(name=&#34;FOV HK&#34;,
-        #                                   selected=get_resource(&#34;:/icons/fov-hk-start.svg&#34;),
-        #                                   not_selected=get_resource(&#34;:/icons/fov-hk-stop.svg&#34;),
-        #                                   status_tip=&#34;Start/stop the FOV HK generation.&#34;)
-        # self.fov_hk_button.clicked.connect(self.start_stop_fov_hk)
-        #
-        # self.n_fee_hk_button = ToggleButton(name=&#34;N-FEE HK generator&#34;,
-        #                                     selected=get_resource(&#34;:/icons/n-fee-hk-start.svg&#34;),
-        #                                     not_selected=get_resource(&#34;:/icons/n-fee-hk-stop.svg&#34;),
-        #                                     status_tip=&#34;Start/stop the N-FEE HK generation.&#34;)
-        # self.n_fee_hk_button.clicked.connect(self.start_stop_n_fee_hk)
+        contingency_icon = QIcon(str(get_resource(&#34;:/icons/radioactive.svg&#34;)))
+        contingency_action = QAction(contingency_icon, &#34;Open the contingency UI&#34;, self)
+        contingency_action.setToolTip(&#34;Open the contingency UI&#34;)
+        contingency_action.setCheckable(False)
+        contingency_action.triggered.connect(open_contingency_ui)
+
+        th_ui_icon = QIcon(str(get_resource(&#34;:/icons/th_ui_logo.svg&#34;)))
+        th_ui_action = QAction(th_ui_icon, f&#34;Open the {SITE.ID} Operator UI&#34;, self)
+        th_ui_action.setToolTip(f&#34;Open the {SITE.ID} Operator UI&#34;)
+        th_ui_action.setCheckable(False)
+        th_ui_action.triggered.connect(open_th_ui)
+
+        fov_ui_icon = QIcon(str(get_resource(&#34;:/icons/location-marker.svg&#34;)))  # TODO
+        fov_ui_action = QAction(fov_ui_icon, &#34;Open the FOV UI&#34;, self)
+        fov_ui_action.setToolTip(&#34;Open the FOV UI&#34;)
+        fov_ui_action.setCheckable(False)
+        fov_ui_action.triggered.connect(open_fov_ui)
+
+        visited_positions_ui_icon = QIcon(str(get_resource(&#34;:/icons/radar.svg&#34;)))    #TODO
+        visited_positions_ui_action = QAction(visited_positions_ui_icon, &#34;Open the visited-positions UI&#34;, self)
+        visited_positions_ui_action.setToolTip(&#34;Open the visited-positions UI&#34;)
+        visited_positions_ui_action.setCheckable(False)
+        visited_positions_ui_action.triggered.connect(open_visited_positions_ui)
 
         self.toolbar = self.addToolBar(&#34;MainToolbar&#34;)
         self.toolbar.addWidget(self.start_egse_button)
         self.toolbar.addWidget(self.stop_egse_button)
         self.toolbar.addSeparator()
-        # self.toolbar.addWidget(self.fitsgen_button)
-        # self.toolbar.addWidget(self.fov_hk_button)
-        # self.toolbar.addWidget(self.n_fee_hk_button)
-        # self.toolbar.addSeparator()
         self.toolbar.addWidget(self.start_aeu_button)
         self.toolbar.addWidget(self.stop_aeu_button)
+
+        spacer = QWidget()
+        spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.toolbar.addWidget(spacer)
+
+        if &#34;CSL&#34; in SITE.ID:
+            self.toolbar.addAction(fov_ui_action)
+        if &#34;CSL&#34; in SITE.ID or &#34;INTA&#34; in SITE.ID:   # Should go when SRON and IAS have their own Operator UI
+            self.toolbar.addAction(th_ui_action)
+            self.toolbar.addSeparator()
+
+        self.toolbar.addAction(visited_positions_ui_action)
+        self.toolbar.addAction(contingency_action)
 
         return self.toolbar
 
@@ -1489,7 +1667,6 @@ class ProcessManagerUIView(QMainWindow):
         self.statusBar().setStyleSheet(&#34;border: 0; background-color: #FFF8DC;&#34;)
         self.statusBar().setStyleSheet(&#34;QStatusBar::item {border: none;}&#34;)
         # self.statusBar().addPermanentWidget(VLine())
-
 
     def start_egse(self):
         &#34;&#34;&#34; Start all EGSE device Control Servers in one go.
@@ -1537,7 +1714,13 @@ class ProcessManagerUIView(QMainWindow):
                     self.monitoring_workers[process_name].start_stop_cs_button_clicked = True
 
                     sim_mode = self.process_widgets[process_name].is_simulator_mode
-                    pm.start_cs(process_name, sim_mode)
+                    response: Response = pm.start_cs(process_name, sim_mode)
+
+                    if not response.successful:
+                        gui_process = SubProcess(&#34;MyApp&#34;, [sys.executable, &#34;-m&#34;,
+                                                           &#34;egse.procman.cannot_start_process_popup&#34;, &#34;--process_name&#34;,
+                                                           process_name, &#34;--message&#34;, response.message])
+                        gui_process.execute(detach_from_parent=True)
 
     def stop_egse(self):
         &#34;&#34;&#34; Shut down all EGSE device Control Servers in one go.
@@ -1584,7 +1767,6 @@ class ProcessManagerUIView(QMainWindow):
                     self.monitoring_workers[process_name].start_stop_cs_button_clicked = True
                     pm.shut_down_cs(process_name)
 
-
     def start_all_aeu_cs(self):
         &#34;&#34;&#34; Start the AEU Control Servers in one go.&#34;&#34;&#34;
 
@@ -1626,7 +1808,14 @@ class ProcessManagerUIView(QMainWindow):
                         self.monitoring_workers[process_name].start_stop_cs_button_clicked = True
 
                         sim_mode = self.process_widgets[process_name].is_simulator_mode
-                        pm.start_cs(process_name, sim_mode)
+                        response: Response = pm.start_cs(process_name, sim_mode)
+
+                        if not response.successful:
+                            gui_process = SubProcess(&#34;MyApp&#34;, [sys.executable, &#34;-m&#34;,
+                                                               &#34;egse.procman.cannot_start_process_popup&#34;,
+                                                               &#34;--process_name&#34;, process_name,
+                                                               &#34;--message&#34;, response.message])
+                            gui_process.execute(detach_from_parent=True)
 
     def stop_all_aeu_cs(self):
         &#34;&#34;&#34; Shut down the AEU Control Servers in one go.&#34;&#34;&#34;
@@ -1666,6 +1855,7 @@ class ProcessManagerUIView(QMainWindow):
 
                         self.monitoring_workers[process_name].start_stop_cs_button_clicked = True
                         pm.shut_down_cs(process_name)
+
 
     # def start_stop_fitsgen(self):
     #     &#34;&#34;&#34; Start/stop the FITS generation.
@@ -1752,7 +1942,7 @@ class ProcessManagerUIView(QMainWindow):
         self.n_fee_hk_widget = NFeeHkWidget(self)
         self.overview_widget_file_services_layout.addWidget(self.n_fee_hk_widget)
 
-        self.overview_widget_file_services = QGroupBox(&#34;File generation&#34;, self)
+        self.overview_widget_file_services = QGroupBox(&#34;File Generation Processes&#34;, self)
         self.overview_widget_file_services.setLayout(self.overview_widget_file_services_layout)
         # self.overview_widget_file_services.setToolTip(
         #     &#34;EGSE core processes: must be running at all times.&#34;)
@@ -1764,34 +1954,35 @@ class ProcessManagerUIView(QMainWindow):
             - close_event: Close event received when the GUI is closed.
         &#34;&#34;&#34;
         for monitoring_worker in self.monitoring_workers.values():
-
             monitoring_worker.active = False
 
         for monitoring_thread in self.monitoring_threads.values():
-
             monitoring_thread.quit()
-            monitoring_thread.wait()
 
         self.setup_monitoring_worker.active = False
         self.setup_monitoring_thread.quit()
-        self.setup_monitoring_thread.wait()
 
         self.logger_monitoring_worker.active = False
         self.logger_monitoring_thread.quit()
-        self.logger_monitoring_thread.wait()
 
         self.fitsgen_monitoring_worker.active = False
         self.fitsgen_monitoring_thread.quit()
-        self.fitsgen_monitoring_thread.wait()
 
         self.fov_hk_monitoring_worker.active = False
         self.fov_hk_monitoring_thread.quit()
-        self.fov_hk_monitoring_thread.wait()
 
         self.n_fee_hk_monitoring_worker.active = False
         self.n_fee_hk_monitoring_thread.quit()
-        self.n_fee_hk_monitoring_thread.wait()
 
+        # Group the waiting
+        for monitoring_thread in self.monitoring_threads.values():
+            monitoring_thread.wait()
+
+        self.setup_monitoring_thread.wait()
+        self.logger_monitoring_thread.wait()
+        self.fitsgen_monitoring_thread.wait()
+        self.fov_hk_monitoring_thread.wait()
+        self.n_fee_hk_monitoring_thread.wait()
 
 class ProcessManagerUIModel:
 
@@ -1834,79 +2025,90 @@ class ProcessManagerUIController:
 
 def main():
     &#34;&#34;&#34; Main method to launch the Process Manager GUI.&#34;&#34;&#34;
+    lock_file = QLockFile(str(Path(&#34;~/pm_ui.app.lock&#34;).expanduser()))
 
     multiprocessing.current_process().name = &#34;pm_ui&#34;
-
-    process_status = ProcessStatus()
-
-    timer_thread = threading.Thread(target=do_every, args=(10, process_status.update))
-    timer_thread.daemon = True
-    timer_thread.start()
-
-    start_http_server(GUI_SETTINGS.METRICS_PORT)
-
     app = QApplication(sys.argv)
+    app.setWindowIcon(QIcon(str(get_resource(&#34;:/icons/pm_ui.svg&#34;))))
 
-    # Check whether the Process Manager CS is running
-    # (show a warning in a pop-up window if it&#39;s not)
+    if lock_file.tryLock(100):
+        process_status = ProcessStatus()
 
-    try:
+        timer_thread = threading.Thread(target=do_every, args=(10, process_status.update))
+        timer_thread.daemon = True
+        timer_thread.start()
 
-        with ProcessManagerProxy():
+        start_http_server(GUI_SETTINGS.METRICS_PORT)
 
-            if not is_configuration_manager_active():
 
-                description = &#34;Could not connect to Configuration Manager&#34;
-                into_text = (
-                    &#34;The GUI will start, but without listed processes. &#34;
-                    &#34;Please, check if the Configuration Manager is running and start the server if needed.&#34;
-                    # &#34;Otherwise, check if the correct HOSTNAME for the Configuration Manager is set in the &#34;
-                    # &#34;Settings.yaml &#34;
-                    # &#34;configuration file.&#34;
-                    &#34;The Process Manager GUI will have to be re-started after that.&#34;
-                )
+        # Check whether the Process Manager CS is running
+        # (show a warning in a pop-up window if it&#39;s not)
 
-                show_info_message(description, into_text)
+        try:
 
-    except ConnectionError:
+            with ProcessManagerProxy():
 
-        description = &#34;Could not connect to Process Manager Control Server&#34;
+                if not is_configuration_manager_active():
 
-        into_text = (
-            &#34;The GUI will start, but the connection button will show a disconnected state. &#34;
-            &#34;Please, check if the Control Server is running and start the server if needed. &#34;
-            &#34;Otherwise, check if the correct HOSTNAME for the control server is set in the &#34;
-            &#34;Settings.yaml &#34;
-            &#34;configuration file.&#34;
-        )
+                    description = &#34;Could not connect to Configuration Manager&#34;
+                    into_text = (
+                        &#34;The GUI will start, but without listed processes. &#34;
+                        &#34;Please, check if the Configuration Manager is running and start the server if needed.&#34;
+                        # &#34;Otherwise, check if the correct HOSTNAME for the Configuration Manager is set in the &#34;
+                        # &#34;Settings.yaml &#34;
+                        # &#34;configuration file.&#34;
+                        &#34;The Process Manager GUI will have to be re-started after that.&#34;
+                    )
 
-        show_info_message(description, into_text)
+                    show_info_message(description, into_text)
 
-    # proxy = ProcessManagerProxy()
+        except ConnectionError:
 
-    # if not proxy.ping():
-    #         description = &#34;Could not connect to Process Manager Control Server&#34;
-    #         into_text = (
-    #             &#34;The GUI will start, but the connection button will show a disconnected state. &#34;
-    #             &#34;Please check if the Control Server is running and start the server if needed. &#34;
-    #             &#34;Otherwise, check if the correct HOSTNAME for the control server is set in the &#34;
-    #             &#34;Settings.yaml &#34;
-    #             &#34;configuration file.&#34;
-    #         )
+            description = &#34;Could not connect to Process Manager Control Server&#34;
 
-    #         show_info_message(description, into_text)
+            into_text = (
+                &#34;The GUI will start, but the connection button will show a disconnected state. &#34;
+                &#34;Please, check if the Control Server is running and start the server if needed. &#34;
+                &#34;Otherwise, check if the correct HOSTNAME for the control server is set in the &#34;
+                &#34;Settings.yaml &#34;
+                &#34;configuration file.&#34;
+            )
 
-    # proxy.disconnect_cs()
+            show_info_message(description, into_text)
 
-    # Create the Process Manager GUI, following the MVC-model
+        # proxy = ProcessManagerProxy()
 
-    view = ProcessManagerUIView()
-    model = ProcessManagerUIModel()
-    ProcessManagerUIController(model, view)
+        # if not proxy.ping():
+        #         description = &#34;Could not connect to Process Manager Control Server&#34;
+        #         into_text = (
+        #             &#34;The GUI will start, but the connection button will show a disconnected state. &#34;
+        #             &#34;Please check if the Control Server is running and start the server if needed. &#34;
+        #             &#34;Otherwise, check if the correct HOSTNAME for the control server is set in the &#34;
+        #             &#34;Settings.yaml &#34;
+        #             &#34;configuration file.&#34;
+        #         )
 
-    view.show()
+        #         show_info_message(description, into_text)
 
-    return app.exec_()
+        # proxy.disconnect_cs()
+
+        # Create the Process Manager GUI, following the MVC-model
+
+        view = ProcessManagerUIView()
+        model = ProcessManagerUIModel()
+        ProcessManagerUIController(model, view)
+
+        view.show()
+
+        return app.exec_()
+    else:
+        error_message = QMessageBox()
+        error_message.setIcon(QMessageBox.Warning)
+        error_message.setWindowTitle(&#34;Error&#34;)
+        error_message.setText(&#34;The Process Manager (PM) GUI application is already running!&#34;)
+        error_message.setStandardButtons(QMessageBox.Ok)
+
+        return error_message.exec()
 
 
 if __name__ == &#39;__main__&#39;:
@@ -1921,6 +2123,58 @@ if __name__ == &#39;__main__&#39;:
 <section>
 <h2 class="section-title" id="header-functions">Functions</h2>
 <dl>
+<dt id="egse.procman.procman_ui.get_csl_ui_process"><code class="name flex">
+<span>def <span class="ident">get_csl_ui_process</span></span>(<span>)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_csl_ui_process():
+    return SubProcess(&#34;MyApp&#34;, [&#34;csl_ui&#34;])</code></pre>
+</details>
+</dd>
+<dt id="egse.procman.procman_ui.get_ias_ui_process"><code class="name flex">
+<span>def <span class="ident">get_ias_ui_process</span></span>(<span>)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_ias_ui_process():
+    return SubProcess(&#34;MyApp&#34;, [&#34;ias_ui&#34;])</code></pre>
+</details>
+</dd>
+<dt id="egse.procman.procman_ui.get_inta_ui_process"><code class="name flex">
+<span>def <span class="ident">get_inta_ui_process</span></span>(<span>)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_inta_ui_process():
+    return SubProcess(&#34;MyApp&#34;, [&#34;inta_ui&#34;])</code></pre>
+</details>
+</dd>
+<dt id="egse.procman.procman_ui.get_sron_ui_process"><code class="name flex">
+<span>def <span class="ident">get_sron_ui_process</span></span>(<span>)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_sron_ui_process():
+    return SubProcess(&#34;MyApp&#34;, [&#34;sron_ui&#34;])</code></pre>
+</details>
+</dd>
 <dt id="egse.procman.procman_ui.main"><code class="name flex">
 <span>def <span class="ident">main</span></span>(<span>)</span>
 </code></dt>
@@ -1932,79 +2186,163 @@ if __name__ == &#39;__main__&#39;:
 </summary>
 <pre><code class="python">def main():
     &#34;&#34;&#34; Main method to launch the Process Manager GUI.&#34;&#34;&#34;
+    lock_file = QLockFile(str(Path(&#34;~/pm_ui.app.lock&#34;).expanduser()))
 
     multiprocessing.current_process().name = &#34;pm_ui&#34;
-
-    process_status = ProcessStatus()
-
-    timer_thread = threading.Thread(target=do_every, args=(10, process_status.update))
-    timer_thread.daemon = True
-    timer_thread.start()
-
-    start_http_server(GUI_SETTINGS.METRICS_PORT)
-
     app = QApplication(sys.argv)
+    app.setWindowIcon(QIcon(str(get_resource(&#34;:/icons/pm_ui.svg&#34;))))
 
-    # Check whether the Process Manager CS is running
-    # (show a warning in a pop-up window if it&#39;s not)
+    if lock_file.tryLock(100):
+        process_status = ProcessStatus()
 
-    try:
+        timer_thread = threading.Thread(target=do_every, args=(10, process_status.update))
+        timer_thread.daemon = True
+        timer_thread.start()
 
-        with ProcessManagerProxy():
+        start_http_server(GUI_SETTINGS.METRICS_PORT)
 
-            if not is_configuration_manager_active():
 
-                description = &#34;Could not connect to Configuration Manager&#34;
-                into_text = (
-                    &#34;The GUI will start, but without listed processes. &#34;
-                    &#34;Please, check if the Configuration Manager is running and start the server if needed.&#34;
-                    # &#34;Otherwise, check if the correct HOSTNAME for the Configuration Manager is set in the &#34;
-                    # &#34;Settings.yaml &#34;
-                    # &#34;configuration file.&#34;
-                    &#34;The Process Manager GUI will have to be re-started after that.&#34;
-                )
+        # Check whether the Process Manager CS is running
+        # (show a warning in a pop-up window if it&#39;s not)
 
-                show_info_message(description, into_text)
+        try:
 
-    except ConnectionError:
+            with ProcessManagerProxy():
 
-        description = &#34;Could not connect to Process Manager Control Server&#34;
+                if not is_configuration_manager_active():
 
-        into_text = (
-            &#34;The GUI will start, but the connection button will show a disconnected state. &#34;
-            &#34;Please, check if the Control Server is running and start the server if needed. &#34;
-            &#34;Otherwise, check if the correct HOSTNAME for the control server is set in the &#34;
-            &#34;Settings.yaml &#34;
-            &#34;configuration file.&#34;
-        )
+                    description = &#34;Could not connect to Configuration Manager&#34;
+                    into_text = (
+                        &#34;The GUI will start, but without listed processes. &#34;
+                        &#34;Please, check if the Configuration Manager is running and start the server if needed.&#34;
+                        # &#34;Otherwise, check if the correct HOSTNAME for the Configuration Manager is set in the &#34;
+                        # &#34;Settings.yaml &#34;
+                        # &#34;configuration file.&#34;
+                        &#34;The Process Manager GUI will have to be re-started after that.&#34;
+                    )
 
-        show_info_message(description, into_text)
+                    show_info_message(description, into_text)
 
-    # proxy = ProcessManagerProxy()
+        except ConnectionError:
 
-    # if not proxy.ping():
-    #         description = &#34;Could not connect to Process Manager Control Server&#34;
-    #         into_text = (
-    #             &#34;The GUI will start, but the connection button will show a disconnected state. &#34;
-    #             &#34;Please check if the Control Server is running and start the server if needed. &#34;
-    #             &#34;Otherwise, check if the correct HOSTNAME for the control server is set in the &#34;
-    #             &#34;Settings.yaml &#34;
-    #             &#34;configuration file.&#34;
-    #         )
+            description = &#34;Could not connect to Process Manager Control Server&#34;
 
-    #         show_info_message(description, into_text)
+            into_text = (
+                &#34;The GUI will start, but the connection button will show a disconnected state. &#34;
+                &#34;Please, check if the Control Server is running and start the server if needed. &#34;
+                &#34;Otherwise, check if the correct HOSTNAME for the control server is set in the &#34;
+                &#34;Settings.yaml &#34;
+                &#34;configuration file.&#34;
+            )
 
-    # proxy.disconnect_cs()
+            show_info_message(description, into_text)
 
-    # Create the Process Manager GUI, following the MVC-model
+        # proxy = ProcessManagerProxy()
 
-    view = ProcessManagerUIView()
-    model = ProcessManagerUIModel()
-    ProcessManagerUIController(model, view)
+        # if not proxy.ping():
+        #         description = &#34;Could not connect to Process Manager Control Server&#34;
+        #         into_text = (
+        #             &#34;The GUI will start, but the connection button will show a disconnected state. &#34;
+        #             &#34;Please check if the Control Server is running and start the server if needed. &#34;
+        #             &#34;Otherwise, check if the correct HOSTNAME for the control server is set in the &#34;
+        #             &#34;Settings.yaml &#34;
+        #             &#34;configuration file.&#34;
+        #         )
 
-    view.show()
+        #         show_info_message(description, into_text)
 
-    return app.exec_()</code></pre>
+        # proxy.disconnect_cs()
+
+        # Create the Process Manager GUI, following the MVC-model
+
+        view = ProcessManagerUIView()
+        model = ProcessManagerUIModel()
+        ProcessManagerUIController(model, view)
+
+        view.show()
+
+        return app.exec_()
+    else:
+        error_message = QMessageBox()
+        error_message.setIcon(QMessageBox.Warning)
+        error_message.setWindowTitle(&#34;Error&#34;)
+        error_message.setText(&#34;The Process Manager (PM) GUI application is already running!&#34;)
+        error_message.setStandardButtons(QMessageBox.Ok)
+
+        return error_message.exec()</code></pre>
+</details>
+</dd>
+<dt id="egse.procman.procman_ui.open_contingency_ui"><code class="name flex">
+<span>def <span class="ident">open_contingency_ui</span></span>(<span>)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Open the contingency UI.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def open_contingency_ui():
+    &#34;&#34;&#34; Open the contingency UI.&#34;&#34;&#34;
+
+    gui_process = SubProcess(&#34;MyApp&#34;, [&#34;contingency_ui&#34;])
+    gui_process.execute(detach_from_parent=True)</code></pre>
+</details>
+</dd>
+<dt id="egse.procman.procman_ui.open_fov_ui"><code class="name flex">
+<span>def <span class="ident">open_fov_ui</span></span>(<span>)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Open the FOV UI.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def open_fov_ui():
+    &#34;&#34;&#34; Open the FOV UI.&#34;&#34;&#34;
+
+    gui_process = SubProcess(&#34;MyApp&#34;, [&#34;fov_ui&#34;])
+    gui_process.execute(detach_from_parent=True)</code></pre>
+</details>
+</dd>
+<dt id="egse.procman.procman_ui.open_th_ui"><code class="name flex">
+<span>def <span class="ident">open_th_ui</span></span>(<span>)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Open the TH Operator UI.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def open_th_ui():
+    &#34;&#34;&#34; Open the TH Operator UI.&#34;&#34;&#34;
+
+    sitehash = {
+        &#34;CSL&#34;: get_csl_ui_process,
+        &#34;CSL1&#34;: get_csl_ui_process,
+        &#34;CSL2&#34;: get_csl_ui_process,
+        &#34;IAS&#34;: get_ias_ui_process,
+        &#34;INTA&#34;: get_inta_ui_process,
+        &#34;SRON&#34;: get_sron_ui_process,
+    }
+
+    gui_process = sitehash[SITE.ID]()
+    gui_process.execute(detach_from_parent=True)</code></pre>
+</details>
+</dd>
+<dt id="egse.procman.procman_ui.open_visited_positions_ui"><code class="name flex">
+<span>def <span class="ident">open_visited_positions_ui</span></span>(<span>)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Open the visited-positions UI.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def open_visited_positions_ui():
+    &#34;&#34;&#34; Open the visited-positions UI.&#34;&#34;&#34;
+
+    gui_process = SubProcess(&#34;MyApp&#34;, [&#34;visited_positions_ui&#34;])
+    gui_process.execute(detach_from_parent=True)</code></pre>
 </details>
 </dd>
 <dt id="egse.procman.procman_ui.start_egse"><code class="name flex">
@@ -2036,7 +2374,7 @@ if __name__ == &#39;__main__&#39;:
     &#34;&#34;&#34; Start the FITS generation.&#34;&#34;&#34;
 
     with ProcessManagerProxy() as pm:
-        pm.start_fitsgen()</code></pre>
+        return pm.start_fitsgen()</code></pre>
 </details>
 </dd>
 <dt id="egse.procman.procman_ui.start_fov_hk"><code class="name flex">
@@ -2052,7 +2390,7 @@ if __name__ == &#39;__main__&#39;:
     &#34;&#34;&#34; Start the generation of FOV HK.&#34;&#34;&#34;
 
     with ProcessManagerProxy() as pm:
-        pm.start_fov_hk()</code></pre>
+        return pm.start_fov_hk()</code></pre>
 </details>
 </dd>
 <dt id="egse.procman.procman_ui.start_n_fee_hk"><code class="name flex">
@@ -2068,7 +2406,7 @@ if __name__ == &#39;__main__&#39;:
     &#34;&#34;&#34; Start the generation of N-FEE HK.&#34;&#34;&#34;
 
     with ProcessManagerProxy() as pm:
-        pm.start_n_fee_hk()</code></pre>
+        return pm.start_n_fee_hk()</code></pre>
 </details>
 </dd>
 <dt id="egse.procman.procman_ui.stop_egse"><code class="name flex">
@@ -2468,7 +2806,12 @@ comprise the following components:</p>
 
     def start_service(self):
 
-        start_fitsgen()
+        response: Response = start_fitsgen()
+
+        if not response.successful:
+            gui_process = SubProcess(&#34;MyApp&#34;, [sys.executable, &#34;-m&#34;, &#34;egse.procman.cannot_start_process_popup&#34;,
+                                               &#34;--process_name&#34;, &#34;FITS generation&#34;, &#34;--message&#34;, response.message])
+            gui_process.execute(detach_from_parent=True)
 
     def stop_service(self):
 
@@ -2512,7 +2855,12 @@ comprise the following components:</p>
 </summary>
 <pre><code class="python">def start_service(self):
 
-    start_fitsgen()</code></pre>
+    response: Response = start_fitsgen()
+
+    if not response.successful:
+        gui_process = SubProcess(&#34;MyApp&#34;, [sys.executable, &#34;-m&#34;, &#34;egse.procman.cannot_start_process_popup&#34;,
+                                           &#34;--process_name&#34;, &#34;FITS generation&#34;, &#34;--message&#34;, response.message])
+        gui_process.execute(detach_from_parent=True)</code></pre>
 </details>
 </dd>
 <dt id="egse.procman.procman_ui.FitsgenWidget.stop_service"><code class="name flex">
@@ -2572,7 +2920,12 @@ comprise the following components:</p>
 
     def start_service(self):
 
-        start_fov_hk()
+        response: Response = start_fov_hk()
+
+        if not response.successful:
+            gui_process = SubProcess(&#34;MyApp&#34;, [sys.executable, &#34;-m&#34;, &#34;egse.procman.cannot_start_process_popup&#34;,
+                                               &#34;--process_name&#34;, &#34;FOV HK generation&#34;, &#34;--message&#34;, response.message])
+            gui_process.execute(detach_from_parent=True)
 
     def stop_service(self):
 
@@ -2601,7 +2954,12 @@ comprise the following components:</p>
 </summary>
 <pre><code class="python">def start_service(self):
 
-    start_fov_hk()</code></pre>
+    response: Response = start_fov_hk()
+
+    if not response.successful:
+        gui_process = SubProcess(&#34;MyApp&#34;, [sys.executable, &#34;-m&#34;, &#34;egse.procman.cannot_start_process_popup&#34;,
+                                           &#34;--process_name&#34;, &#34;FOV HK generation&#34;, &#34;--message&#34;, response.message])
+        gui_process.execute(detach_from_parent=True)</code></pre>
 </details>
 </dd>
 <dt id="egse.procman.procman_ui.FovHkWidget.stop_service"><code class="name flex">
@@ -2744,6 +3102,7 @@ comprise the following components:</p>
 
         self.process_name = process_name
         self.proxy_type = process_info[0]
+        self.proxy_type_as_type = find_class(self.proxy_type[7:])
         self.device_args = process_info[1]
 
         self.monitoring_socket = None
@@ -2882,6 +3241,9 @@ comprise the following components:</p>
                     else:
                         process_status[&#34;Color&#34;], process_status[&#34;Simulator&#34;] = self.get_device_process_status()
 
+                        if not issubclass(self.proxy_type_as_type, DeviceInterface):
+                            process_status.pop(&#34;Simulator&#34;)
+
                     if self.previous_state != process_status[&#34;Color&#34;]:
 
                         self.process_status_signal.emit(process_status)
@@ -2933,22 +3295,32 @@ comprise the following components:</p>
 
             with find_class(self.proxy_type)(*self.device_args) as process_proxy:
 
-                try:
+                # CS that are supposed to connect to a H/W unit (controller)
 
-                    # CS connected to Controller -&gt; green
+                if isinstance(process_proxy, DeviceInterface):
 
-                    if process_proxy.is_connected():
+                    try:
+
+                        # CS connected to Controller -&gt; green
+
+                        if process_proxy.is_connected():
+                            color = Indic.GREEN
+
+                        # CS not connected to Controller -&gt; orange
+
+                        else:
+                            color = Indic.ORANGE
+
+                    except AttributeError:
                         color = Indic.GREEN
 
-                    # CS not connected to Controller -&gt; orange
+                    is_simulator = process_proxy.is_simulator()
 
-                    else:
-                        color = Indic.ORANGE
+                # CS that do not control any device (e.g. FDIR, alert manager, etc.)
 
-                except AttributeError:
+                else:
                     color = Indic.GREEN
-
-                is_simulator = process_proxy.is_simulator()
+                    is_simulator = False
 
         except ConnectionError:
             pass
@@ -3056,22 +3428,32 @@ comprise the following components:</p>
 
         with find_class(self.proxy_type)(*self.device_args) as process_proxy:
 
-            try:
+            # CS that are supposed to connect to a H/W unit (controller)
 
-                # CS connected to Controller -&gt; green
+            if isinstance(process_proxy, DeviceInterface):
 
-                if process_proxy.is_connected():
+                try:
+
+                    # CS connected to Controller -&gt; green
+
+                    if process_proxy.is_connected():
+                        color = Indic.GREEN
+
+                    # CS not connected to Controller -&gt; orange
+
+                    else:
+                        color = Indic.ORANGE
+
+                except AttributeError:
                     color = Indic.GREEN
 
-                # CS not connected to Controller -&gt; orange
+                is_simulator = process_proxy.is_simulator()
 
-                else:
-                    color = Indic.ORANGE
+            # CS that do not control any device (e.g. FDIR, alert manager, etc.)
 
-            except AttributeError:
+            else:
                 color = Indic.GREEN
-
-            is_simulator = process_proxy.is_simulator()
+                is_simulator = False
 
     except ConnectionError:
         pass
@@ -3143,6 +3525,9 @@ def run(self):
 
                 else:
                     process_status[&#34;Color&#34;], process_status[&#34;Simulator&#34;] = self.get_device_process_status()
+
+                    if not issubclass(self.proxy_type_as_type, DeviceInterface):
+                        process_status.pop(&#34;Simulator&#34;)
 
                 if self.previous_state != process_status[&#34;Color&#34;]:
 
@@ -3268,7 +3653,12 @@ comprise the following components:</p>
 
     def start_service(self):
 
-        start_n_fee_hk()
+        response: Response = start_n_fee_hk()
+
+        if not response.successful:
+            gui_process = SubProcess(&#34;MyApp&#34;, [sys.executable, &#34;-m&#34;, &#34;egse.procman.cannot_start_process_popup&#34;,
+                                               &#34;--process_name&#34;, &#34;N-FEE HK generation&#34;, &#34;--message&#34;, response.message])
+            gui_process.execute(detach_from_parent=True)
 
     def stop_service(self):
 
@@ -3297,7 +3687,12 @@ comprise the following components:</p>
 </summary>
 <pre><code class="python">def start_service(self):
 
-    start_n_fee_hk()</code></pre>
+    response: Response = start_n_fee_hk()
+
+    if not response.successful:
+        gui_process = SubProcess(&#34;MyApp&#34;, [sys.executable, &#34;-m&#34;, &#34;egse.procman.cannot_start_process_popup&#34;,
+                                           &#34;--process_name&#34;, &#34;N-FEE HK generation&#34;, &#34;--message&#34;, response.message])
+        gui_process.execute(detach_from_parent=True)</code></pre>
 </details>
 </dd>
 <dt id="egse.procman.procman_ui.NFeeHkWidget.stop_service"><code class="name flex">
@@ -3407,8 +3802,8 @@ comprise the following components:</p>
 
             self.start_stop_button = ToggleButton(name=f&#34;Start / shut down the {self.process_name}.&#34;,
                                                   status_tip=f&#34;Start / shut down the {self.process_name}.&#34;,
-                                                  selected=get_resource(&#34;:/icons/play-green.svg&#34;),
-                                                  not_selected=get_resource(&#34;:/icons/stop-red.svg&#34;),
+                                                  selected=get_resource(&#34;:/images/play-button.svg&#34;),
+                                                  not_selected=get_resource(&#34;:/images/stop-button.svg&#34;),
                                                   disabled=[get_resource(&#34;:/icons/busy.svg&#34;),
                                                             get_resource(&#34;:/icons/busy.svg&#34;)]
                                                   )
@@ -3675,7 +4070,7 @@ updates in the process status (in the background) and display these in the GUI.<
 
         super().__init__()
 
-        self.setGeometry(300, 300, 150, 1000)
+        self.setGeometry(300, 300, 1000, 1000)
         self.setWindowTitle(&#34;Process Manager&#34;)
 
         self.processes = {}
@@ -3774,51 +4169,76 @@ updates in the process status (in the background) and display these in the GUI.<
         self.create_toolbar()
         self.create_statusbar()
 
-        layout = QHBoxLayout()
-        vbox = QVBoxLayout()
+        scroll = QScrollArea()
+        # widget_frame = QFrame()
+
+        hbox = QHBoxLayout()
+        vbox_left = QVBoxLayout()
+        vbox_right = QVBoxLayout()
+        hbox.addLayout(vbox_left)
+        hbox.addLayout(vbox_right)
+
+        vbox_right.addStretch()
+
+        app_frame.setLayout(hbox)
 
         # Obsid
 
+        info_gridbox = QGridLayout()
+
         self.obsid = QLabel(&#34;No observation is running&#34;)
         self.setStyleSheet(&#39;QMainWindow{border: 3px solid green;}&#39;)
-        vbox.addWidget(self.obsid)
-        vbox.addWidget(QLabel())
+        info_gridbox.addWidget(QLabel(&#34;Obsid:&#34;), 0, 0)
+        info_gridbox.addWidget(self.obsid, 0, 1)
 
-        # Left-hand side: one process widget per process
 
-        widget_frame = QFrame()
+        self.setup_id = QLabel(&#34;No setup loaded&#34;)
+        info_gridbox.addWidget(QLabel(&#34;Setup ID:&#34;), 1, 0)
+        info_gridbox.addWidget(self.setup_id, 1, 1)
 
-        self.overview_widget_devices_layout = QVBoxLayout()
-        self.overview_widget_devices_layout.addStretch()
-        self.overview_widget_devices = QGroupBox(&#34;Devices&#34;, self)
-        self.overview_widget_devices.setLayout(self.overview_widget_devices_layout)
-        self.overview_widget_devices.setToolTip(
-            &#34;EGSE device processes:\n&#34; +
+        self.camera_id = QLabel(&#34;Camera ID unknown&#34;)
+        info_gridbox.addWidget(QLabel(&#34;Camera ID:&#34;), 2, 0)
+        info_gridbox.addWidget(self.camera_id, 2, 1)
+
+        self.csl_hexapod_id = QLabel(&#34;Hexapod ID unknown&#34;)
+        if &#34;CSL&#34; in SITE.ID:
+            info_gridbox.addWidget(QLabel(&#34;Hexapod ID:&#34;), 3, 0)
+            info_gridbox.addWidget(self.csl_hexapod_id, 3, 1)
+
+        vbox_left.addLayout(info_gridbox)
+        vbox_left.addWidget(QLabel())
+
+        self.overview_widget_device_cs_layout = QVBoxLayout()
+        self.overview_widget_device_cs_layout.addStretch()
+        self.overview_widget_device_cs = QGroupBox(&#34;Device Control Servers&#34;, self)
+        self.overview_widget_device_cs.setLayout(self.overview_widget_device_cs_layout)
+        self.overview_widget_device_cs.setToolTip(
+            &#34;EGSE device control servers:\n&#34; +
             &#34;can be started in this GUI or on the command line.&#34;)
 
+        self.overview_widget_non_device_cs_layout = QVBoxLayout()
+        self.overview_widget_non_device_cs_layout.addStretch()
+        self.overview_widget_non_device_cs = QGroupBox(&#34;Non-Device Control Servers&#34;, self)
+        self.overview_widget_non_device_cs.setLayout(self.overview_widget_non_device_cs_layout)
+        self.overview_widget_non_device_cs.setToolTip(
+            &#34;EGSE non-device control servers:\n&#34; +
+            &#34;can be started in this GUI or on the command line (operational mode only).&#34;)
+
         self.create_overview_widget_core()
-        vbox.addWidget(self.overview_widget_core)
+        vbox_left.addWidget(self.overview_widget_core)
 
         self.create_overview_widget_file_services()
-        vbox.addWidget(self.overview_widget_file_services)
+        vbox_left.addWidget(self.overview_widget_file_services)
 
-        vbox.addWidget(self.overview_widget_devices)
+        vbox_right.addWidget(self.overview_widget_device_cs)
+        vbox_left.addWidget(self.overview_widget_non_device_cs)
 
-        widget_frame.setLayout(vbox)
-        # layout.addWidget(widget_frame)
-
-        scroll = QScrollArea()
-        scroll.setWidget(widget_frame)
-        scroll.setWidgetResizable(True)
         scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        # scroll.setFixedHeight(400)
-        scroll.setFixedWidth(550)
-        layout.addWidget(scroll)
+        scroll.setWidgetResizable(True)
 
-        app_frame.setLayout(layout)
-
-        self.setCentralWidget(app_frame)
+        scroll.setWidget(app_frame)
+        self.setCentralWidget(scroll)
 
     def start_monitoring(self) -&gt; object:
         &#34;&#34;&#34; Start listening on the monitoring port.
@@ -3844,7 +4264,7 @@ updates in the process status (in the background) and display these in the GUI.<
 
             self.monitoring_threads[process_name].start()
 
-    def on_setup_changed_signal(self, setup):
+    def on_setup_changed_signal(self, setup: Setup):
         &#34;&#34;&#34; Re-build the GUI after a change in setup.
 
         Args:
@@ -3863,6 +4283,8 @@ updates in the process status (in the background) and display these in the GUI.<
 
             self.monitoring_workers[process_name].stop()
             self.monitoring_threads[process_name].quit()
+
+        for process_name in self.processes.keys():
             self.monitoring_threads[process_name].wait()
 
         self.monitoring_workers.clear()
@@ -3879,9 +4301,16 @@ updates in the process status (in the background) and display these in the GUI.<
 
         # Remove the widgets from the layouts
 
-        while self.overview_widget_devices_layout.count():
+        while self.overview_widget_device_cs_layout.count():
 
-            widget = self.overview_widget_devices_layout.takeAt(0).widget()
+            widget = self.overview_widget_device_cs_layout.takeAt(0).widget()
+
+            if widget is not None:
+                widget.deleteLater()
+
+        while self.overview_widget_non_device_cs_layout.count():
+
+            widget = self.overview_widget_non_device_cs_layout.takeAt(0).widget()
 
             if widget is not None:
                 widget.deleteLater()
@@ -3913,13 +4342,17 @@ updates in the process status (in the background) and display these in the GUI.<
 
             self.process_widgets[process_name] = process_widget
 
-            self.overview_widget_devices_layout.addWidget(process_widget)
+            if process_widget.is_device:
+                self.overview_widget_device_cs_layout.addWidget(process_widget)
+            else:
+                self.overview_widget_non_device_cs_layout.addWidget(process_widget)
 
         self.process_widgets.update(self.process_widgets_core)
 
         # Make sure the boxes stay nicely together when vertically resizing
 
-        self.overview_widget_devices_layout.addStretch()
+        self.overview_widget_device_cs_layout.addStretch()
+        self.overview_widget_non_device_cs_layout.addStretch()
 
         # Start monitoring the process status
 
@@ -3939,7 +4372,22 @@ updates in the process status (in the background) and display these in the GUI.<
             self.start_aeu_button.setEnabled(False)
             self.stop_aeu_button.setEnabled(False)
 
-    def on_obsid_changed_signal(self, obsid):
+        self.setup_id.setText(f&#34;{setup.get_id()}&#34;)
+
+        try:
+            cam_id = setup.camera.ID
+            if cam_id != &#34;EM&#34;:
+                self.camera_id.setToolTip(&#34;Ah, beer!  The cause of and the solution to all of life&#39;s problems!&#34;)
+            self.camera_id.setText(cam_id)
+        except AttributeError:
+            self.camera_id.setText(&#34;Camera ID unknown&#34;)
+
+        try:
+            self.csl_hexapod_id.setText(str(setup.gse.hexapod.ID))
+        except AttributeError:
+            self.csl_hexapod_id.setText(&#34;Hexapod ID unknown&#34;)
+
+    def on_obsid_changed_signal(self, obsid: ObservationIdentifier):
         &#34;&#34;&#34; Update the GUI for the new obsid.
 
         Args:
@@ -3953,7 +4401,7 @@ updates in the process status (in the background) and display these in the GUI.<
 
         else:
 
-            self.obsid.setText(f&#34;Observation {obsid} is running&#34;)
+            self.obsid.setText(str(obsid))
             self.setStyleSheet(&#39;QMainWindow{border: 3px solid red;}&#39;)
 
     def on_process_status_signal(self, process_info):
@@ -4087,8 +4535,6 @@ updates in the process status (in the background) and display these in the GUI.<
                 self.processes.update(self.core)
                 self.processes.update(self.devices)
 
-                print(self.processes)
-
         except ConnectionError:
 
             self.devices = {}
@@ -4135,34 +4581,49 @@ updates in the process status (in the background) and display these in the GUI.<
                                             )
         self.stop_aeu_button.clicked.connect(self.stop_all_aeu_cs)
 
-        # self.fitsgen_button = ToggleButton(name=&#34;FITS generator&#34;,
-        #                                    selected=get_resource(&#34;:/icons/fitsgen-start.svg&#34;),
-        #                                    not_selected=get_resource(&#34;:/icons/fitsgen-stop.svg&#34;),
-        #                                    status_tip=&#34;Start/stop the FITS generation.&#34;)
-        # self.fitsgen_button.clicked.connect(self.start_stop_fitsgen)
-        #
-        # self.fov_hk_button = ToggleButton(name=&#34;FOV HK&#34;,
-        #                                   selected=get_resource(&#34;:/icons/fov-hk-start.svg&#34;),
-        #                                   not_selected=get_resource(&#34;:/icons/fov-hk-stop.svg&#34;),
-        #                                   status_tip=&#34;Start/stop the FOV HK generation.&#34;)
-        # self.fov_hk_button.clicked.connect(self.start_stop_fov_hk)
-        #
-        # self.n_fee_hk_button = ToggleButton(name=&#34;N-FEE HK generator&#34;,
-        #                                     selected=get_resource(&#34;:/icons/n-fee-hk-start.svg&#34;),
-        #                                     not_selected=get_resource(&#34;:/icons/n-fee-hk-stop.svg&#34;),
-        #                                     status_tip=&#34;Start/stop the N-FEE HK generation.&#34;)
-        # self.n_fee_hk_button.clicked.connect(self.start_stop_n_fee_hk)
+        contingency_icon = QIcon(str(get_resource(&#34;:/icons/radioactive.svg&#34;)))
+        contingency_action = QAction(contingency_icon, &#34;Open the contingency UI&#34;, self)
+        contingency_action.setToolTip(&#34;Open the contingency UI&#34;)
+        contingency_action.setCheckable(False)
+        contingency_action.triggered.connect(open_contingency_ui)
+
+        th_ui_icon = QIcon(str(get_resource(&#34;:/icons/th_ui_logo.svg&#34;)))
+        th_ui_action = QAction(th_ui_icon, f&#34;Open the {SITE.ID} Operator UI&#34;, self)
+        th_ui_action.setToolTip(f&#34;Open the {SITE.ID} Operator UI&#34;)
+        th_ui_action.setCheckable(False)
+        th_ui_action.triggered.connect(open_th_ui)
+
+        fov_ui_icon = QIcon(str(get_resource(&#34;:/icons/location-marker.svg&#34;)))  # TODO
+        fov_ui_action = QAction(fov_ui_icon, &#34;Open the FOV UI&#34;, self)
+        fov_ui_action.setToolTip(&#34;Open the FOV UI&#34;)
+        fov_ui_action.setCheckable(False)
+        fov_ui_action.triggered.connect(open_fov_ui)
+
+        visited_positions_ui_icon = QIcon(str(get_resource(&#34;:/icons/radar.svg&#34;)))    #TODO
+        visited_positions_ui_action = QAction(visited_positions_ui_icon, &#34;Open the visited-positions UI&#34;, self)
+        visited_positions_ui_action.setToolTip(&#34;Open the visited-positions UI&#34;)
+        visited_positions_ui_action.setCheckable(False)
+        visited_positions_ui_action.triggered.connect(open_visited_positions_ui)
 
         self.toolbar = self.addToolBar(&#34;MainToolbar&#34;)
         self.toolbar.addWidget(self.start_egse_button)
         self.toolbar.addWidget(self.stop_egse_button)
         self.toolbar.addSeparator()
-        # self.toolbar.addWidget(self.fitsgen_button)
-        # self.toolbar.addWidget(self.fov_hk_button)
-        # self.toolbar.addWidget(self.n_fee_hk_button)
-        # self.toolbar.addSeparator()
         self.toolbar.addWidget(self.start_aeu_button)
         self.toolbar.addWidget(self.stop_aeu_button)
+
+        spacer = QWidget()
+        spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.toolbar.addWidget(spacer)
+
+        if &#34;CSL&#34; in SITE.ID:
+            self.toolbar.addAction(fov_ui_action)
+        if &#34;CSL&#34; in SITE.ID or &#34;INTA&#34; in SITE.ID:   # Should go when SRON and IAS have their own Operator UI
+            self.toolbar.addAction(th_ui_action)
+            self.toolbar.addSeparator()
+
+        self.toolbar.addAction(visited_positions_ui_action)
+        self.toolbar.addAction(contingency_action)
 
         return self.toolbar
 
@@ -4172,7 +4633,6 @@ updates in the process status (in the background) and display these in the GUI.<
         self.statusBar().setStyleSheet(&#34;border: 0; background-color: #FFF8DC;&#34;)
         self.statusBar().setStyleSheet(&#34;QStatusBar::item {border: none;}&#34;)
         # self.statusBar().addPermanentWidget(VLine())
-
 
     def start_egse(self):
         &#34;&#34;&#34; Start all EGSE device Control Servers in one go.
@@ -4220,7 +4680,13 @@ updates in the process status (in the background) and display these in the GUI.<
                     self.monitoring_workers[process_name].start_stop_cs_button_clicked = True
 
                     sim_mode = self.process_widgets[process_name].is_simulator_mode
-                    pm.start_cs(process_name, sim_mode)
+                    response: Response = pm.start_cs(process_name, sim_mode)
+
+                    if not response.successful:
+                        gui_process = SubProcess(&#34;MyApp&#34;, [sys.executable, &#34;-m&#34;,
+                                                           &#34;egse.procman.cannot_start_process_popup&#34;, &#34;--process_name&#34;,
+                                                           process_name, &#34;--message&#34;, response.message])
+                        gui_process.execute(detach_from_parent=True)
 
     def stop_egse(self):
         &#34;&#34;&#34; Shut down all EGSE device Control Servers in one go.
@@ -4267,7 +4733,6 @@ updates in the process status (in the background) and display these in the GUI.<
                     self.monitoring_workers[process_name].start_stop_cs_button_clicked = True
                     pm.shut_down_cs(process_name)
 
-
     def start_all_aeu_cs(self):
         &#34;&#34;&#34; Start the AEU Control Servers in one go.&#34;&#34;&#34;
 
@@ -4309,7 +4774,14 @@ updates in the process status (in the background) and display these in the GUI.<
                         self.monitoring_workers[process_name].start_stop_cs_button_clicked = True
 
                         sim_mode = self.process_widgets[process_name].is_simulator_mode
-                        pm.start_cs(process_name, sim_mode)
+                        response: Response = pm.start_cs(process_name, sim_mode)
+
+                        if not response.successful:
+                            gui_process = SubProcess(&#34;MyApp&#34;, [sys.executable, &#34;-m&#34;,
+                                                               &#34;egse.procman.cannot_start_process_popup&#34;,
+                                                               &#34;--process_name&#34;, process_name,
+                                                               &#34;--message&#34;, response.message])
+                            gui_process.execute(detach_from_parent=True)
 
     def stop_all_aeu_cs(self):
         &#34;&#34;&#34; Shut down the AEU Control Servers in one go.&#34;&#34;&#34;
@@ -4349,6 +4821,7 @@ updates in the process status (in the background) and display these in the GUI.<
 
                         self.monitoring_workers[process_name].start_stop_cs_button_clicked = True
                         pm.shut_down_cs(process_name)
+
 
     # def start_stop_fitsgen(self):
     #     &#34;&#34;&#34; Start/stop the FITS generation.
@@ -4435,7 +4908,7 @@ updates in the process status (in the background) and display these in the GUI.<
         self.n_fee_hk_widget = NFeeHkWidget(self)
         self.overview_widget_file_services_layout.addWidget(self.n_fee_hk_widget)
 
-        self.overview_widget_file_services = QGroupBox(&#34;File generation&#34;, self)
+        self.overview_widget_file_services = QGroupBox(&#34;File Generation Processes&#34;, self)
         self.overview_widget_file_services.setLayout(self.overview_widget_file_services_layout)
         # self.overview_widget_file_services.setToolTip(
         #     &#34;EGSE core processes: must be running at all times.&#34;)
@@ -4447,32 +4920,34 @@ updates in the process status (in the background) and display these in the GUI.<
             - close_event: Close event received when the GUI is closed.
         &#34;&#34;&#34;
         for monitoring_worker in self.monitoring_workers.values():
-
             monitoring_worker.active = False
 
         for monitoring_thread in self.monitoring_threads.values():
-
             monitoring_thread.quit()
-            monitoring_thread.wait()
 
         self.setup_monitoring_worker.active = False
         self.setup_monitoring_thread.quit()
-        self.setup_monitoring_thread.wait()
 
         self.logger_monitoring_worker.active = False
         self.logger_monitoring_thread.quit()
-        self.logger_monitoring_thread.wait()
 
         self.fitsgen_monitoring_worker.active = False
         self.fitsgen_monitoring_thread.quit()
-        self.fitsgen_monitoring_thread.wait()
 
         self.fov_hk_monitoring_worker.active = False
         self.fov_hk_monitoring_thread.quit()
-        self.fov_hk_monitoring_thread.wait()
 
         self.n_fee_hk_monitoring_worker.active = False
         self.n_fee_hk_monitoring_thread.quit()
+
+        # Group the waiting
+        for monitoring_thread in self.monitoring_threads.values():
+            monitoring_thread.wait()
+
+        self.setup_monitoring_thread.wait()
+        self.logger_monitoring_thread.wait()
+        self.fitsgen_monitoring_thread.wait()
+        self.fov_hk_monitoring_thread.wait()
         self.n_fee_hk_monitoring_thread.wait()</code></pre>
 </details>
 <h3>Ancestors</h3>
@@ -4506,32 +4981,34 @@ updates in the process status (in the background) and display these in the GUI.<
         - close_event: Close event received when the GUI is closed.
     &#34;&#34;&#34;
     for monitoring_worker in self.monitoring_workers.values():
-
         monitoring_worker.active = False
 
     for monitoring_thread in self.monitoring_threads.values():
-
         monitoring_thread.quit()
-        monitoring_thread.wait()
 
     self.setup_monitoring_worker.active = False
     self.setup_monitoring_thread.quit()
-    self.setup_monitoring_thread.wait()
 
     self.logger_monitoring_worker.active = False
     self.logger_monitoring_thread.quit()
-    self.logger_monitoring_thread.wait()
 
     self.fitsgen_monitoring_worker.active = False
     self.fitsgen_monitoring_thread.quit()
-    self.fitsgen_monitoring_thread.wait()
 
     self.fov_hk_monitoring_worker.active = False
     self.fov_hk_monitoring_thread.quit()
-    self.fov_hk_monitoring_thread.wait()
 
     self.n_fee_hk_monitoring_worker.active = False
     self.n_fee_hk_monitoring_thread.quit()
+
+    # Group the waiting
+    for monitoring_thread in self.monitoring_threads.values():
+        monitoring_thread.wait()
+
+    self.setup_monitoring_thread.wait()
+    self.logger_monitoring_thread.wait()
+    self.fitsgen_monitoring_thread.wait()
+    self.fov_hk_monitoring_thread.wait()
     self.n_fee_hk_monitoring_thread.wait()</code></pre>
 </details>
 </dd>
@@ -4594,7 +5071,7 @@ updates in the process status (in the background) and display these in the GUI.<
     self.n_fee_hk_widget = NFeeHkWidget(self)
     self.overview_widget_file_services_layout.addWidget(self.n_fee_hk_widget)
 
-    self.overview_widget_file_services = QGroupBox(&#34;File generation&#34;, self)
+    self.overview_widget_file_services = QGroupBox(&#34;File Generation Processes&#34;, self)
     self.overview_widget_file_services.setLayout(self.overview_widget_file_services_layout)
     # self.overview_widget_file_services.setToolTip(
     #     &#34;EGSE core processes: must be running at all times.&#34;)</code></pre>
@@ -4673,34 +5150,49 @@ updates in the process status (in the background) and display these in the GUI.<
                                         )
     self.stop_aeu_button.clicked.connect(self.stop_all_aeu_cs)
 
-    # self.fitsgen_button = ToggleButton(name=&#34;FITS generator&#34;,
-    #                                    selected=get_resource(&#34;:/icons/fitsgen-start.svg&#34;),
-    #                                    not_selected=get_resource(&#34;:/icons/fitsgen-stop.svg&#34;),
-    #                                    status_tip=&#34;Start/stop the FITS generation.&#34;)
-    # self.fitsgen_button.clicked.connect(self.start_stop_fitsgen)
-    #
-    # self.fov_hk_button = ToggleButton(name=&#34;FOV HK&#34;,
-    #                                   selected=get_resource(&#34;:/icons/fov-hk-start.svg&#34;),
-    #                                   not_selected=get_resource(&#34;:/icons/fov-hk-stop.svg&#34;),
-    #                                   status_tip=&#34;Start/stop the FOV HK generation.&#34;)
-    # self.fov_hk_button.clicked.connect(self.start_stop_fov_hk)
-    #
-    # self.n_fee_hk_button = ToggleButton(name=&#34;N-FEE HK generator&#34;,
-    #                                     selected=get_resource(&#34;:/icons/n-fee-hk-start.svg&#34;),
-    #                                     not_selected=get_resource(&#34;:/icons/n-fee-hk-stop.svg&#34;),
-    #                                     status_tip=&#34;Start/stop the N-FEE HK generation.&#34;)
-    # self.n_fee_hk_button.clicked.connect(self.start_stop_n_fee_hk)
+    contingency_icon = QIcon(str(get_resource(&#34;:/icons/radioactive.svg&#34;)))
+    contingency_action = QAction(contingency_icon, &#34;Open the contingency UI&#34;, self)
+    contingency_action.setToolTip(&#34;Open the contingency UI&#34;)
+    contingency_action.setCheckable(False)
+    contingency_action.triggered.connect(open_contingency_ui)
+
+    th_ui_icon = QIcon(str(get_resource(&#34;:/icons/th_ui_logo.svg&#34;)))
+    th_ui_action = QAction(th_ui_icon, f&#34;Open the {SITE.ID} Operator UI&#34;, self)
+    th_ui_action.setToolTip(f&#34;Open the {SITE.ID} Operator UI&#34;)
+    th_ui_action.setCheckable(False)
+    th_ui_action.triggered.connect(open_th_ui)
+
+    fov_ui_icon = QIcon(str(get_resource(&#34;:/icons/location-marker.svg&#34;)))  # TODO
+    fov_ui_action = QAction(fov_ui_icon, &#34;Open the FOV UI&#34;, self)
+    fov_ui_action.setToolTip(&#34;Open the FOV UI&#34;)
+    fov_ui_action.setCheckable(False)
+    fov_ui_action.triggered.connect(open_fov_ui)
+
+    visited_positions_ui_icon = QIcon(str(get_resource(&#34;:/icons/radar.svg&#34;)))    #TODO
+    visited_positions_ui_action = QAction(visited_positions_ui_icon, &#34;Open the visited-positions UI&#34;, self)
+    visited_positions_ui_action.setToolTip(&#34;Open the visited-positions UI&#34;)
+    visited_positions_ui_action.setCheckable(False)
+    visited_positions_ui_action.triggered.connect(open_visited_positions_ui)
 
     self.toolbar = self.addToolBar(&#34;MainToolbar&#34;)
     self.toolbar.addWidget(self.start_egse_button)
     self.toolbar.addWidget(self.stop_egse_button)
     self.toolbar.addSeparator()
-    # self.toolbar.addWidget(self.fitsgen_button)
-    # self.toolbar.addWidget(self.fov_hk_button)
-    # self.toolbar.addWidget(self.n_fee_hk_button)
-    # self.toolbar.addSeparator()
     self.toolbar.addWidget(self.start_aeu_button)
     self.toolbar.addWidget(self.stop_aeu_button)
+
+    spacer = QWidget()
+    spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+    self.toolbar.addWidget(spacer)
+
+    if &#34;CSL&#34; in SITE.ID:
+        self.toolbar.addAction(fov_ui_action)
+    if &#34;CSL&#34; in SITE.ID or &#34;INTA&#34; in SITE.ID:   # Should go when SRON and IAS have their own Operator UI
+        self.toolbar.addAction(th_ui_action)
+        self.toolbar.addSeparator()
+
+    self.toolbar.addAction(visited_positions_ui_action)
+    self.toolbar.addAction(contingency_action)
 
     return self.toolbar</code></pre>
 </details>
@@ -4737,51 +5229,76 @@ updates in the process status (in the background) and display these in the GUI.<
     self.create_toolbar()
     self.create_statusbar()
 
-    layout = QHBoxLayout()
-    vbox = QVBoxLayout()
+    scroll = QScrollArea()
+    # widget_frame = QFrame()
+
+    hbox = QHBoxLayout()
+    vbox_left = QVBoxLayout()
+    vbox_right = QVBoxLayout()
+    hbox.addLayout(vbox_left)
+    hbox.addLayout(vbox_right)
+
+    vbox_right.addStretch()
+
+    app_frame.setLayout(hbox)
 
     # Obsid
 
+    info_gridbox = QGridLayout()
+
     self.obsid = QLabel(&#34;No observation is running&#34;)
     self.setStyleSheet(&#39;QMainWindow{border: 3px solid green;}&#39;)
-    vbox.addWidget(self.obsid)
-    vbox.addWidget(QLabel())
+    info_gridbox.addWidget(QLabel(&#34;Obsid:&#34;), 0, 0)
+    info_gridbox.addWidget(self.obsid, 0, 1)
 
-    # Left-hand side: one process widget per process
 
-    widget_frame = QFrame()
+    self.setup_id = QLabel(&#34;No setup loaded&#34;)
+    info_gridbox.addWidget(QLabel(&#34;Setup ID:&#34;), 1, 0)
+    info_gridbox.addWidget(self.setup_id, 1, 1)
 
-    self.overview_widget_devices_layout = QVBoxLayout()
-    self.overview_widget_devices_layout.addStretch()
-    self.overview_widget_devices = QGroupBox(&#34;Devices&#34;, self)
-    self.overview_widget_devices.setLayout(self.overview_widget_devices_layout)
-    self.overview_widget_devices.setToolTip(
-        &#34;EGSE device processes:\n&#34; +
+    self.camera_id = QLabel(&#34;Camera ID unknown&#34;)
+    info_gridbox.addWidget(QLabel(&#34;Camera ID:&#34;), 2, 0)
+    info_gridbox.addWidget(self.camera_id, 2, 1)
+
+    self.csl_hexapod_id = QLabel(&#34;Hexapod ID unknown&#34;)
+    if &#34;CSL&#34; in SITE.ID:
+        info_gridbox.addWidget(QLabel(&#34;Hexapod ID:&#34;), 3, 0)
+        info_gridbox.addWidget(self.csl_hexapod_id, 3, 1)
+
+    vbox_left.addLayout(info_gridbox)
+    vbox_left.addWidget(QLabel())
+
+    self.overview_widget_device_cs_layout = QVBoxLayout()
+    self.overview_widget_device_cs_layout.addStretch()
+    self.overview_widget_device_cs = QGroupBox(&#34;Device Control Servers&#34;, self)
+    self.overview_widget_device_cs.setLayout(self.overview_widget_device_cs_layout)
+    self.overview_widget_device_cs.setToolTip(
+        &#34;EGSE device control servers:\n&#34; +
         &#34;can be started in this GUI or on the command line.&#34;)
 
+    self.overview_widget_non_device_cs_layout = QVBoxLayout()
+    self.overview_widget_non_device_cs_layout.addStretch()
+    self.overview_widget_non_device_cs = QGroupBox(&#34;Non-Device Control Servers&#34;, self)
+    self.overview_widget_non_device_cs.setLayout(self.overview_widget_non_device_cs_layout)
+    self.overview_widget_non_device_cs.setToolTip(
+        &#34;EGSE non-device control servers:\n&#34; +
+        &#34;can be started in this GUI or on the command line (operational mode only).&#34;)
+
     self.create_overview_widget_core()
-    vbox.addWidget(self.overview_widget_core)
+    vbox_left.addWidget(self.overview_widget_core)
 
     self.create_overview_widget_file_services()
-    vbox.addWidget(self.overview_widget_file_services)
+    vbox_left.addWidget(self.overview_widget_file_services)
 
-    vbox.addWidget(self.overview_widget_devices)
+    vbox_right.addWidget(self.overview_widget_device_cs)
+    vbox_left.addWidget(self.overview_widget_non_device_cs)
 
-    widget_frame.setLayout(vbox)
-    # layout.addWidget(widget_frame)
-
-    scroll = QScrollArea()
-    scroll.setWidget(widget_frame)
-    scroll.setWidgetResizable(True)
     scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
     scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-    # scroll.setFixedHeight(400)
-    scroll.setFixedWidth(550)
-    layout.addWidget(scroll)
+    scroll.setWidgetResizable(True)
 
-    app_frame.setLayout(layout)
-
-    self.setCentralWidget(app_frame)</code></pre>
+    scroll.setWidget(app_frame)
+    self.setCentralWidget(scroll)</code></pre>
 </details>
 </dd>
 <dt id="egse.procman.procman_ui.ProcessManagerUIView.on_fitsgen_is_running_signal"><code class="name flex">
@@ -4886,7 +5403,7 @@ updates in the process status (in the background) and display these in the GUI.<
 </details>
 </dd>
 <dt id="egse.procman.procman_ui.ProcessManagerUIView.on_obsid_changed_signal"><code class="name flex">
-<span>def <span class="ident">on_obsid_changed_signal</span></span>(<span>self, obsid)</span>
+<span>def <span class="ident">on_obsid_changed_signal</span></span>(<span>self, obsid: <a title="egse.obsid.ObservationIdentifier" href="../obsid.html#egse.obsid.ObservationIdentifier">ObservationIdentifier</a>)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Update the GUI for the new obsid.</p>
@@ -4898,7 +5415,7 @@ updates in the process status (in the background) and display these in the GUI.<
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def on_obsid_changed_signal(self, obsid):
+<pre><code class="python">def on_obsid_changed_signal(self, obsid: ObservationIdentifier):
     &#34;&#34;&#34; Update the GUI for the new obsid.
 
     Args:
@@ -4912,7 +5429,7 @@ updates in the process status (in the background) and display these in the GUI.<
 
     else:
 
-        self.obsid.setText(f&#34;Observation {obsid} is running&#34;)
+        self.obsid.setText(str(obsid))
         self.setStyleSheet(&#39;QMainWindow{border: 3px solid red;}&#39;)</code></pre>
 </details>
 </dd>
@@ -5000,7 +5517,7 @@ Process Manager GUI.</dd>
 </details>
 </dd>
 <dt id="egse.procman.procman_ui.ProcessManagerUIView.on_setup_changed_signal"><code class="name flex">
-<span>def <span class="ident">on_setup_changed_signal</span></span>(<span>self, setup)</span>
+<span>def <span class="ident">on_setup_changed_signal</span></span>(<span>self, setup: <a title="egse.setup.Setup" href="../setup.html#egse.setup.Setup">Setup</a>)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Re-build the GUI after a change in setup.</p>
@@ -5012,7 +5529,7 @@ Process Manager GUI.</dd>
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def on_setup_changed_signal(self, setup):
+<pre><code class="python">def on_setup_changed_signal(self, setup: Setup):
     &#34;&#34;&#34; Re-build the GUI after a change in setup.
 
     Args:
@@ -5031,6 +5548,8 @@ Process Manager GUI.</dd>
 
         self.monitoring_workers[process_name].stop()
         self.monitoring_threads[process_name].quit()
+
+    for process_name in self.processes.keys():
         self.monitoring_threads[process_name].wait()
 
     self.monitoring_workers.clear()
@@ -5047,9 +5566,16 @@ Process Manager GUI.</dd>
 
     # Remove the widgets from the layouts
 
-    while self.overview_widget_devices_layout.count():
+    while self.overview_widget_device_cs_layout.count():
 
-        widget = self.overview_widget_devices_layout.takeAt(0).widget()
+        widget = self.overview_widget_device_cs_layout.takeAt(0).widget()
+
+        if widget is not None:
+            widget.deleteLater()
+
+    while self.overview_widget_non_device_cs_layout.count():
+
+        widget = self.overview_widget_non_device_cs_layout.takeAt(0).widget()
 
         if widget is not None:
             widget.deleteLater()
@@ -5081,13 +5607,17 @@ Process Manager GUI.</dd>
 
         self.process_widgets[process_name] = process_widget
 
-        self.overview_widget_devices_layout.addWidget(process_widget)
+        if process_widget.is_device:
+            self.overview_widget_device_cs_layout.addWidget(process_widget)
+        else:
+            self.overview_widget_non_device_cs_layout.addWidget(process_widget)
 
     self.process_widgets.update(self.process_widgets_core)
 
     # Make sure the boxes stay nicely together when vertically resizing
 
-    self.overview_widget_devices_layout.addStretch()
+    self.overview_widget_device_cs_layout.addStretch()
+    self.overview_widget_non_device_cs_layout.addStretch()
 
     # Start monitoring the process status
 
@@ -5105,7 +5635,22 @@ Process Manager GUI.</dd>
         # self.all_aeu_cs_button.set_selected(False)
         # self.all_aeu_cs_button.disable()
         self.start_aeu_button.setEnabled(False)
-        self.stop_aeu_button.setEnabled(False)</code></pre>
+        self.stop_aeu_button.setEnabled(False)
+
+    self.setup_id.setText(f&#34;{setup.get_id()}&#34;)
+
+    try:
+        cam_id = setup.camera.ID
+        if cam_id != &#34;EM&#34;:
+            self.camera_id.setToolTip(&#34;Ah, beer!  The cause of and the solution to all of life&#39;s problems!&#34;)
+        self.camera_id.setText(cam_id)
+    except AttributeError:
+        self.camera_id.setText(&#34;Camera ID unknown&#34;)
+
+    try:
+        self.csl_hexapod_id.setText(str(setup.gse.hexapod.ID))
+    except AttributeError:
+        self.csl_hexapod_id.setText(&#34;Hexapod ID unknown&#34;)</code></pre>
 </details>
 </dd>
 <dt id="egse.procman.procman_ui.ProcessManagerUIView.on_start_stop_cs_button_clicked"><code class="name flex">
@@ -5165,8 +5710,6 @@ Process Manager GUI.</dd>
 
             self.processes.update(self.core)
             self.processes.update(self.devices)
-
-            print(self.processes)
 
     except ConnectionError:
 
@@ -5552,8 +6095,10 @@ comprise the following components:</p>
 
         self.process_name = process_name
         self.proxy_type = process_info[0]
+        self.proxy_type_as_type = find_class(self.proxy_type[7:])
         self.device_args = process_info[1]
         self.is_simulator_mode = False
+        self.is_device = True
 
         self.parent = parent
 
@@ -5601,8 +6146,8 @@ comprise the following components:</p>
 
             self.start_stop_button = ToggleButton(name=f&#34;Start / shut down the {self.process_name} control server.&#34;,
                                                   status_tip=f&#34;Start / shut down the {self.process_name} control server.&#34;,
-                                                  selected=get_resource(&#34;:/icons/play-green.svg&#34;),
-                                                  not_selected=get_resource(&#34;:/icons/stop-red.svg&#34;),
+                                                  selected=get_resource(&#34;:/images/play-button.svg&#34;),
+                                                  not_selected=get_resource(&#34;:/images/stop-button.svg&#34;),
                                                   disabled=[get_resource(&#34;:/icons/busy.svg&#34;),
                                                             get_resource(&#34;:/icons/busy.svg&#34;)]
                                                   )
@@ -5611,16 +6156,27 @@ comprise the following components:</p>
             layout.addWidget(self.start_stop_button, 0, index)
             index += 1
 
-            self.sim_option_button = ToggleButton(name=f&#34;Operational vs. simulator mode&#34;,
-                                                  status_tip=f&#34;Indicate whether you want to start the &#34;
-                                                             f&#34;{self.process_name} Control Server in operational or in &#34;
-                                                             f&#34;simulator mode.&#34;,
-                                                  selected=get_resource(&#34;:/icons/sim-mode.svg&#34;),
-                                                  not_selected=get_resource(&#34;:/icons/ops-mode.svg&#34;),
-                                                  disabled=[get_resource(&#34;:/icons/sim-mode.svg&#34;),
-                                                            get_resource(&#34;:/icons/ops-mode.svg&#34;)]
-                                                  )
-            self.sim_option_button.set_selected(False)  # Default: operational mode
+            if issubclass(self.proxy_type_as_type, DeviceInterface):
+                self.sim_option_button = ToggleButton(name=f&#34;Operational vs. simulator mode&#34;,
+                                                      status_tip=f&#34;Indicate whether you want to start the &#34;
+                                                                 f&#34;{self.process_name} Control Server in operational or in &#34;
+                                                                 f&#34;simulator mode.&#34;,
+                                                      selected=get_resource(&#34;:/icons/sim-mode.svg&#34;),
+                                                      not_selected=get_resource(&#34;:/icons/ops-mode.svg&#34;),
+                                                      disabled=[get_resource(&#34;:/icons/sim-mode.svg&#34;),
+                                                                get_resource(&#34;:/icons/ops-mode.svg&#34;)]
+                                                      )
+                self.sim_option_button.set_selected(False)  # Default: operational mode
+            else:
+                self.sim_option_button = ToggleButton(name=f&#34;Operational vs. simulator mode&#34;,
+                                                      status_tip=f&#34;The {self.process_name} Control Server can only be &#34;
+                                                                 f&#34;started in operational mode.&#34;,
+                                                      selected=get_resource(&#34;:/icons/ops-mode.svg&#34;),
+                                                      not_selected=get_resource(&#34;:/icons/ops-mode.svg&#34;),
+                                                      disabled=[get_resource(&#34;:/icons/ops-mode.svg&#34;),
+                                                                get_resource(&#34;:/icons/ops-mode.svg&#34;)]
+                                                      )
+                self.is_device = False
             self.sim_option_button.clicked.connect(self.set_cs_start_mode)
 
             if self.process_name == &#34;DAQ&#34;:
@@ -5630,10 +6186,6 @@ comprise the following components:</p>
                 self.sim_option_button.setEnabled(False)    # Only in operational mode
                 self.sim_option_button.setStatusTip(f&#34;The {self.process_name} and its data acquisition can only be&#34;
                                                     f&#34;started in operational mode.&#34;)
-
-            if self.process_name == &#34;DPU&#34;:
-
-                self.sim_option_button.setEnabled(False)    # Only in operational mode
 
             layout.addWidget(self.sim_option_button, 0, index)
             index += 1
@@ -5697,21 +6249,39 @@ comprise the following components:</p>
 
             with ProcessManagerProxy() as pm:
 
-                try:
-                    pm.start_cs(self.process_name, self.is_simulator_mode)
-                    self.sim_option_button.setDisabled(True)
+                response: Response = pm.start_cs(self.process_name, self.is_simulator_mode)
 
-                except ConnectionError:
-                    LOGGER.info(f&#34;Could not start Control Server for {self.process_name}&#34;)
+                if response.successful:
+                    self.sim_option_button.setDisabled(True)
+                else:
                     self.sim_option_button.setEnabled(True)
 
-        except ConnectionError:
+                    gui_process = SubProcess(&#34;MyApp&#34;, [sys.executable, &#34;-m&#34;, &#34;egse.procman.cannot_start_process_popup&#34;,
+                                                       &#34;--process_name&#34;, f&#34;{self.process_name} Control Server&#34;,
+                                                       &#34;--message&#34;, response.message])
+                    gui_process.execute(detach_from_parent=True)
 
-            LOGGER.critical(f&#34;Lost connection to Process Manager&#34;)
+                return response
+
+        #
+        #         try:
+        #             pm.start_cs(self.process_name, self.is_simulator_mode)
+        #             self.sim_option_button.setDisabled(True)
+        #
+        #         except ConnectionError:
+        #             LOGGER.info(f&#34;Could not start Control Server for {self.process_name}&#34;)
+        #             self.sim_option_button.setEnabled(True)
+        #
+        except ConnectionError as exc:
+
+            message = f&#34;Lost connection to Process Manager&#34;
+            LOGGER.critical(message, exc_info=True)
 
             self.sim_option_button.setEnabled(True)
             self.start_stop_button.setEnabled(True)
             self.start_stop_button.set_selected(True)
+
+            return Failure(message, cause=exc)
 
     def stop_cs(self):
 
@@ -5906,21 +6476,39 @@ Indic.ORANGE, or Indic.RED.</li>
 
         with ProcessManagerProxy() as pm:
 
-            try:
-                pm.start_cs(self.process_name, self.is_simulator_mode)
-                self.sim_option_button.setDisabled(True)
+            response: Response = pm.start_cs(self.process_name, self.is_simulator_mode)
 
-            except ConnectionError:
-                LOGGER.info(f&#34;Could not start Control Server for {self.process_name}&#34;)
+            if response.successful:
+                self.sim_option_button.setDisabled(True)
+            else:
                 self.sim_option_button.setEnabled(True)
 
-    except ConnectionError:
+                gui_process = SubProcess(&#34;MyApp&#34;, [sys.executable, &#34;-m&#34;, &#34;egse.procman.cannot_start_process_popup&#34;,
+                                                   &#34;--process_name&#34;, f&#34;{self.process_name} Control Server&#34;,
+                                                   &#34;--message&#34;, response.message])
+                gui_process.execute(detach_from_parent=True)
 
-        LOGGER.critical(f&#34;Lost connection to Process Manager&#34;)
+            return response
+
+    #
+    #         try:
+    #             pm.start_cs(self.process_name, self.is_simulator_mode)
+    #             self.sim_option_button.setDisabled(True)
+    #
+    #         except ConnectionError:
+    #             LOGGER.info(f&#34;Could not start Control Server for {self.process_name}&#34;)
+    #             self.sim_option_button.setEnabled(True)
+    #
+    except ConnectionError as exc:
+
+        message = f&#34;Lost connection to Process Manager&#34;
+        LOGGER.critical(message, exc_info=True)
 
         self.sim_option_button.setEnabled(True)
         self.start_stop_button.setEnabled(True)
-        self.start_stop_button.set_selected(True)</code></pre>
+        self.start_stop_button.set_selected(True)
+
+        return Failure(message, cause=exc)</code></pre>
 </details>
 </dd>
 <dt id="egse.procman.procman_ui.ProcessWidget.start_gui"><code class="name flex">
@@ -6028,8 +6616,16 @@ Indic.ORANGE, or Indic.RED.</li>
 </ul>
 </li>
 <li><h3><a href="#header-functions">Functions</a></h3>
-<ul class="two-column">
+<ul class="">
+<li><code><a title="egse.procman.procman_ui.get_csl_ui_process" href="#egse.procman.procman_ui.get_csl_ui_process">get_csl_ui_process</a></code></li>
+<li><code><a title="egse.procman.procman_ui.get_ias_ui_process" href="#egse.procman.procman_ui.get_ias_ui_process">get_ias_ui_process</a></code></li>
+<li><code><a title="egse.procman.procman_ui.get_inta_ui_process" href="#egse.procman.procman_ui.get_inta_ui_process">get_inta_ui_process</a></code></li>
+<li><code><a title="egse.procman.procman_ui.get_sron_ui_process" href="#egse.procman.procman_ui.get_sron_ui_process">get_sron_ui_process</a></code></li>
 <li><code><a title="egse.procman.procman_ui.main" href="#egse.procman.procman_ui.main">main</a></code></li>
+<li><code><a title="egse.procman.procman_ui.open_contingency_ui" href="#egse.procman.procman_ui.open_contingency_ui">open_contingency_ui</a></code></li>
+<li><code><a title="egse.procman.procman_ui.open_fov_ui" href="#egse.procman.procman_ui.open_fov_ui">open_fov_ui</a></code></li>
+<li><code><a title="egse.procman.procman_ui.open_th_ui" href="#egse.procman.procman_ui.open_th_ui">open_th_ui</a></code></li>
+<li><code><a title="egse.procman.procman_ui.open_visited_positions_ui" href="#egse.procman.procman_ui.open_visited_positions_ui">open_visited_positions_ui</a></code></li>
 <li><code><a title="egse.procman.procman_ui.start_egse" href="#egse.procman.procman_ui.start_egse">start_egse</a></code></li>
 <li><code><a title="egse.procman.procman_ui.start_fitsgen" href="#egse.procman.procman_ui.start_fitsgen">start_fitsgen</a></code></li>
 <li><code><a title="egse.procman.procman_ui.start_fov_hk" href="#egse.procman.procman_ui.start_fov_hk">start_fov_hk</a></code></li>

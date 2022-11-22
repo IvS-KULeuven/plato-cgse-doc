@@ -98,6 +98,8 @@ import multiprocessing
 
 import rich
 
+from egse.state import GlobalState
+
 multiprocessing.current_process().name = &#34;das&#34;
 
 import re
@@ -151,10 +153,8 @@ def load_setup_from_input_file(input_file: str):
 
 def load_setup_from_configuration_manager():
     &#34;&#34;&#34;Loads a Setup YAML file from the Configuration Manager.&#34;&#34;&#34;
-    with ConfigurationManagerProxy() as cm:
-        setup = cm.get_setup()
 
-    return setup
+    return GlobalState.setup
 
 
 class Config:
@@ -521,8 +521,20 @@ def ptc10(config, user_regulation: float, auto_regulation: int, background: bool
 
         R = setup.gse.PTC10.heater_Ohm #Resistance of the heater in Ohm
 
+        # Time update from egse server
+        ptc.update_time()
+        is_on_time = True
+
         while True:
             try:
+
+# Update time of PTC10 every first of the month to avoid a time lag after several days and a time desynchronisation.
+                day = time.gmtime()[2]
+                if day &gt;= 2:
+                    is_on_time = False
+                if day == 1 and not is_on_time:
+                    ptc.update_time()
+                    is_on_time = True
 
                 if user_regulation and auto_regulation:
                     print(&#34;Only 1 option is expected (user_regulation OR auto_regulation) but both were given.\nTerminating... &#34;)
@@ -1077,10 +1089,8 @@ parsing a temperature takes the 'ºC' into account when extracting the actual va
 </summary>
 <pre><code class="python">def load_setup_from_configuration_manager():
     &#34;&#34;&#34;Loads a Setup YAML file from the Configuration Manager.&#34;&#34;&#34;
-    with ConfigurationManagerProxy() as cm:
-        setup = cm.get_setup()
 
-    return setup</code></pre>
+    return GlobalState.setup</code></pre>
 </details>
 </dd>
 <dt id="egse.das.load_setup_from_input_file"><code class="name flex">

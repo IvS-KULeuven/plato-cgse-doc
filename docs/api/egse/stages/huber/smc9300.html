@@ -34,10 +34,10 @@ from __future__ import annotations
 
 import logging
 import textwrap
-import time
 from typing import Tuple
 
 import rich
+import time
 
 from egse.control import Failure
 from egse.device import DeviceConnectionError
@@ -48,9 +48,9 @@ from egse.mixin import add_cr_lf
 from egse.mixin import dynamic_command
 from egse.proxy import DynamicProxy
 from egse.settings import Settings
-from egse.setup import load_setup
 from egse.stages.huber.smc9300_devif import HuberError
 from egse.stages.huber.smc9300_devif import HuberSMC9300EthernetInterface
+from egse.state import GlobalState
 from egse.zmq_ser import connect_address
 
 # Explicitly set the module name instead of __name__. When module is executed instead of imported
@@ -518,6 +518,18 @@ class HuberSMC9300Interface(DeviceInterface):
         &#34;&#34;&#34;
         raise NotImplementedError
 
+    @dynamic_command(cmd_type=&#34;write&#34;, cmd_string=&#34;update&#34;, process_cmd_string=process_cmd_string)
+    def save_configuration(self):
+        &#34;&#34;&#34;Saves the current configuration permanently. The settings will be reloaded automatically
+        the next time the controller starts.&#34;&#34;&#34;
+        raise NotImplementedError
+
+    @dynamic_command(cmd_type=&#34;write&#34;, cmd_string=&#34;reset&#34;, process_cmd_string=process_cmd_string)
+    def reset(self):
+        &#34;&#34;&#34;Resets the controller back to power-on state. When you previously saved the configuration,
+        those values will be reloaded automatically, otherwise the default configuration will be loaded.&#34;&#34;&#34;
+        raise NotImplementedError
+
     @dynamic_command(
         cmd_type=&#34;query&#34;, cmd_string=&#34;?s${axis}&#34;,
         process_cmd_string=process_cmd_string,
@@ -562,6 +574,10 @@ class HuberSMC9300Interface(DeviceInterface):
         Set the current position of the axis to zero (0.00). If a reference position
         offset value is configured (see the configuration command `rofs`) the current
         position is set to that reference offset value.
+
+        If you want to retain this zero position, you will have to also call the
+        &#39;save_configuration()&#39; command. Otherwise the zero position will be lost
+        after a reset or a power cycle.
         &#34;&#34;&#34;
         raise NotImplementedError
 
@@ -693,7 +709,7 @@ class HuberSMC9300Controller(HuberSMC9300Interface, DynamicCommandMixin):
         return self.huber.is_connected()
 
     def is_simulator(self):
-        return False
+        return &#34;simulator: true&#34; in self.info()
 
 
 class HuberSMC9300Simulator(HuberSMC9300Interface):
@@ -778,7 +794,7 @@ def calculate_relative_movement(current, setpoint, hardstop=None, avoidance=None
         [-180 + avoidance, +180 - avoidance].
     &#34;&#34;&#34;
 
-    setup = load_setup()
+    setup = GlobalState.setup
 
     avoidance = avoidance if avoidance is not None else setup.gse.stages.big_rotation_stage.avoidance
     hardstop = hardstop if hardstop is not None else setup.gse.stages.big_rotation_stage.hardstop
@@ -948,7 +964,7 @@ the avoidance range.</p>
         [-180 + avoidance, +180 - avoidance].
     &#34;&#34;&#34;
 
-    setup = load_setup()
+    setup = GlobalState.setup
 
     avoidance = avoidance if avoidance is not None else setup.gse.stages.big_rotation_stage.avoidance
     hardstop = hardstop if hardstop is not None else setup.gse.stages.big_rotation_stage.hardstop
@@ -1264,7 +1280,7 @@ A carriage return and newline is appended to the command.</p></div>
 <dl>
 <dt id="egse.stages.huber.smc9300.HuberSMC9300Controller"><code class="flex name class">
 <span>class <span class="ident">HuberSMC9300Controller</span></span>
-<span>(</span><span>hostname='10.33.178.251', port=4243)</span>
+<span>(</span><span>hostname='XXX.XXX.XXX.XXX', port=4243)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>The HuberSmC9300Controller class is used to directly communicate with the HUBER SMC9300
@@ -1347,7 +1363,7 @@ configuration file.</dd>
         return self.huber.is_connected()
 
     def is_simulator(self):
-        return False</code></pre>
+        return &#34;simulator: true&#34; in self.info()</code></pre>
 </details>
 <h3>Ancestors</h3>
 <ul class="hlist">
@@ -1405,6 +1421,8 @@ configuration file.</dd>
 <li><code><a title="egse.stages.huber.smc9300.HuberSMC9300Interface.notify_observers" href="../../device.html#egse.device.DeviceConnectionObservable.notify_observers">notify_observers</a></code></li>
 <li><code><a title="egse.stages.huber.smc9300.HuberSMC9300Interface.quit" href="#egse.stages.huber.smc9300.HuberSMC9300Interface.quit">quit</a></code></li>
 <li><code><a title="egse.stages.huber.smc9300.HuberSMC9300Interface.reconnect" href="../../device.html#egse.device.DeviceConnectionInterface.reconnect">reconnect</a></code></li>
+<li><code><a title="egse.stages.huber.smc9300.HuberSMC9300Interface.reset" href="#egse.stages.huber.smc9300.HuberSMC9300Interface.reset">reset</a></code></li>
+<li><code><a title="egse.stages.huber.smc9300.HuberSMC9300Interface.save_configuration" href="#egse.stages.huber.smc9300.HuberSMC9300Interface.save_configuration">save_configuration</a></code></li>
 <li><code><a title="egse.stages.huber.smc9300.HuberSMC9300Interface.set_edev" href="#egse.stages.huber.smc9300.HuberSMC9300Interface.set_edev">set_edev</a></code></li>
 <li><code><a title="egse.stages.huber.smc9300.HuberSMC9300Interface.set_edir" href="#egse.stages.huber.smc9300.HuberSMC9300Interface.set_edir">set_edir</a></code></li>
 <li><code><a title="egse.stages.huber.smc9300.HuberSMC9300Interface.set_slew_speed" href="#egse.stages.huber.smc9300.HuberSMC9300Interface.set_slew_speed">set_slew_speed</a></code></li>
@@ -1728,6 +1746,18 @@ configuration file.</dd>
         &#34;&#34;&#34;
         raise NotImplementedError
 
+    @dynamic_command(cmd_type=&#34;write&#34;, cmd_string=&#34;update&#34;, process_cmd_string=process_cmd_string)
+    def save_configuration(self):
+        &#34;&#34;&#34;Saves the current configuration permanently. The settings will be reloaded automatically
+        the next time the controller starts.&#34;&#34;&#34;
+        raise NotImplementedError
+
+    @dynamic_command(cmd_type=&#34;write&#34;, cmd_string=&#34;reset&#34;, process_cmd_string=process_cmd_string)
+    def reset(self):
+        &#34;&#34;&#34;Resets the controller back to power-on state. When you previously saved the configuration,
+        those values will be reloaded automatically, otherwise the default configuration will be loaded.&#34;&#34;&#34;
+        raise NotImplementedError
+
     @dynamic_command(
         cmd_type=&#34;query&#34;, cmd_string=&#34;?s${axis}&#34;,
         process_cmd_string=process_cmd_string,
@@ -1772,6 +1802,10 @@ configuration file.</dd>
         Set the current position of the axis to zero (0.00). If a reference position
         offset value is configured (see the configuration command `rofs`) the current
         position is set to that reference offset value.
+
+        If you want to retain this zero position, you will have to also call the
+        &#39;save_configuration()&#39; command. Otherwise the zero position will be lost
+        after a reset or a power cycle.
         &#34;&#34;&#34;
         raise NotImplementedError
 
@@ -2434,6 +2468,40 @@ def quit(self) -&gt; None:
     raise NotImplementedError</code></pre>
 </details>
 </dd>
+<dt id="egse.stages.huber.smc9300.HuberSMC9300Interface.reset"><code class="name flex">
+<span>def <span class="ident">reset</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Resets the controller back to power-on state. When you previously saved the configuration,
+those values will be reloaded automatically, otherwise the default configuration will be loaded.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@dynamic_command(cmd_type=&#34;write&#34;, cmd_string=&#34;reset&#34;, process_cmd_string=process_cmd_string)
+def reset(self):
+    &#34;&#34;&#34;Resets the controller back to power-on state. When you previously saved the configuration,
+    those values will be reloaded automatically, otherwise the default configuration will be loaded.&#34;&#34;&#34;
+    raise NotImplementedError</code></pre>
+</details>
+</dd>
+<dt id="egse.stages.huber.smc9300.HuberSMC9300Interface.save_configuration"><code class="name flex">
+<span>def <span class="ident">save_configuration</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Saves the current configuration permanently. The settings will be reloaded automatically
+the next time the controller starts.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@dynamic_command(cmd_type=&#34;write&#34;, cmd_string=&#34;update&#34;, process_cmd_string=process_cmd_string)
+def save_configuration(self):
+    &#34;&#34;&#34;Saves the current configuration permanently. The settings will be reloaded automatically
+    the next time the controller starts.&#34;&#34;&#34;
+    raise NotImplementedError</code></pre>
+</details>
+</dd>
 <dt id="egse.stages.huber.smc9300.HuberSMC9300Interface.set_edev"><code class="name flex">
 <span>def <span class="ident">set_edev</span></span>(<span>self, axis, value)</span>
 </code></dt>
@@ -2608,7 +2676,10 @@ def set_slew_speed(self, axis, speed):
 <dd>
 <div class="desc"><p>Set the current position of the axis to zero (0.00). If a reference position
 offset value is configured (see the configuration command <code>rofs</code>) the current
-position is set to that reference offset value.</p></div>
+position is set to that reference offset value.</p>
+<p>If you want to retain this zero position, you will have to also call the
+'save_configuration()' command. Otherwise the zero position will be lost
+after a reset or a power cycle.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
@@ -2621,6 +2692,10 @@ def zero(self, axis) -&gt; None:
     Set the current position of the axis to zero (0.00). If a reference position
     offset value is configured (see the configuration command `rofs`) the current
     position is set to that reference offset value.
+
+    If you want to retain this zero position, you will have to also call the
+    &#39;save_configuration()&#39; command. Otherwise the zero position will be lost
+    after a reset or a power cycle.
     &#34;&#34;&#34;
     raise NotImplementedError</code></pre>
 </details>
@@ -2750,6 +2825,8 @@ to the HUBER Hardware Controller remotely.</p>
 <li><code><a title="egse.stages.huber.smc9300.HuberSMC9300Interface.notify_observers" href="../../device.html#egse.device.DeviceConnectionObservable.notify_observers">notify_observers</a></code></li>
 <li><code><a title="egse.stages.huber.smc9300.HuberSMC9300Interface.quit" href="#egse.stages.huber.smc9300.HuberSMC9300Interface.quit">quit</a></code></li>
 <li><code><a title="egse.stages.huber.smc9300.HuberSMC9300Interface.reconnect" href="../../device.html#egse.device.DeviceConnectionInterface.reconnect">reconnect</a></code></li>
+<li><code><a title="egse.stages.huber.smc9300.HuberSMC9300Interface.reset" href="#egse.stages.huber.smc9300.HuberSMC9300Interface.reset">reset</a></code></li>
+<li><code><a title="egse.stages.huber.smc9300.HuberSMC9300Interface.save_configuration" href="#egse.stages.huber.smc9300.HuberSMC9300Interface.save_configuration">save_configuration</a></code></li>
 <li><code><a title="egse.stages.huber.smc9300.HuberSMC9300Interface.set_edev" href="#egse.stages.huber.smc9300.HuberSMC9300Interface.set_edev">set_edev</a></code></li>
 <li><code><a title="egse.stages.huber.smc9300.HuberSMC9300Interface.set_edir" href="#egse.stages.huber.smc9300.HuberSMC9300Interface.set_edir">set_edir</a></code></li>
 <li><code><a title="egse.stages.huber.smc9300.HuberSMC9300Interface.set_slew_speed" href="#egse.stages.huber.smc9300.HuberSMC9300Interface.set_slew_speed">set_slew_speed</a></code></li>
@@ -2832,6 +2909,8 @@ to the HUBER Hardware Controller remotely.</p>
 <li><code><a title="egse.stages.huber.smc9300.HuberSMC9300Interface.notify_observers" href="../../device.html#egse.device.DeviceConnectionObservable.notify_observers">notify_observers</a></code></li>
 <li><code><a title="egse.stages.huber.smc9300.HuberSMC9300Interface.quit" href="#egse.stages.huber.smc9300.HuberSMC9300Interface.quit">quit</a></code></li>
 <li><code><a title="egse.stages.huber.smc9300.HuberSMC9300Interface.reconnect" href="../../device.html#egse.device.DeviceConnectionInterface.reconnect">reconnect</a></code></li>
+<li><code><a title="egse.stages.huber.smc9300.HuberSMC9300Interface.reset" href="#egse.stages.huber.smc9300.HuberSMC9300Interface.reset">reset</a></code></li>
+<li><code><a title="egse.stages.huber.smc9300.HuberSMC9300Interface.save_configuration" href="#egse.stages.huber.smc9300.HuberSMC9300Interface.save_configuration">save_configuration</a></code></li>
 <li><code><a title="egse.stages.huber.smc9300.HuberSMC9300Interface.set_edev" href="#egse.stages.huber.smc9300.HuberSMC9300Interface.set_edev">set_edev</a></code></li>
 <li><code><a title="egse.stages.huber.smc9300.HuberSMC9300Interface.set_edir" href="#egse.stages.huber.smc9300.HuberSMC9300Interface.set_edir">set_edir</a></code></li>
 <li><code><a title="egse.stages.huber.smc9300.HuberSMC9300Interface.set_slew_speed" href="#egse.stages.huber.smc9300.HuberSMC9300Interface.set_slew_speed">set_slew_speed</a></code></li>
@@ -2903,6 +2982,8 @@ to the HUBER Hardware Controller remotely.</p>
 <li><code><a title="egse.stages.huber.smc9300.HuberSMC9300Interface.move" href="#egse.stages.huber.smc9300.HuberSMC9300Interface.move">move</a></code></li>
 <li><code><a title="egse.stages.huber.smc9300.HuberSMC9300Interface.move_direct" href="#egse.stages.huber.smc9300.HuberSMC9300Interface.move_direct">move_direct</a></code></li>
 <li><code><a title="egse.stages.huber.smc9300.HuberSMC9300Interface.quit" href="#egse.stages.huber.smc9300.HuberSMC9300Interface.quit">quit</a></code></li>
+<li><code><a title="egse.stages.huber.smc9300.HuberSMC9300Interface.reset" href="#egse.stages.huber.smc9300.HuberSMC9300Interface.reset">reset</a></code></li>
+<li><code><a title="egse.stages.huber.smc9300.HuberSMC9300Interface.save_configuration" href="#egse.stages.huber.smc9300.HuberSMC9300Interface.save_configuration">save_configuration</a></code></li>
 <li><code><a title="egse.stages.huber.smc9300.HuberSMC9300Interface.set_edev" href="#egse.stages.huber.smc9300.HuberSMC9300Interface.set_edev">set_edev</a></code></li>
 <li><code><a title="egse.stages.huber.smc9300.HuberSMC9300Interface.set_edir" href="#egse.stages.huber.smc9300.HuberSMC9300Interface.set_edir">set_edir</a></code></li>
 <li><code><a title="egse.stages.huber.smc9300.HuberSMC9300Interface.set_slew_speed" href="#egse.stages.huber.smc9300.HuberSMC9300Interface.set_slew_speed">set_slew_speed</a></code></li>

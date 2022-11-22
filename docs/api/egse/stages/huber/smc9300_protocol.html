@@ -27,16 +27,18 @@
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">import logging
+import sys
+import time
 
 from egse.control import ControlServer
-from egse.decorators import timer
 from egse.device import DeviceConnectionState
 from egse.hk import convert_hk_names
 from egse.hk import read_conversion_dict
+from egse.process import SubProcess
 from egse.protocol import DynamicCommandProtocol
 from egse.settings import Settings
 from egse.stages.huber.smc9300 import HuberSMC9300Controller
-from egse.stages.huber.smc9300 import HuberSMC9300Simulator
+from egse.stages.huber.smc9300 import HuberSMC9300Interface
 from egse.system import format_datetime
 from egse.zmq_ser import bind_address
 
@@ -50,14 +52,27 @@ class HuberSMC9300Protocol(DynamicCommandProtocol):
     def __init__(self, control_server: ControlServer):
         super().__init__(control_server)
 
+        self.huber_sim: SubProcess
+        self.huber = HuberSMC9300Interface
+
         self.hk_conversion_table = read_conversion_dict(
-            self.get_control_server().get_storage_mnemonic(), use_site=True)
+            self.get_control_server().get_storage_mnemonic(),
+            use_site=True
+        )
 
         if Settings.simulation_mode():
-            self.huber = HuberSMC9300Simulator()
+            # In simulation mode, we start the simulator process and have the control server
+            # connect to that process instead of the hardware.
+            self.huber_sim = SubProcess(&#34;SMC9300 Simulator&#34;,
+                                        [sys.executable, &#34;-m&#34;, &#34;egse.stages.huber.smc9300_sim&#34;, &#34;start&#34;])
+            self.huber_sim.execute(detach_from_parent=True)
+            time.sleep(2.0)  # Allow the simulator time to start up
+            self.huber = HuberSMC9300Controller(hostname=&#34;localhost&#34;)
         else:
+            self.huber_sim = None
             self.huber = HuberSMC9300Controller()
-            self.huber.add_observer(self)
+
+        self.huber.add_observer(self)
 
         try:
             self.huber.connect()
@@ -65,6 +80,10 @@ class HuberSMC9300Protocol(DynamicCommandProtocol):
             MODULE_LOGGER.warning(
                 &#34;Couldn&#39;t establish a connection to the HUBER Stages, check the log messages.&#34;)
             MODULE_LOGGER.debug(f&#34;{exc = }&#34;)
+
+    def quit(self):
+        if self.huber_sim is not None:
+            self.huber_sim.quit()
 
     def get_bind_address(self):
         return bind_address(
@@ -96,7 +115,7 @@ class HuberSMC9300Protocol(DynamicCommandProtocol):
 
         response = {&#34;timestamp&#34;: format_datetime()}
 
-        if self.state == DeviceConnectionState.DEVICE_CONNECTED:
+        if self.state == DeviceConnectionState.DEVICE_CONNECTED or Settings.simulation_mode():
             response.update({
                 &#34;axis 1 - cur_pos&#34;: self.huber.get_current_position(axis=1),
                 &#34;axis 2 - cur_pos&#34;: self.huber.get_current_position(axis=2),
@@ -137,14 +156,27 @@ update of its state by calling the <code>update_connection_state()</code> method
     def __init__(self, control_server: ControlServer):
         super().__init__(control_server)
 
+        self.huber_sim: SubProcess
+        self.huber = HuberSMC9300Interface
+
         self.hk_conversion_table = read_conversion_dict(
-            self.get_control_server().get_storage_mnemonic(), use_site=True)
+            self.get_control_server().get_storage_mnemonic(),
+            use_site=True
+        )
 
         if Settings.simulation_mode():
-            self.huber = HuberSMC9300Simulator()
+            # In simulation mode, we start the simulator process and have the control server
+            # connect to that process instead of the hardware.
+            self.huber_sim = SubProcess(&#34;SMC9300 Simulator&#34;,
+                                        [sys.executable, &#34;-m&#34;, &#34;egse.stages.huber.smc9300_sim&#34;, &#34;start&#34;])
+            self.huber_sim.execute(detach_from_parent=True)
+            time.sleep(2.0)  # Allow the simulator time to start up
+            self.huber = HuberSMC9300Controller(hostname=&#34;localhost&#34;)
         else:
+            self.huber_sim = None
             self.huber = HuberSMC9300Controller()
-            self.huber.add_observer(self)
+
+        self.huber.add_observer(self)
 
         try:
             self.huber.connect()
@@ -152,6 +184,10 @@ update of its state by calling the <code>update_connection_state()</code> method
             MODULE_LOGGER.warning(
                 &#34;Couldn&#39;t establish a connection to the HUBER Stages, check the log messages.&#34;)
             MODULE_LOGGER.debug(f&#34;{exc = }&#34;)
+
+    def quit(self):
+        if self.huber_sim is not None:
+            self.huber_sim.quit()
 
     def get_bind_address(self):
         return bind_address(
@@ -183,7 +219,7 @@ update of its state by calling the <code>update_connection_state()</code> method
 
         response = {&#34;timestamp&#34;: format_datetime()}
 
-        if self.state == DeviceConnectionState.DEVICE_CONNECTED:
+        if self.state == DeviceConnectionState.DEVICE_CONNECTED or Settings.simulation_mode():
             response.update({
                 &#34;axis 1 - cur_pos&#34;: self.huber.get_current_position(axis=1),
                 &#34;axis 2 - cur_pos&#34;: self.huber.get_current_position(axis=2),

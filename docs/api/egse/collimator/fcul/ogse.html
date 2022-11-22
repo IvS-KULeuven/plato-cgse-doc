@@ -46,6 +46,7 @@ from egse.command import ClientServerCommand
 from egse.command import CommandError
 from egse.control import Failure
 from egse.control import is_control_server_active
+from egse.device import DeviceConnectionState
 from egse.device import DeviceInterface
 from egse.mixin import DynamicCommandMixin
 from egse.mixin import add_lf
@@ -363,7 +364,7 @@ class OGSEInterface(DeviceInterface):
 
     @dynamic_command(cmd_type=&#34;query&#34;, cmd_string=&#34;version&#34;, process_cmd_string=add_lf,
                      process_response=decode_response)
-    def version(self):
+    def version(self) -&gt; str:
         &#34;&#34;&#34;Returns version information about the OGSE hardware controller.&#34;&#34;&#34;
         raise NotImplementedError
 
@@ -376,31 +377,32 @@ class OGSEInterface(DeviceInterface):
     @dynamic_command(cmd_type=&#34;query&#34;, cmd_string=&#34;exit&#34;, process_cmd_string=add_lf,
                      process_response=decode_response)
     def exit(self):
+        &#34;&#34;&#34;Disconnects client from the server.&#34;&#34;&#34;
         raise NotImplementedError
 
     @dynamic_command(cmd_type=&#34;query&#34;, cmd_string=&#34;ldls status&#34;, process_cmd_string=add_lf,
                      process_response=decode_response)
-    def ldls_status(self):
+    def ldls_status(self) -&gt; str:
         &#34;&#34;&#34;
         Returns the state of the connection to the LDLS device. The returned value is &#39;OK&#39;
         when the LDLS device is initialised and ready, &#39;ERROR&#39; when the device failed to
         initialise.
 
         Returns:
-            &#39;OK&#39; or &#39;ERROR&#39;
+            &#39;ldls: OK&#39; or &#39;ldls: ERROR&#39;
         &#34;&#34;&#34;
         raise NotImplementedError
 
     @dynamic_command(cmd_type=&#34;query&#34;, cmd_string=&#34;pm status&#34;, process_cmd_string=add_lf,
                      process_response=decode_pm_status_response)
-    def pm_status(self):
+    def pm_status(self) -&gt; dict:
         &#34;&#34;&#34;
         Returns the state of the connection to the power-meter devices. The returned value is &#39;OK&#39;
         when the power-meter device is initialised and ready, &#39;ERROR&#39; when the device failed to
         initialise.
 
         Returns:
-            pm1: &lt;status&gt;, pm2: &lt;status&gt;.
+            A dictionary with keys: &#39;pm1&#39;, &#39;pm2&#39; and values &#39;OK&#39; or &#39;ERROR&#39;.
         &#34;&#34;&#34;
         raise NotImplementedError
 
@@ -413,64 +415,71 @@ class OGSEInterface(DeviceInterface):
         initialise.
 
         Returns:
-            A string containing &#39;OK&#39; or &#39;ERROR&#39;.
+            A string containing &#39;OK&#39; or &#39;ERROR&#39;, i.e. &#39;att: OK&#39; or &#39;att: ERROR&#39;.
         &#34;&#34;&#34;
         raise NotImplementedError
 
     @dynamic_command(cmd_type=&#34;query&#34;, cmd_string=&#34;get interlock&#34;, process_cmd_string=add_lf,
                      process_response=decode_response)
-    def get_interlock(self):
-        &#34;&#34;&#34;Get the state of the interlock. Returns &#39;OPEN&#39; or &#39;CLOSE&#39;.&#34;&#34;&#34;
+    def get_interlock(self) -&gt; str:
+        &#34;&#34;&#34;Get the state of the interlock.
+
+        Returns:
+            A string containg &#39;OPEN&#39; or &#39;CLOSE&#39;, i.e. &#39;interlock: OPEN&#39; or &#39;interlock: CLOSE&#39;.
+        &#34;&#34;&#34;
         raise NotImplementedError
 
     @dynamic_command(cmd_type=&#34;query&#34;, cmd_string=&#34;get power&#34;, process_cmd_string=add_lf,
                      process_response=decode_response)
-    def get_power(self):
-        &#34;&#34;&#34;Get the state of the power supply. Returns &#39;ON&#39; or &#39;OFF&#39;.&#34;&#34;&#34;
+    def get_power(self) -&gt; str:
+        &#34;&#34;&#34;Get the state of the power supply. Returns &#39;power: ON&#39; or &#39;power: OFF&#39;.&#34;&#34;&#34;
         raise NotImplementedError
 
     @dynamic_command(cmd_type=&#34;query&#34;, cmd_string=&#34;get lamp&#34;, process_cmd_string=add_lf,
                      process_response=decode_response)
-    def get_lamp(self):
-        &#34;&#34;&#34;Get the state of the lamp.  Returns &#39;ON&#39; or &#39;OFF&#39;.&#34;&#34;&#34;
+    def get_lamp(self) -&gt; str:
+        &#34;&#34;&#34;Get the state of the lamp.  Returns &#39;lamp: ON&#39; or &#39;lamp: OFF&#39;.&#34;&#34;&#34;
         raise NotImplementedError
 
     @dynamic_command(cmd_type=&#34;query&#34;, cmd_string=&#34;get laser&#34;, process_cmd_string=add_lf,
                      process_response=decode_response)
-    def get_laser(self):
-        &#34;&#34;&#34;Get the state of the laser.  Returns &#39;ON&#39; or &#39;OFF&#39;.&#34;&#34;&#34;
+    def get_laser(self) -&gt; str:
+        &#34;&#34;&#34;Get the state of the laser.  Returns &#39;laser: ON&#39; or &#39;laser: OFF&#39;.&#34;&#34;&#34;
         raise NotImplementedError
 
     @dynamic_command(cmd_type=&#34;query&#34;, cmd_string=&#34;get lamp-fault&#34;, process_cmd_string=add_lf,
                      process_response=decode_response)
-    def get_lamp_fault(self):
-        &#34;&#34;&#34;Returns if there was an error with the lamp. Returned value is &#39;ERROR&#39; or &#39;NO_ERROR&#39;.&#34;&#34;&#34;
+    def get_lamp_fault(self) -&gt; str:
+        &#34;&#34;&#34;
+        Returns if there was an error with the lamp.
+        Returned value is &#39;lamp-fault: ERROR&#39; or &#39;lamp-fault: NO-ERROR&#39;.
+        &#34;&#34;&#34;
         raise NotImplementedError
 
     @dynamic_command(cmd_type=&#34;query&#34;, cmd_string=&#34;get controller-fault&#34;, process_cmd_string=add_lf,
                      process_response=decode_response)
-    def get_controller_fault(self):
+    def get_controller_fault(self) -&gt; str:
         &#34;&#34;&#34;
         Returns if there was an error with the controller.
-        The returned value is &#39;ERROR&#39; or &#39;NO_ERROR&#39;.
+        The returned value is &#39;controller-fault: ERROR&#39; or &#39;controller-fault: NO-ERROR&#39;.
         &#34;&#34;&#34;
         raise NotImplementedError
 
     @dynamic_command(cmd_type=&#34;query&#34;, cmd_string=&#34;get psu&#34;, process_cmd_string=add_lf,
                      process_response=decode_response)
-    def get_psu(self):
-        &#34;&#34;&#34;Get the state of the power supply unit.  Returns &#39;ON&#39; or &#39;OFF&#39;.&#34;&#34;&#34;
+    def get_psu(self) -&gt; str:
+        &#34;&#34;&#34;Get the state of the power supply unit.  Returns &#39;psu: ON&#39; or &#39;psu: OFF&#39;.&#34;&#34;&#34;
         raise NotImplementedError
 
     @dynamic_command(cmd_type=&#34;query&#34;, cmd_string=&#34;get operate&#34;, process_cmd_string=add_lf,
                      process_response=decode_response)
-    def get_operate(self):
-        &#34;&#34;&#34;Get the state of the laser (operate).  Returns &#39;ON&#39; or &#39;OFF&#39;.&#34;&#34;&#34;
+    def get_operate(self) -&gt; str:
+        &#34;&#34;&#34;Get the state of the laser (operate).  Returns &#39;operate: ON&#39; or &#39;operate: OFF&#39;.&#34;&#34;&#34;
         raise NotImplementedError
 
     @dynamic_command(cmd_type=&#34;query&#34;, cmd_string=&#34;get flags&#34;, process_cmd_string=add_lf,
                      process_response=decode_response)
-    def get_flags(self):
+    def get_flags(self) -&gt; str:
         &#34;&#34;&#34;
         Get the state of all parameters encoded in a single number formatted in hexadecimal
         and binary. The bit order from msb to lsb is:
@@ -528,7 +537,7 @@ class OGSEInterface(DeviceInterface):
     @dynamic_command(cmd_type=&#34;transaction&#34;, cmd_string=&#34;level ${factor}&#34;,
                      process_cmd_string=add_lf,
                      process_response=decode_response)
-    def att_set_level_factor(self, factor: Union[int, float]):
+    def att_set_level_factor(self, factor: int | float) -&gt; str:
         &#34;&#34;&#34;
         Sets attenuator to the level closest to &lt;factor&gt;. There are 47 levels of attenuation
         available, from 0 to 1.
@@ -537,13 +546,16 @@ class OGSEInterface(DeviceInterface):
         Args:
             factor (float): value between 0.0 and 1.0, where 0.0 is opaque and 1.0 is transparant.
 
+        Returns:
+            The string &#39;OK&#39; or &#39;ERROR&#39; depending whether the command
+            was accepted or the attenuator device is not ready.
         &#34;&#34;&#34;
         raise NotImplementedError
 
     @dynamic_command(cmd_type=&#34;transaction&#34;, cmd_string=&#34;level #${index}&#34;,
                      process_cmd_string=check_cmd_att_index,
                      process_response=decode_response)
-    def att_set_level_index(self, index: int):
+    def att_set_level_index(self, index: int) -&gt; str:
         &#34;&#34;&#34;
         Sets attenuator to the level closest to &lt;index&gt;. There are 47 levels of attenuation
         available, from 0 to 46. This command chooses the level closest to the requested value.
@@ -551,48 +563,86 @@ class OGSEInterface(DeviceInterface):
         Args:
             index (int): value between 0-46 (inclusive).
 
+        Returns:
+            The string &#39;OK&#39; or &#39;ERROR&#39; depending whether the command
+            was accepted or the attenuator device is not ready.
         &#34;&#34;&#34;
         raise NotImplementedError
 
-    @dynamic_command(cmd_type=&#34;transaction&#34;, cmd_string=&#34;level ${level1} ${level2}&#34;,
+    @dynamic_command(cmd_type=&#34;transaction&#34;, cmd_string=&#34;level ${pos1} ${pos2}&#34;,
                      process_cmd_string=add_lf,
                      process_response=decode_response)
-    def att_set_level_position(self, level1: int, level2: int):
+    def att_set_level_position(self, pos1: int, pos2: int) -&gt; str:
+        &#34;&#34;&#34;
+        Sets the two filter wheels to the given values (pos1 and pos2 must be between 1 and 8).
+
+        Args:
+            pos1: the requested position for wheel 1
+            pos2: the requested position for wheel 2
+
+        Returns:
+            The string &#39;OK&#39; or &#39;ERROR&#39; depending whether the command
+            was accepted or the attenuator device is not ready.
+
+        &#34;&#34;&#34;
         raise NotImplementedError
 
     @dynamic_command(cmd_type=&#34;transaction&#34;, cmd_string=&#34;level up&#34;, process_cmd_string=add_lf,
                      process_response=decode_response)
-    def att_level_up(self):
+    def att_level_up(self) -&gt; str:
+        &#34;&#34;&#34;
+        Selects the attenuation one step higher than the current value.
+        It has no effect if the current level is already the highest value allowed.
+
+        Returns:
+            The string &#39;OK&#39; or &#39;ERROR&#39; depending whether the command
+            was accepted or the attenuator device is not ready.
+        &#34;&#34;&#34;
         raise NotImplementedError
 
     @dynamic_command(cmd_type=&#34;transaction&#34;, cmd_string=&#34;level down&#34;, process_cmd_string=add_lf,
                      process_response=decode_response)
-    def att_level_down(self):
+    def att_level_down(self) -&gt; str:
+        &#34;&#34;&#34;
+        Selects the attenuation one step lower than the current value.
+        It has no effect if the current level is already the lowest value allowed.
+
+        Returns:
+            The string &#39;OK&#39; or &#39;ERROR&#39; depending whether the command
+            was accepted or the attenuator device is not ready.
+        &#34;&#34;&#34;
         raise NotImplementedError
 
     @dynamic_command(cmd_type=&#34;transaction&#34;, cmd_string=&#34;power on&#34;, process_cmd_string=add_lf,
                      process_response=decode_response)
-    def power_on(self):
+    def power_on(self) -&gt; str:
+        &#34;&#34;&#34;Turns the power supply on, returns &#39;OK&#39; or &#39;ERROR&#39;.&#34;&#34;&#34;
         raise NotImplementedError
 
     @dynamic_command(cmd_type=&#34;transaction&#34;, cmd_string=&#34;power off&#34;, process_cmd_string=add_lf,
                      process_response=decode_response)
-    def power_off(self):
+    def power_off(self) -&gt; str:
+        &#34;&#34;&#34;Turns the power supply off, returns &#39;OK&#39; or &#39;ERROR&#39;.&#34;&#34;&#34;
         raise NotImplementedError
 
     @dynamic_command(cmd_type=&#34;transaction&#34;, cmd_string=&#34;operate on&#34;, process_cmd_string=add_lf,
                      process_response=decode_response)
-    def operate_on(self):
+    def operate_on(self) -&gt; str:
+        &#34;&#34;&#34;Turns the laser on, returns &#39;OK&#39; or &#39;ERROR&#39;.&#34;&#34;&#34;
         raise NotImplementedError
 
     @dynamic_command(cmd_type=&#34;transaction&#34;, cmd_string=&#34;operate off&#34;, process_cmd_string=add_lf,
                      process_response=decode_response)
-    def operate_off(self):
+    def operate_off(self) -&gt; str:
+        &#34;&#34;&#34;Turns the laser off, returns &#39;OK&#39; or &#39;ERROR&#39;.&#34;&#34;&#34;
         raise NotImplementedError
 
     @dynamic_command(cmd_type=&#34;transaction&#34;, cmd_string=&#34;reset&#34;, process_cmd_string=add_lf,
                      process_response=decode_response)
-    def reset(self):
+    def reset(self) -&gt; str:
+        &#34;&#34;&#34;Performs a ‘reset’ cycle. This is sometimes needed to take LDLS out of a locked state.
+        Returns &#39;OK&#39; or &#39;ERROR&#39;.
+        &#34;&#34;&#34;
         raise NotImplementedError
 
 
@@ -620,9 +670,11 @@ class OGSEController(OGSEInterface, DynamicCommandMixin):
 
     def connect(self):
         self.transport.connect()
+        self.notify_observers(DeviceConnectionState.DEVICE_CONNECTED)
 
     def disconnect(self):
         self.transport.disconnect()
+        self.notify_observers(DeviceConnectionState.DEVICE_NOT_CONNECTED)
 
     def reconnect(self):
         self.transport.reconnect()
@@ -632,7 +684,7 @@ class OGSEController(OGSEInterface, DynamicCommandMixin):
         return self.transport.is_connected()
 
     def is_simulator(self):
-        return False
+        return &#34;sim&#34; in self.version()
 
 
 ATT_LEVELS_BY_WHEEL = {
@@ -1586,7 +1638,7 @@ Arguments can be positional or keyword arguments, not both.</p></div>
 </dd>
 <dt id="egse.collimator.fcul.ogse.OGSEController"><code class="flex name class">
 <span>class <span class="ident">OGSEController</span></span>
-<span>(</span><span>hostname='localhost', port=4181)</span>
+<span>(</span><span>hostname='139.165.177.76', port=4181)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>This is the class that talks directly to the OGSE device. It opens a TCP/IP socket
@@ -1628,9 +1680,11 @@ configuration file.</dd>
 
     def connect(self):
         self.transport.connect()
+        self.notify_observers(DeviceConnectionState.DEVICE_CONNECTED)
 
     def disconnect(self):
         self.transport.disconnect()
+        self.notify_observers(DeviceConnectionState.DEVICE_NOT_CONNECTED)
 
     def reconnect(self):
         self.transport.reconnect()
@@ -1640,7 +1694,7 @@ configuration file.</dd>
         return self.transport.is_connected()
 
     def is_simulator(self):
-        return False</code></pre>
+        return &#34;sim&#34; in self.version()</code></pre>
 </details>
 <h3>Ancestors</h3>
 <ul class="hlist">
@@ -1673,11 +1727,15 @@ configuration file.</dd>
 <ul class="hlist">
 <li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.add_observer" href="../../device.html#egse.device.DeviceConnectionObservable.add_observer">add_observer</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.att_get_level" href="#egse.collimator.fcul.ogse.OGSEInterface.att_get_level">att_get_level</a></code></li>
+<li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.att_level_down" href="#egse.collimator.fcul.ogse.OGSEInterface.att_level_down">att_level_down</a></code></li>
+<li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.att_level_up" href="#egse.collimator.fcul.ogse.OGSEInterface.att_level_up">att_level_up</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.att_set_level_factor" href="#egse.collimator.fcul.ogse.OGSEInterface.att_set_level_factor">att_set_level_factor</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.att_set_level_index" href="#egse.collimator.fcul.ogse.OGSEInterface.att_set_level_index">att_set_level_index</a></code></li>
+<li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.att_set_level_position" href="#egse.collimator.fcul.ogse.OGSEInterface.att_set_level_position">att_set_level_position</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.att_status" href="#egse.collimator.fcul.ogse.OGSEInterface.att_status">att_status</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.connect" href="../../device.html#egse.device.DeviceConnectionInterface.connect">connect</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.disconnect" href="../../device.html#egse.device.DeviceConnectionInterface.disconnect">disconnect</a></code></li>
+<li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.exit" href="#egse.collimator.fcul.ogse.OGSEInterface.exit">exit</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.get_controller_fault" href="#egse.collimator.fcul.ogse.OGSEInterface.get_controller_fault">get_controller_fault</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.get_flags" href="#egse.collimator.fcul.ogse.OGSEInterface.get_flags">get_flags</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.get_interlock" href="#egse.collimator.fcul.ogse.OGSEInterface.get_interlock">get_interlock</a></code></li>
@@ -1691,9 +1749,14 @@ configuration file.</dd>
 <li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.is_simulator" href="../../device.html#egse.device.DeviceInterface.is_simulator">is_simulator</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.ldls_status" href="#egse.collimator.fcul.ogse.OGSEInterface.ldls_status">ldls_status</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.notify_observers" href="../../device.html#egse.device.DeviceConnectionObservable.notify_observers">notify_observers</a></code></li>
+<li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.operate_off" href="#egse.collimator.fcul.ogse.OGSEInterface.operate_off">operate_off</a></code></li>
+<li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.operate_on" href="#egse.collimator.fcul.ogse.OGSEInterface.operate_on">operate_on</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.pm_status" href="#egse.collimator.fcul.ogse.OGSEInterface.pm_status">pm_status</a></code></li>
+<li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.power_off" href="#egse.collimator.fcul.ogse.OGSEInterface.power_off">power_off</a></code></li>
+<li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.power_on" href="#egse.collimator.fcul.ogse.OGSEInterface.power_on">power_on</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.quit" href="#egse.collimator.fcul.ogse.OGSEInterface.quit">quit</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.reconnect" href="../../device.html#egse.device.DeviceConnectionInterface.reconnect">reconnect</a></code></li>
+<li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.reset" href="#egse.collimator.fcul.ogse.OGSEInterface.reset">reset</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.status" href="#egse.collimator.fcul.ogse.OGSEInterface.status">status</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.version" href="#egse.collimator.fcul.ogse.OGSEInterface.version">version</a></code></li>
 </ul>
@@ -1722,7 +1785,7 @@ configuration file.</dd>
 
     @dynamic_command(cmd_type=&#34;query&#34;, cmd_string=&#34;version&#34;, process_cmd_string=add_lf,
                      process_response=decode_response)
-    def version(self):
+    def version(self) -&gt; str:
         &#34;&#34;&#34;Returns version information about the OGSE hardware controller.&#34;&#34;&#34;
         raise NotImplementedError
 
@@ -1735,31 +1798,32 @@ configuration file.</dd>
     @dynamic_command(cmd_type=&#34;query&#34;, cmd_string=&#34;exit&#34;, process_cmd_string=add_lf,
                      process_response=decode_response)
     def exit(self):
+        &#34;&#34;&#34;Disconnects client from the server.&#34;&#34;&#34;
         raise NotImplementedError
 
     @dynamic_command(cmd_type=&#34;query&#34;, cmd_string=&#34;ldls status&#34;, process_cmd_string=add_lf,
                      process_response=decode_response)
-    def ldls_status(self):
+    def ldls_status(self) -&gt; str:
         &#34;&#34;&#34;
         Returns the state of the connection to the LDLS device. The returned value is &#39;OK&#39;
         when the LDLS device is initialised and ready, &#39;ERROR&#39; when the device failed to
         initialise.
 
         Returns:
-            &#39;OK&#39; or &#39;ERROR&#39;
+            &#39;ldls: OK&#39; or &#39;ldls: ERROR&#39;
         &#34;&#34;&#34;
         raise NotImplementedError
 
     @dynamic_command(cmd_type=&#34;query&#34;, cmd_string=&#34;pm status&#34;, process_cmd_string=add_lf,
                      process_response=decode_pm_status_response)
-    def pm_status(self):
+    def pm_status(self) -&gt; dict:
         &#34;&#34;&#34;
         Returns the state of the connection to the power-meter devices. The returned value is &#39;OK&#39;
         when the power-meter device is initialised and ready, &#39;ERROR&#39; when the device failed to
         initialise.
 
         Returns:
-            pm1: &lt;status&gt;, pm2: &lt;status&gt;.
+            A dictionary with keys: &#39;pm1&#39;, &#39;pm2&#39; and values &#39;OK&#39; or &#39;ERROR&#39;.
         &#34;&#34;&#34;
         raise NotImplementedError
 
@@ -1772,64 +1836,71 @@ configuration file.</dd>
         initialise.
 
         Returns:
-            A string containing &#39;OK&#39; or &#39;ERROR&#39;.
+            A string containing &#39;OK&#39; or &#39;ERROR&#39;, i.e. &#39;att: OK&#39; or &#39;att: ERROR&#39;.
         &#34;&#34;&#34;
         raise NotImplementedError
 
     @dynamic_command(cmd_type=&#34;query&#34;, cmd_string=&#34;get interlock&#34;, process_cmd_string=add_lf,
                      process_response=decode_response)
-    def get_interlock(self):
-        &#34;&#34;&#34;Get the state of the interlock. Returns &#39;OPEN&#39; or &#39;CLOSE&#39;.&#34;&#34;&#34;
+    def get_interlock(self) -&gt; str:
+        &#34;&#34;&#34;Get the state of the interlock.
+
+        Returns:
+            A string containg &#39;OPEN&#39; or &#39;CLOSE&#39;, i.e. &#39;interlock: OPEN&#39; or &#39;interlock: CLOSE&#39;.
+        &#34;&#34;&#34;
         raise NotImplementedError
 
     @dynamic_command(cmd_type=&#34;query&#34;, cmd_string=&#34;get power&#34;, process_cmd_string=add_lf,
                      process_response=decode_response)
-    def get_power(self):
-        &#34;&#34;&#34;Get the state of the power supply. Returns &#39;ON&#39; or &#39;OFF&#39;.&#34;&#34;&#34;
+    def get_power(self) -&gt; str:
+        &#34;&#34;&#34;Get the state of the power supply. Returns &#39;power: ON&#39; or &#39;power: OFF&#39;.&#34;&#34;&#34;
         raise NotImplementedError
 
     @dynamic_command(cmd_type=&#34;query&#34;, cmd_string=&#34;get lamp&#34;, process_cmd_string=add_lf,
                      process_response=decode_response)
-    def get_lamp(self):
-        &#34;&#34;&#34;Get the state of the lamp.  Returns &#39;ON&#39; or &#39;OFF&#39;.&#34;&#34;&#34;
+    def get_lamp(self) -&gt; str:
+        &#34;&#34;&#34;Get the state of the lamp.  Returns &#39;lamp: ON&#39; or &#39;lamp: OFF&#39;.&#34;&#34;&#34;
         raise NotImplementedError
 
     @dynamic_command(cmd_type=&#34;query&#34;, cmd_string=&#34;get laser&#34;, process_cmd_string=add_lf,
                      process_response=decode_response)
-    def get_laser(self):
-        &#34;&#34;&#34;Get the state of the laser.  Returns &#39;ON&#39; or &#39;OFF&#39;.&#34;&#34;&#34;
+    def get_laser(self) -&gt; str:
+        &#34;&#34;&#34;Get the state of the laser.  Returns &#39;laser: ON&#39; or &#39;laser: OFF&#39;.&#34;&#34;&#34;
         raise NotImplementedError
 
     @dynamic_command(cmd_type=&#34;query&#34;, cmd_string=&#34;get lamp-fault&#34;, process_cmd_string=add_lf,
                      process_response=decode_response)
-    def get_lamp_fault(self):
-        &#34;&#34;&#34;Returns if there was an error with the lamp. Returned value is &#39;ERROR&#39; or &#39;NO_ERROR&#39;.&#34;&#34;&#34;
+    def get_lamp_fault(self) -&gt; str:
+        &#34;&#34;&#34;
+        Returns if there was an error with the lamp.
+        Returned value is &#39;lamp-fault: ERROR&#39; or &#39;lamp-fault: NO-ERROR&#39;.
+        &#34;&#34;&#34;
         raise NotImplementedError
 
     @dynamic_command(cmd_type=&#34;query&#34;, cmd_string=&#34;get controller-fault&#34;, process_cmd_string=add_lf,
                      process_response=decode_response)
-    def get_controller_fault(self):
+    def get_controller_fault(self) -&gt; str:
         &#34;&#34;&#34;
         Returns if there was an error with the controller.
-        The returned value is &#39;ERROR&#39; or &#39;NO_ERROR&#39;.
+        The returned value is &#39;controller-fault: ERROR&#39; or &#39;controller-fault: NO-ERROR&#39;.
         &#34;&#34;&#34;
         raise NotImplementedError
 
     @dynamic_command(cmd_type=&#34;query&#34;, cmd_string=&#34;get psu&#34;, process_cmd_string=add_lf,
                      process_response=decode_response)
-    def get_psu(self):
-        &#34;&#34;&#34;Get the state of the power supply unit.  Returns &#39;ON&#39; or &#39;OFF&#39;.&#34;&#34;&#34;
+    def get_psu(self) -&gt; str:
+        &#34;&#34;&#34;Get the state of the power supply unit.  Returns &#39;psu: ON&#39; or &#39;psu: OFF&#39;.&#34;&#34;&#34;
         raise NotImplementedError
 
     @dynamic_command(cmd_type=&#34;query&#34;, cmd_string=&#34;get operate&#34;, process_cmd_string=add_lf,
                      process_response=decode_response)
-    def get_operate(self):
-        &#34;&#34;&#34;Get the state of the laser (operate).  Returns &#39;ON&#39; or &#39;OFF&#39;.&#34;&#34;&#34;
+    def get_operate(self) -&gt; str:
+        &#34;&#34;&#34;Get the state of the laser (operate).  Returns &#39;operate: ON&#39; or &#39;operate: OFF&#39;.&#34;&#34;&#34;
         raise NotImplementedError
 
     @dynamic_command(cmd_type=&#34;query&#34;, cmd_string=&#34;get flags&#34;, process_cmd_string=add_lf,
                      process_response=decode_response)
-    def get_flags(self):
+    def get_flags(self) -&gt; str:
         &#34;&#34;&#34;
         Get the state of all parameters encoded in a single number formatted in hexadecimal
         and binary. The bit order from msb to lsb is:
@@ -1887,7 +1958,7 @@ configuration file.</dd>
     @dynamic_command(cmd_type=&#34;transaction&#34;, cmd_string=&#34;level ${factor}&#34;,
                      process_cmd_string=add_lf,
                      process_response=decode_response)
-    def att_set_level_factor(self, factor: Union[int, float]):
+    def att_set_level_factor(self, factor: int | float) -&gt; str:
         &#34;&#34;&#34;
         Sets attenuator to the level closest to &lt;factor&gt;. There are 47 levels of attenuation
         available, from 0 to 1.
@@ -1896,13 +1967,16 @@ configuration file.</dd>
         Args:
             factor (float): value between 0.0 and 1.0, where 0.0 is opaque and 1.0 is transparant.
 
+        Returns:
+            The string &#39;OK&#39; or &#39;ERROR&#39; depending whether the command
+            was accepted or the attenuator device is not ready.
         &#34;&#34;&#34;
         raise NotImplementedError
 
     @dynamic_command(cmd_type=&#34;transaction&#34;, cmd_string=&#34;level #${index}&#34;,
                      process_cmd_string=check_cmd_att_index,
                      process_response=decode_response)
-    def att_set_level_index(self, index: int):
+    def att_set_level_index(self, index: int) -&gt; str:
         &#34;&#34;&#34;
         Sets attenuator to the level closest to &lt;index&gt;. There are 47 levels of attenuation
         available, from 0 to 46. This command chooses the level closest to the requested value.
@@ -1910,48 +1984,86 @@ configuration file.</dd>
         Args:
             index (int): value between 0-46 (inclusive).
 
+        Returns:
+            The string &#39;OK&#39; or &#39;ERROR&#39; depending whether the command
+            was accepted or the attenuator device is not ready.
         &#34;&#34;&#34;
         raise NotImplementedError
 
-    @dynamic_command(cmd_type=&#34;transaction&#34;, cmd_string=&#34;level ${level1} ${level2}&#34;,
+    @dynamic_command(cmd_type=&#34;transaction&#34;, cmd_string=&#34;level ${pos1} ${pos2}&#34;,
                      process_cmd_string=add_lf,
                      process_response=decode_response)
-    def att_set_level_position(self, level1: int, level2: int):
+    def att_set_level_position(self, pos1: int, pos2: int) -&gt; str:
+        &#34;&#34;&#34;
+        Sets the two filter wheels to the given values (pos1 and pos2 must be between 1 and 8).
+
+        Args:
+            pos1: the requested position for wheel 1
+            pos2: the requested position for wheel 2
+
+        Returns:
+            The string &#39;OK&#39; or &#39;ERROR&#39; depending whether the command
+            was accepted or the attenuator device is not ready.
+
+        &#34;&#34;&#34;
         raise NotImplementedError
 
     @dynamic_command(cmd_type=&#34;transaction&#34;, cmd_string=&#34;level up&#34;, process_cmd_string=add_lf,
                      process_response=decode_response)
-    def att_level_up(self):
+    def att_level_up(self) -&gt; str:
+        &#34;&#34;&#34;
+        Selects the attenuation one step higher than the current value.
+        It has no effect if the current level is already the highest value allowed.
+
+        Returns:
+            The string &#39;OK&#39; or &#39;ERROR&#39; depending whether the command
+            was accepted or the attenuator device is not ready.
+        &#34;&#34;&#34;
         raise NotImplementedError
 
     @dynamic_command(cmd_type=&#34;transaction&#34;, cmd_string=&#34;level down&#34;, process_cmd_string=add_lf,
                      process_response=decode_response)
-    def att_level_down(self):
+    def att_level_down(self) -&gt; str:
+        &#34;&#34;&#34;
+        Selects the attenuation one step lower than the current value.
+        It has no effect if the current level is already the lowest value allowed.
+
+        Returns:
+            The string &#39;OK&#39; or &#39;ERROR&#39; depending whether the command
+            was accepted or the attenuator device is not ready.
+        &#34;&#34;&#34;
         raise NotImplementedError
 
     @dynamic_command(cmd_type=&#34;transaction&#34;, cmd_string=&#34;power on&#34;, process_cmd_string=add_lf,
                      process_response=decode_response)
-    def power_on(self):
+    def power_on(self) -&gt; str:
+        &#34;&#34;&#34;Turns the power supply on, returns &#39;OK&#39; or &#39;ERROR&#39;.&#34;&#34;&#34;
         raise NotImplementedError
 
     @dynamic_command(cmd_type=&#34;transaction&#34;, cmd_string=&#34;power off&#34;, process_cmd_string=add_lf,
                      process_response=decode_response)
-    def power_off(self):
+    def power_off(self) -&gt; str:
+        &#34;&#34;&#34;Turns the power supply off, returns &#39;OK&#39; or &#39;ERROR&#39;.&#34;&#34;&#34;
         raise NotImplementedError
 
     @dynamic_command(cmd_type=&#34;transaction&#34;, cmd_string=&#34;operate on&#34;, process_cmd_string=add_lf,
                      process_response=decode_response)
-    def operate_on(self):
+    def operate_on(self) -&gt; str:
+        &#34;&#34;&#34;Turns the laser on, returns &#39;OK&#39; or &#39;ERROR&#39;.&#34;&#34;&#34;
         raise NotImplementedError
 
     @dynamic_command(cmd_type=&#34;transaction&#34;, cmd_string=&#34;operate off&#34;, process_cmd_string=add_lf,
                      process_response=decode_response)
-    def operate_off(self):
+    def operate_off(self) -&gt; str:
+        &#34;&#34;&#34;Turns the laser off, returns &#39;OK&#39; or &#39;ERROR&#39;.&#34;&#34;&#34;
         raise NotImplementedError
 
     @dynamic_command(cmd_type=&#34;transaction&#34;, cmd_string=&#34;reset&#34;, process_cmd_string=add_lf,
                      process_response=decode_response)
-    def reset(self):
+    def reset(self) -&gt; str:
+        &#34;&#34;&#34;Performs a ‘reset’ cycle. This is sometimes needed to take LDLS out of a locked state.
+        Returns &#39;OK&#39; or &#39;ERROR&#39;.
+        &#34;&#34;&#34;
         raise NotImplementedError</code></pre>
 </details>
 <h3>Ancestors</h3>
@@ -1990,37 +2102,61 @@ def att_get_level(self) -&gt; dict | Failure:
 </details>
 </dd>
 <dt id="egse.collimator.fcul.ogse.OGSEInterface.att_level_down"><code class="name flex">
-<span>def <span class="ident">att_level_down</span></span>(<span>self)</span>
+<span>def <span class="ident">att_level_down</span></span>(<span>self) ‑> str</span>
 </code></dt>
 <dd>
-<div class="desc"></div>
+<div class="desc"><p>Selects the attenuation one step lower than the current value.
+It has no effect if the current level is already the lowest value allowed.</p>
+<h2 id="returns">Returns</h2>
+<p>The string 'OK' or 'ERROR' depending whether the command
+was accepted or the attenuator device is not ready.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">@dynamic_command(cmd_type=&#34;transaction&#34;, cmd_string=&#34;level down&#34;, process_cmd_string=add_lf,
                  process_response=decode_response)
-def att_level_down(self):
+def att_level_down(self) -&gt; str:
+    &#34;&#34;&#34;
+    Selects the attenuation one step lower than the current value.
+    It has no effect if the current level is already the lowest value allowed.
+
+    Returns:
+        The string &#39;OK&#39; or &#39;ERROR&#39; depending whether the command
+        was accepted or the attenuator device is not ready.
+    &#34;&#34;&#34;
     raise NotImplementedError</code></pre>
 </details>
 </dd>
 <dt id="egse.collimator.fcul.ogse.OGSEInterface.att_level_up"><code class="name flex">
-<span>def <span class="ident">att_level_up</span></span>(<span>self)</span>
+<span>def <span class="ident">att_level_up</span></span>(<span>self) ‑> str</span>
 </code></dt>
 <dd>
-<div class="desc"></div>
+<div class="desc"><p>Selects the attenuation one step higher than the current value.
+It has no effect if the current level is already the highest value allowed.</p>
+<h2 id="returns">Returns</h2>
+<p>The string 'OK' or 'ERROR' depending whether the command
+was accepted or the attenuator device is not ready.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">@dynamic_command(cmd_type=&#34;transaction&#34;, cmd_string=&#34;level up&#34;, process_cmd_string=add_lf,
                  process_response=decode_response)
-def att_level_up(self):
+def att_level_up(self) -&gt; str:
+    &#34;&#34;&#34;
+    Selects the attenuation one step higher than the current value.
+    It has no effect if the current level is already the highest value allowed.
+
+    Returns:
+        The string &#39;OK&#39; or &#39;ERROR&#39; depending whether the command
+        was accepted or the attenuator device is not ready.
+    &#34;&#34;&#34;
     raise NotImplementedError</code></pre>
 </details>
 </dd>
 <dt id="egse.collimator.fcul.ogse.OGSEInterface.att_set_level_factor"><code class="name flex">
-<span>def <span class="ident">att_set_level_factor</span></span>(<span>self, factor: Union[int, float])</span>
+<span>def <span class="ident">att_set_level_factor</span></span>(<span>self, factor: int | float) ‑> str</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Sets attenuator to the level closest to <factor>. There are 47 levels of attenuation
@@ -2030,7 +2166,10 @@ This command chooses the level closest to the requested value.</p>
 <dl>
 <dt><strong><code>factor</code></strong> :&ensp;<code>float</code></dt>
 <dd>value between 0.0 and 1.0, where 0.0 is opaque and 1.0 is transparant.</dd>
-</dl></div>
+</dl>
+<h2 id="returns">Returns</h2>
+<p>The string 'OK' or 'ERROR' depending whether the command
+was accepted or the attenuator device is not ready.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
@@ -2038,7 +2177,7 @@ This command chooses the level closest to the requested value.</p>
 <pre><code class="python">@dynamic_command(cmd_type=&#34;transaction&#34;, cmd_string=&#34;level ${factor}&#34;,
                  process_cmd_string=add_lf,
                  process_response=decode_response)
-def att_set_level_factor(self, factor: Union[int, float]):
+def att_set_level_factor(self, factor: int | float) -&gt; str:
     &#34;&#34;&#34;
     Sets attenuator to the level closest to &lt;factor&gt;. There are 47 levels of attenuation
     available, from 0 to 1.
@@ -2047,12 +2186,15 @@ def att_set_level_factor(self, factor: Union[int, float]):
     Args:
         factor (float): value between 0.0 and 1.0, where 0.0 is opaque and 1.0 is transparant.
 
+    Returns:
+        The string &#39;OK&#39; or &#39;ERROR&#39; depending whether the command
+        was accepted or the attenuator device is not ready.
     &#34;&#34;&#34;
     raise NotImplementedError</code></pre>
 </details>
 </dd>
 <dt id="egse.collimator.fcul.ogse.OGSEInterface.att_set_level_index"><code class="name flex">
-<span>def <span class="ident">att_set_level_index</span></span>(<span>self, index: int)</span>
+<span>def <span class="ident">att_set_level_index</span></span>(<span>self, index: int) ‑> str</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Sets attenuator to the level closest to <index>. There are 47 levels of attenuation
@@ -2061,7 +2203,10 @@ available, from 0 to 46. This command chooses the level closest to the requested
 <dl>
 <dt><strong><code>index</code></strong> :&ensp;<code>int</code></dt>
 <dd>value between 0-46 (inclusive).</dd>
-</dl></div>
+</dl>
+<h2 id="returns">Returns</h2>
+<p>The string 'OK' or 'ERROR' depending whether the command
+was accepted or the attenuator device is not ready.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
@@ -2069,7 +2214,7 @@ available, from 0 to 46. This command chooses the level closest to the requested
 <pre><code class="python">@dynamic_command(cmd_type=&#34;transaction&#34;, cmd_string=&#34;level #${index}&#34;,
                  process_cmd_string=check_cmd_att_index,
                  process_response=decode_response)
-def att_set_level_index(self, index: int):
+def att_set_level_index(self, index: int) -&gt; str:
     &#34;&#34;&#34;
     Sets attenuator to the level closest to &lt;index&gt;. There are 47 levels of attenuation
     available, from 0 to 46. This command chooses the level closest to the requested value.
@@ -2077,23 +2222,48 @@ def att_set_level_index(self, index: int):
     Args:
         index (int): value between 0-46 (inclusive).
 
+    Returns:
+        The string &#39;OK&#39; or &#39;ERROR&#39; depending whether the command
+        was accepted or the attenuator device is not ready.
     &#34;&#34;&#34;
     raise NotImplementedError</code></pre>
 </details>
 </dd>
 <dt id="egse.collimator.fcul.ogse.OGSEInterface.att_set_level_position"><code class="name flex">
-<span>def <span class="ident">att_set_level_position</span></span>(<span>self, level1: int, level2: int)</span>
+<span>def <span class="ident">att_set_level_position</span></span>(<span>self, pos1: int, pos2: int) ‑> str</span>
 </code></dt>
 <dd>
-<div class="desc"></div>
+<div class="desc"><p>Sets the two filter wheels to the given values (pos1 and pos2 must be between 1 and 8).</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>pos1</code></strong></dt>
+<dd>the requested position for wheel 1</dd>
+<dt><strong><code>pos2</code></strong></dt>
+<dd>the requested position for wheel 2</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<p>The string 'OK' or 'ERROR' depending whether the command
+was accepted or the attenuator device is not ready.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">@dynamic_command(cmd_type=&#34;transaction&#34;, cmd_string=&#34;level ${level1} ${level2}&#34;,
+<pre><code class="python">@dynamic_command(cmd_type=&#34;transaction&#34;, cmd_string=&#34;level ${pos1} ${pos2}&#34;,
                  process_cmd_string=add_lf,
                  process_response=decode_response)
-def att_set_level_position(self, level1: int, level2: int):
+def att_set_level_position(self, pos1: int, pos2: int) -&gt; str:
+    &#34;&#34;&#34;
+    Sets the two filter wheels to the given values (pos1 and pos2 must be between 1 and 8).
+
+    Args:
+        pos1: the requested position for wheel 1
+        pos2: the requested position for wheel 2
+
+    Returns:
+        The string &#39;OK&#39; or &#39;ERROR&#39; depending whether the command
+        was accepted or the attenuator device is not ready.
+
+    &#34;&#34;&#34;
     raise NotImplementedError</code></pre>
 </details>
 </dd>
@@ -2105,7 +2275,7 @@ def att_set_level_position(self, level1: int, level2: int):
 when the attenuator device is initialised and ready, 'ERROR' when the device failed to
 initialise.</p>
 <h2 id="returns">Returns</h2>
-<p>A string containing 'OK' or 'ERROR'.</p></div>
+<p>A string containing 'OK' or 'ERROR', i.e. 'att: OK' or 'att: ERROR'.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
@@ -2119,7 +2289,7 @@ def att_status(self) -&gt; str:
     initialise.
 
     Returns:
-        A string containing &#39;OK&#39; or &#39;ERROR&#39;.
+        A string containing &#39;OK&#39; or &#39;ERROR&#39;, i.e. &#39;att: OK&#39; or &#39;att: ERROR&#39;.
     &#34;&#34;&#34;
     raise NotImplementedError</code></pre>
 </details>
@@ -2128,7 +2298,7 @@ def att_status(self) -&gt; str:
 <span>def <span class="ident">exit</span></span>(<span>self)</span>
 </code></dt>
 <dd>
-<div class="desc"></div>
+<div class="desc"><p>Disconnects client from the server.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
@@ -2136,31 +2306,32 @@ def att_status(self) -&gt; str:
 <pre><code class="python">@dynamic_command(cmd_type=&#34;query&#34;, cmd_string=&#34;exit&#34;, process_cmd_string=add_lf,
                  process_response=decode_response)
 def exit(self):
+    &#34;&#34;&#34;Disconnects client from the server.&#34;&#34;&#34;
     raise NotImplementedError</code></pre>
 </details>
 </dd>
 <dt id="egse.collimator.fcul.ogse.OGSEInterface.get_controller_fault"><code class="name flex">
-<span>def <span class="ident">get_controller_fault</span></span>(<span>self)</span>
+<span>def <span class="ident">get_controller_fault</span></span>(<span>self) ‑> str</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Returns if there was an error with the controller.
-The returned value is 'ERROR' or 'NO_ERROR'.</p></div>
+The returned value is 'controller-fault: ERROR' or 'controller-fault: NO-ERROR'.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">@dynamic_command(cmd_type=&#34;query&#34;, cmd_string=&#34;get controller-fault&#34;, process_cmd_string=add_lf,
                  process_response=decode_response)
-def get_controller_fault(self):
+def get_controller_fault(self) -&gt; str:
     &#34;&#34;&#34;
     Returns if there was an error with the controller.
-    The returned value is &#39;ERROR&#39; or &#39;NO_ERROR&#39;.
+    The returned value is &#39;controller-fault: ERROR&#39; or &#39;controller-fault: NO-ERROR&#39;.
     &#34;&#34;&#34;
     raise NotImplementedError</code></pre>
 </details>
 </dd>
 <dt id="egse.collimator.fcul.ogse.OGSEInterface.get_flags"><code class="name flex">
-<span>def <span class="ident">get_flags</span></span>(<span>self)</span>
+<span>def <span class="ident">get_flags</span></span>(<span>self) ‑> str</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Get the state of all parameters encoded in a single number formatted in hexadecimal
@@ -2186,7 +2357,7 @@ and binary. The bit order from msb to lsb is:</p>
 </summary>
 <pre><code class="python">@dynamic_command(cmd_type=&#34;query&#34;, cmd_string=&#34;get flags&#34;, process_cmd_string=add_lf,
                  process_response=decode_response)
-def get_flags(self):
+def get_flags(self) -&gt; str:
     &#34;&#34;&#34;
     Get the state of all parameters encoded in a single number formatted in hexadecimal
     and binary. The bit order from msb to lsb is:
@@ -2207,101 +2378,111 @@ def get_flags(self):
 </details>
 </dd>
 <dt id="egse.collimator.fcul.ogse.OGSEInterface.get_interlock"><code class="name flex">
-<span>def <span class="ident">get_interlock</span></span>(<span>self)</span>
+<span>def <span class="ident">get_interlock</span></span>(<span>self) ‑> str</span>
 </code></dt>
 <dd>
-<div class="desc"><p>Get the state of the interlock. Returns 'OPEN' or 'CLOSE'.</p></div>
+<div class="desc"><p>Get the state of the interlock.</p>
+<h2 id="returns">Returns</h2>
+<p>A string containg 'OPEN' or 'CLOSE', i.e. 'interlock: OPEN' or 'interlock: CLOSE'.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">@dynamic_command(cmd_type=&#34;query&#34;, cmd_string=&#34;get interlock&#34;, process_cmd_string=add_lf,
                  process_response=decode_response)
-def get_interlock(self):
-    &#34;&#34;&#34;Get the state of the interlock. Returns &#39;OPEN&#39; or &#39;CLOSE&#39;.&#34;&#34;&#34;
+def get_interlock(self) -&gt; str:
+    &#34;&#34;&#34;Get the state of the interlock.
+
+    Returns:
+        A string containg &#39;OPEN&#39; or &#39;CLOSE&#39;, i.e. &#39;interlock: OPEN&#39; or &#39;interlock: CLOSE&#39;.
+    &#34;&#34;&#34;
     raise NotImplementedError</code></pre>
 </details>
 </dd>
 <dt id="egse.collimator.fcul.ogse.OGSEInterface.get_lamp"><code class="name flex">
-<span>def <span class="ident">get_lamp</span></span>(<span>self)</span>
+<span>def <span class="ident">get_lamp</span></span>(<span>self) ‑> str</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Get the state of the lamp.
-Returns 'ON' or 'OFF'.</p></div>
+Returns 'lamp: ON' or 'lamp: OFF'.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">@dynamic_command(cmd_type=&#34;query&#34;, cmd_string=&#34;get lamp&#34;, process_cmd_string=add_lf,
                  process_response=decode_response)
-def get_lamp(self):
-    &#34;&#34;&#34;Get the state of the lamp.  Returns &#39;ON&#39; or &#39;OFF&#39;.&#34;&#34;&#34;
+def get_lamp(self) -&gt; str:
+    &#34;&#34;&#34;Get the state of the lamp.  Returns &#39;lamp: ON&#39; or &#39;lamp: OFF&#39;.&#34;&#34;&#34;
     raise NotImplementedError</code></pre>
 </details>
 </dd>
 <dt id="egse.collimator.fcul.ogse.OGSEInterface.get_lamp_fault"><code class="name flex">
-<span>def <span class="ident">get_lamp_fault</span></span>(<span>self)</span>
+<span>def <span class="ident">get_lamp_fault</span></span>(<span>self) ‑> str</span>
 </code></dt>
 <dd>
-<div class="desc"><p>Returns if there was an error with the lamp. Returned value is 'ERROR' or 'NO_ERROR'.</p></div>
+<div class="desc"><p>Returns if there was an error with the lamp.
+Returned value is 'lamp-fault: ERROR' or 'lamp-fault: NO-ERROR'.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">@dynamic_command(cmd_type=&#34;query&#34;, cmd_string=&#34;get lamp-fault&#34;, process_cmd_string=add_lf,
                  process_response=decode_response)
-def get_lamp_fault(self):
-    &#34;&#34;&#34;Returns if there was an error with the lamp. Returned value is &#39;ERROR&#39; or &#39;NO_ERROR&#39;.&#34;&#34;&#34;
+def get_lamp_fault(self) -&gt; str:
+    &#34;&#34;&#34;
+    Returns if there was an error with the lamp.
+    Returned value is &#39;lamp-fault: ERROR&#39; or &#39;lamp-fault: NO-ERROR&#39;.
+    &#34;&#34;&#34;
     raise NotImplementedError</code></pre>
 </details>
 </dd>
 <dt id="egse.collimator.fcul.ogse.OGSEInterface.get_laser"><code class="name flex">
-<span>def <span class="ident">get_laser</span></span>(<span>self)</span>
+<span>def <span class="ident">get_laser</span></span>(<span>self) ‑> str</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Get the state of the laser.
-Returns 'ON' or 'OFF'.</p></div>
+Returns 'laser: ON' or 'laser: OFF'.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">@dynamic_command(cmd_type=&#34;query&#34;, cmd_string=&#34;get laser&#34;, process_cmd_string=add_lf,
                  process_response=decode_response)
-def get_laser(self):
-    &#34;&#34;&#34;Get the state of the laser.  Returns &#39;ON&#39; or &#39;OFF&#39;.&#34;&#34;&#34;
+def get_laser(self) -&gt; str:
+    &#34;&#34;&#34;Get the state of the laser.  Returns &#39;laser: ON&#39; or &#39;laser: OFF&#39;.&#34;&#34;&#34;
     raise NotImplementedError</code></pre>
 </details>
 </dd>
 <dt id="egse.collimator.fcul.ogse.OGSEInterface.get_operate"><code class="name flex">
-<span>def <span class="ident">get_operate</span></span>(<span>self)</span>
+<span>def <span class="ident">get_operate</span></span>(<span>self) ‑> str</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Get the state of the laser (operate).
-Returns 'ON' or 'OFF'.</p></div>
+Returns 'operate: ON' or 'operate: OFF'.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">@dynamic_command(cmd_type=&#34;query&#34;, cmd_string=&#34;get operate&#34;, process_cmd_string=add_lf,
                  process_response=decode_response)
-def get_operate(self):
-    &#34;&#34;&#34;Get the state of the laser (operate).  Returns &#39;ON&#39; or &#39;OFF&#39;.&#34;&#34;&#34;
+def get_operate(self) -&gt; str:
+    &#34;&#34;&#34;Get the state of the laser (operate).  Returns &#39;operate: ON&#39; or &#39;operate: OFF&#39;.&#34;&#34;&#34;
     raise NotImplementedError</code></pre>
 </details>
 </dd>
 <dt id="egse.collimator.fcul.ogse.OGSEInterface.get_power"><code class="name flex">
-<span>def <span class="ident">get_power</span></span>(<span>self)</span>
+<span>def <span class="ident">get_power</span></span>(<span>self) ‑> str</span>
 </code></dt>
 <dd>
-<div class="desc"><p>Get the state of the power supply. Returns 'ON' or 'OFF'.</p></div>
+<div class="desc"><p>Get the state of the power supply. Returns 'power: ON' or 'power: OFF'.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">@dynamic_command(cmd_type=&#34;query&#34;, cmd_string=&#34;get power&#34;, process_cmd_string=add_lf,
                  process_response=decode_response)
-def get_power(self):
-    &#34;&#34;&#34;Get the state of the power supply. Returns &#39;ON&#39; or &#39;OFF&#39;.&#34;&#34;&#34;
+def get_power(self) -&gt; str:
+    &#34;&#34;&#34;Get the state of the power supply. Returns &#39;power: ON&#39; or &#39;power: OFF&#39;.&#34;&#34;&#34;
     raise NotImplementedError</code></pre>
 </details>
 </dd>
@@ -2333,81 +2514,83 @@ def get_power_and_temperature(self) -&gt; dict | Failure:
 </details>
 </dd>
 <dt id="egse.collimator.fcul.ogse.OGSEInterface.get_psu"><code class="name flex">
-<span>def <span class="ident">get_psu</span></span>(<span>self)</span>
+<span>def <span class="ident">get_psu</span></span>(<span>self) ‑> str</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Get the state of the power supply unit.
-Returns 'ON' or 'OFF'.</p></div>
+Returns 'psu: ON' or 'psu: OFF'.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">@dynamic_command(cmd_type=&#34;query&#34;, cmd_string=&#34;get psu&#34;, process_cmd_string=add_lf,
                  process_response=decode_response)
-def get_psu(self):
-    &#34;&#34;&#34;Get the state of the power supply unit.  Returns &#39;ON&#39; or &#39;OFF&#39;.&#34;&#34;&#34;
+def get_psu(self) -&gt; str:
+    &#34;&#34;&#34;Get the state of the power supply unit.  Returns &#39;psu: ON&#39; or &#39;psu: OFF&#39;.&#34;&#34;&#34;
     raise NotImplementedError</code></pre>
 </details>
 </dd>
 <dt id="egse.collimator.fcul.ogse.OGSEInterface.ldls_status"><code class="name flex">
-<span>def <span class="ident">ldls_status</span></span>(<span>self)</span>
+<span>def <span class="ident">ldls_status</span></span>(<span>self) ‑> str</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Returns the state of the connection to the LDLS device. The returned value is 'OK'
 when the LDLS device is initialised and ready, 'ERROR' when the device failed to
 initialise.</p>
 <h2 id="returns">Returns</h2>
-<p>'OK' or 'ERROR'</p></div>
+<p>'ldls: OK' or 'ldls: ERROR'</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">@dynamic_command(cmd_type=&#34;query&#34;, cmd_string=&#34;ldls status&#34;, process_cmd_string=add_lf,
                  process_response=decode_response)
-def ldls_status(self):
+def ldls_status(self) -&gt; str:
     &#34;&#34;&#34;
     Returns the state of the connection to the LDLS device. The returned value is &#39;OK&#39;
     when the LDLS device is initialised and ready, &#39;ERROR&#39; when the device failed to
     initialise.
 
     Returns:
-        &#39;OK&#39; or &#39;ERROR&#39;
+        &#39;ldls: OK&#39; or &#39;ldls: ERROR&#39;
     &#34;&#34;&#34;
     raise NotImplementedError</code></pre>
 </details>
 </dd>
 <dt id="egse.collimator.fcul.ogse.OGSEInterface.operate_off"><code class="name flex">
-<span>def <span class="ident">operate_off</span></span>(<span>self)</span>
+<span>def <span class="ident">operate_off</span></span>(<span>self) ‑> str</span>
 </code></dt>
 <dd>
-<div class="desc"></div>
+<div class="desc"><p>Turns the laser off, returns 'OK' or 'ERROR'.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">@dynamic_command(cmd_type=&#34;transaction&#34;, cmd_string=&#34;operate off&#34;, process_cmd_string=add_lf,
                  process_response=decode_response)
-def operate_off(self):
+def operate_off(self) -&gt; str:
+    &#34;&#34;&#34;Turns the laser off, returns &#39;OK&#39; or &#39;ERROR&#39;.&#34;&#34;&#34;
     raise NotImplementedError</code></pre>
 </details>
 </dd>
 <dt id="egse.collimator.fcul.ogse.OGSEInterface.operate_on"><code class="name flex">
-<span>def <span class="ident">operate_on</span></span>(<span>self)</span>
+<span>def <span class="ident">operate_on</span></span>(<span>self) ‑> str</span>
 </code></dt>
 <dd>
-<div class="desc"></div>
+<div class="desc"><p>Turns the laser on, returns 'OK' or 'ERROR'.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">@dynamic_command(cmd_type=&#34;transaction&#34;, cmd_string=&#34;operate on&#34;, process_cmd_string=add_lf,
                  process_response=decode_response)
-def operate_on(self):
+def operate_on(self) -&gt; str:
+    &#34;&#34;&#34;Turns the laser on, returns &#39;OK&#39; or &#39;ERROR&#39;.&#34;&#34;&#34;
     raise NotImplementedError</code></pre>
 </details>
 </dd>
 <dt id="egse.collimator.fcul.ogse.OGSEInterface.pm_status"><code class="name flex">
-<span>def <span class="ident">pm_status</span></span>(<span>self)</span>
+<span>def <span class="ident">pm_status</span></span>(<span>self) ‑> dict</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Returns the state of the connection to the power-meter devices. The returned value is 'OK'
@@ -2415,8 +2598,8 @@ when the power-meter device is initialised and ready, 'ERROR' when the device fa
 initialise.</p>
 <h2 id="returns">Returns</h2>
 <dl>
-<dt><code>pm1</code></dt>
-<dd><status>, pm2: <status>.</dd>
+<dt><code>A dictionary with keys</code></dt>
+<dd>'pm1', 'pm2' and values 'OK' or 'ERROR'.</dd>
 </dl></div>
 <details class="source">
 <summary>
@@ -2424,45 +2607,47 @@ initialise.</p>
 </summary>
 <pre><code class="python">@dynamic_command(cmd_type=&#34;query&#34;, cmd_string=&#34;pm status&#34;, process_cmd_string=add_lf,
                  process_response=decode_pm_status_response)
-def pm_status(self):
+def pm_status(self) -&gt; dict:
     &#34;&#34;&#34;
     Returns the state of the connection to the power-meter devices. The returned value is &#39;OK&#39;
     when the power-meter device is initialised and ready, &#39;ERROR&#39; when the device failed to
     initialise.
 
     Returns:
-        pm1: &lt;status&gt;, pm2: &lt;status&gt;.
+        A dictionary with keys: &#39;pm1&#39;, &#39;pm2&#39; and values &#39;OK&#39; or &#39;ERROR&#39;.
     &#34;&#34;&#34;
     raise NotImplementedError</code></pre>
 </details>
 </dd>
 <dt id="egse.collimator.fcul.ogse.OGSEInterface.power_off"><code class="name flex">
-<span>def <span class="ident">power_off</span></span>(<span>self)</span>
+<span>def <span class="ident">power_off</span></span>(<span>self) ‑> str</span>
 </code></dt>
 <dd>
-<div class="desc"></div>
+<div class="desc"><p>Turns the power supply off, returns 'OK' or 'ERROR'.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">@dynamic_command(cmd_type=&#34;transaction&#34;, cmd_string=&#34;power off&#34;, process_cmd_string=add_lf,
                  process_response=decode_response)
-def power_off(self):
+def power_off(self) -&gt; str:
+    &#34;&#34;&#34;Turns the power supply off, returns &#39;OK&#39; or &#39;ERROR&#39;.&#34;&#34;&#34;
     raise NotImplementedError</code></pre>
 </details>
 </dd>
 <dt id="egse.collimator.fcul.ogse.OGSEInterface.power_on"><code class="name flex">
-<span>def <span class="ident">power_on</span></span>(<span>self)</span>
+<span>def <span class="ident">power_on</span></span>(<span>self) ‑> str</span>
 </code></dt>
 <dd>
-<div class="desc"></div>
+<div class="desc"><p>Turns the power supply on, returns 'OK' or 'ERROR'.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">@dynamic_command(cmd_type=&#34;transaction&#34;, cmd_string=&#34;power on&#34;, process_cmd_string=add_lf,
                  process_response=decode_response)
-def power_on(self):
+def power_on(self) -&gt; str:
+    &#34;&#34;&#34;Turns the power supply on, returns &#39;OK&#39; or &#39;ERROR&#39;.&#34;&#34;&#34;
     raise NotImplementedError</code></pre>
 </details>
 </dd>
@@ -2483,17 +2668,21 @@ def quit(self):
 </details>
 </dd>
 <dt id="egse.collimator.fcul.ogse.OGSEInterface.reset"><code class="name flex">
-<span>def <span class="ident">reset</span></span>(<span>self)</span>
+<span>def <span class="ident">reset</span></span>(<span>self) ‑> str</span>
 </code></dt>
 <dd>
-<div class="desc"></div>
+<div class="desc"><p>Performs a ‘reset’ cycle. This is sometimes needed to take LDLS out of a locked state.
+Returns 'OK' or 'ERROR'.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">@dynamic_command(cmd_type=&#34;transaction&#34;, cmd_string=&#34;reset&#34;, process_cmd_string=add_lf,
                  process_response=decode_response)
-def reset(self):
+def reset(self) -&gt; str:
+    &#34;&#34;&#34;Performs a ‘reset’ cycle. This is sometimes needed to take LDLS out of a locked state.
+    Returns &#39;OK&#39; or &#39;ERROR&#39;.
+    &#34;&#34;&#34;
     raise NotImplementedError</code></pre>
 </details>
 </dd>
@@ -2530,7 +2719,7 @@ def status(self) -&gt; dict | Failure:
 </details>
 </dd>
 <dt id="egse.collimator.fcul.ogse.OGSEInterface.version"><code class="name flex">
-<span>def <span class="ident">version</span></span>(<span>self)</span>
+<span>def <span class="ident">version</span></span>(<span>self) ‑> str</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Returns version information about the OGSE hardware controller.</p></div>
@@ -2540,7 +2729,7 @@ def status(self) -&gt; dict | Failure:
 </summary>
 <pre><code class="python">@dynamic_command(cmd_type=&#34;query&#34;, cmd_string=&#34;version&#34;, process_cmd_string=add_lf,
                  process_response=decode_response)
-def version(self):
+def version(self) -&gt; str:
     &#34;&#34;&#34;Returns version information about the OGSE hardware controller.&#34;&#34;&#34;
     raise NotImplementedError</code></pre>
 </details>
@@ -2644,11 +2833,15 @@ to the OGSE Hardware Controller remotely.</p>
 <ul class="hlist">
 <li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.add_observer" href="../../device.html#egse.device.DeviceConnectionObservable.add_observer">add_observer</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.att_get_level" href="#egse.collimator.fcul.ogse.OGSEInterface.att_get_level">att_get_level</a></code></li>
+<li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.att_level_down" href="#egse.collimator.fcul.ogse.OGSEInterface.att_level_down">att_level_down</a></code></li>
+<li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.att_level_up" href="#egse.collimator.fcul.ogse.OGSEInterface.att_level_up">att_level_up</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.att_set_level_factor" href="#egse.collimator.fcul.ogse.OGSEInterface.att_set_level_factor">att_set_level_factor</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.att_set_level_index" href="#egse.collimator.fcul.ogse.OGSEInterface.att_set_level_index">att_set_level_index</a></code></li>
+<li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.att_set_level_position" href="#egse.collimator.fcul.ogse.OGSEInterface.att_set_level_position">att_set_level_position</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.att_status" href="#egse.collimator.fcul.ogse.OGSEInterface.att_status">att_status</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.connect" href="../../device.html#egse.device.DeviceConnectionInterface.connect">connect</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.disconnect" href="../../device.html#egse.device.DeviceConnectionInterface.disconnect">disconnect</a></code></li>
+<li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.exit" href="#egse.collimator.fcul.ogse.OGSEInterface.exit">exit</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.get_controller_fault" href="#egse.collimator.fcul.ogse.OGSEInterface.get_controller_fault">get_controller_fault</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.get_flags" href="#egse.collimator.fcul.ogse.OGSEInterface.get_flags">get_flags</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.get_interlock" href="#egse.collimator.fcul.ogse.OGSEInterface.get_interlock">get_interlock</a></code></li>
@@ -2663,9 +2856,14 @@ to the OGSE Hardware Controller remotely.</p>
 <li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.is_simulator" href="../../device.html#egse.device.DeviceInterface.is_simulator">is_simulator</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.ldls_status" href="#egse.collimator.fcul.ogse.OGSEInterface.ldls_status">ldls_status</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.notify_observers" href="../../device.html#egse.device.DeviceConnectionObservable.notify_observers">notify_observers</a></code></li>
+<li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.operate_off" href="#egse.collimator.fcul.ogse.OGSEInterface.operate_off">operate_off</a></code></li>
+<li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.operate_on" href="#egse.collimator.fcul.ogse.OGSEInterface.operate_on">operate_on</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.pm_status" href="#egse.collimator.fcul.ogse.OGSEInterface.pm_status">pm_status</a></code></li>
+<li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.power_off" href="#egse.collimator.fcul.ogse.OGSEInterface.power_off">power_off</a></code></li>
+<li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.power_on" href="#egse.collimator.fcul.ogse.OGSEInterface.power_on">power_on</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.quit" href="#egse.collimator.fcul.ogse.OGSEInterface.quit">quit</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.reconnect" href="../../device.html#egse.device.DeviceConnectionInterface.reconnect">reconnect</a></code></li>
+<li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.reset" href="#egse.collimator.fcul.ogse.OGSEInterface.reset">reset</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.status" href="#egse.collimator.fcul.ogse.OGSEInterface.status">status</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.version" href="#egse.collimator.fcul.ogse.OGSEInterface.version">version</a></code></li>
 </ul>
@@ -2911,173 +3109,21 @@ to the OGSE Hardware Controller remotely.</p>
 <li><a title="egse.device.DeviceConnectionInterface" href="../../device.html#egse.device.DeviceConnectionInterface">DeviceConnectionInterface</a></li>
 <li><a title="egse.device.DeviceConnectionObservable" href="../../device.html#egse.device.DeviceConnectionObservable">DeviceConnectionObservable</a></li>
 </ul>
-<h3>Methods</h3>
-<dl>
-<dt id="egse.collimator.fcul.ogse.OGSESimulator.att_level_down"><code class="name flex">
-<span>def <span class="ident">att_level_down</span></span>(<span>self)</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def att_level_down(self):
-
-    self.att_set_level_index(max(self._att_index - 1, 0))
-
-    return &#34;OK&#34;</code></pre>
-</details>
-</dd>
-<dt id="egse.collimator.fcul.ogse.OGSESimulator.att_level_up"><code class="name flex">
-<span>def <span class="ident">att_level_up</span></span>(<span>self)</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def att_level_up(self):
-
-    self.att_set_level_index(min(self._att_index + 1, len(ATT_LEVELS_BY_FACTOR) - 1))
-
-    return &#34;OK&#34;</code></pre>
-</details>
-</dd>
-<dt id="egse.collimator.fcul.ogse.OGSESimulator.att_set_level_position"><code class="name flex">
-<span>def <span class="ident">att_set_level_position</span></span>(<span>self, level1, level2)</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def att_set_level_position(self, level1, level2):
-
-    if 1 &lt;= level1 &lt;= 8 and 1 &lt;= level2 &lt;= 8:
-
-        self._att_position_1 = level1
-        self._att_position_2 = level2
-
-        self._att_level = ATT_LEVELS_BY_WHEEL[(level1, level2)]
-        self._att_index = get_attenuation_index(self._att_level)
-
-        time.sleep(random.random() * 3 + 6)  # wait between 6.0 and 9.0 seconds
-
-        return &#34;OK&#34;
-
-    else:
-
-        return (
-            &#34;ERROR: usage: attenuator level &lt;wheel_1&gt; &lt;wheel_2&gt;  -- &#34; 
-            &#34;wheel positions must be integer = 1..8&#34;
-        )</code></pre>
-</details>
-</dd>
-<dt id="egse.collimator.fcul.ogse.OGSESimulator.exit"><code class="name flex">
-<span>def <span class="ident">exit</span></span>(<span>self)</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def exit(self):
-    pass</code></pre>
-</details>
-</dd>
-<dt id="egse.collimator.fcul.ogse.OGSESimulator.operate_off"><code class="name flex">
-<span>def <span class="ident">operate_off</span></span>(<span>self)</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def operate_off(self):
-
-    self._operate = True
-
-    return &#34;OK&#34;</code></pre>
-</details>
-</dd>
-<dt id="egse.collimator.fcul.ogse.OGSESimulator.operate_on"><code class="name flex">
-<span>def <span class="ident">operate_on</span></span>(<span>self)</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def operate_on(self):
-
-    self._operate = True
-
-    return &#34;OK&#34;</code></pre>
-</details>
-</dd>
-<dt id="egse.collimator.fcul.ogse.OGSESimulator.power_off"><code class="name flex">
-<span>def <span class="ident">power_off</span></span>(<span>self)</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def power_off(self):
-
-    self._power = False
-
-    return &#34;OK&#34;</code></pre>
-</details>
-</dd>
-<dt id="egse.collimator.fcul.ogse.OGSESimulator.power_on"><code class="name flex">
-<span>def <span class="ident">power_on</span></span>(<span>self)</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def power_on(self):
-
-    self._power = True
-
-    return &#34;OK&#34;</code></pre>
-</details>
-</dd>
-<dt id="egse.collimator.fcul.ogse.OGSESimulator.reset"><code class="name flex">
-<span>def <span class="ident">reset</span></span>(<span>self)</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def reset(self):
-    pass</code></pre>
-</details>
-</dd>
-</dl>
 <h3>Inherited members</h3>
 <ul class="hlist">
 <li><code><b><a title="egse.collimator.fcul.ogse.OGSEInterface" href="#egse.collimator.fcul.ogse.OGSEInterface">OGSEInterface</a></b></code>:
 <ul class="hlist">
 <li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.add_observer" href="../../device.html#egse.device.DeviceConnectionObservable.add_observer">add_observer</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.att_get_level" href="#egse.collimator.fcul.ogse.OGSEInterface.att_get_level">att_get_level</a></code></li>
+<li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.att_level_down" href="#egse.collimator.fcul.ogse.OGSEInterface.att_level_down">att_level_down</a></code></li>
+<li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.att_level_up" href="#egse.collimator.fcul.ogse.OGSEInterface.att_level_up">att_level_up</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.att_set_level_factor" href="#egse.collimator.fcul.ogse.OGSEInterface.att_set_level_factor">att_set_level_factor</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.att_set_level_index" href="#egse.collimator.fcul.ogse.OGSEInterface.att_set_level_index">att_set_level_index</a></code></li>
+<li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.att_set_level_position" href="#egse.collimator.fcul.ogse.OGSEInterface.att_set_level_position">att_set_level_position</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.att_status" href="#egse.collimator.fcul.ogse.OGSEInterface.att_status">att_status</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.connect" href="../../device.html#egse.device.DeviceConnectionInterface.connect">connect</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.disconnect" href="../../device.html#egse.device.DeviceConnectionInterface.disconnect">disconnect</a></code></li>
+<li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.exit" href="#egse.collimator.fcul.ogse.OGSEInterface.exit">exit</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.get_controller_fault" href="#egse.collimator.fcul.ogse.OGSEInterface.get_controller_fault">get_controller_fault</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.get_flags" href="#egse.collimator.fcul.ogse.OGSEInterface.get_flags">get_flags</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.get_interlock" href="#egse.collimator.fcul.ogse.OGSEInterface.get_interlock">get_interlock</a></code></li>
@@ -3092,9 +3138,14 @@ to the OGSE Hardware Controller remotely.</p>
 <li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.is_simulator" href="../../device.html#egse.device.DeviceInterface.is_simulator">is_simulator</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.ldls_status" href="#egse.collimator.fcul.ogse.OGSEInterface.ldls_status">ldls_status</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.notify_observers" href="../../device.html#egse.device.DeviceConnectionObservable.notify_observers">notify_observers</a></code></li>
+<li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.operate_off" href="#egse.collimator.fcul.ogse.OGSEInterface.operate_off">operate_off</a></code></li>
+<li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.operate_on" href="#egse.collimator.fcul.ogse.OGSEInterface.operate_on">operate_on</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.pm_status" href="#egse.collimator.fcul.ogse.OGSEInterface.pm_status">pm_status</a></code></li>
+<li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.power_off" href="#egse.collimator.fcul.ogse.OGSEInterface.power_off">power_off</a></code></li>
+<li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.power_on" href="#egse.collimator.fcul.ogse.OGSEInterface.power_on">power_on</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.quit" href="#egse.collimator.fcul.ogse.OGSEInterface.quit">quit</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.reconnect" href="../../device.html#egse.device.DeviceConnectionInterface.reconnect">reconnect</a></code></li>
+<li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.reset" href="#egse.collimator.fcul.ogse.OGSEInterface.reset">reset</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.status" href="#egse.collimator.fcul.ogse.OGSEInterface.status">status</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse.OGSEInterface.version" href="#egse.collimator.fcul.ogse.OGSEInterface.version">version</a></code></li>
 </ul>
@@ -3210,17 +3261,6 @@ to the OGSE Hardware Controller remotely.</p>
 </li>
 <li>
 <h4><code><a title="egse.collimator.fcul.ogse.OGSESimulator" href="#egse.collimator.fcul.ogse.OGSESimulator">OGSESimulator</a></code></h4>
-<ul class="">
-<li><code><a title="egse.collimator.fcul.ogse.OGSESimulator.att_level_down" href="#egse.collimator.fcul.ogse.OGSESimulator.att_level_down">att_level_down</a></code></li>
-<li><code><a title="egse.collimator.fcul.ogse.OGSESimulator.att_level_up" href="#egse.collimator.fcul.ogse.OGSESimulator.att_level_up">att_level_up</a></code></li>
-<li><code><a title="egse.collimator.fcul.ogse.OGSESimulator.att_set_level_position" href="#egse.collimator.fcul.ogse.OGSESimulator.att_set_level_position">att_set_level_position</a></code></li>
-<li><code><a title="egse.collimator.fcul.ogse.OGSESimulator.exit" href="#egse.collimator.fcul.ogse.OGSESimulator.exit">exit</a></code></li>
-<li><code><a title="egse.collimator.fcul.ogse.OGSESimulator.operate_off" href="#egse.collimator.fcul.ogse.OGSESimulator.operate_off">operate_off</a></code></li>
-<li><code><a title="egse.collimator.fcul.ogse.OGSESimulator.operate_on" href="#egse.collimator.fcul.ogse.OGSESimulator.operate_on">operate_on</a></code></li>
-<li><code><a title="egse.collimator.fcul.ogse.OGSESimulator.power_off" href="#egse.collimator.fcul.ogse.OGSESimulator.power_off">power_off</a></code></li>
-<li><code><a title="egse.collimator.fcul.ogse.OGSESimulator.power_on" href="#egse.collimator.fcul.ogse.OGSESimulator.power_on">power_on</a></code></li>
-<li><code><a title="egse.collimator.fcul.ogse.OGSESimulator.reset" href="#egse.collimator.fcul.ogse.OGSESimulator.reset">reset</a></code></li>
-</ul>
 </li>
 <li>
 <h4><code><a title="egse.collimator.fcul.ogse.OnOffSwitch" href="#egse.collimator.fcul.ogse.OnOffSwitch">OnOffSwitch</a></code></h4>

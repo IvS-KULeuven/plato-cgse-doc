@@ -63,14 +63,20 @@ class Igm402Controller(SerialDevice, Igm402Interface):
         # Initialize the parent class with the port and baudrate
         super().__init__(port=self._port, baudrate=self._baudrate)
         self.connect()
-
+        
         # Set the temperature points at which the IG filament is dis-/enabled.
         self.set_trip_point_i_low(0.9 * setup.gse.igm402.calibration.enable_filament_pressure)
+        time.sleep(0.1)
         self.set_trip_point_i_high(setup.gse.igm402.calibration.enable_filament_pressure)
+        time.sleep(0.1)
 
     def get_idn(self):
         cmd = f&#34;#{self._address:02d}VER\r&#34;
         return self.query(cmd)
+
+    def reset(self):
+        cmd = f&#34;#{self._address:02d}RST\r&#34;
+        self.send_command(cmd)
 
     def get_status(self):
         cmd = f&#34;#{self._address:02d}RS\r&#34;
@@ -110,11 +116,11 @@ class Igm402Controller(SerialDevice, Igm402Interface):
         return self.query(cmd)
 
     def set_trip_point_i_low(self, pressure):
-        cmd = f&#34;#{self._address:02d}SL+{pressure}\r&#34;
+        cmd = f&#34;#{self._address:02d}SL+{pressure:.2E}\r&#34;
         return self.query(cmd)
 
     def set_trip_point_i_high(self, pressure):
-        cmd = f&#34;#{self._address:02d}SL-{pressure}\r&#34;
+        cmd = f&#34;#{self._address:02d}SL-{pressure:.2E}\r&#34;
         return self.query(cmd)
 
     def query(self, command: str):
@@ -144,8 +150,8 @@ def main():
     print(dev.get_ion_gauge_pressure())
     print(dev.get_cgn_pressure(1))
     print(dev.get_cgn_pressure(2))
-
-
+    
+    
 if __name__ == &#39;__main__&#39;:
     main()</code></pre>
 </details>
@@ -205,14 +211,20 @@ if __name__ == &#39;__main__&#39;:
         # Initialize the parent class with the port and baudrate
         super().__init__(port=self._port, baudrate=self._baudrate)
         self.connect()
-
+        
         # Set the temperature points at which the IG filament is dis-/enabled.
         self.set_trip_point_i_low(0.9 * setup.gse.igm402.calibration.enable_filament_pressure)
+        time.sleep(0.1)
         self.set_trip_point_i_high(setup.gse.igm402.calibration.enable_filament_pressure)
+        time.sleep(0.1)
 
     def get_idn(self):
         cmd = f&#34;#{self._address:02d}VER\r&#34;
         return self.query(cmd)
+
+    def reset(self):
+        cmd = f&#34;#{self._address:02d}RST\r&#34;
+        self.send_command(cmd)
 
     def get_status(self):
         cmd = f&#34;#{self._address:02d}RS\r&#34;
@@ -252,11 +264,11 @@ if __name__ == &#39;__main__&#39;:
         return self.query(cmd)
 
     def set_trip_point_i_low(self, pressure):
-        cmd = f&#34;#{self._address:02d}SL+{pressure}\r&#34;
+        cmd = f&#34;#{self._address:02d}SL+{pressure:.2E}\r&#34;
         return self.query(cmd)
 
     def set_trip_point_i_high(self, pressure):
-        cmd = f&#34;#{self._address:02d}SL-{pressure}\r&#34;
+        cmd = f&#34;#{self._address:02d}SL-{pressure:.2E}\r&#34;
         return self.query(cmd)
 
     def query(self, command: str):
@@ -378,6 +390,20 @@ if __name__ == &#39;__main__&#39;:
     return response[4:-1]</code></pre>
 </details>
 </dd>
+<dt id="egse.vacuum.instrutech.igm402_controller.Igm402Controller.reset"><code class="name flex">
+<span>def <span class="ident">reset</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def reset(self):
+    cmd = f&#34;#{self._address:02d}RST\r&#34;
+    self.send_command(cmd)</code></pre>
+</details>
+</dd>
 <dt id="egse.vacuum.instrutech.igm402_controller.Igm402Controller.set_emission_current"><code class="name flex">
 <span>def <span class="ident">set_emission_current</span></span>(<span>self, current)</span>
 </code></dt>
@@ -446,7 +472,7 @@ if __name__ == &#39;__main__&#39;:
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def set_trip_point_i_high(self, pressure):
-    cmd = f&#34;#{self._address:02d}SL-{pressure}\r&#34;
+    cmd = f&#34;#{self._address:02d}SL-{pressure:.2E}\r&#34;
     return self.query(cmd)</code></pre>
 </details>
 </dd>
@@ -460,7 +486,7 @@ if __name__ == &#39;__main__&#39;:
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def set_trip_point_i_low(self, pressure):
-    cmd = f&#34;#{self._address:02d}SL+{pressure}\r&#34;
+    cmd = f&#34;#{self._address:02d}SL+{pressure:.2E}\r&#34;
     return self.query(cmd)</code></pre>
 </details>
 </dd>
@@ -516,6 +542,7 @@ if __name__ == &#39;__main__&#39;:
 <li><code><a title="egse.vacuum.instrutech.igm402_controller.Igm402Controller.get_status" href="#egse.vacuum.instrutech.igm402_controller.Igm402Controller.get_status">get_status</a></code></li>
 <li><code><a title="egse.vacuum.instrutech.igm402_controller.Igm402Controller.get_system_pressure" href="#egse.vacuum.instrutech.igm402_controller.Igm402Controller.get_system_pressure">get_system_pressure</a></code></li>
 <li><code><a title="egse.vacuum.instrutech.igm402_controller.Igm402Controller.query" href="#egse.vacuum.instrutech.igm402_controller.Igm402Controller.query">query</a></code></li>
+<li><code><a title="egse.vacuum.instrutech.igm402_controller.Igm402Controller.reset" href="#egse.vacuum.instrutech.igm402_controller.Igm402Controller.reset">reset</a></code></li>
 <li><code><a title="egse.vacuum.instrutech.igm402_controller.Igm402Controller.set_emission_current" href="#egse.vacuum.instrutech.igm402_controller.Igm402Controller.set_emission_current">set_emission_current</a></code></li>
 <li><code><a title="egse.vacuum.instrutech.igm402_controller.Igm402Controller.set_enable_degas" href="#egse.vacuum.instrutech.igm402_controller.Igm402Controller.set_enable_degas">set_enable_degas</a></code></li>
 <li><code><a title="egse.vacuum.instrutech.igm402_controller.Igm402Controller.set_filament" href="#egse.vacuum.instrutech.igm402_controller.Igm402Controller.set_filament">set_filament</a></code></li>

@@ -29,15 +29,16 @@
 <pre><code class="python">import pickle
 import threading
 from enum import Enum
+from pathlib import Path
 
 import sys
 import zmq
-from PyQt5.QtCore import QThread, QObject, pyqtSignal, pyqtSlot
-from PyQt5.QtGui import QCloseEvent, QPixmap
-from PyQt5.QtWidgets import QApplication, QMainWindow, QFrame, QVBoxLayout, QHBoxLayout, QLabel
+from PyQt5.QtCore import QThread, QObject, pyqtSignal, pyqtSlot, QLockFile
+from PyQt5.QtGui import QCloseEvent, QPixmap, QIcon
+from PyQt5.QtWidgets import QApplication, QMainWindow, QFrame, QVBoxLayout, QHBoxLayout, QLabel, QMessageBox
 
+from egse.gui import QHLine
 from egse.gui.buttons import ToggleButton
-from egse.gui.led import Indic
 from egse.process import SubProcess
 from egse.resource import get_resource
 from egse.settings import Settings
@@ -64,9 +65,11 @@ class FilenamesMonitoringWorker(QObject):
     #   - down: The FITS generation process is inactive
     #   - idle: The FITS generation process is waiting for an HDF5 file to come in
     #   - processing: The FITS generation process is processing data
+    # The last obsid (being) processed
 
     filenames_signal = pyqtSignal(dict)
     status_signal = pyqtSignal(FitsgenStatus)
+    last_processed_obsid_signal = pyqtSignal(str)
 
     def __init__(self):
         &#34;&#34;&#34; Initialisation of a monitoring worker for the FITS generation.
@@ -83,6 +86,7 @@ class FilenamesMonitoringWorker(QObject):
         self.hdf5_filename = None
         self.fits_filename = None
         self.fitsgen_status = None
+        self.last_processed_obsid = None
 
         self.active = False
 
@@ -155,6 +159,7 @@ class FilenamesMonitoringWorker(QObject):
 
                     current_hdf5_filename = monitoring_info[&#34;hdf5&#34;]
                     current_fits_filename = monitoring_info[&#34;fits&#34;]
+                    current_last_processed_obsid = monitoring_info[&#34;last obsid (being) processed&#34;]
 
                     if current_hdf5_filename != self.hdf5_filename or current_fits_filename != self.fits_filename:
 
@@ -169,6 +174,10 @@ class FilenamesMonitoringWorker(QObject):
                     if self.fitsgen_status != current_fitsgen_status:
                         self.fitsgen_status = current_fitsgen_status
                         self.status_signal.emit(current_fitsgen_status)
+
+                    if self.last_processed_obsid != current_last_processed_obsid:
+                        self.last_processed_obsid = current_last_processed_obsid
+                        self.last_processed_obsid_signal.emit(current_last_processed_obsid)
 
                 # Timeout occurred
 
@@ -203,6 +212,7 @@ class FitsgenUIView(QMainWindow):
         self.filenames_monitoring_worker.moveToThread(self.filenames_monitoring_thread)
         self.filenames_monitoring_worker.filenames_signal.connect(self.on_filenames_change_signal)
         self.filenames_monitoring_worker.status_signal.connect(self.on_status_change_signal)
+        self.filenames_monitoring_worker.last_processed_obsid_signal.connect(self.on_last_processed_obsid_change_signal)
         self.filenames_monitoring_thread.started.connect(self.filenames_monitoring_worker.start_process)
         self.filenames_monitoring_thread.start()
 
@@ -259,13 +269,24 @@ class FitsgenUIView(QMainWindow):
         self.hdf5_filename = QLabel(&#34;None&#34;)
         self.fits_filename = QLabel(&#34;None&#34;)
 
+        # Last obsid (being) processed
+
+        self.last_processed_obsid = QLabel(&#34;None&#34;)
+        self.last_processed_obsid.setStatusTip(&#34;Do not remove this obsid, nor more recent ones!&#34;)
+
         keyword_layout.addWidget(QLabel(&#34;Status:&#34;))
+        keyword_layout.addWidget(QHLine())
         keyword_layout.addWidget(QLabel(&#34;HDF5 file currently being processed:&#34;))
         keyword_layout.addWidget(QLabel(&#34;FITS file currently being created:&#34;))
+        keyword_layout.addWidget(QHLine())
+        keyword_layout.addWidget(QLabel(&#34;Last obsid that was/is being processed:&#34;))
 
         value_layout.addWidget(self.status_icon)
+        value_layout.addWidget(QHLine())
         value_layout.addWidget(self.hdf5_filename)
         value_layout.addWidget(self.fits_filename)
+        value_layout.addWidget(QHLine())
+        value_layout.addWidget(self.last_processed_obsid)
 
         layout.addLayout(keyword_layout)
         layout.addLayout(value_layout)
@@ -358,6 +379,13 @@ class FitsgenUIView(QMainWindow):
             self.hdf5_filename.setText(&#34;None&#34;)
             self.fits_filename.setText(&#34;None&#34;)
 
+    def on_last_processed_obsid_change_signal(self, last_processed_obsid: str):
+
+        if last_processed_obsid:
+            self.last_processed_obsid.setText(last_processed_obsid)
+        else:
+            self.last_processed_obsid.setText(&#34;None&#34;)
+
     def closeEvent(self, close_event: QCloseEvent) -&gt; None:
         &#34;&#34;&#34; Make sure that all threads are stopped when the GUI is closed.
 
@@ -374,11 +402,23 @@ def main():
     &#34;&#34;&#34; Main method to launch the Process Manager GUI.&#34;&#34;&#34;
 
     app = QApplication(sys.argv)
-    view = FitsgenUIView()
-    view.show()
+    app.setWindowIcon(QIcon(str(get_resource(&#34;:/icons/fitsgen.svg&#34;))))
 
-    return app.exec_()
+    lock_file = QLockFile(str(Path(&#34;~/fitgen_ui.app.lock&#34;).expanduser()))
 
+    if lock_file.tryLock(100):
+        view = FitsgenUIView()
+        view.show()
+
+        return app.exec_()
+    else:
+        error_message = QMessageBox()
+        error_message.setIcon(QMessageBox.Warning)
+        error_message.setWindowTitle(&#34;Error&#34;)
+        error_message.setText(&#34;The FITS generation GUI application is already running!&#34;)
+        error_message.setStandardButtons(QMessageBox.Ok)
+
+        return error_message.exec()
 
 if __name__ == &#39;__main__&#39;:
     sys.exit(main())</code></pre>
@@ -404,10 +444,23 @@ if __name__ == &#39;__main__&#39;:
     &#34;&#34;&#34; Main method to launch the Process Manager GUI.&#34;&#34;&#34;
 
     app = QApplication(sys.argv)
-    view = FitsgenUIView()
-    view.show()
+    app.setWindowIcon(QIcon(str(get_resource(&#34;:/icons/fitsgen.svg&#34;))))
 
-    return app.exec_()</code></pre>
+    lock_file = QLockFile(str(Path(&#34;~/fitgen_ui.app.lock&#34;).expanduser()))
+
+    if lock_file.tryLock(100):
+        view = FitsgenUIView()
+        view.show()
+
+        return app.exec_()
+    else:
+        error_message = QMessageBox()
+        error_message.setIcon(QMessageBox.Warning)
+        error_message.setWindowTitle(&#34;Error&#34;)
+        error_message.setText(&#34;The FITS generation GUI application is already running!&#34;)
+        error_message.setStandardButtons(QMessageBox.Ok)
+
+        return error_message.exec()</code></pre>
 </details>
 </dd>
 </dl>
@@ -437,9 +490,11 @@ if __name__ == &#39;__main__&#39;:
     #   - down: The FITS generation process is inactive
     #   - idle: The FITS generation process is waiting for an HDF5 file to come in
     #   - processing: The FITS generation process is processing data
+    # The last obsid (being) processed
 
     filenames_signal = pyqtSignal(dict)
     status_signal = pyqtSignal(FitsgenStatus)
+    last_processed_obsid_signal = pyqtSignal(str)
 
     def __init__(self):
         &#34;&#34;&#34; Initialisation of a monitoring worker for the FITS generation.
@@ -456,6 +511,7 @@ if __name__ == &#39;__main__&#39;:
         self.hdf5_filename = None
         self.fits_filename = None
         self.fitsgen_status = None
+        self.last_processed_obsid = None
 
         self.active = False
 
@@ -528,6 +584,7 @@ if __name__ == &#39;__main__&#39;:
 
                     current_hdf5_filename = monitoring_info[&#34;hdf5&#34;]
                     current_fits_filename = monitoring_info[&#34;fits&#34;]
+                    current_last_processed_obsid = monitoring_info[&#34;last obsid (being) processed&#34;]
 
                     if current_hdf5_filename != self.hdf5_filename or current_fits_filename != self.fits_filename:
 
@@ -542,6 +599,10 @@ if __name__ == &#39;__main__&#39;:
                     if self.fitsgen_status != current_fitsgen_status:
                         self.fitsgen_status = current_fitsgen_status
                         self.status_signal.emit(current_fitsgen_status)
+
+                    if self.last_processed_obsid != current_last_processed_obsid:
+                        self.last_processed_obsid = current_last_processed_obsid
+                        self.last_processed_obsid_signal.emit(current_last_processed_obsid)
 
                 # Timeout occurred
 
@@ -603,6 +664,12 @@ if __name__ == &#39;__main__&#39;:
 <dd>
 <div class="desc"></div>
 </dd>
+<dt id="egse.dpu.fitsgen_ui.FilenamesMonitoringWorker.last_processed_obsid_signal"><code class="name flex">
+<span>def <span class="ident">last_processed_obsid_signal</span></span>(<span>...)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
 <dt id="egse.dpu.fitsgen_ui.FilenamesMonitoringWorker.run"><code class="name flex">
 <span>def <span class="ident">run</span></span>(<span>self)</span>
 </code></dt>
@@ -633,6 +700,7 @@ def run(self):
 
                 current_hdf5_filename = monitoring_info[&#34;hdf5&#34;]
                 current_fits_filename = monitoring_info[&#34;fits&#34;]
+                current_last_processed_obsid = monitoring_info[&#34;last obsid (being) processed&#34;]
 
                 if current_hdf5_filename != self.hdf5_filename or current_fits_filename != self.fits_filename:
 
@@ -647,6 +715,10 @@ def run(self):
                 if self.fitsgen_status != current_fitsgen_status:
                     self.fitsgen_status = current_fitsgen_status
                     self.status_signal.emit(current_fitsgen_status)
+
+                if self.last_processed_obsid != current_last_processed_obsid:
+                    self.last_processed_obsid = current_last_processed_obsid
+                    self.last_processed_obsid_signal.emit(current_last_processed_obsid)
 
             # Timeout occurred
 
@@ -775,6 +847,7 @@ def run(self):
         self.filenames_monitoring_worker.moveToThread(self.filenames_monitoring_thread)
         self.filenames_monitoring_worker.filenames_signal.connect(self.on_filenames_change_signal)
         self.filenames_monitoring_worker.status_signal.connect(self.on_status_change_signal)
+        self.filenames_monitoring_worker.last_processed_obsid_signal.connect(self.on_last_processed_obsid_change_signal)
         self.filenames_monitoring_thread.started.connect(self.filenames_monitoring_worker.start_process)
         self.filenames_monitoring_thread.start()
 
@@ -831,13 +904,24 @@ def run(self):
         self.hdf5_filename = QLabel(&#34;None&#34;)
         self.fits_filename = QLabel(&#34;None&#34;)
 
+        # Last obsid (being) processed
+
+        self.last_processed_obsid = QLabel(&#34;None&#34;)
+        self.last_processed_obsid.setStatusTip(&#34;Do not remove this obsid, nor more recent ones!&#34;)
+
         keyword_layout.addWidget(QLabel(&#34;Status:&#34;))
+        keyword_layout.addWidget(QHLine())
         keyword_layout.addWidget(QLabel(&#34;HDF5 file currently being processed:&#34;))
         keyword_layout.addWidget(QLabel(&#34;FITS file currently being created:&#34;))
+        keyword_layout.addWidget(QHLine())
+        keyword_layout.addWidget(QLabel(&#34;Last obsid that was/is being processed:&#34;))
 
         value_layout.addWidget(self.status_icon)
+        value_layout.addWidget(QHLine())
         value_layout.addWidget(self.hdf5_filename)
         value_layout.addWidget(self.fits_filename)
+        value_layout.addWidget(QHLine())
+        value_layout.addWidget(self.last_processed_obsid)
 
         layout.addLayout(keyword_layout)
         layout.addLayout(value_layout)
@@ -929,6 +1013,13 @@ def run(self):
         if status != FitsgenStatus.PROCESSING:
             self.hdf5_filename.setText(&#34;None&#34;)
             self.fits_filename.setText(&#34;None&#34;)
+
+    def on_last_processed_obsid_change_signal(self, last_processed_obsid: str):
+
+        if last_processed_obsid:
+            self.last_processed_obsid.setText(last_processed_obsid)
+        else:
+            self.last_processed_obsid.setText(&#34;None&#34;)
 
     def closeEvent(self, close_event: QCloseEvent) -&gt; None:
         &#34;&#34;&#34; Make sure that all threads are stopped when the GUI is closed.
@@ -1103,13 +1194,24 @@ def run(self):
     self.hdf5_filename = QLabel(&#34;None&#34;)
     self.fits_filename = QLabel(&#34;None&#34;)
 
+    # Last obsid (being) processed
+
+    self.last_processed_obsid = QLabel(&#34;None&#34;)
+    self.last_processed_obsid.setStatusTip(&#34;Do not remove this obsid, nor more recent ones!&#34;)
+
     keyword_layout.addWidget(QLabel(&#34;Status:&#34;))
+    keyword_layout.addWidget(QHLine())
     keyword_layout.addWidget(QLabel(&#34;HDF5 file currently being processed:&#34;))
     keyword_layout.addWidget(QLabel(&#34;FITS file currently being created:&#34;))
+    keyword_layout.addWidget(QHLine())
+    keyword_layout.addWidget(QLabel(&#34;Last obsid that was/is being processed:&#34;))
 
     value_layout.addWidget(self.status_icon)
+    value_layout.addWidget(QHLine())
     value_layout.addWidget(self.hdf5_filename)
     value_layout.addWidget(self.fits_filename)
+    value_layout.addWidget(QHLine())
+    value_layout.addWidget(self.last_processed_obsid)
 
     layout.addLayout(keyword_layout)
     layout.addLayout(value_layout)
@@ -1144,6 +1246,23 @@ def run(self):
 
     self.hdf5_filename.setText(str(filenames.get(&#34;hdf5&#34;)) or &#34;None&#34;)
     self.fits_filename.setText(str(filenames.get(&#34;fits&#34;)) or &#34;None&#34;)</code></pre>
+</details>
+</dd>
+<dt id="egse.dpu.fitsgen_ui.FitsgenUIView.on_last_processed_obsid_change_signal"><code class="name flex">
+<span>def <span class="ident">on_last_processed_obsid_change_signal</span></span>(<span>self, last_processed_obsid: str)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def on_last_processed_obsid_change_signal(self, last_processed_obsid: str):
+
+    if last_processed_obsid:
+        self.last_processed_obsid.setText(last_processed_obsid)
+    else:
+        self.last_processed_obsid.setText(&#34;None&#34;)</code></pre>
 </details>
 </dd>
 <dt id="egse.dpu.fitsgen_ui.FitsgenUIView.on_status_change_signal"><code class="name flex">
@@ -1224,9 +1343,10 @@ def run(self):
 <ul>
 <li>
 <h4><code><a title="egse.dpu.fitsgen_ui.FilenamesMonitoringWorker" href="#egse.dpu.fitsgen_ui.FilenamesMonitoringWorker">FilenamesMonitoringWorker</a></code></h4>
-<ul class="two-column">
+<ul class="">
 <li><code><a title="egse.dpu.fitsgen_ui.FilenamesMonitoringWorker.connect_socket" href="#egse.dpu.fitsgen_ui.FilenamesMonitoringWorker.connect_socket">connect_socket</a></code></li>
 <li><code><a title="egse.dpu.fitsgen_ui.FilenamesMonitoringWorker.filenames_signal" href="#egse.dpu.fitsgen_ui.FilenamesMonitoringWorker.filenames_signal">filenames_signal</a></code></li>
+<li><code><a title="egse.dpu.fitsgen_ui.FilenamesMonitoringWorker.last_processed_obsid_signal" href="#egse.dpu.fitsgen_ui.FilenamesMonitoringWorker.last_processed_obsid_signal">last_processed_obsid_signal</a></code></li>
 <li><code><a title="egse.dpu.fitsgen_ui.FilenamesMonitoringWorker.run" href="#egse.dpu.fitsgen_ui.FilenamesMonitoringWorker.run">run</a></code></li>
 <li><code><a title="egse.dpu.fitsgen_ui.FilenamesMonitoringWorker.start_process" href="#egse.dpu.fitsgen_ui.FilenamesMonitoringWorker.start_process">start_process</a></code></li>
 <li><code><a title="egse.dpu.fitsgen_ui.FilenamesMonitoringWorker.status_signal" href="#egse.dpu.fitsgen_ui.FilenamesMonitoringWorker.status_signal">status_signal</a></code></li>
@@ -1249,6 +1369,7 @@ def run(self):
 <li><code><a title="egse.dpu.fitsgen_ui.FitsgenUIView.create_toolbar" href="#egse.dpu.fitsgen_ui.FitsgenUIView.create_toolbar">create_toolbar</a></code></li>
 <li><code><a title="egse.dpu.fitsgen_ui.FitsgenUIView.init_ui" href="#egse.dpu.fitsgen_ui.FitsgenUIView.init_ui">init_ui</a></code></li>
 <li><code><a title="egse.dpu.fitsgen_ui.FitsgenUIView.on_filenames_change_signal" href="#egse.dpu.fitsgen_ui.FitsgenUIView.on_filenames_change_signal">on_filenames_change_signal</a></code></li>
+<li><code><a title="egse.dpu.fitsgen_ui.FitsgenUIView.on_last_processed_obsid_change_signal" href="#egse.dpu.fitsgen_ui.FitsgenUIView.on_last_processed_obsid_change_signal">on_last_processed_obsid_change_signal</a></code></li>
 <li><code><a title="egse.dpu.fitsgen_ui.FitsgenUIView.on_status_change_signal" href="#egse.dpu.fitsgen_ui.FitsgenUIView.on_status_change_signal">on_status_change_signal</a></code></li>
 <li><code><a title="egse.dpu.fitsgen_ui.FitsgenUIView.start_fitsgen" href="#egse.dpu.fitsgen_ui.FitsgenUIView.start_fitsgen">start_fitsgen</a></code></li>
 <li><code><a title="egse.dpu.fitsgen_ui.FitsgenUIView.stop_fitsgen" href="#egse.dpu.fitsgen_ui.FitsgenUIView.stop_fitsgen">stop_fitsgen</a></code></li>

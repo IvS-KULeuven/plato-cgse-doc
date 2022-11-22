@@ -140,6 +140,17 @@ class BeagleboneDeviceInterface:
         except Exception as exc:
             logger.error(f&#39;Could not get controller faults: {exc}&#39;)
             raise exc
+        
+    def fix_controller_fault(self):
+        # 1. Close interlocks
+        self.set_interlock(True)
+        # 2. Turn on lamp
+        self.set_lamp(True)
+        # 3. Wait for a second
+        time.sleep(2)
+        # 4. Disable lamp 
+        self.set_lamp(False)
+            
 
 def main():
     bbb = BeagleboneDeviceInterface()
@@ -354,7 +365,17 @@ Arguments can be positional or keyword arguments, not both.</p></div>
             return bool(controller_fault[0])
         except Exception as exc:
             logger.error(f&#39;Could not get controller faults: {exc}&#39;)
-            raise exc</code></pre>
+            raise exc
+        
+    def fix_controller_fault(self):
+        # 1. Close interlocks
+        self.set_interlock(True)
+        # 2. Turn on lamp
+        self.set_lamp(True)
+        # 3. Wait for a second
+        time.sleep(2)
+        # 4. Disable lamp 
+        self.set_lamp(False)</code></pre>
 </details>
 <h3>Methods</h3>
 <dl>
@@ -382,6 +403,26 @@ Arguments can be positional or keyword arguments, not both.</p></div>
 </summary>
 <pre><code class="python">def disconnect(self):
     self._is_connected = False</code></pre>
+</details>
+</dd>
+<dt id="egse.lampcontrol.beaglebone.beaglebone_devif.BeagleboneDeviceInterface.fix_controller_fault"><code class="name flex">
+<span>def <span class="ident">fix_controller_fault</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def fix_controller_fault(self):
+    # 1. Close interlocks
+    self.set_interlock(True)
+    # 2. Turn on lamp
+    self.set_lamp(True)
+    # 3. Wait for a second
+    time.sleep(2)
+    # 4. Disable lamp 
+    self.set_lamp(False)</code></pre>
 </details>
 </dd>
 <dt id="egse.lampcontrol.beaglebone.beaglebone_devif.BeagleboneDeviceInterface.get_controller_fault"><code class="name flex">
@@ -554,6 +595,7 @@ Arguments can be positional or keyword arguments, not both.</p></div>
 <ul class="">
 <li><code><a title="egse.lampcontrol.beaglebone.beaglebone_devif.BeagleboneDeviceInterface.connect" href="#egse.lampcontrol.beaglebone.beaglebone_devif.BeagleboneDeviceInterface.connect">connect</a></code></li>
 <li><code><a title="egse.lampcontrol.beaglebone.beaglebone_devif.BeagleboneDeviceInterface.disconnect" href="#egse.lampcontrol.beaglebone.beaglebone_devif.BeagleboneDeviceInterface.disconnect">disconnect</a></code></li>
+<li><code><a title="egse.lampcontrol.beaglebone.beaglebone_devif.BeagleboneDeviceInterface.fix_controller_fault" href="#egse.lampcontrol.beaglebone.beaglebone_devif.BeagleboneDeviceInterface.fix_controller_fault">fix_controller_fault</a></code></li>
 <li><code><a title="egse.lampcontrol.beaglebone.beaglebone_devif.BeagleboneDeviceInterface.get_controller_fault" href="#egse.lampcontrol.beaglebone.beaglebone_devif.BeagleboneDeviceInterface.get_controller_fault">get_controller_fault</a></code></li>
 <li><code><a title="egse.lampcontrol.beaglebone.beaglebone_devif.BeagleboneDeviceInterface.get_lamp_module_fault" href="#egse.lampcontrol.beaglebone.beaglebone_devif.BeagleboneDeviceInterface.get_lamp_module_fault">get_lamp_module_fault</a></code></li>
 <li><code><a title="egse.lampcontrol.beaglebone.beaglebone_devif.BeagleboneDeviceInterface.get_lamp_on" href="#egse.lampcontrol.beaglebone.beaglebone_devif.BeagleboneDeviceInterface.get_lamp_on">get_lamp_on</a></code></li>

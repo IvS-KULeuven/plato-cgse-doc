@@ -29,6 +29,8 @@
 <pre><code class="python">import logging
 import multiprocessing
 import os
+from pathlib import Path
+
 import sys
 import threading
 from typing import Optional
@@ -36,7 +38,12 @@ from typing import Tuple
 from typing import Union
 
 from PyQt5 import QtCore
+from PyQt5.QtCore import QObject, QLockFile
+from PyQt5.QtCore import QRunnable
+from PyQt5.QtCore import QThreadPool
 from PyQt5.QtCore import QTimer
+from PyQt5.QtCore import pyqtSignal
+from PyQt5.QtCore import pyqtSlot
 from PyQt5.QtGui import QIcon
 from PyQt5.QtWidgets import QAction
 from PyQt5.QtWidgets import QApplication
@@ -56,6 +63,8 @@ from prometheus_client import start_http_server
 from zmq import ZMQError
 
 from egse.collimator.fcul.ogse import OGSEProxy
+from egse.decorators import timer
+from egse.gui import VLine
 from egse.gui.buttons import BUTTON_SELECTED
 from egse.gui.buttons import ToggleButton
 from egse.gui.buttons import TouchButton
@@ -456,6 +465,9 @@ class OGSEGUIView(QMainWindow, Observable):
     def __init__(self):
         super().__init__()
 
+        self.status_puller = None
+        self.threadpool = QThreadPool()
+
         self.cs_connection: ToggleButton = ...
         self.device_connection: ToggleButton = ...
         self.help_action: QAction = ...
@@ -465,10 +477,13 @@ class OGSEGUIView(QMainWindow, Observable):
         self.setWindowTitle(&#34;OGSE Controller GUI&#34;)
         self.setGeometry(300, 300, 600, 300)
 
-        self.setStatusBar(QStatusBar(self))
-        self.status_bar = self.statusBar()
+        # The mode_label describes the current mode in which the controller is running.
+        # The mode can be Proxy, Simulator, Direct
+
+        self.mode_label = QLabel(&#34;&#34;)
 
         self.create_toolbar()
+        self.create_status_bar()
 
         self.status = StatusWidget()
         self.power_meter = PowerMeterWidget()
@@ -501,6 +516,48 @@ class OGSEGUIView(QMainWindow, Observable):
         widget.setLayout(layout)
 
         self.setCentralWidget(widget)
+
+    def closeEvent(self, event):
+        MODULE_LOGGER.info(&#34;Window closed, quiting....&#34;)
+        self.status_puller.quit()
+        event.accept()
+
+        all_threads_finished = self.threadpool.waitForDone(msecs=2000)
+        if not all_threads_finished:
+            MODULE_LOGGER.warning(&#34;Not all threads were finished before the OGSE GUI terminated.&#34;)
+
+    def start_pulling_status(self):
+        self.status_puller = worker = StatusPuller(OGSEUIModel())
+        self.threadpool.start(worker)
+        worker.signals.states.connect(self.worker_states)
+        worker.signals.faults.connect(self.worker_faults)
+        worker.signals.att.connect(self.worker_att)
+        worker.signals.dev.connect(self.worker_dev)
+        worker.signals.pm.connect(self.worker_pm)
+
+    @pyqtSlot(list)
+    def worker_states(self, states):
+        self.status.states.set_states(states)
+
+    @pyqtSlot(list)
+    def worker_faults(self, faults):
+        self.faults.states.set_states(faults)
+
+    @pyqtSlot(list)
+    def worker_att(self, att):
+        self.attenuation.index.setText( str(att[0]))
+        self.attenuation.factor.setText(str(att[1]))
+
+    @pyqtSlot(bool)
+    def worker_dev(self, dev):
+        self.device_connection.set_selected(dev)
+
+    @pyqtSlot(dict)
+    def worker_pm(self, pm):
+        self.power_meter.power_1 = f&#34;{pm[&#39;power1&#39;]:.4e}&#34;
+        self.power_meter.power_2 = f&#34;{pm[&#39;power2&#39;]:.4e}&#34;
+        self.power_meter.temp_1 = f&#34;{pm[&#39;temp1&#39;]:5.2f}&#34;
+        self.power_meter.temp_2 = f&#34;{pm[&#39;temp2&#39;]:5.2f}&#34;
 
     def on_click(self, icon: Union[QIcon, bool]):
         # MODULE_LOGGER.info(f&#34;in {self.__class__.__name__}.on_click()&#34;)
@@ -559,6 +616,13 @@ class OGSEGUIView(QMainWindow, Observable):
 
     def uncheck_device_action(self):
         self.device_connection.set_selected(False)
+
+    def create_status_bar(self):
+
+        self.statusBar().setStyleSheet(&#34;border: 0; background-color: #FFF8DC;&#34;)
+        self.statusBar().setStyleSheet(&#34;QStatusBar::item {border: none;}&#34;)
+        self.statusBar().addPermanentWidget(VLine())
+        self.statusBar().addPermanentWidget(self.mode_label)
 
     def create_toolbar(self):
 
@@ -622,6 +686,17 @@ class OGSEGUIView(QMainWindow, Observable):
                 f&#34;Unknown State ({state}), expected &#39;connected&#39; or &#39;disconnected&#39;.&#34;
             )
 
+    def update_status_bar(self, message=None, mode=None, timeout=2000):
+        if message:
+            self.statusBar().showMessage(message, msecs=timeout)
+        if mode:
+            self.mode_label.setStyleSheet(
+                f&#34;border: 0; &#34; f&#34;color: {&#39;red&#39; if &#39;Simulator&#39; in mode else &#39;black&#39;};&#34;
+            )
+            self.mode_label.setText(f&#34;mode: {mode}&#34;)
+        self.statusBar().repaint()
+
+
 
 class OGSEUIModel:
     def __init__(self):
@@ -654,6 +729,9 @@ class OGSEUIModel:
         response = self.device.is_connected()
         # MODULE_LOGGER.info(f&#34;{self.__class__.__name__}.device.is_connected() = {response}&#34;)
         return response if response is not None else False
+
+    def is_simulator(self):
+        return &#34;[sim]&#34; in self.device.version()
 
     def power_on(self):
         MODULE_LOGGER.debug(f&#34;in {self.__class__.__name__}.power_on()&#34;)
@@ -691,7 +769,7 @@ class OGSEUIModel:
 
     def get_interlock(self) -&gt; bool:
         interlock = self.device.get_interlock()
-        return &#34;OPEN&#34; in interlock
+        return &#34;ON&#34; in interlock
 
     def get_power(self) -&gt; bool:
         power = self.device.get_power()
@@ -707,7 +785,7 @@ class OGSEUIModel:
 
     def get_ldls_status(self):
         ldls = self.device.ldls_status()
-        return &#34;ON&#34; in ldls
+        return &#34;OK&#34; in ldls
 
     def status(self) -&gt; dict:
         &#34;&#34;&#34;
@@ -737,22 +815,79 @@ class OGSEUIModel:
     def get_lamp_fault(self):
         fault = self.device.get_lamp_fault()
 
-        # get_lamp_fault response contains &#39;NO_ERROR&#39; if all good, and &#39;ERROR&#39; if there
+        # get_lamp_fault response contains &#39;NO-ERROR&#39; if all good, and &#39;ERROR&#39; if there
         # was an error. The model will return True if there is a fault detected!
 
-        return &#34;NO_ERROR&#34; not in fault
+        return &#34;NO-ERROR&#34; not in fault
 
     def get_controller_fault(self):
         fault = self.device.get_controller_fault()
 
-        # get_controller_fault response contains &#39;NO_ERROR&#39; if all good, and &#39;ERROR&#39; if there
+        # get_controller_fault response contains &#39;NO-ERROR&#39; if all good, and &#39;ERROR&#39; if there
         # was an error. The model will return True if there is a fault detected!
 
-        return &#34;NO_ERROR&#34; not in fault
+        return &#34;NO-ERROR&#34; not in fault
 
     def set_attenuation_index(self, index):
         # MODULE_LOGGER.info(f&#34;set_attenuation_index to {index} ({type(index)=})&#34;)
         self.device.att_set_level_index(int(index))
+
+
+class StatusSignals(QObject):
+    states = pyqtSignal(list)
+    faults = pyqtSignal(list)
+    att = pyqtSignal(list)
+    dev = pyqtSignal(bool)
+    pm = pyqtSignal(dict)
+
+
+class StatusPuller(QRunnable):
+    def __init__(self, model: OGSEUIModel):
+        super().__init__()
+        self.signals = StatusSignals()
+        self.model = model
+        self.quit_request = False
+
+    @pyqtSlot()
+    def run(self):
+        while not self.quit_request:
+
+            self.signals.dev.emit(self.model.is_device_connected())
+
+            # Set all the status LEDs
+
+            status = self.model.status()
+            states = [
+                Indic.GREEN if &#39;ON&#39; in status[&#34;interlock&#34;] else Indic.BLACK,
+                Indic.GREEN if &#39;ON&#39; in status[&#34;power&#34;] else Indic.BLACK,
+                Indic.GREEN if self.model.get_laser() else Indic.BLACK,
+                Indic.GREEN if &#39;ON&#39; in status[&#34;lamp&#34;] else Indic.BLACK,
+                Indic.GREEN if &#39;ON&#39; in status[&#34;psu&#34;] else Indic.BLACK,
+                Indic.GREEN if self.model.get_ldls_status() else Indic.BLACK,
+                Indic.ORANGE if status[&#34;att_moving&#34;] else Indic.BLACK,
+            ]
+            self.signals.states.emit(states)
+
+            self.signals.pm.emit(
+                {
+                    &#34;power1&#34;: status[&#39;power1&#39;],
+                    &#34;power2&#34;: status[&#39;power2&#39;],
+                    &#34;temp1&#34;: status[&#39;temp1&#39;],
+                    &#34;temp2&#34;: status[&#39;temp2&#39;],
+                })
+
+            # Set the fault detection on the lamp and controller
+
+            faults = [
+                Indic.RED if self.model.get_lamp_fault() else Indic.GREEN,
+                Indic.RED if self.model.get_controller_fault() else Indic.GREEN,
+            ]
+            self.signals.faults.emit(faults)
+
+            self.signals.att.emit([status[&#34;att_index&#34;], status[&#34;att_factor&#34;]])
+
+    def quit(self):
+        self.quit_request = True
 
 
 class OGSEUIController(Observer):
@@ -770,6 +905,8 @@ class OGSEUIController(Observer):
         self.create_timer()
 
         if self.model.is_cs_connected():
+            mode = f&#34;Proxy{&#39; [Simulator]&#39; if self.model.is_simulator() else &#39;&#39;}&#34;
+            self.view.update_status_bar(mode=mode)
             self.view.check_cs_action()
         else:
             self.view.uncheck_cs_action()
@@ -791,6 +928,8 @@ class OGSEUIController(Observer):
         else:
             self.view.set_connection_state(&#34;disconnected&#34;)
             self.stop_timer()
+
+        self.view.start_pulling_status()
 
     def has_connection(self):
         &#34;&#34;&#34;
@@ -902,6 +1041,9 @@ class OGSEUIController(Observer):
 
     def update_state(self):
         # MODULE_LOGGER.info(f&#34;in {self.__class__.__name__}.update_state()&#34;)
+        # MODULE_LOGGER.info(&#34;Disabled update_state() from OGSEUIController&#34;)
+        # return
+
         self.view.device_connection.set_selected(self.model.is_device_connected())
 
         m = self.model
@@ -910,12 +1052,12 @@ class OGSEUIController(Observer):
 
         status = m.status()
         states = [
-            Indic.GREEN if &#39;OPEN&#39; in status[&#34;interlock&#34;] else Indic.BLACK,
+            Indic.GREEN if &#39;ON&#39; in status[&#34;interlock&#34;] else Indic.BLACK,
             Indic.GREEN if &#39;ON&#39; in status[&#34;power&#34;] else Indic.BLACK,
             Indic.GREEN if m.get_laser() else Indic.BLACK,
             Indic.GREEN if &#39;ON&#39; in status[&#34;lamp&#34;] else Indic.BLACK,
             Indic.GREEN if &#39;ON&#39; in status[&#34;psu&#34;] else Indic.BLACK,
-            Indic.GREEN if m.get_ldls_status() else Indic.RED,
+            Indic.GREEN if m.get_ldls_status() else Indic.BLACK,
             Indic.ORANGE if status[&#34;att_moving&#34;] else Indic.BLACK,
         ]
         self.view.status.states.set_states(states)
@@ -947,36 +1089,46 @@ class OGSEUIController(Observer):
             self.view.commanding.cmd_power.set_selected(False)
             self.view.commanding.disable_commanding()
 
-        self.view.attenuation.index.setText(str(status[&#34;att_index&#34;]))
+        self.view.attenuation.index.setText( str(status[&#34;att_index&#34;]))
         self.view.attenuation.factor.setText(str(status[&#34;att_factor&#34;]))
 
 
 def main():
+    lock_file = QLockFile(str(Path(&#34;~/ogse_ui.app.lock&#34;).expanduser()))
 
     app_logo = get_resource(&#34;:/icons/logo-ogse.svg&#34;)
-
-    process_status = ProcessStatus()
-
-    timer_thread = threading.Thread(target=do_every, args=(10, process_status.update))
-    timer_thread.daemon = True
-    timer_thread.start()
-
-    start_http_server(GUI_SETTINGS.METRICS_PORT)
-
     app = QApplication(sys.argv)
     app.setWindowIcon(QIcon(str(app_logo)))
 
-    os.environ[&#34;QT_ENABLE_HIGHDPI_SCALING&#34;] = &#34;1&#34;
-    QApplication.setHighDpiScaleFactorRoundingPolicy(
-        QtCore.Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
+    if lock_file.tryLock(100):
 
-    view = OGSEGUIView()
-    model = OGSEUIModel()
-    OGSEUIController(model, view)
+        process_status = ProcessStatus()
 
-    view.show()
+        timer_thread = threading.Thread(target=do_every, args=(10, process_status.update))
+        timer_thread.daemon = True
+        timer_thread.start()
 
-    return app.exec_()
+        start_http_server(GUI_SETTINGS.METRICS_PORT)
+
+        os.environ[&#34;QT_ENABLE_HIGHDPI_SCALING&#34;] = &#34;1&#34;
+        QApplication.setHighDpiScaleFactorRoundingPolicy(
+            QtCore.Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
+
+        view = OGSEGUIView()
+        model = OGSEUIModel()
+        OGSEUIController(model, view)
+
+        view.show()
+
+        return app.exec_()
+    else:
+        error_message = QMessageBox()
+        error_message.setIcon(QMessageBox.Warning)
+        error_message.setWindowTitle(&#34;Error&#34;)
+        error_message.setText(&#34;The OGSE GUI application is already running!&#34;)
+        error_message.setStandardButtons(QMessageBox.Ok)
+
+        return error_message.exec()
 
 
 if __name__ == &#39;__main__&#39;:
@@ -1001,31 +1153,41 @@ if __name__ == &#39;__main__&#39;:
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def main():
+    lock_file = QLockFile(str(Path(&#34;~/ogse_ui.app.lock&#34;).expanduser()))
 
     app_logo = get_resource(&#34;:/icons/logo-ogse.svg&#34;)
-
-    process_status = ProcessStatus()
-
-    timer_thread = threading.Thread(target=do_every, args=(10, process_status.update))
-    timer_thread.daemon = True
-    timer_thread.start()
-
-    start_http_server(GUI_SETTINGS.METRICS_PORT)
-
     app = QApplication(sys.argv)
     app.setWindowIcon(QIcon(str(app_logo)))
 
-    os.environ[&#34;QT_ENABLE_HIGHDPI_SCALING&#34;] = &#34;1&#34;
-    QApplication.setHighDpiScaleFactorRoundingPolicy(
-        QtCore.Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
+    if lock_file.tryLock(100):
 
-    view = OGSEGUIView()
-    model = OGSEUIModel()
-    OGSEUIController(model, view)
+        process_status = ProcessStatus()
 
-    view.show()
+        timer_thread = threading.Thread(target=do_every, args=(10, process_status.update))
+        timer_thread.daemon = True
+        timer_thread.start()
 
-    return app.exec_()</code></pre>
+        start_http_server(GUI_SETTINGS.METRICS_PORT)
+
+        os.environ[&#34;QT_ENABLE_HIGHDPI_SCALING&#34;] = &#34;1&#34;
+        QApplication.setHighDpiScaleFactorRoundingPolicy(
+            QtCore.Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
+
+        view = OGSEGUIView()
+        model = OGSEUIModel()
+        OGSEUIController(model, view)
+
+        view.show()
+
+        return app.exec_()
+    else:
+        error_message = QMessageBox()
+        error_message.setIcon(QMessageBox.Warning)
+        error_message.setWindowTitle(&#34;Error&#34;)
+        error_message.setText(&#34;The OGSE GUI application is already running!&#34;)
+        error_message.setStandardButtons(QMessageBox.Ok)
+
+        return error_message.exec()</code></pre>
 </details>
 </dd>
 </dl>
@@ -1494,6 +1656,9 @@ QMessageBox(QMessageBox.Icon, str, str, buttons: Union[QMessageBox.StandardButto
     def __init__(self):
         super().__init__()
 
+        self.status_puller = None
+        self.threadpool = QThreadPool()
+
         self.cs_connection: ToggleButton = ...
         self.device_connection: ToggleButton = ...
         self.help_action: QAction = ...
@@ -1503,10 +1668,13 @@ QMessageBox(QMessageBox.Icon, str, str, buttons: Union[QMessageBox.StandardButto
         self.setWindowTitle(&#34;OGSE Controller GUI&#34;)
         self.setGeometry(300, 300, 600, 300)
 
-        self.setStatusBar(QStatusBar(self))
-        self.status_bar = self.statusBar()
+        # The mode_label describes the current mode in which the controller is running.
+        # The mode can be Proxy, Simulator, Direct
+
+        self.mode_label = QLabel(&#34;&#34;)
 
         self.create_toolbar()
+        self.create_status_bar()
 
         self.status = StatusWidget()
         self.power_meter = PowerMeterWidget()
@@ -1539,6 +1707,48 @@ QMessageBox(QMessageBox.Icon, str, str, buttons: Union[QMessageBox.StandardButto
         widget.setLayout(layout)
 
         self.setCentralWidget(widget)
+
+    def closeEvent(self, event):
+        MODULE_LOGGER.info(&#34;Window closed, quiting....&#34;)
+        self.status_puller.quit()
+        event.accept()
+
+        all_threads_finished = self.threadpool.waitForDone(msecs=2000)
+        if not all_threads_finished:
+            MODULE_LOGGER.warning(&#34;Not all threads were finished before the OGSE GUI terminated.&#34;)
+
+    def start_pulling_status(self):
+        self.status_puller = worker = StatusPuller(OGSEUIModel())
+        self.threadpool.start(worker)
+        worker.signals.states.connect(self.worker_states)
+        worker.signals.faults.connect(self.worker_faults)
+        worker.signals.att.connect(self.worker_att)
+        worker.signals.dev.connect(self.worker_dev)
+        worker.signals.pm.connect(self.worker_pm)
+
+    @pyqtSlot(list)
+    def worker_states(self, states):
+        self.status.states.set_states(states)
+
+    @pyqtSlot(list)
+    def worker_faults(self, faults):
+        self.faults.states.set_states(faults)
+
+    @pyqtSlot(list)
+    def worker_att(self, att):
+        self.attenuation.index.setText( str(att[0]))
+        self.attenuation.factor.setText(str(att[1]))
+
+    @pyqtSlot(bool)
+    def worker_dev(self, dev):
+        self.device_connection.set_selected(dev)
+
+    @pyqtSlot(dict)
+    def worker_pm(self, pm):
+        self.power_meter.power_1 = f&#34;{pm[&#39;power1&#39;]:.4e}&#34;
+        self.power_meter.power_2 = f&#34;{pm[&#39;power2&#39;]:.4e}&#34;
+        self.power_meter.temp_1 = f&#34;{pm[&#39;temp1&#39;]:5.2f}&#34;
+        self.power_meter.temp_2 = f&#34;{pm[&#39;temp2&#39;]:5.2f}&#34;
 
     def on_click(self, icon: Union[QIcon, bool]):
         # MODULE_LOGGER.info(f&#34;in {self.__class__.__name__}.on_click()&#34;)
@@ -1597,6 +1807,13 @@ QMessageBox(QMessageBox.Icon, str, str, buttons: Union[QMessageBox.StandardButto
 
     def uncheck_device_action(self):
         self.device_connection.set_selected(False)
+
+    def create_status_bar(self):
+
+        self.statusBar().setStyleSheet(&#34;border: 0; background-color: #FFF8DC;&#34;)
+        self.statusBar().setStyleSheet(&#34;QStatusBar::item {border: none;}&#34;)
+        self.statusBar().addPermanentWidget(VLine())
+        self.statusBar().addPermanentWidget(self.mode_label)
 
     def create_toolbar(self):
 
@@ -1658,7 +1875,17 @@ QMessageBox(QMessageBox.Icon, str, str, buttons: Union[QMessageBox.StandardButto
         else:
             raise UnknownStateError(
                 f&#34;Unknown State ({state}), expected &#39;connected&#39; or &#39;disconnected&#39;.&#34;
-            )</code></pre>
+            )
+
+    def update_status_bar(self, message=None, mode=None, timeout=2000):
+        if message:
+            self.statusBar().showMessage(message, msecs=timeout)
+        if mode:
+            self.mode_label.setStyleSheet(
+                f&#34;border: 0; &#34; f&#34;color: {&#39;red&#39; if &#39;Simulator&#39; in mode else &#39;black&#39;};&#34;
+            )
+            self.mode_label.setText(f&#34;mode: {mode}&#34;)
+        self.statusBar().repaint()</code></pre>
 </details>
 <h3>Ancestors</h3>
 <ul class="hlist">
@@ -1696,6 +1923,42 @@ QMessageBox(QMessageBox.Icon, str, str, buttons: Union[QMessageBox.StandardButto
 </summary>
 <pre><code class="python">def check_device_action(self):
     self.device_connection.set_selected()</code></pre>
+</details>
+</dd>
+<dt id="egse.collimator.fcul.ogse_ui.OGSEGUIView.closeEvent"><code class="name flex">
+<span>def <span class="ident">closeEvent</span></span>(<span>self, event)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>closeEvent(self, QCloseEvent)</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def closeEvent(self, event):
+    MODULE_LOGGER.info(&#34;Window closed, quiting....&#34;)
+    self.status_puller.quit()
+    event.accept()
+
+    all_threads_finished = self.threadpool.waitForDone(msecs=2000)
+    if not all_threads_finished:
+        MODULE_LOGGER.warning(&#34;Not all threads were finished before the OGSE GUI terminated.&#34;)</code></pre>
+</details>
+</dd>
+<dt id="egse.collimator.fcul.ogse_ui.OGSEGUIView.create_status_bar"><code class="name flex">
+<span>def <span class="ident">create_status_bar</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def create_status_bar(self):
+
+    self.statusBar().setStyleSheet(&#34;border: 0; background-color: #FFF8DC;&#34;)
+    self.statusBar().setStyleSheet(&#34;QStatusBar::item {border: none;}&#34;)
+    self.statusBar().addPermanentWidget(VLine())
+    self.statusBar().addPermanentWidget(self.mode_label)</code></pre>
 </details>
 </dd>
 <dt id="egse.collimator.fcul.ogse_ui.OGSEGUIView.create_toolbar"><code class="name flex">
@@ -1876,6 +2139,25 @@ QMessageBox(QMessageBox.Icon, str, str, buttons: Union[QMessageBox.StandardButto
         )</code></pre>
 </details>
 </dd>
+<dt id="egse.collimator.fcul.ogse_ui.OGSEGUIView.start_pulling_status"><code class="name flex">
+<span>def <span class="ident">start_pulling_status</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def start_pulling_status(self):
+    self.status_puller = worker = StatusPuller(OGSEUIModel())
+    self.threadpool.start(worker)
+    worker.signals.states.connect(self.worker_states)
+    worker.signals.faults.connect(self.worker_faults)
+    worker.signals.att.connect(self.worker_att)
+    worker.signals.dev.connect(self.worker_dev)
+    worker.signals.pm.connect(self.worker_pm)</code></pre>
+</details>
+</dd>
 <dt id="egse.collimator.fcul.ogse_ui.OGSEGUIView.uncheck_cs_action"><code class="name flex">
 <span>def <span class="ident">uncheck_cs_action</span></span>(<span>self)</span>
 </code></dt>
@@ -1900,6 +2182,100 @@ QMessageBox(QMessageBox.Icon, str, str, buttons: Union[QMessageBox.StandardButto
 </summary>
 <pre><code class="python">def uncheck_device_action(self):
     self.device_connection.set_selected(False)</code></pre>
+</details>
+</dd>
+<dt id="egse.collimator.fcul.ogse_ui.OGSEGUIView.update_status_bar"><code class="name flex">
+<span>def <span class="ident">update_status_bar</span></span>(<span>self, message=None, mode=None, timeout=2000)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def update_status_bar(self, message=None, mode=None, timeout=2000):
+    if message:
+        self.statusBar().showMessage(message, msecs=timeout)
+    if mode:
+        self.mode_label.setStyleSheet(
+            f&#34;border: 0; &#34; f&#34;color: {&#39;red&#39; if &#39;Simulator&#39; in mode else &#39;black&#39;};&#34;
+        )
+        self.mode_label.setText(f&#34;mode: {mode}&#34;)
+    self.statusBar().repaint()</code></pre>
+</details>
+</dd>
+<dt id="egse.collimator.fcul.ogse_ui.OGSEGUIView.worker_att"><code class="name flex">
+<span>def <span class="ident">worker_att</span></span>(<span>self, att)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@pyqtSlot(list)
+def worker_att(self, att):
+    self.attenuation.index.setText( str(att[0]))
+    self.attenuation.factor.setText(str(att[1]))</code></pre>
+</details>
+</dd>
+<dt id="egse.collimator.fcul.ogse_ui.OGSEGUIView.worker_dev"><code class="name flex">
+<span>def <span class="ident">worker_dev</span></span>(<span>self, dev)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@pyqtSlot(bool)
+def worker_dev(self, dev):
+    self.device_connection.set_selected(dev)</code></pre>
+</details>
+</dd>
+<dt id="egse.collimator.fcul.ogse_ui.OGSEGUIView.worker_faults"><code class="name flex">
+<span>def <span class="ident">worker_faults</span></span>(<span>self, faults)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@pyqtSlot(list)
+def worker_faults(self, faults):
+    self.faults.states.set_states(faults)</code></pre>
+</details>
+</dd>
+<dt id="egse.collimator.fcul.ogse_ui.OGSEGUIView.worker_pm"><code class="name flex">
+<span>def <span class="ident">worker_pm</span></span>(<span>self, pm)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@pyqtSlot(dict)
+def worker_pm(self, pm):
+    self.power_meter.power_1 = f&#34;{pm[&#39;power1&#39;]:.4e}&#34;
+    self.power_meter.power_2 = f&#34;{pm[&#39;power2&#39;]:.4e}&#34;
+    self.power_meter.temp_1 = f&#34;{pm[&#39;temp1&#39;]:5.2f}&#34;
+    self.power_meter.temp_2 = f&#34;{pm[&#39;temp2&#39;]:5.2f}&#34;</code></pre>
+</details>
+</dd>
+<dt id="egse.collimator.fcul.ogse_ui.OGSEGUIView.worker_states"><code class="name flex">
+<span>def <span class="ident">worker_states</span></span>(<span>self, states)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@pyqtSlot(list)
+def worker_states(self, states):
+    self.status.states.set_states(states)</code></pre>
 </details>
 </dd>
 </dl>
@@ -1943,6 +2319,8 @@ inheritance.</p></div>
         self.create_timer()
 
         if self.model.is_cs_connected():
+            mode = f&#34;Proxy{&#39; [Simulator]&#39; if self.model.is_simulator() else &#39;&#39;}&#34;
+            self.view.update_status_bar(mode=mode)
             self.view.check_cs_action()
         else:
             self.view.uncheck_cs_action()
@@ -1964,6 +2342,8 @@ inheritance.</p></div>
         else:
             self.view.set_connection_state(&#34;disconnected&#34;)
             self.stop_timer()
+
+        self.view.start_pulling_status()
 
     def has_connection(self):
         &#34;&#34;&#34;
@@ -2075,6 +2455,9 @@ inheritance.</p></div>
 
     def update_state(self):
         # MODULE_LOGGER.info(f&#34;in {self.__class__.__name__}.update_state()&#34;)
+        # MODULE_LOGGER.info(&#34;Disabled update_state() from OGSEUIController&#34;)
+        # return
+
         self.view.device_connection.set_selected(self.model.is_device_connected())
 
         m = self.model
@@ -2083,12 +2466,12 @@ inheritance.</p></div>
 
         status = m.status()
         states = [
-            Indic.GREEN if &#39;OPEN&#39; in status[&#34;interlock&#34;] else Indic.BLACK,
+            Indic.GREEN if &#39;ON&#39; in status[&#34;interlock&#34;] else Indic.BLACK,
             Indic.GREEN if &#39;ON&#39; in status[&#34;power&#34;] else Indic.BLACK,
             Indic.GREEN if m.get_laser() else Indic.BLACK,
             Indic.GREEN if &#39;ON&#39; in status[&#34;lamp&#34;] else Indic.BLACK,
             Indic.GREEN if &#39;ON&#39; in status[&#34;psu&#34;] else Indic.BLACK,
-            Indic.GREEN if m.get_ldls_status() else Indic.RED,
+            Indic.GREEN if m.get_ldls_status() else Indic.BLACK,
             Indic.ORANGE if status[&#34;att_moving&#34;] else Indic.BLACK,
         ]
         self.view.status.states.set_states(states)
@@ -2120,7 +2503,7 @@ inheritance.</p></div>
             self.view.commanding.cmd_power.set_selected(False)
             self.view.commanding.disable_commanding()
 
-        self.view.attenuation.index.setText(str(status[&#34;att_index&#34;]))
+        self.view.attenuation.index.setText( str(status[&#34;att_index&#34;]))
         self.view.attenuation.factor.setText(str(status[&#34;att_factor&#34;]))</code></pre>
 </details>
 <h3>Ancestors</h3>
@@ -2311,6 +2694,9 @@ the device or to a simulator.</p></div>
 </summary>
 <pre><code class="python">def update_state(self):
     # MODULE_LOGGER.info(f&#34;in {self.__class__.__name__}.update_state()&#34;)
+    # MODULE_LOGGER.info(&#34;Disabled update_state() from OGSEUIController&#34;)
+    # return
+
     self.view.device_connection.set_selected(self.model.is_device_connected())
 
     m = self.model
@@ -2319,12 +2705,12 @@ the device or to a simulator.</p></div>
 
     status = m.status()
     states = [
-        Indic.GREEN if &#39;OPEN&#39; in status[&#34;interlock&#34;] else Indic.BLACK,
+        Indic.GREEN if &#39;ON&#39; in status[&#34;interlock&#34;] else Indic.BLACK,
         Indic.GREEN if &#39;ON&#39; in status[&#34;power&#34;] else Indic.BLACK,
         Indic.GREEN if m.get_laser() else Indic.BLACK,
         Indic.GREEN if &#39;ON&#39; in status[&#34;lamp&#34;] else Indic.BLACK,
         Indic.GREEN if &#39;ON&#39; in status[&#34;psu&#34;] else Indic.BLACK,
-        Indic.GREEN if m.get_ldls_status() else Indic.RED,
+        Indic.GREEN if m.get_ldls_status() else Indic.BLACK,
         Indic.ORANGE if status[&#34;att_moving&#34;] else Indic.BLACK,
     ]
     self.view.status.states.set_states(states)
@@ -2356,7 +2742,7 @@ the device or to a simulator.</p></div>
         self.view.commanding.cmd_power.set_selected(False)
         self.view.commanding.disable_commanding()
 
-    self.view.attenuation.index.setText(str(status[&#34;att_index&#34;]))
+    self.view.attenuation.index.setText( str(status[&#34;att_index&#34;]))
     self.view.attenuation.factor.setText(str(status[&#34;att_factor&#34;]))</code></pre>
 </details>
 </dd>
@@ -2403,6 +2789,9 @@ the device or to a simulator.</p></div>
         # MODULE_LOGGER.info(f&#34;{self.__class__.__name__}.device.is_connected() = {response}&#34;)
         return response if response is not None else False
 
+    def is_simulator(self):
+        return &#34;[sim]&#34; in self.device.version()
+
     def power_on(self):
         MODULE_LOGGER.debug(f&#34;in {self.__class__.__name__}.power_on()&#34;)
         self.device.power_on()
@@ -2439,7 +2828,7 @@ the device or to a simulator.</p></div>
 
     def get_interlock(self) -&gt; bool:
         interlock = self.device.get_interlock()
-        return &#34;OPEN&#34; in interlock
+        return &#34;ON&#34; in interlock
 
     def get_power(self) -&gt; bool:
         power = self.device.get_power()
@@ -2455,7 +2844,7 @@ the device or to a simulator.</p></div>
 
     def get_ldls_status(self):
         ldls = self.device.ldls_status()
-        return &#34;ON&#34; in ldls
+        return &#34;OK&#34; in ldls
 
     def status(self) -&gt; dict:
         &#34;&#34;&#34;
@@ -2485,18 +2874,18 @@ the device or to a simulator.</p></div>
     def get_lamp_fault(self):
         fault = self.device.get_lamp_fault()
 
-        # get_lamp_fault response contains &#39;NO_ERROR&#39; if all good, and &#39;ERROR&#39; if there
+        # get_lamp_fault response contains &#39;NO-ERROR&#39; if all good, and &#39;ERROR&#39; if there
         # was an error. The model will return True if there is a fault detected!
 
-        return &#34;NO_ERROR&#34; not in fault
+        return &#34;NO-ERROR&#34; not in fault
 
     def get_controller_fault(self):
         fault = self.device.get_controller_fault()
 
-        # get_controller_fault response contains &#39;NO_ERROR&#39; if all good, and &#39;ERROR&#39; if there
+        # get_controller_fault response contains &#39;NO-ERROR&#39; if all good, and &#39;ERROR&#39; if there
         # was an error. The model will return True if there is a fault detected!
 
-        return &#34;NO_ERROR&#34; not in fault
+        return &#34;NO-ERROR&#34; not in fault
 
     def set_attenuation_index(self, index):
         # MODULE_LOGGER.info(f&#34;set_attenuation_index to {index} ({type(index)=})&#34;)
@@ -2545,10 +2934,10 @@ the device or to a simulator.</p></div>
 <pre><code class="python">def get_controller_fault(self):
     fault = self.device.get_controller_fault()
 
-    # get_controller_fault response contains &#39;NO_ERROR&#39; if all good, and &#39;ERROR&#39; if there
+    # get_controller_fault response contains &#39;NO-ERROR&#39; if all good, and &#39;ERROR&#39; if there
     # was an error. The model will return True if there is a fault detected!
 
-    return &#34;NO_ERROR&#34; not in fault</code></pre>
+    return &#34;NO-ERROR&#34; not in fault</code></pre>
 </details>
 </dd>
 <dt id="egse.collimator.fcul.ogse_ui.OGSEUIModel.get_interlock"><code class="name flex">
@@ -2562,7 +2951,7 @@ the device or to a simulator.</p></div>
 </summary>
 <pre><code class="python">def get_interlock(self) -&gt; bool:
     interlock = self.device.get_interlock()
-    return &#34;OPEN&#34; in interlock</code></pre>
+    return &#34;ON&#34; in interlock</code></pre>
 </details>
 </dd>
 <dt id="egse.collimator.fcul.ogse_ui.OGSEUIModel.get_lamp_fault"><code class="name flex">
@@ -2577,10 +2966,10 @@ the device or to a simulator.</p></div>
 <pre><code class="python">def get_lamp_fault(self):
     fault = self.device.get_lamp_fault()
 
-    # get_lamp_fault response contains &#39;NO_ERROR&#39; if all good, and &#39;ERROR&#39; if there
+    # get_lamp_fault response contains &#39;NO-ERROR&#39; if all good, and &#39;ERROR&#39; if there
     # was an error. The model will return True if there is a fault detected!
 
-    return &#34;NO_ERROR&#34; not in fault</code></pre>
+    return &#34;NO-ERROR&#34; not in fault</code></pre>
 </details>
 </dd>
 <dt id="egse.collimator.fcul.ogse_ui.OGSEUIModel.get_laser"><code class="name flex">
@@ -2608,7 +2997,7 @@ the device or to a simulator.</p></div>
 </summary>
 <pre><code class="python">def get_ldls_status(self):
     ldls = self.device.ldls_status()
-    return &#34;ON&#34; in ldls</code></pre>
+    return &#34;OK&#34; in ldls</code></pre>
 </details>
 </dd>
 <dt id="egse.collimator.fcul.ogse_ui.OGSEUIModel.get_operate"><code class="name flex">
@@ -2667,6 +3056,19 @@ the device or to a simulator.</p></div>
     response = self.device.is_connected()
     # MODULE_LOGGER.info(f&#34;{self.__class__.__name__}.device.is_connected() = {response}&#34;)
     return response if response is not None else False</code></pre>
+</details>
+</dd>
+<dt id="egse.collimator.fcul.ogse_ui.OGSEUIModel.is_simulator"><code class="name flex">
+<span>def <span class="ident">is_simulator</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def is_simulator(self):
+    return &#34;[sim]&#34; in self.device.version()</code></pre>
 </details>
 </dd>
 <dt id="egse.collimator.fcul.ogse_ui.OGSEUIModel.operate_off"><code class="name flex">
@@ -3039,6 +3441,193 @@ def temp_2(self) -&gt; str:
 </dd>
 </dl>
 </dd>
+<dt id="egse.collimator.fcul.ogse_ui.StatusPuller"><code class="flex name class">
+<span>class <span class="ident">StatusPuller</span></span>
+<span>(</span><span>model: <a title="egse.collimator.fcul.ogse_ui.OGSEUIModel" href="#egse.collimator.fcul.ogse_ui.OGSEUIModel">OGSEUIModel</a>)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>QRunnable()
+QRunnable(QRunnable)</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class StatusPuller(QRunnable):
+    def __init__(self, model: OGSEUIModel):
+        super().__init__()
+        self.signals = StatusSignals()
+        self.model = model
+        self.quit_request = False
+
+    @pyqtSlot()
+    def run(self):
+        while not self.quit_request:
+
+            self.signals.dev.emit(self.model.is_device_connected())
+
+            # Set all the status LEDs
+
+            status = self.model.status()
+            states = [
+                Indic.GREEN if &#39;ON&#39; in status[&#34;interlock&#34;] else Indic.BLACK,
+                Indic.GREEN if &#39;ON&#39; in status[&#34;power&#34;] else Indic.BLACK,
+                Indic.GREEN if self.model.get_laser() else Indic.BLACK,
+                Indic.GREEN if &#39;ON&#39; in status[&#34;lamp&#34;] else Indic.BLACK,
+                Indic.GREEN if &#39;ON&#39; in status[&#34;psu&#34;] else Indic.BLACK,
+                Indic.GREEN if self.model.get_ldls_status() else Indic.BLACK,
+                Indic.ORANGE if status[&#34;att_moving&#34;] else Indic.BLACK,
+            ]
+            self.signals.states.emit(states)
+
+            self.signals.pm.emit(
+                {
+                    &#34;power1&#34;: status[&#39;power1&#39;],
+                    &#34;power2&#34;: status[&#39;power2&#39;],
+                    &#34;temp1&#34;: status[&#39;temp1&#39;],
+                    &#34;temp2&#34;: status[&#39;temp2&#39;],
+                })
+
+            # Set the fault detection on the lamp and controller
+
+            faults = [
+                Indic.RED if self.model.get_lamp_fault() else Indic.GREEN,
+                Indic.RED if self.model.get_controller_fault() else Indic.GREEN,
+            ]
+            self.signals.faults.emit(faults)
+
+            self.signals.att.emit([status[&#34;att_index&#34;], status[&#34;att_factor&#34;]])
+
+    def quit(self):
+        self.quit_request = True</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>PyQt5.QtCore.QRunnable</li>
+<li>sip.wrapper</li>
+<li>sip.simplewrapper</li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="egse.collimator.fcul.ogse_ui.StatusPuller.quit"><code class="name flex">
+<span>def <span class="ident">quit</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def quit(self):
+    self.quit_request = True</code></pre>
+</details>
+</dd>
+<dt id="egse.collimator.fcul.ogse_ui.StatusPuller.run"><code class="name flex">
+<span>def <span class="ident">run</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>run(self)</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@pyqtSlot()
+def run(self):
+    while not self.quit_request:
+
+        self.signals.dev.emit(self.model.is_device_connected())
+
+        # Set all the status LEDs
+
+        status = self.model.status()
+        states = [
+            Indic.GREEN if &#39;ON&#39; in status[&#34;interlock&#34;] else Indic.BLACK,
+            Indic.GREEN if &#39;ON&#39; in status[&#34;power&#34;] else Indic.BLACK,
+            Indic.GREEN if self.model.get_laser() else Indic.BLACK,
+            Indic.GREEN if &#39;ON&#39; in status[&#34;lamp&#34;] else Indic.BLACK,
+            Indic.GREEN if &#39;ON&#39; in status[&#34;psu&#34;] else Indic.BLACK,
+            Indic.GREEN if self.model.get_ldls_status() else Indic.BLACK,
+            Indic.ORANGE if status[&#34;att_moving&#34;] else Indic.BLACK,
+        ]
+        self.signals.states.emit(states)
+
+        self.signals.pm.emit(
+            {
+                &#34;power1&#34;: status[&#39;power1&#39;],
+                &#34;power2&#34;: status[&#39;power2&#39;],
+                &#34;temp1&#34;: status[&#39;temp1&#39;],
+                &#34;temp2&#34;: status[&#39;temp2&#39;],
+            })
+
+        # Set the fault detection on the lamp and controller
+
+        faults = [
+            Indic.RED if self.model.get_lamp_fault() else Indic.GREEN,
+            Indic.RED if self.model.get_controller_fault() else Indic.GREEN,
+        ]
+        self.signals.faults.emit(faults)
+
+        self.signals.att.emit([status[&#34;att_index&#34;], status[&#34;att_factor&#34;]])</code></pre>
+</details>
+</dd>
+</dl>
+</dd>
+<dt id="egse.collimator.fcul.ogse_ui.StatusSignals"><code class="flex name class">
+<span>class <span class="ident">StatusSignals</span></span>
+<span>(</span><span>*args, **kwargs)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>QObject(parent: QObject = None)</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class StatusSignals(QObject):
+    states = pyqtSignal(list)
+    faults = pyqtSignal(list)
+    att = pyqtSignal(list)
+    dev = pyqtSignal(bool)
+    pm = pyqtSignal(dict)</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>PyQt5.QtCore.QObject</li>
+<li>sip.wrapper</li>
+<li>sip.simplewrapper</li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="egse.collimator.fcul.ogse_ui.StatusSignals.att"><code class="name flex">
+<span>def <span class="ident">att</span></span>(<span>...)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="egse.collimator.fcul.ogse_ui.StatusSignals.dev"><code class="name flex">
+<span>def <span class="ident">dev</span></span>(<span>...)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="egse.collimator.fcul.ogse_ui.StatusSignals.faults"><code class="name flex">
+<span>def <span class="ident">faults</span></span>(<span>...)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="egse.collimator.fcul.ogse_ui.StatusSignals.pm"><code class="name flex">
+<span>def <span class="ident">pm</span></span>(<span>...)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="egse.collimator.fcul.ogse_ui.StatusSignals.states"><code class="name flex">
+<span>def <span class="ident">states</span></span>(<span>...)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+</dl>
+</dd>
 <dt id="egse.collimator.fcul.ogse_ui.StatusWidget"><code class="flex name class">
 <span>class <span class="ident">StatusWidget</span></span>
 </code></dt>
@@ -3124,6 +3713,8 @@ def temp_2(self) -&gt; str:
 <ul class="">
 <li><code><a title="egse.collimator.fcul.ogse_ui.OGSEGUIView.check_cs_action" href="#egse.collimator.fcul.ogse_ui.OGSEGUIView.check_cs_action">check_cs_action</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse_ui.OGSEGUIView.check_device_action" href="#egse.collimator.fcul.ogse_ui.OGSEGUIView.check_device_action">check_device_action</a></code></li>
+<li><code><a title="egse.collimator.fcul.ogse_ui.OGSEGUIView.closeEvent" href="#egse.collimator.fcul.ogse_ui.OGSEGUIView.closeEvent">closeEvent</a></code></li>
+<li><code><a title="egse.collimator.fcul.ogse_ui.OGSEGUIView.create_status_bar" href="#egse.collimator.fcul.ogse_ui.OGSEGUIView.create_status_bar">create_status_bar</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse_ui.OGSEGUIView.create_toolbar" href="#egse.collimator.fcul.ogse_ui.OGSEGUIView.create_toolbar">create_toolbar</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse_ui.OGSEGUIView.disable_cs_action" href="#egse.collimator.fcul.ogse_ui.OGSEGUIView.disable_cs_action">disable_cs_action</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse_ui.OGSEGUIView.enable_cs_action" href="#egse.collimator.fcul.ogse_ui.OGSEGUIView.enable_cs_action">enable_cs_action</a></code></li>
@@ -3131,8 +3722,15 @@ def temp_2(self) -&gt; str:
 <li><code><a title="egse.collimator.fcul.ogse_ui.OGSEGUIView.on_click" href="#egse.collimator.fcul.ogse_ui.OGSEGUIView.on_click">on_click</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse_ui.OGSEGUIView.on_press" href="#egse.collimator.fcul.ogse_ui.OGSEGUIView.on_press">on_press</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse_ui.OGSEGUIView.set_connection_state" href="#egse.collimator.fcul.ogse_ui.OGSEGUIView.set_connection_state">set_connection_state</a></code></li>
+<li><code><a title="egse.collimator.fcul.ogse_ui.OGSEGUIView.start_pulling_status" href="#egse.collimator.fcul.ogse_ui.OGSEGUIView.start_pulling_status">start_pulling_status</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse_ui.OGSEGUIView.uncheck_cs_action" href="#egse.collimator.fcul.ogse_ui.OGSEGUIView.uncheck_cs_action">uncheck_cs_action</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse_ui.OGSEGUIView.uncheck_device_action" href="#egse.collimator.fcul.ogse_ui.OGSEGUIView.uncheck_device_action">uncheck_device_action</a></code></li>
+<li><code><a title="egse.collimator.fcul.ogse_ui.OGSEGUIView.update_status_bar" href="#egse.collimator.fcul.ogse_ui.OGSEGUIView.update_status_bar">update_status_bar</a></code></li>
+<li><code><a title="egse.collimator.fcul.ogse_ui.OGSEGUIView.worker_att" href="#egse.collimator.fcul.ogse_ui.OGSEGUIView.worker_att">worker_att</a></code></li>
+<li><code><a title="egse.collimator.fcul.ogse_ui.OGSEGUIView.worker_dev" href="#egse.collimator.fcul.ogse_ui.OGSEGUIView.worker_dev">worker_dev</a></code></li>
+<li><code><a title="egse.collimator.fcul.ogse_ui.OGSEGUIView.worker_faults" href="#egse.collimator.fcul.ogse_ui.OGSEGUIView.worker_faults">worker_faults</a></code></li>
+<li><code><a title="egse.collimator.fcul.ogse_ui.OGSEGUIView.worker_pm" href="#egse.collimator.fcul.ogse_ui.OGSEGUIView.worker_pm">worker_pm</a></code></li>
+<li><code><a title="egse.collimator.fcul.ogse_ui.OGSEGUIView.worker_states" href="#egse.collimator.fcul.ogse_ui.OGSEGUIView.worker_states">worker_states</a></code></li>
 </ul>
 </li>
 <li>
@@ -3164,6 +3762,7 @@ def temp_2(self) -&gt; str:
 <li><code><a title="egse.collimator.fcul.ogse_ui.OGSEUIModel.get_power" href="#egse.collimator.fcul.ogse_ui.OGSEUIModel.get_power">get_power</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse_ui.OGSEUIModel.is_cs_connected" href="#egse.collimator.fcul.ogse_ui.OGSEUIModel.is_cs_connected">is_cs_connected</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse_ui.OGSEUIModel.is_device_connected" href="#egse.collimator.fcul.ogse_ui.OGSEUIModel.is_device_connected">is_device_connected</a></code></li>
+<li><code><a title="egse.collimator.fcul.ogse_ui.OGSEUIModel.is_simulator" href="#egse.collimator.fcul.ogse_ui.OGSEUIModel.is_simulator">is_simulator</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse_ui.OGSEUIModel.operate_off" href="#egse.collimator.fcul.ogse_ui.OGSEUIModel.operate_off">operate_off</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse_ui.OGSEUIModel.operate_on" href="#egse.collimator.fcul.ogse_ui.OGSEUIModel.operate_on">operate_on</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse_ui.OGSEUIModel.pm_power_1" href="#egse.collimator.fcul.ogse_ui.OGSEUIModel.pm_power_1">pm_power_1</a></code></li>
@@ -3186,6 +3785,23 @@ def temp_2(self) -&gt; str:
 <li><code><a title="egse.collimator.fcul.ogse_ui.PowerMeterWidget.power_2" href="#egse.collimator.fcul.ogse_ui.PowerMeterWidget.power_2">power_2</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse_ui.PowerMeterWidget.temp_1" href="#egse.collimator.fcul.ogse_ui.PowerMeterWidget.temp_1">temp_1</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse_ui.PowerMeterWidget.temp_2" href="#egse.collimator.fcul.ogse_ui.PowerMeterWidget.temp_2">temp_2</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="egse.collimator.fcul.ogse_ui.StatusPuller" href="#egse.collimator.fcul.ogse_ui.StatusPuller">StatusPuller</a></code></h4>
+<ul class="">
+<li><code><a title="egse.collimator.fcul.ogse_ui.StatusPuller.quit" href="#egse.collimator.fcul.ogse_ui.StatusPuller.quit">quit</a></code></li>
+<li><code><a title="egse.collimator.fcul.ogse_ui.StatusPuller.run" href="#egse.collimator.fcul.ogse_ui.StatusPuller.run">run</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="egse.collimator.fcul.ogse_ui.StatusSignals" href="#egse.collimator.fcul.ogse_ui.StatusSignals">StatusSignals</a></code></h4>
+<ul class="">
+<li><code><a title="egse.collimator.fcul.ogse_ui.StatusSignals.att" href="#egse.collimator.fcul.ogse_ui.StatusSignals.att">att</a></code></li>
+<li><code><a title="egse.collimator.fcul.ogse_ui.StatusSignals.dev" href="#egse.collimator.fcul.ogse_ui.StatusSignals.dev">dev</a></code></li>
+<li><code><a title="egse.collimator.fcul.ogse_ui.StatusSignals.faults" href="#egse.collimator.fcul.ogse_ui.StatusSignals.faults">faults</a></code></li>
+<li><code><a title="egse.collimator.fcul.ogse_ui.StatusSignals.pm" href="#egse.collimator.fcul.ogse_ui.StatusSignals.pm">pm</a></code></li>
+<li><code><a title="egse.collimator.fcul.ogse_ui.StatusSignals.states" href="#egse.collimator.fcul.ogse_ui.StatusSignals.states">states</a></code></li>
 </ul>
 </li>
 <li>

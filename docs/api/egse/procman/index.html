@@ -33,22 +33,25 @@ This module provides Process Management functionality for the Common-EGSE.
 import importlib
 import logging
 import pickle
-import sys
+import time
 
+import sys
 import zmq
 
 from egse.command import ClientServerCommand
 from egse.confman import ConfigurationManagerProxy
-from egse.confman import is_configuration_manager_active
-from egse.control import ControlServer
+from egse.control import ControlServer, Success, Failure
 from egse.decorators import dynamic_interface
-from egse.dpu import DPUProxy
+from egse.dpu import fitsgen
 from egse.dpu.dpu_cs import is_dpu_cs_active
+from egse.fee import n_fee_hk
+from egse.fov import fov_hk
 from egse.process import SubProcess
 from egse.protocol import CommandProtocol
 from egse.proxy import Proxy
 from egse.settings import Settings
-from egse.setup import Setup, load_setup
+from egse.setup import Setup
+from egse.state import GlobalState
 from egse.storage import is_storage_manager_active
 from egse.system import find_class
 from egse.system import format_datetime
@@ -403,7 +406,7 @@ class ProcessManagerController(ProcessManagerInterface):
 
         try:
 
-            setup = self.get_cm_proxy().get_setup()
+            setup = GlobalState.setup
 
             devices = {}
             devices = Setup.find_devices(setup, devices=devices)
@@ -506,7 +509,7 @@ class ProcessManagerController(ProcessManagerInterface):
                     cs.execute(detach_from_parent=True)
 
                     if process_name == &#34;DAQ6510&#34;:
-                        setup = load_setup()
+                        setup = GlobalState.setup
                         das_delay = setup.gse.DAQ6510.route.delay
                         das_count = setup.gse.DAQ6510.route.scan.COUNT.SCAN
                         das_interval = setup.gse.DAQ6510.route.scan.INTERVAL
@@ -518,6 +521,7 @@ class ProcessManagerController(ProcessManagerInterface):
 
                     # Check to see the CS actually started
 
+                    time.sleep(3)
                     try:
                         with find_class(proxy_type)(*device_args):
                             pass
@@ -565,7 +569,9 @@ class ProcessManagerController(ProcessManagerInterface):
 
                 # The CS is already running
 
-                LOGGER.info(f&#34;{process_name} was already running&#34;)
+                message = f&#34;{process_name} was already running&#34;
+                LOGGER.info(message)
+                return Success(message)
 
         except ConnectionError:
 
@@ -631,7 +637,7 @@ class ProcessManagerController(ProcessManagerInterface):
 
                 if process_name == &#34;DAQ6510&#34;:
 
-                    setup = load_setup()
+                    setup = GlobalState.setup
                     das_delay = setup.gse.DAQ6510.route.delay
                     das_count = setup.gse.DAQ6510.route.scan.COUNT.SCAN
                     das_interval = setup.gse.DAQ6510.route.scan.INTERVAL
@@ -641,16 +647,20 @@ class ProcessManagerController(ProcessManagerInterface):
                     das.execute(detach_from_parent=&#34;True&#34;)
 
                 # Check to see the CS actually started
-                
+
+                time.sleep(3)
                 try:
                     with find_class(proxy_type)(*device_args):
-                        pass
+                        return Success(f&#34;{process_name} successfully started&#34;)
                 except ConnectionError as exc:
-                    LOGGER.warning(f&#34;Could not start Control Server for {process_name}&#34;, exc_info=True)
+                    message = f&#34;Could not start Control Server for {process_name}&#34;
+                    LOGGER.warning(message, exc_info=True)
+                    return Failure(message, cause=exc)
 
             except AttributeError as exc:
-
-                LOGGER.error(f&#34;Cannot start Control Server for {process_name}&#34;, exc_info=True)
+                message = f&#34;Cannot start Control Server for {process_name}&#34;
+                LOGGER.error(message, exc_info=True)
+                return Failure(message, cause=exc)
 
         # with find_class(proxy_type)(*device_args):
         #         pass
@@ -739,14 +749,19 @@ class ProcessManagerController(ProcessManagerInterface):
         # Check whether the DPU CS is running
 
         if not is_dpu_cs_active():
-
-            LOGGER.critical(&#34;DPU Control Server must be running to be able to start the FITS generator.&#34;)
-            return
+            message = &#34;The DPU Control Server must be running to be able to start the FITS generation.&#34;
+            LOGGER.critical(message)
+            return Failure(message)
 
         LOGGER.info(&#34;Starting the FITS generation&#34;)
 
         fg = SubProcess(&#34;MyApp&#34;, [sys.executable, &#34;-m&#34;, &#34;egse.dpu.fitsgen&#34;, &#34;start&#34;])
         fg.execute(detach_from_parent=True)
+
+        if fitsgen.send_request(&#34;status&#34;).get(&#34;status&#34;) != &#34;ACK&#34;:
+            return Failure(&#34;FITS generation could not be started for some unknown reason.&#34;)
+
+        return Success(&#34;FITS generation successfully started.&#34;)
 
     def stop_fitsgen(self):
         &#34;&#34;&#34; Stop the FITS generation.&#34;&#34;&#34;
@@ -764,6 +779,11 @@ class ProcessManagerController(ProcessManagerInterface):
         fg = SubProcess(&#34;MyApp&#34;, [sys.executable, &#34;-m&#34;, &#34;egse.fov.fov_hk&#34;, &#34;start&#34;])
         fg.execute(detach_from_parent=True)
 
+        if fov_hk.send_request(&#34;status&#34;).get(&#34;status&#34;) != &#34;ACK&#34;:
+            return Failure(&#34;FOV HK generation could not be started for some unknown reason.&#34;)
+
+        return Success(&#34;FOV HK generation successfully started.&#34;)
+
     def stop_fov_hk(self):
         &#34;&#34;&#34; Stop the generation of FOV HK.&#34;&#34;&#34;
 
@@ -779,6 +799,11 @@ class ProcessManagerController(ProcessManagerInterface):
 
         fg = SubProcess(&#34;MyApp&#34;, [sys.executable, &#34;-m&#34;, &#34;egse.fee.n_fee_hk&#34;, &#34;start&#34;])
         fg.execute(detach_from_parent=True)
+
+        if n_fee_hk.send_request(&#34;status&#34;).get(&#34;status&#34;) != &#34;ACK&#34;:
+            return Failure(&#34;N-FEE HK generation could not be started for some unknown reason.&#34;)
+
+        return Success(&#34;N-FEE HK generation successfully started.&#34;)
 
     def stop_n_fee_hk(self):
         &#34;&#34;&#34; Stop the generation of N-FEE HK.&#34;&#34;&#34;
@@ -822,6 +847,10 @@ class ProcessManagerProxy(Proxy, ProcessManagerInterface):
 <section>
 <h2 class="section-title" id="header-submodules">Sub-modules</h2>
 <dl>
+<dt><code class="name"><a title="egse.procman.cannot_start_process_popup" href="cannot_start_process_popup.html">egse.procman.cannot_start_process_popup</a></code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
 <dt><code class="name"><a title="egse.procman.procman_cs" href="procman_cs.html">egse.procman.procman_cs</a></code></dt>
 <dd>
 <div class="desc"><p>The Process Manager Control Server is the service that handles all Common-EGSE
@@ -1016,7 +1045,7 @@ inactive (and False will be returned).</p>
 
         try:
 
-            setup = self.get_cm_proxy().get_setup()
+            setup = GlobalState.setup
 
             devices = {}
             devices = Setup.find_devices(setup, devices=devices)
@@ -1119,7 +1148,7 @@ inactive (and False will be returned).</p>
                     cs.execute(detach_from_parent=True)
 
                     if process_name == &#34;DAQ6510&#34;:
-                        setup = load_setup()
+                        setup = GlobalState.setup
                         das_delay = setup.gse.DAQ6510.route.delay
                         das_count = setup.gse.DAQ6510.route.scan.COUNT.SCAN
                         das_interval = setup.gse.DAQ6510.route.scan.INTERVAL
@@ -1131,6 +1160,7 @@ inactive (and False will be returned).</p>
 
                     # Check to see the CS actually started
 
+                    time.sleep(3)
                     try:
                         with find_class(proxy_type)(*device_args):
                             pass
@@ -1178,7 +1208,9 @@ inactive (and False will be returned).</p>
 
                 # The CS is already running
 
-                LOGGER.info(f&#34;{process_name} was already running&#34;)
+                message = f&#34;{process_name} was already running&#34;
+                LOGGER.info(message)
+                return Success(message)
 
         except ConnectionError:
 
@@ -1244,7 +1276,7 @@ inactive (and False will be returned).</p>
 
                 if process_name == &#34;DAQ6510&#34;:
 
-                    setup = load_setup()
+                    setup = GlobalState.setup
                     das_delay = setup.gse.DAQ6510.route.delay
                     das_count = setup.gse.DAQ6510.route.scan.COUNT.SCAN
                     das_interval = setup.gse.DAQ6510.route.scan.INTERVAL
@@ -1254,16 +1286,20 @@ inactive (and False will be returned).</p>
                     das.execute(detach_from_parent=&#34;True&#34;)
 
                 # Check to see the CS actually started
-                
+
+                time.sleep(3)
                 try:
                     with find_class(proxy_type)(*device_args):
-                        pass
+                        return Success(f&#34;{process_name} successfully started&#34;)
                 except ConnectionError as exc:
-                    LOGGER.warning(f&#34;Could not start Control Server for {process_name}&#34;, exc_info=True)
+                    message = f&#34;Could not start Control Server for {process_name}&#34;
+                    LOGGER.warning(message, exc_info=True)
+                    return Failure(message, cause=exc)
 
             except AttributeError as exc:
-
-                LOGGER.error(f&#34;Cannot start Control Server for {process_name}&#34;, exc_info=True)
+                message = f&#34;Cannot start Control Server for {process_name}&#34;
+                LOGGER.error(message, exc_info=True)
+                return Failure(message, cause=exc)
 
         # with find_class(proxy_type)(*device_args):
         #         pass
@@ -1352,14 +1388,19 @@ inactive (and False will be returned).</p>
         # Check whether the DPU CS is running
 
         if not is_dpu_cs_active():
-
-            LOGGER.critical(&#34;DPU Control Server must be running to be able to start the FITS generator.&#34;)
-            return
+            message = &#34;The DPU Control Server must be running to be able to start the FITS generation.&#34;
+            LOGGER.critical(message)
+            return Failure(message)
 
         LOGGER.info(&#34;Starting the FITS generation&#34;)
 
         fg = SubProcess(&#34;MyApp&#34;, [sys.executable, &#34;-m&#34;, &#34;egse.dpu.fitsgen&#34;, &#34;start&#34;])
         fg.execute(detach_from_parent=True)
+
+        if fitsgen.send_request(&#34;status&#34;).get(&#34;status&#34;) != &#34;ACK&#34;:
+            return Failure(&#34;FITS generation could not be started for some unknown reason.&#34;)
+
+        return Success(&#34;FITS generation successfully started.&#34;)
 
     def stop_fitsgen(self):
         &#34;&#34;&#34; Stop the FITS generation.&#34;&#34;&#34;
@@ -1377,6 +1418,11 @@ inactive (and False will be returned).</p>
         fg = SubProcess(&#34;MyApp&#34;, [sys.executable, &#34;-m&#34;, &#34;egse.fov.fov_hk&#34;, &#34;start&#34;])
         fg.execute(detach_from_parent=True)
 
+        if fov_hk.send_request(&#34;status&#34;).get(&#34;status&#34;) != &#34;ACK&#34;:
+            return Failure(&#34;FOV HK generation could not be started for some unknown reason.&#34;)
+
+        return Success(&#34;FOV HK generation successfully started.&#34;)
+
     def stop_fov_hk(self):
         &#34;&#34;&#34; Stop the generation of FOV HK.&#34;&#34;&#34;
 
@@ -1392,6 +1438,11 @@ inactive (and False will be returned).</p>
 
         fg = SubProcess(&#34;MyApp&#34;, [sys.executable, &#34;-m&#34;, &#34;egse.fee.n_fee_hk&#34;, &#34;start&#34;])
         fg.execute(detach_from_parent=True)
+
+        if n_fee_hk.send_request(&#34;status&#34;).get(&#34;status&#34;) != &#34;ACK&#34;:
+            return Failure(&#34;N-FEE HK generation could not be started for some unknown reason.&#34;)
+
+        return Success(&#34;N-FEE HK generation successfully started.&#34;)
 
     def stop_n_fee_hk(self):
         &#34;&#34;&#34; Stop the generation of N-FEE HK.&#34;&#34;&#34;
@@ -1499,7 +1550,7 @@ from the "device" entries in the setup file (and should be Proxy classes).</p>
 
     try:
 
-        setup = self.get_cm_proxy().get_setup()
+        setup = GlobalState.setup
 
         devices = {}
         devices = Setup.find_devices(setup, devices=devices)
@@ -2364,6 +2415,7 @@ commands [default is taken from settings file].</li>
 </li>
 <li><h3><a href="#header-submodules">Sub-modules</a></h3>
 <ul>
+<li><code><a title="egse.procman.cannot_start_process_popup" href="cannot_start_process_popup.html">egse.procman.cannot_start_process_popup</a></code></li>
 <li><code><a title="egse.procman.procman_cs" href="procman_cs.html">egse.procman.procman_cs</a></code></li>
 <li><code><a title="egse.procman.procman_ui" href="procman_ui.html">egse.procman.procman_ui</a></code></li>
 </ul>

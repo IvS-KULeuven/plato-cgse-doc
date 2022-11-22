@@ -66,6 +66,25 @@ DEVICE_SETTINGS = Settings.load(filename=&#34;puna.yaml&#34;)
 NUM_OF_DECIMALS = 6  # used for rounding numbers before sending to PMAC
 
 
+def get_endpoint_hexapod_controller() -&gt; (str, str):
+    &#34;&#34;&#34;Returns the hostname and port number for the hexapod as defined in the Setup.&#34;&#34;&#34;
+
+    from egse.state import GlobalState
+    from egse.setup import SetupError
+
+    setup = GlobalState.setup
+
+    try:
+        hexapod_id = setup.gse.hexapod.ID
+        hexapod_id = f&#34;H_{hexapod_id}&#34;
+        hostname = PUNA_SETTINGS[hexapod_id][&#34;HOSTNAME&#34;]
+        port = PUNA_SETTINGS[hexapod_id][&#34;PORT&#34;]
+    except AttributeError as exc:
+        raise SetupError(&#34;The Setup doesn&#39;t contain proper controller parameters for the Hexapod.&#34;) from exc
+
+    return hostname, port
+
+
 class PunaInterface(AlphaControllerInterface, DeviceInterface):
     &#34;&#34;&#34;
     Interface definition for the PunaController, the PunaProxy and the PunaSimulator.
@@ -113,7 +132,7 @@ class PunaController(PunaInterface):
     SPEC_POS_RETRACTED = 2
     &#34;&#34;&#34;Hexapod retracted position.&#34;&#34;&#34;
 
-    def __init__(self, hostname=PUNA_SETTINGS.HOSTNAME, port=PUNA_SETTINGS.PORT):
+    def __init__(self, hostname=None, port=None):
         &#34;&#34;&#34;
         Opens a TCP/IP socket connection with the Hexapod PUNA Hardware Controller.
 
@@ -130,6 +149,9 @@ class PunaController(PunaInterface):
         &#34;&#34;&#34;
 
         super().__init__()
+
+        if hostname is None or port is None:
+            raise ValueError(f&#34;Please provide both hostname and port for the PunaController, {hostname=}, {port=}&#34;)
 
         logger.debug(f&#34;Initializing PunaController with hostname={hostname} on port={port}&#34;)
 
@@ -1200,13 +1222,44 @@ class PunaProxy(Proxy, PunaInterface):
 <section>
 </section>
 <section>
+<h2 class="section-title" id="header-functions">Functions</h2>
+<dl>
+<dt id="egse.hexapod.symetrie.puna.get_endpoint_hexapod_controller"><code class="name flex">
+<span>def <span class="ident">get_endpoint_hexapod_controller</span></span>(<span>) ‑> (<class 'str'>, <class 'str'>)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Returns the hostname and port number for the hexapod as defined in the Setup.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_endpoint_hexapod_controller() -&gt; (str, str):
+    &#34;&#34;&#34;Returns the hostname and port number for the hexapod as defined in the Setup.&#34;&#34;&#34;
+
+    from egse.state import GlobalState
+    from egse.setup import SetupError
+
+    setup = GlobalState.setup
+
+    try:
+        hexapod_id = setup.gse.hexapod.ID
+        hexapod_id = f&#34;H_{hexapod_id}&#34;
+        hostname = PUNA_SETTINGS[hexapod_id][&#34;HOSTNAME&#34;]
+        port = PUNA_SETTINGS[hexapod_id][&#34;PORT&#34;]
+    except AttributeError as exc:
+        raise SetupError(&#34;The Setup doesn&#39;t contain proper controller parameters for the Hexapod.&#34;) from exc
+
+    return hostname, port</code></pre>
+</details>
+</dd>
+</dl>
 </section>
 <section>
 <h2 class="section-title" id="header-classes">Classes</h2>
 <dl>
 <dt id="egse.hexapod.symetrie.puna.PunaController"><code class="flex name class">
 <span>class <span class="ident">PunaController</span></span>
-<span>(</span><span>hostname='localhost', port=1025)</span>
+<span>(</span><span>hostname=None, port=None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>The PunaController class allows controlling a Symétrie PUNA Hexapod through an Ethernet
@@ -1297,7 +1350,7 @@ The default is defined in the <code>settings.yaml</code> configuration file.</p>
     SPEC_POS_RETRACTED = 2
     &#34;&#34;&#34;Hexapod retracted position.&#34;&#34;&#34;
 
-    def __init__(self, hostname=PUNA_SETTINGS.HOSTNAME, port=PUNA_SETTINGS.PORT):
+    def __init__(self, hostname=None, port=None):
         &#34;&#34;&#34;
         Opens a TCP/IP socket connection with the Hexapod PUNA Hardware Controller.
 
@@ -1314,6 +1367,9 @@ The default is defined in the <code>settings.yaml</code> configuration file.</p>
         &#34;&#34;&#34;
 
         super().__init__()
+
+        if hostname is None or port is None:
+            raise ValueError(f&#34;Please provide both hostname and port for the PunaController, {hostname=}, {port=}&#34;)
 
         logger.debug(f&#34;Initializing PunaController with hostname={hostname} on port={port}&#34;)
 
@@ -2722,6 +2778,11 @@ and when the hardware is not available.</p>
 <li><h3>Super-module</h3>
 <ul>
 <li><code><a title="egse.hexapod.symetrie" href="index.html">egse.hexapod.symetrie</a></code></li>
+</ul>
+</li>
+<li><h3><a href="#header-functions">Functions</a></h3>
+<ul class="">
+<li><code><a title="egse.hexapod.symetrie.puna.get_endpoint_hexapod_controller" href="#egse.hexapod.symetrie.puna.get_endpoint_hexapod_controller">get_endpoint_hexapod_controller</a></code></li>
 </ul>
 </li>
 <li><h3><a href="#header-classes">Classes</a></h3>

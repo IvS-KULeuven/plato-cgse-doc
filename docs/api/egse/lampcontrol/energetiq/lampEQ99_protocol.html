@@ -27,11 +27,13 @@
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">from egse.control import ControlServer
+from egse.metrics import define_metrics
 from egse.protocol import CommandProtocol
 from egse.settings import Settings
 
 from egse.lampcontrol.energetiq.lampEQ99 import LampEQ99Controller, LampEQ99Interface, LampEQ99Simulator
 from egse.lampcontrol.energetiq.lampEQ99_devif import LampEQ99Command
+from egse.synoptics import SynopticsManagerProxy
 from egse.system import format_datetime
 from egse.zmq_ser import bind_address
 
@@ -51,6 +53,9 @@ class LampEQ99Protocol(CommandProtocol):
         self.load_commands(COMMAND_SETTINGS.Commands, LampEQ99Command, LampEQ99Interface)
 
         self.build_device_method_lookup_table(self.lamp)
+
+        self.metrics = define_metrics(&#34;EQ99&#34;)
+        self.synoptics = SynopticsManagerProxy()
 
     def get_bind_address(self):
         return bind_address(
@@ -72,8 +77,18 @@ class LampEQ99Protocol(CommandProtocol):
 
         _data = [_enable, _status, _time, _errors]
 
-        for idx, key in enumerate([&#34;is enabled:&#34;, &#34;status:&#34;, &#34;on time:&#34;, &#34;errors:&#34;]):
+        # TODO Incl. the laser status
+
+        for idx, key in enumerate([&#34;GIAS_LAMP_ON&#34;, &#34;GIAS_LAMP_STATUS&#34;, &#34;GIAS_LAMP_ON_TIME&#34;, &#34;GIAS_LAMP_ERRORS&#34;]):
             result[key] = _data[idx]
+
+        # TODO Incl. laser status (&#34;GIAS_LASER_ON&#34;) -&gt; also update the TM dictionary
+
+        for key, value in result.items():
+            if key != &#34;timestamp&#34;:
+                self.metrics[key].set(value)
+
+        self.synoptics.store_th_synoptics(result)
 
         return result</code></pre>
 </details>
@@ -118,6 +133,9 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
 
         self.build_device_method_lookup_table(self.lamp)
 
+        self.metrics = define_metrics(&#34;EQ99&#34;)
+        self.synoptics = SynopticsManagerProxy()
+
     def get_bind_address(self):
         return bind_address(
             self.control_server.get_communication_protocol(),
@@ -138,8 +156,18 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
 
         _data = [_enable, _status, _time, _errors]
 
-        for idx, key in enumerate([&#34;is enabled:&#34;, &#34;status:&#34;, &#34;on time:&#34;, &#34;errors:&#34;]):
+        # TODO Incl. the laser status
+
+        for idx, key in enumerate([&#34;GIAS_LAMP_ON&#34;, &#34;GIAS_LAMP_STATUS&#34;, &#34;GIAS_LAMP_ON_TIME&#34;, &#34;GIAS_LAMP_ERRORS&#34;]):
             result[key] = _data[idx]
+
+        # TODO Incl. laser status (&#34;GIAS_LASER_ON&#34;) -&gt; also update the TM dictionary
+
+        for key, value in result.items():
+            if key != &#34;timestamp&#34;:
+                self.metrics[key].set(value)
+
+        self.synoptics.store_th_synoptics(result)
 
         return result</code></pre>
 </details>

@@ -26,19 +26,19 @@
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">import argparse
+<pre><code class="python">import logging
+
 import click
-import logging
+import rich
 import sys
 import zmq
-
-from egse.control import ControlServer
-from egse.filterwheel.eksma.fw8smc4 import FilterWheel8SMC4Proxy
-from egse.settings import Settings
-
-from egse.filterwheel.eksma.fw8smc4_protocol import FilterWheel8SMC4Protocol
-
 from prometheus_client import start_http_server
+
+from egse.control import ControlServer, is_control_server_active
+from egse.filterwheel.eksma.fw8smc4 import FilterWheel8SMC4Proxy
+from egse.filterwheel.eksma.fw8smc4_protocol import FilterWheel8SMC4Protocol
+from egse.settings import Settings
+from egse.zmq_ser import connect_address
 
 logger = logging.getLogger(&#34;egse.filterwheel.eksma.fw8smc4_cs&#34;)
 
@@ -136,6 +136,34 @@ def stop():
 
         sp = proxy.get_service_proxy()
         sp.quit_server()
+
+
+@cli.command()
+def status():
+    &#34;&#34;&#34;Send a &#39;quit_server&#39; command to the FW8SMC4 filterwheel.&#34;&#34;&#34;
+
+    rich.print(&#34;FW8SMC4 filterwheel:&#34;)
+
+    protocol = CTRL_SETTINGS.PROTOCOL
+    hostname = CTRL_SETTINGS.HOSTNAME
+    port = CTRL_SETTINGS.COMMANDING_PORT
+
+    endpoint = connect_address(protocol, hostname, port)
+
+    if is_control_server_active(endpoint):
+        rich.print(f&#34;  Status: [green]active&#34;)
+
+        with FilterWheel8SMC4Proxy() as filterwheel:
+            rich.print(f&#34;  Hostname: {filterwheel.get_ip_address()}&#34;)
+            rich.print(f&#34;  Monitoring port: {filterwheel.get_monitoring_port()}&#34;)
+            rich.print(f&#34;  Commanding port: {filterwheel.get_commanding_port()}&#34;)
+            rich.print(f&#34;  Service port: {filterwheel.get_service_port()}&#34;)
+            sim = filterwheel.is_simulator()
+            connected = filterwheel.is_connected()
+            rich.print(f&#34;mode: {&#39;simulator&#39; if sim else &#39;device&#39;}{&#39; not&#39; if not connected else &#39;&#39;} connected&#34;)
+
+    else:
+        rich.print(f&#34;  Status: [red]inactive&#34;)
 
 
 if __name__ == &#34;__main__&#34;:

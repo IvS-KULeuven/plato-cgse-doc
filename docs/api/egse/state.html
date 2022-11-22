@@ -28,9 +28,10 @@
 </summary>
 <pre><code class="python">import abc
 import logging
+import textwrap
 from pathlib import Path
+from typing import Optional
 
-from egse.config import find_file
 from egse.decorators import borg
 from egse.decorators import deprecate
 from egse.setup import Setup
@@ -93,7 +94,7 @@ class _GlobalState:
     def __init__(self):
         self._dry_run = False
         self._command_sequence = []
-        self._setup: Setup = None
+        self._setup: Optional[Setup] = None
 
     def __call__(self, *args, **kwargs):
         return self
@@ -116,21 +117,35 @@ class _GlobalState:
         self._command_sequence.clear()
 
     @property
-    def setup(self):
-        return self._setup
+    def setup(self) -&gt; Optional[Setup]:
+        &#34;&#34;&#34;
+        Returns the currently active Setup from the configuration manager. Please note that each call
+        to this property sends a request to the configuration manager to return its current Setup. If
+        you are accessing information from the Setup in a loop or function that is called often, save
+        the Setup into a local variable before proceeding.
+
+        Returns:
+            The currently active Setup or None (when the configuration manager is not reachable).
+        &#34;&#34;&#34;
+        return self.load_setup()
 
     # This function should be the standard function to reload a setup from the configuration manager
     # Since we have no proper CM yet, the function loads from the default setup.yaml file.
     # But what happens then in other parts of the system, where e.g. the PM has also the &#39;rights&#39;
     # to call load_setup() on the CM_CS?
 
-    def load_setup(self):
+    def load_setup(self) -&gt; Optional[Setup]:
         &#34;&#34;&#34;
-        Load the current Setup from the Configuration manager. The current Setup is the Setup
-        that is defined and loaded in the Configuration manager. Since the GlobalState should
-        reflect the configuration of the test, it can only load the current Setup from the
-        configuration manager. If you need to work with different Setups, work with the `Setup`
+        Loads the currently active  Setup from the Configuration manager. The current Setup is the Setup
+        that is defined and loaded in the Configuration manager. When the configuration manager is not
+        reachable, None will be returned and a warning will be logged.
+
+        Since the GlobalState should reflect the configuration of the test, it can only load the current
+        Setup from the configuration manager. If you need to work with different Setups, work with the `Setup`
         class and the Configuration Manager directly.
+
+        Returns:
+            The currently active Setup or None.
         &#34;&#34;&#34;
         from egse.confman import ConfigurationManagerProxy
         from egse.confman import is_configuration_manager_active
@@ -139,14 +154,15 @@ class _GlobalState:
             with ConfigurationManagerProxy() as cm_proxy:
                 self._setup = cm_proxy.get_setup()
         else:
-            # When Configuration Manager is not accessible, load the local Setup &#39;Zero&#39;
-
-            LOGGER.warning(&#34;No Configuration Manager available, loaded default Setup with id=0!&#34;)
-
-            filename = &#34;SETUP_CSL_00000_170620_150000.yaml&#34;
-            in_dir = &#34;data/conf&#34;
-            yaml_filename = find_file(filename, in_dir=in_dir)
-            self._setup = Setup.from_yaml_file(yaml_filename)
+            LOGGER.warning(textwrap.dedent(
+                f&#34;&#34;&#34;\
+                    Could not reach the Configuration Manager to request the current Setup, returning None.
+                    
+                    Check if the Configuration Manager is running and why it can not be consulted. When it&#39;s 
+                    back on-line, do a &#39;load_setup()&#39;. 
+                &#34;&#34;&#34;
+            ))
+            self._setup = None
 
         return self._setup
 
@@ -198,7 +214,24 @@ class _GlobalState:
         return self.setup
 
 
-GlobalState = _GlobalState()</code></pre>
+GlobalState = _GlobalState()
+
+__all__ = [
+    &#34;GlobalState&#34;,
+]
+
+if __name__ == &#34;__main__&#34;:
+
+    from rich import print
+
+    print(textwrap.dedent(
+        f&#34;&#34;&#34;\
+            GlobalState info:
+              Setup loaded: {GlobalState.setup.get_id()}
+              Dry run: {&#39;ON&#39; if GlobalState.dry_run else &#39;OFF&#39;}
+              Command Sequence: {GlobalState.get_command_sequence()} \
+        &#34;&#34;&#34;)
+    )</code></pre>
 </details>
 </section>
 <section>
@@ -208,183 +241,6 @@ GlobalState = _GlobalState()</code></pre>
 <section>
 </section>
 <section>
-<h2 class="section-title" id="header-classes">Classes</h2>
-<dl>
-<dt id="egse.state.ConnectionStateInterface"><code class="flex name class">
-<span>class <span class="ident">ConnectionStateInterface</span></span>
-</code></dt>
-<dd>
-<div class="desc"><p>A class used to enforce the implementation of the <em>connection</em> interface
-to model the state of a (network) connection.</p>
-<p>Subclasses only need to implement those methods that are applicable to
-their state.</p></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">class ConnectionStateInterface(abc.ABC):
-    &#34;&#34;&#34;
-    A class used to enforce the implementation of the _connection_ interface
-    to model the state of a (network) connection.
-
-    Subclasses only need to implement those methods that are applicable to
-    their state.
-
-    &#34;&#34;&#34;
-
-    # This class is to enforce the implementation of the interface on both the
-    # model, i.e. the Proxy, and the State class. At the same time, it will allow
-    # the State subclasses to implement only those methods that are applicable
-    # in their state.
-
-    @abc.abstractmethod
-    def connect(self, proxy):
-        pass
-
-    @abc.abstractmethod
-    def disconnect(self, proxy):
-        pass
-
-    @abc.abstractmethod
-    def reconnect(self, proxy):
-        pass</code></pre>
-</details>
-<h3>Ancestors</h3>
-<ul class="hlist">
-<li>abc.ABC</li>
-</ul>
-<h3>Methods</h3>
-<dl>
-<dt id="egse.state.ConnectionStateInterface.connect"><code class="name flex">
-<span>def <span class="ident">connect</span></span>(<span>self, proxy)</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">@abc.abstractmethod
-def connect(self, proxy):
-    pass</code></pre>
-</details>
-</dd>
-<dt id="egse.state.ConnectionStateInterface.disconnect"><code class="name flex">
-<span>def <span class="ident">disconnect</span></span>(<span>self, proxy)</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">@abc.abstractmethod
-def disconnect(self, proxy):
-    pass</code></pre>
-</details>
-</dd>
-<dt id="egse.state.ConnectionStateInterface.reconnect"><code class="name flex">
-<span>def <span class="ident">reconnect</span></span>(<span>self, proxy)</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">@abc.abstractmethod
-def reconnect(self, proxy):
-    pass</code></pre>
-</details>
-</dd>
-</dl>
-</dd>
-<dt id="egse.state.IllegalStateTransition"><code class="flex name class">
-<span>class <span class="ident">IllegalStateTransition</span></span>
-<span>(</span><span>*args, **kwargs)</span>
-</code></dt>
-<dd>
-<div class="desc"><p>Common base class for all non-exit exceptions.</p></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">class IllegalStateTransition(StateError):
-    pass</code></pre>
-</details>
-<h3>Ancestors</h3>
-<ul class="hlist">
-<li><a title="egse.state.StateError" href="#egse.state.StateError">StateError</a></li>
-<li>builtins.Exception</li>
-<li>builtins.BaseException</li>
-</ul>
-</dd>
-<dt id="egse.state.NotImplementedTransition"><code class="flex name class">
-<span>class <span class="ident">NotImplementedTransition</span></span>
-<span>(</span><span>*args, **kwargs)</span>
-</code></dt>
-<dd>
-<div class="desc"><p>Common base class for all non-exit exceptions.</p></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">class NotImplementedTransition(StateError):
-    pass</code></pre>
-</details>
-<h3>Ancestors</h3>
-<ul class="hlist">
-<li><a title="egse.state.StateError" href="#egse.state.StateError">StateError</a></li>
-<li>builtins.Exception</li>
-<li>builtins.BaseException</li>
-</ul>
-</dd>
-<dt id="egse.state.StateError"><code class="flex name class">
-<span>class <span class="ident">StateError</span></span>
-<span>(</span><span>*args, **kwargs)</span>
-</code></dt>
-<dd>
-<div class="desc"><p>Common base class for all non-exit exceptions.</p></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">class StateError(Exception):
-    pass</code></pre>
-</details>
-<h3>Ancestors</h3>
-<ul class="hlist">
-<li>builtins.Exception</li>
-<li>builtins.BaseException</li>
-</ul>
-<h3>Subclasses</h3>
-<ul class="hlist">
-<li><a title="egse.state.IllegalStateTransition" href="#egse.state.IllegalStateTransition">IllegalStateTransition</a></li>
-<li><a title="egse.state.NotImplementedTransition" href="#egse.state.NotImplementedTransition">NotImplementedTransition</a></li>
-<li><a title="egse.state.UnknownStateError" href="#egse.state.UnknownStateError">UnknownStateError</a></li>
-</ul>
-</dd>
-<dt id="egse.state.UnknownStateError"><code class="flex name class">
-<span>class <span class="ident">UnknownStateError</span></span>
-<span>(</span><span>*args, **kwargs)</span>
-</code></dt>
-<dd>
-<div class="desc"><p>Common base class for all non-exit exceptions.</p></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">class UnknownStateError(StateError):
-    pass</code></pre>
-</details>
-<h3>Ancestors</h3>
-<ul class="hlist">
-<li><a title="egse.state.StateError" href="#egse.state.StateError">StateError</a></li>
-<li>builtins.Exception</li>
-<li>builtins.BaseException</li>
-</ul>
-</dd>
-</dl>
 </section>
 </article>
 <nav id="sidebar">
@@ -396,30 +252,6 @@ def reconnect(self, proxy):
 <li><h3>Super-module</h3>
 <ul>
 <li><code><a title="egse" href="index.html">egse</a></code></li>
-</ul>
-</li>
-<li><h3><a href="#header-classes">Classes</a></h3>
-<ul>
-<li>
-<h4><code><a title="egse.state.ConnectionStateInterface" href="#egse.state.ConnectionStateInterface">ConnectionStateInterface</a></code></h4>
-<ul class="">
-<li><code><a title="egse.state.ConnectionStateInterface.connect" href="#egse.state.ConnectionStateInterface.connect">connect</a></code></li>
-<li><code><a title="egse.state.ConnectionStateInterface.disconnect" href="#egse.state.ConnectionStateInterface.disconnect">disconnect</a></code></li>
-<li><code><a title="egse.state.ConnectionStateInterface.reconnect" href="#egse.state.ConnectionStateInterface.reconnect">reconnect</a></code></li>
-</ul>
-</li>
-<li>
-<h4><code><a title="egse.state.IllegalStateTransition" href="#egse.state.IllegalStateTransition">IllegalStateTransition</a></code></h4>
-</li>
-<li>
-<h4><code><a title="egse.state.NotImplementedTransition" href="#egse.state.NotImplementedTransition">NotImplementedTransition</a></code></h4>
-</li>
-<li>
-<h4><code><a title="egse.state.StateError" href="#egse.state.StateError">StateError</a></code></h4>
-</li>
-<li>
-<h4><code><a title="egse.state.UnknownStateError" href="#egse.state.UnknownStateError">UnknownStateError</a></code></h4>
-</li>
 </ul>
 </li>
 </ul>

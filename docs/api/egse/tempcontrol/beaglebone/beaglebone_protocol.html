@@ -58,10 +58,11 @@ class BeagleboneProtocol(CommandProtocol):
             self._num_dev = len(self.beaglebone.beaglebone.dev_pwm_names)
 
         self.temperature_gauges = [Gauge(f&#39;GSRON_HTR_TEMP_{device}&#39;, &#39;&#39;) for device in range(self._num_dev)]
-        self.current_gauges = [[Gauge(f&#34;GSRON_HTR_I_{device}_{channel}&#34;, &#39;&#39;) for channel in range(4)] for device in range(self._num_dev)]
-        self.voltage_gauges = [[Gauge(f&#34;GSRON_HTR_V_{device}_{channel}&#34;, &#39;&#39;) for channel in range(4)] for device in range(self._num_dev)]
-
-
+        self.current_gauges     = [[Gauge(f&#34;GSRON_HTR_I_{device}_{channel}&#34;, &#39;&#39;) for channel in range(4)] for device in range(self._num_dev)]
+        self.voltage_gauges     = [[Gauge(f&#34;GSRON_HTR_V_{device}_{channel}&#34;, &#39;&#39;) for channel in range(4)] for device in range(self._num_dev)]
+        self.resistance_gauges  = [[Gauge(f&#34;GSRON_HTR_R_{device}_{channel}&#34;, &#39;&#39;) for channel in range(4)] for device in range(self._num_dev)]
+        self.power_gauges       = [[Gauge(f&#34;GSRON_HTR_P_{device}_{channel}&#34;, &#39;&#39;) for channel in range(4)] for device in range(self._num_dev)]
+        
         self.load_commands(COMMAND_SETTINGS.Commands, BeagleboneCommand, BeagleboneInterface)
 
         self.build_device_method_lookup_table(self.beaglebone)
@@ -95,8 +96,14 @@ class BeagleboneProtocol(CommandProtocol):
                 for channel in range(4):
                     hk_dict[f&#34;GSRON_HTR_V_{device}_{channel}&#34;] = self.beaglebone.get_voltage(device, channel)
                     hk_dict[f&#34;GSRON_HTR_I_{device}_{channel}&#34;] = self.beaglebone.get_current(device, channel)
+                    hk_dict[f&#34;GSRON_HTR_R_{device}_{channel}&#34;] = hk_dict[f&#34;GSRON_HTR_V_{device}_{channel}&#34;] / hk_dict[f&#34;GSRON_HTR_I_{device}_{channel}&#34;] \
+                                                                        if hk_dict[f&#34;GSRON_HTR_I_{device}_{channel}&#34;] else 0
+                    hk_dict[f&#34;GSRON_HTR_P_{device}_{channel}&#34;] = hk_dict[f&#34;GSRON_HTR_V_{device}_{channel}&#34;] * hk_dict[f&#34;GSRON_HTR_I_{device}_{channel}&#34;]
+                    
                     self.voltage_gauges[device][channel].set(hk_dict[f&#34;GSRON_HTR_V_{device}_{channel}&#34;])
                     self.current_gauges[device][channel].set(hk_dict[f&#34;GSRON_HTR_I_{device}_{channel}&#34;])
+                    self.resistance_gauges[device][channel].set(hk_dict[f&#34;GSRON_HTR_R_{device}_{channel}&#34;])
+                    self.power_gauges[device][channel].set(hk_dict[f&#34;GSRON_HTR_P_{device}_{channel}&#34;])
 
         except Exception as exc:
             logger.warning(f&#39;failed to get HK ({exc})&#39;)
@@ -143,10 +150,11 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
             self._num_dev = len(self.beaglebone.beaglebone.dev_pwm_names)
 
         self.temperature_gauges = [Gauge(f&#39;GSRON_HTR_TEMP_{device}&#39;, &#39;&#39;) for device in range(self._num_dev)]
-        self.current_gauges = [[Gauge(f&#34;GSRON_HTR_I_{device}_{channel}&#34;, &#39;&#39;) for channel in range(4)] for device in range(self._num_dev)]
-        self.voltage_gauges = [[Gauge(f&#34;GSRON_HTR_V_{device}_{channel}&#34;, &#39;&#39;) for channel in range(4)] for device in range(self._num_dev)]
-
-
+        self.current_gauges     = [[Gauge(f&#34;GSRON_HTR_I_{device}_{channel}&#34;, &#39;&#39;) for channel in range(4)] for device in range(self._num_dev)]
+        self.voltage_gauges     = [[Gauge(f&#34;GSRON_HTR_V_{device}_{channel}&#34;, &#39;&#39;) for channel in range(4)] for device in range(self._num_dev)]
+        self.resistance_gauges  = [[Gauge(f&#34;GSRON_HTR_R_{device}_{channel}&#34;, &#39;&#39;) for channel in range(4)] for device in range(self._num_dev)]
+        self.power_gauges       = [[Gauge(f&#34;GSRON_HTR_P_{device}_{channel}&#34;, &#39;&#39;) for channel in range(4)] for device in range(self._num_dev)]
+        
         self.load_commands(COMMAND_SETTINGS.Commands, BeagleboneCommand, BeagleboneInterface)
 
         self.build_device_method_lookup_table(self.beaglebone)
@@ -180,8 +188,14 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
                 for channel in range(4):
                     hk_dict[f&#34;GSRON_HTR_V_{device}_{channel}&#34;] = self.beaglebone.get_voltage(device, channel)
                     hk_dict[f&#34;GSRON_HTR_I_{device}_{channel}&#34;] = self.beaglebone.get_current(device, channel)
+                    hk_dict[f&#34;GSRON_HTR_R_{device}_{channel}&#34;] = hk_dict[f&#34;GSRON_HTR_V_{device}_{channel}&#34;] / hk_dict[f&#34;GSRON_HTR_I_{device}_{channel}&#34;] \
+                                                                        if hk_dict[f&#34;GSRON_HTR_I_{device}_{channel}&#34;] else 0
+                    hk_dict[f&#34;GSRON_HTR_P_{device}_{channel}&#34;] = hk_dict[f&#34;GSRON_HTR_V_{device}_{channel}&#34;] * hk_dict[f&#34;GSRON_HTR_I_{device}_{channel}&#34;]
+                    
                     self.voltage_gauges[device][channel].set(hk_dict[f&#34;GSRON_HTR_V_{device}_{channel}&#34;])
                     self.current_gauges[device][channel].set(hk_dict[f&#34;GSRON_HTR_I_{device}_{channel}&#34;])
+                    self.resistance_gauges[device][channel].set(hk_dict[f&#34;GSRON_HTR_R_{device}_{channel}&#34;])
+                    self.power_gauges[device][channel].set(hk_dict[f&#34;GSRON_HTR_P_{device}_{channel}&#34;])
 
         except Exception as exc:
             logger.warning(f&#39;failed to get HK ({exc})&#39;)

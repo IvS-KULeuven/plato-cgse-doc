@@ -29,22 +29,22 @@
 <pre><code class="python">import logging
 import time
 import os
-
-import yaml
+from threading import Thread
+import threading 
+import rich
 
 from egse.serialdevice import SerialDevice
 from egse.command import Command
 from egse.settings import Settings
 from egse.stages.arun.smd3_interface import Smd3Interface
 
-
-logger = logging.getLogger(__name__)
+logger = logging.getLogger(&#39;smd3_controller&#39;)
 
 # Load the device settings from the global common-egse config file
 DEVICE_SETTINGS = Settings.load(&#34;Arun SMD3 Controller&#34;)
 
 # Load the device protocol
-DEVICE_PROTOCOL = Settings.load(filename=&#39;smd3.yaml&#39;)[&#39;Commands&#39;]
+# DEVICE_PROTOCOL = Settings.load(filename=&#39;smd3.yaml&#39;)[&#39;Commands&#39;]
 
 
 class Smd3Exception(Exception):
@@ -59,274 +59,391 @@ class Smd3Mode:
     BAKE                    = 4
     HOME                    = 5
 
+EFLAGS = {
+    0: &#34;TSHORT&#34;,
+    1: &#34;TOPEN&#34;,
+    2: &#34;TOVR&#34;,
+    3: &#34;MOTORSHORT&#34;,
+    4: &#34;EXTERNALDISABLE&#34;,
+    5: &#34;EMERGENCYSTOP&#34;,
+    6: &#34;CONFIGURATIONERROR&#34;
+}
+
+SFLAGS = {
+    0: &#34;JSCON&#34;,
+    1: &#34;LIMITNEGATIVE&#34;,
+    2: &#34;LIMITPOSITIVE&#34;,
+    3: &#34;EXTEN&#34;,
+    4: &#34;IDENT&#34;,
+    6: &#34;STANDBY&#34;,
+    7: &#34;BAKE&#34;,
+    8: &#34;ATSPEED&#34;
+}
 
 class Smd3Controller(SerialDevice, Smd3Interface):
-
     STEP_SIZE_MM        = 5E-3 # step size (5um) but in mm
-    MAX_VELOCITY        = 500  # Hz
-    POS_DISABLE_STEPS   = -6390
-    POS_ENABLE_STEPS    = 32110
-
+    IN_FOV_POSITION     = 37800
     def __init__(self, port=&#39;/dev/smd3&#39;, baudrate=115200):
-
         # Load device configuration from the common-egse global config file
         self._port              = DEVICE_SETTINGS.PORT if port is None else port
         self._baudrate          = DEVICE_SETTINGS.BAUDRATE if baudrate is None else baudrate
-        self._limit_negative    = None
-        self._limit_positive    = None
 
-        # Generate the path to the yaml file
-        self.storage_path = os.path.abspath(&#34;/data/plato1/egse_plato/smd_position.yaml&#34;)
-        # module_path = os.path.abspath(os.path.dirname(__file__))
-        # self.storage_path = os.path.join(module_path, &#34;position.yaml&#34;)
-
-        # Create a dict of Command objects for each function
-        self._commands = {}
-        for name, items in DEVICE_PROTOCOL.items():
-            if &#39;cmd&#39; in items:
-                self._commands[name] = Command(name, items[&#39;cmd&#39;])
-
-        # Initialize the parent class with the port and baudrate
+        self.status = {}
+        self.fault  = {}
+        self.homed  = False
+        self.limits = {&#39;positive&#39;:None, 
+                       &#39;negative&#39;:None}
+        
         super().__init__(port=self._port, baudrate=self._baudrate, terminator=&#39;\r\n&#39;)
-
         self.connect()
-
-        # Stop the device (just in case)
-        self.stop()
-        if self.is_moving():
-            logger.warning(&#39;device was moving, waiting for stop...&#39;)
-            while self.is_moving():
-                time.sleep(0.1)
-            logger.info(&#39;device stopped&#39;)
-
-        # Load the last known position from yaml and write to the controller.
-        # Because the limit switches are unreliable, we store the position after each move.
-        # We load this during initialization and hope it is actually correct.
-        position = self._load_position()
-        self.set_position_absolute_steps(position)
-
-        # Write configuration
-        self.set_mode(Smd3Mode.REMOTE) # this seems not necessary
-        self.set_enable_limit_switches_global(False)
-        self.set_enable_limit_switches_individual(&#39;-&#39;, False)
-        self.set_enable_limit_switches_individual(&#39;+&#39;, False)
-        self.set_external_enable(False)
-        self.set_max_velocity(self.MAX_VELOCITY)
-        self.set_freewheel_mode(2) # Short phases to ground when not moving.
-        self.set_running_current(0.150)
-        self.set_acceleration_current(0.150)
-        self.set_limit_stop_mode(1) # Set hard stop mode.
-
+        
+        self.emergency_stop()
+        # Clear any triggered flags
+        self.clear_flags()
+        
+        # Attempt to home the hartmann mask
+        home_thread = Thread(target=self.homing_procedure, daemon=True)
+        home_thread.start()
+        
+    # General methods
     def get_idn(self):
-        return self._query(self._commands[&#39;get_idn&#39;].get_cmd_string())[2]
-
+        return self._query(&#39;SER\r\n&#39;)
+    
     def get_version(self):
-        return self._query(self._commands[&#39;get_version&#39;].get_cmd_string())[2]
-
+        return self._query(&#39;FW\r\n&#39;)
+    
+    def clear_flags(self):
+        return self._query(&#39;CLR\r\n&#39;)
+    
+    def load_configuration(self):
+        return self._query(&#39;LOAD\r\n&#39;)
+    
+    def store_configuration(self):
+        return self._query(&#39;STORE\r\n&#39;)
+    
+    def load_factory_defaults(self):
+        return self._query(&#39;LOADFD\r\n&#39;)
+    
+    def select_mode(self, mode: Smd3Mode):
+        return self._query(&#39;MODE,{}\r\n&#39;.format(mode))
+    
     def get_status(self):
-        return int(self._query(self._commands[&#39;get_status&#39;].get_cmd_string())[0], 16)
-
-    def get_errors(self):
-        return int(self._query(self._commands[&#39;get_errors&#39;].get_cmd_string())[1], 16)
-
-    def clear_errors(self):
-        self._query(self._commands[&#39;clear_errors&#39;].get_cmd_string())
-
-    def is_moving(self):
-        return not bool(self.get_status() &amp; 0x0040)
-
-    def get_mode(self):
-        return int(self._query(self._commands[&#39;get_mode&#39;].get_cmd_string())[2][0])
-
-    def set_mode(self, mode):
-        self._query(self._commands[&#39;set_mode&#39;].get_cmd_string(mode=mode))
-
-    def get_max_velocity(self):
-        return float(self._query(self._commands[&#39;get_max_velocity&#39;].get_cmd_string())[2][1])
-
-    def set_max_velocity(self, velocity):
-        self._query(self._commands[&#39;set_max_velocity&#39;].get_cmd_string(velocity=velocity))
-
-    def get_external_enable(self):
-        return bool(int(self._query(self._commands[&#39;get_external_enable&#39;].get_cmd_string())[2]))
-
-    def set_external_enable(self, enable):
-        self._query(self._commands[&#39;set_external_enable&#39;].get_cmd_string(enable=int(enable)))
-
-    def get_position_absolute_steps(self):
-        return int(float(self._query(
-            self._commands[&#39;get_position_absolute_steps&#39;].get_cmd_string())[2]))
-
-    def get_position_absolute_mm(self):
-        return float(self.get_position_absolute_steps() * self.STEP_SIZE_MM)
-
-    def zero_position_absolute(self):
-        self._query(self._commands[&#39;zero_position_absolute&#39;].get_cmd_string())
-        self._store_position(0)
-
-    def set_position_absolute_steps(self, position):
-        self._query(self._commands[&#39;set_position_absolute_steps&#39;].get_cmd_string(position=position))
-        self._store_position(position)
-
-    def _home_limitless_software_direction(self, direction):
-        assert direction in [-1, 1]
-
-        self._query(self._commands[&#39;move_position_absolute_steps&#39;].get_cmd_string(
-            position=(1000000 * direction)))
-
-        while self.is_moving():
-            act = self._query(&#39;VACT\r\n&#39;)
-
-            print(f&#34;Position: {self.get_position_absolute_steps()}, Speed CMD: {self.get_max_velocity()}, Speed ACT: {act[2][1]}&#34;)
-
-            time.sleep(2)
-
-        self.stop()
-        # prev_pos = 0
-
-        # while self.is_moving():
-        #     print(self.get_position_absolute_steps(), prev_pos)
-        #     speed = prev_pos - self.get_position_absolute_steps() / 5
-        #     print(speed)
-        #     prev_pos = self.get_position_absolute_steps()
-        #     time.sleep(5)
-
-        # logger.info(&#39;No more movement detected, limit asserted&#39;)
-
-        # self.stop() # Stop moving.
-
-        # self.set_max_velocity(self.MAX_VELOCITY) # Restore nominal speed setting.
-
-    def _home_software_direction(self, direction):
-
-        assert direction in [-1, 1]
-
-        limit_mask = 0x02 if direction == -1 else 0x04 # Create bit mask for limit input in status word.
-
-        # Move into limit. (can&#39;t use move_position_absolute_steps before device is homed)
-        self._query(self._commands[&#39;move_position_absolute_steps&#39;].get_cmd_string(
-            position=(1000000 * direction)))
-
-        while (not self.get_status() &amp; limit_mask): # Wait until limit switch is asserted.
-            logger.info(f&#39;homing, status = 0x{self.get_status():X} position = {self.get_position_absolute_steps()}&#39;)
-            time.sleep(1)
-
-
-        logger.info(&#39;limit asserted&#39;)
-
-        self.set_max_velocity(30) # Set speed to 30 Hz.
-
-        # Move out of limit. (can&#39;t use move_position_absolute_steps before device is homed)
-        self._query(self._commands[&#39;move_position_absolute_steps&#39;].get_cmd_string(
-            position=(-1000000 * direction)))
-
-        while (self.get_status() &amp; limit_mask): # Wait until limit is de-asserted.
-            logger.info(f&#39;reversing, status = 0x{self.get_status():X} position = {self.get_position_absolute_steps()}&#39;)
-            time.sleep(1)
-
-        self.stop() # Stop moving.
-        logger.info(&#39;limit cleared&#39;)
-
-        self.set_max_velocity(self.MAX_VELOCITY) # Restore nominal speed setting.
-
-    def home_software(self):
-
-        logger.info(&#39;start homing in positive direction...&#39;)
-        self._home_limitless_software_direction(1)
-        self.zero_position_absolute() # set absolute 0 to negative limit (also stores position to yaml)
-        self.limit_positive = 0
-        logger.info(&#39;homing in positive direction completed&#39;)
-
-        logger.info(&#39;start homing in negative direction...&#39;)
-        self._home_limitless_software_direction(-1)
-        self.limit_negative = self.get_position_absolute_steps()
-        self._store_position(self.limit_negative)
-        logger.info(&#39;homing in negative direction completed&#39;)
-
-    def get_motor_temperature(self):
-        return int(self._query(self._commands[&#39;get_motor_temperature&#39;].get_cmd_string())[2])
-
-    def stop(self):
-        # TODO: store position after stop command?
-        self._query(self._commands[&#39;stop&#39;].get_cmd_string())
-
-    def emergency_stop(self):
-        # TODO: store position after stop command?
-        self._query(self._commands[&#39;emergency_stop&#39;].get_cmd_string())
-
-    def move_position_absolute_steps(self, position):
-
-        # if self.limit_negative is None or self.limit_positive is None:
-        #     raise Smd3Exception(&#39;Device is not homed&#39;)
-
-        # if position &lt; self.limit_negative:
-        #     raise Smd3Exception(f&#39;Outside negative limit ({position} &lt; {self._limit_negative})&#39;)
-        #
-        # elif position &gt; self.limit_positive:
-        #     raise Smd3Exception(f&#39;Outside positive limit ({position} &gt; {self._limit_positive})&#39;)
-        #
-        # else:
-
-        self._query(self._commands[&#39;move_position_absolute_steps&#39;].get_cmd_string(position=position))[2]
-        self._store_position(position)
-
-    def move_position_absolute_mm(self, position):
-        self.move_position_absolute_steps(int(position / self.STEP_SIZE_MM))
-
-    def move_mask_fov(self, enable):
-        position = self.POS_ENABLE_STEPS if enable else self.POS_DISABLE_STEPS
-        self.move_position_absolute_steps(position)
-
-    def mask_in_fov(self):
-        if self.get_position_absolute_steps() == self.POS_ENABLE_STEPS:
-            return True
-        elif self.get_position_absolute_steps() == self.POS_DISABLE_STEPS:
-            return False
+        return self._query(&#39;FLAGS\r\n&#39;)
+    
+    
+    # Command movement methods
+    def velocity_move(self, direction: str):
+        if direction in [&#39;-&#39;, &#39;+&#39;]:
+            return self._query(&#39;RUNV,{}\r\n&#39;.format(direction))
         else:
-            raise Smd3Exception(&#39;Mask is in an undefined position (not opened or closed)&#39;)
+            raise Smd3Exception(&#34;Direction can only be &#39;-&#39; or &#39;+&#39;&#34;)
+    
+    def absolute_move(self, absolute_position: float):
+        return self._query(&#39;RUNA,{}\r\n&#39;.format(absolute_position))
+    
+    def relative_move(self, relative_position: float):
+        return self._query(&#39;RUNR,{}\r\n&#39;.format(relative_position))
+    
+    def bake(self):
+        return self._query(&#39;RUNB\r\n&#39;)
+    
+    def home(self, direction: str):
+        if direction in [&#39;-&#39;, &#39;+&#39;]:
+            return self._query(&#39;RUNH,{}\r\n&#39;.format(direction))
+        else:
+            raise Smd3Exception(&#34;Direction can only be &#39;-&#39; or &#39;+&#39;&#34;)
+    
+    def stop(self):
+        return self._query(&#39;STOP\r\n&#39;)
+    
+    def quick_stop(self):
+        return self._query(&#39;SSTOP\r\n&#39;)
+    
+    def emergency_stop(self):
+        return self._query(&#39;ESTOP\r\n&#39;)
+    
+    
+    # Motor methods
+    def select_tsensor(self, sensor_type=None):
+        if sensor_type == None:
+            return self._query(&#39;TSEL\r\n&#39;)
+        else:
+            return self._query(&#39;TSEL,{}\r\n&#39;.format(sensor_type))
+    
+    def get_temperature(self):
+        return self._query(&#39;TMOT\r\n&#39;)
+    
+    def run_current(self, current=None):
+        if current != None:
+            return self._query(&#39;IR,{}\r\n&#39;.format(current))
+        else:
+            return self._query(&#39;IR\r\n&#39;)
+    
+    def acceleration_current(self, current=None):
+        if current != None:
+            return self._query(&#39;IA,{}\r\n&#39;.format(current))
+        else:
+            return self._query(&#39;IA\r\n&#39;)
+            
+    
+    def hold_current(self, current=None):
+        if current != None:
+            return self._query(&#39;IH,{}\r\n&#39;.format(current))
+        else:
+            return self._query(&#39;IH\r\n&#39;)
+    
+    def power_down_delay(self, delay=None):
+        if delay != None:
+            return self._query(&#39;PDDEL\r\n&#39;)
+        else:
+            return self._query(&#39;PDDEL,{}\r\n&#39;.format(delay))
+    
+    def power_down_ramp_delay(self, delay):
+        pass
+    
+    def set_freewheel(self, fw=None):
+        if fw != None:
+            return self._query(&#39;FW,{}\r\n&#39;.format(fw))
+        else:
+            return self._query(&#39;FW\r\n&#39;)
+    
+    def resolution(self, res=None):
+        if res != None:
+            return self._query(&#39;RES,{}\r\n&#39;.format(res))
+        else:
+            return self._query(&#39;RES\r\n&#39;)
+    
+    
+    # Limit input methods
+    def global_limit(self, enable=None):
+        if enable != None:
+            return self._query(&#39;L,{}\r\n&#39;.format(enable))
+        else:
+            return self._query(&#39;L\r\n&#39;)
+    
+    def positive_limit(self, enable=None):
+        if enable != None:
+            return self._query(&#39;L+,{}\r\n&#39;.format(enable))
+        else:
+            return self._query(&#39;L+\r\n&#39;)
+        
+    def negative_limit(self, enable=None):
+        if enable != None:
+            return self._query(&#39;L-,{}\r\n&#39;.format(enable))
+        else:
+            return self._query(&#39;L-\r\n&#39;.format(enable))
+    
+    def positive_limit_polarity(self, polarity=None):
+        if polarity != None:
+            return self._query(&#39;LP+,{}\r\n&#39;.format(polarity))
+        else:
+            return self._query(&#39;LP+\r\n&#39;)
+        
+    def negative_limit_polarity(self, polarity=None):
+        if polarity != None:
+            return self._query(&#39;LP-,{}\r\n&#39;.format(polarity))
+        else:
+            return self._query(&#39;LP-\r\n&#39;)
+        
+    def limit_polarity(self, polarity):
+        return self.query(&#39;LP,{}\r\n&#39;.format(polarity))
+    
+    def limit_stop_mode(self, stop_mode):
+        return self._query(&#39;LSM,{}\r\n&#39;.format(stop_mode))
+    
+    
+    # Profile methods
+    def acceleration(self, acceleration=None):
+        if acceleration != None:
+            return self._query(&#39;AMAX,{}\r\n&#39;.format(acceleration))
+        else:
+            return self._query(&#39;AMAX\r\n&#39;)
+    
+    def deceleration(self, deceleration=None):
+        if deceleration != None:
+            return self._query(&#39;DMAX,{}\r\n&#39;.format(deceleration))
+        else:
+            return self._query(&#39;DMAX\r\n&#39;)
+    
+    def start_frequency(self, frequency=None):
+        if frequency != None:
+            return self._query(&#39;VSTART,{}\r\n&#39;.format(frequency))
+        else:
+            return self._query(&#39;VSTART\r\n&#39;)
+    
+    def stop_frequency(self, frequency=None):
+        if frequency != None:
+            return self._query(&#39;VSTOP,{}\r\n&#39;.format(frequency))
+        else:
+            return self._query(&#39;VSTOP\r\n&#39;)
+    
+    def target_frequency(self, frequency=None):
+        if frequency != None:
+            return self._query(&#39;VMAX,{}\r\n&#39;.format(frequency))
+        else:
+            return self._query(&#39;VMAX\r\n&#39;)
+    
+    def actual_frequency(self):
+        return self._query(&#39;VACT\r\n&#39;)
+    
+    def actual_position(self, position=None):
+        if position != None:
+            return self._query(&#39;PACT,{}\r\n&#39;.format(position))
+        else:
+            return self._query(&#39;PACT\r\n&#39;)
+    
+    def relative_position(self, position=None):
+        if position != None:
+            return self._query(&#39;PREL,{}\r\n&#39;.format(position))
+        else:
+            return self._query(&#39;PREL\r\n&#39;)
+    
+    def time_stop_before_move(self, time):
+        if time != None:
+            return self._query(&#39;TZW,{}\r\n&#39;.format(time))
+        else:
+            return self._query(&#39;TZW\r\n&#39;)
+    
+    def full_step(self, step):
+        if step != None:
+            return self._query(&#39;THIGH,{}\r\n&#39;.format(step))
+        else:
+            return self._query(&#39;THIGH\r\n&#39;)
+    
+    
+    # Step/Direction methods
+    def step_edge(self, edge):
+        if edge != None:
+            return self._query(&#39;EDGE,{}\r\n&#39;.format(edge))
+        else:
+            return self._query(&#39;EDGE\r\n&#39;)
+    
+    def interpolate(self, enable):
+        if enable != None:
+            return self._query(&#39;INTERP,{}\r\n&#39;.format(enable))
+        else:
+            return self._query(&#39;INTERP\r\n&#39;)
+ 
+    # Bake methods
+    def bakeout_setpoint(self, setpoint):
+        if setpoint != None:
+            return self._query(&#39;BAKET,{}\r\n&#39;.format(setpoint))
+        else:
+            return self._query(&#39;BAKET\r\n&#39;)
+    
+    
+    # Advanced methods
+    def configure_limits(self):
+        self.global_limit(1)
+        self.positive_limit(1)
+        self.negative_limit(1)
+        self.limit_polarity(0)
+        self.negative_limit_polarity(0)
+        self.positive_limit_polarity(0)
+        self.limit_stop_mode(0)
+    
+    def configure_homing(self):
+        self.select_mode(Smd3Mode.HOME)
+        self.acceleration(100)
+        self.deceleration(100)
+        self.acceleration_current(0.150)
+        self.hold_current(0)
+        self.run_current(0.150)
+        self.start_frequency(10)
+        self.target_frequency(1000)
+    
+    def configure_remote(self):
+        self.select_mode(Smd3Mode.REMOTE)
+        self.acceleration(100)
+        self.deceleration(100)
+        self.acceleration_current(0.150)
+        self.hold_current(0)
+        self.run_current(0.150)
+        self.start_frequency(10)
+        self.target_frequency(2000)
+    
+    def save_status(self, status_word):
+        for bits, name in SFLAGS.items():
+            self.status[name] = bool(int(status_word, 0) &amp; (1 &lt;&lt; bits))
+    
+    def save_fault(self, error_word):
+        for bits, name in EFLAGS.items():
+            self.fault[name]  = bool(int(error_word, 0) &amp; (1 &lt;&lt; bits))
+    
+    def homing_procedure(self):
+        self.configure_homing()
+        self.configure_limits()
+        logger.info(&#34;Starting homing procedure...&#34;)
 
-    def get_enable_limit_switches_global(self):
-        return self._query(
-            self._commands[&#39;get_enable_limit_switches_global&#39;].get_cmd_string())[2]
+        # Negative homing procedure
+        # Home negative side
+        self.home(&#39;-&#39;)
 
-    def get_enable_limit_switches_individual(self, direction):
-        return self._query(
-            self._commands[&#39;get_enable_limit_switches_individual&#39;].get_cmd_string(
-                direction=direction))[2]
+        # Wait until we stat moving
+        time.sleep(0.1)
+        _, _, velocity = self.actual_frequency()
+        while float(velocity) != 0.0:
+            _, _, velocity = self.actual_frequency()
+            time.sleep(1)
+        
+        # Wait a little bit until we actually stopped    
+        time.sleep(0.1)
+        
+         # Reset actual position
+        self.actual_position(0.0)
+        self.limits[&#39;negative&#39;] = 0
+        logger.info(&#34;Negative home found! Negative home at: 0&#34;)
 
-    def set_enable_limit_switches_global(self, enable):
-        self._query(
-            self._commands[&#39;set_enable_limit_switches_global&#39;].get_cmd_string(enable=int(enable)))
+        # Positive homing procedure
+        # Home postive side
+        self.home(&#39;+&#39;)
 
-    def set_enable_limit_switches_individual(self, direction, enable):
-        self._query(
-            self._commands[&#39;set_enable_limit_switches_individual&#39;].get_cmd_string(
-                direction=direction, enable=int(enable)))
+        # Wait until we start moving
+        time.sleep(0.1)
+        _, _, velocity = self.actual_frequency()
+        while float(velocity) != 0.0:
+            _, _, velocity = self.actual_frequency()
+            time.sleep(1)
 
-    def set_freewheel_mode(self, mode):
-        self._query(self._commands[&#39;set_freewheel_mode&#39;].get_cmd_string(mode=mode))
+        # Wait a little bit until we actually stopped
+        time.sleep(0.1)
+        
+        _, _, position = self.actual_position()
+        self.limits[&#39;positive&#39;] = float(position)
+        logger.info(&#34;Positive home found!. Positive home at: {}&#34;.format(position))
 
-    def get_limit_stop_mode(self):
-        return int(self._query(self._commands[&#39;get_limit_stop_mode&#39;].get_cmd_string())[2])
-
-    def set_limit_stop_mode(self, mode):
-        self._query(self._commands[&#39;set_limit_stop_mode&#39;].get_cmd_string(mode=mode))
-
-    def set_running_current(self, current):
-        self._query(f&#34;IR,{current}\r\n&#34;)
-
-    def set_acceleration_current(self, current):
-        self._query(f&#34;IA,{current}\r\n&#34;)
-
-    def set_holding_current(self, current):
-        self._query(f&#34;IH,{current}\r\n&#34;)
-
+        self.homed = True
+        
+        logger.info(&#34;Homing procedure completed!&#34;)
+        
+        self.configure_remote()
+    
+    def move_mask_fov(self, enable: bool):
+        if self.homed:
+            if enable:
+                self.absolute_move(self.IN_FOV_POSITION)
+            else:
+                self.absolute_move(self.limits[&#39;negative&#39;])
+        else:
+            raise Smd3Exception(&#34;SMD3 has not been homed. Move has been ignored&#34;)
+    
+    def mask_in_fov(self):
+        if self.homed:
+            _, _, position = self.actual_position()
+            if self.limits[&#39;positive&#39;] - 1 &lt;= round(float(position)) &lt;= self.limits[&#39;positive&#39;] + 1:
+                return True
+            else:
+                return False
+        else:
+            return False
+            
+    def actual_position_mm(self):
+        _, _, position = self.actual_position()
+        return float(position)  * self.STEP_SIZE_MM
+    
     def _query(self, command):
         &#34;&#34;&#34; Uses the parent query function and adds some sanity checks. &#34;&#34;&#34;
-
-        # print(&#39;send:&#39;, repr(command))
         response = super().query(command)
-        # print(&#39;recv:&#39;, repr(response))
 
         if response[-2:] != &#39;\r\n&#39;:
             raise ConnectionError(f&#34;Missing termination characters in response: {response}&#34;)
@@ -339,91 +456,52 @@ class Smd3Controller(SerialDevice, Smd3Interface):
         status_word = msg_parts[0]
         error_word = msg_parts[1]
 
+        self.save_status(status_word)
+        self.save_fault(error_word)
+        
         if len(msg_parts) &gt;= 3 and msg_parts[2][:3] == &#39;ERR&#39;:
             raise ConnectionError(f&#34;Reveived error response. Error flags: {msg_parts[1]}, &#34; +
                                   f&#34;Error code: {msg_parts[2]}&#34;)
 
         # return a list if multiple return values are received
+        
         if len(msg_parts) == 2:
             return status_word, error_word, None
         elif len(msg_parts) &gt; 3:
             return status_word, error_word, msg_parts[2:]
         else:
-            return status_word, error_word, msg_parts[2]
-
-    def _load_position(self):
-
-        try:
-            with open(self.storage_path) as f:
-                d = yaml.full_load(f)
-        except Exception as e:
-            logger.warning(&#39;could not load last position from yaml&#39;)
-            return 0
-
-        return d[&#39;position&#39;]
-
-
-    def _store_position(self, position):
-
-        d = {&#39;position&#39;: position}
-
-        with open(self.storage_path, &#39;w&#39;) as f:
-            yaml.dump(d, f)
-
-
+            return status_word, error_word, msg_parts[2]   
+    
 def main():
-
-    from time import sleep
-
-    logging.basicConfig()
-    logger.setLevel(logging.DEBUG)
-
     dev = Smd3Controller()
-
-    print(dev.get_idn())
-    print(dev.get_version())
-    print(hex(dev.get_status()))
-    print(hex(dev.get_errors()))
-
-
-    # position = dev.get_position_absolute_steps()
-    # print(position)
-    # dev.move_position_absolute_steps(position + 500)
-    # while(dev.is_moving()):
-    #     print(&#39;waiting...&#39;)
-    #     time.sleep(1)
-    # print(dev.get_position_absolute_steps())
-
-    # dev._home_limitless_software_direction(-1)
-
-
-    # print(dev.get_mode())
-    # print(dev.get_position_absolute_steps())
-    # print(dev.get_max_velocity())
-    # print(dev.get_external_enable())
-    # print(dev.get_errors())
-    # print(dev.get_position_absolute_mm())
-    # print(dev.get_motor_temperature())
-
-    # dev.home_software()
-    #
-    # logger.info(f&#39;move to negative limit... @ {dev.limit_negative}&#39;)
-    # dev.move_position_absolute_steps(dev.limit_negative)
-    #
-    # logger.info(f&#39;move to positive limit... @ {dev.limit_positive}&#39;)
-    # dev.move_position_absolute_steps(dev.limit_positive)
-    #
-    # logger.info(&#39;test done&#39;)
-
-    # while True:
-    #     print(dev.get_status(), dev.get_errors())
-    #     sleep(1)
-
-    # dev.emergency_stop()
-
+    while not dev.homed:
+        _, _, velocity = dev.actual_frequency()
+        _, _, position = dev.actual_position()
+        _, _, temperature = dev.get_temperature()
+        rich.print(&#34;Position: {}, Velocity: {}, Temperature: {}&#34;
+              .format(position, velocity, temperature))
+        time.sleep(1)
+        
+    dev.move_mask_fov(True)
+    
+    while not dev.mask_in_fov():
+        _, _, velocity = dev.actual_frequency()
+        _, _, position = dev.actual_position()
+        _, _, temperature = dev.get_temperature()
+        rich.print(&#34;Position: {}, Position(rounded): {}, Position(inted): {}, Velocity: {}, Temperature: {}&#34;
+              .format(position, round(float(position)), int(float(position)), velocity, temperature))
+        rich.print(&#39;Negative: {}, Positive: {}&#39;.format(dev.limits[&#39;negative&#39;], dev.limits[&#39;positive&#39;]))
+        time.sleep(1)
+    
+    print(&#34;Hartmann Mask has been enabed&#34;)
 
 if __name__ == &#39;__main__&#39;:
-    main()</code></pre>
+    main()
+    
+    
+    
+    
+    </code></pre>
 </details>
 </section>
 <section>
@@ -443,54 +521,27 @@ if __name__ == &#39;__main__&#39;:
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def main():
-
-    from time import sleep
-
-    logging.basicConfig()
-    logger.setLevel(logging.DEBUG)
-
     dev = Smd3Controller()
-
-    print(dev.get_idn())
-    print(dev.get_version())
-    print(hex(dev.get_status()))
-    print(hex(dev.get_errors()))
-
-
-    # position = dev.get_position_absolute_steps()
-    # print(position)
-    # dev.move_position_absolute_steps(position + 500)
-    # while(dev.is_moving()):
-    #     print(&#39;waiting...&#39;)
-    #     time.sleep(1)
-    # print(dev.get_position_absolute_steps())
-
-    # dev._home_limitless_software_direction(-1)
-
-
-    # print(dev.get_mode())
-    # print(dev.get_position_absolute_steps())
-    # print(dev.get_max_velocity())
-    # print(dev.get_external_enable())
-    # print(dev.get_errors())
-    # print(dev.get_position_absolute_mm())
-    # print(dev.get_motor_temperature())
-
-    # dev.home_software()
-    #
-    # logger.info(f&#39;move to negative limit... @ {dev.limit_negative}&#39;)
-    # dev.move_position_absolute_steps(dev.limit_negative)
-    #
-    # logger.info(f&#39;move to positive limit... @ {dev.limit_positive}&#39;)
-    # dev.move_position_absolute_steps(dev.limit_positive)
-    #
-    # logger.info(&#39;test done&#39;)
-
-    # while True:
-    #     print(dev.get_status(), dev.get_errors())
-    #     sleep(1)
-
-    # dev.emergency_stop()</code></pre>
+    while not dev.homed:
+        _, _, velocity = dev.actual_frequency()
+        _, _, position = dev.actual_position()
+        _, _, temperature = dev.get_temperature()
+        rich.print(&#34;Position: {}, Velocity: {}, Temperature: {}&#34;
+              .format(position, velocity, temperature))
+        time.sleep(1)
+        
+    dev.move_mask_fov(True)
+    
+    while not dev.mask_in_fov():
+        _, _, velocity = dev.actual_frequency()
+        _, _, position = dev.actual_position()
+        _, _, temperature = dev.get_temperature()
+        rich.print(&#34;Position: {}, Position(rounded): {}, Position(inted): {}, Velocity: {}, Temperature: {}&#34;
+              .format(position, round(float(position)), int(float(position)), velocity, temperature))
+        rich.print(&#39;Negative: {}, Positive: {}&#39;.format(dev.limits[&#39;negative&#39;], dev.limits[&#39;positive&#39;]))
+        time.sleep(1)
+    
+    print(&#34;Hartmann Mask has been enabed&#34;)</code></pre>
 </details>
 </dd>
 </dl>
@@ -510,272 +561,369 @@ if __name__ == &#39;__main__&#39;:
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">class Smd3Controller(SerialDevice, Smd3Interface):
-
     STEP_SIZE_MM        = 5E-3 # step size (5um) but in mm
-    MAX_VELOCITY        = 500  # Hz
-    POS_DISABLE_STEPS   = -6390
-    POS_ENABLE_STEPS    = 32110
-
+    IN_FOV_POSITION     = 37800
     def __init__(self, port=&#39;/dev/smd3&#39;, baudrate=115200):
-
         # Load device configuration from the common-egse global config file
         self._port              = DEVICE_SETTINGS.PORT if port is None else port
         self._baudrate          = DEVICE_SETTINGS.BAUDRATE if baudrate is None else baudrate
-        self._limit_negative    = None
-        self._limit_positive    = None
 
-        # Generate the path to the yaml file
-        self.storage_path = os.path.abspath(&#34;/data/plato1/egse_plato/smd_position.yaml&#34;)
-        # module_path = os.path.abspath(os.path.dirname(__file__))
-        # self.storage_path = os.path.join(module_path, &#34;position.yaml&#34;)
-
-        # Create a dict of Command objects for each function
-        self._commands = {}
-        for name, items in DEVICE_PROTOCOL.items():
-            if &#39;cmd&#39; in items:
-                self._commands[name] = Command(name, items[&#39;cmd&#39;])
-
-        # Initialize the parent class with the port and baudrate
+        self.status = {}
+        self.fault  = {}
+        self.homed  = False
+        self.limits = {&#39;positive&#39;:None, 
+                       &#39;negative&#39;:None}
+        
         super().__init__(port=self._port, baudrate=self._baudrate, terminator=&#39;\r\n&#39;)
-
         self.connect()
-
-        # Stop the device (just in case)
-        self.stop()
-        if self.is_moving():
-            logger.warning(&#39;device was moving, waiting for stop...&#39;)
-            while self.is_moving():
-                time.sleep(0.1)
-            logger.info(&#39;device stopped&#39;)
-
-        # Load the last known position from yaml and write to the controller.
-        # Because the limit switches are unreliable, we store the position after each move.
-        # We load this during initialization and hope it is actually correct.
-        position = self._load_position()
-        self.set_position_absolute_steps(position)
-
-        # Write configuration
-        self.set_mode(Smd3Mode.REMOTE) # this seems not necessary
-        self.set_enable_limit_switches_global(False)
-        self.set_enable_limit_switches_individual(&#39;-&#39;, False)
-        self.set_enable_limit_switches_individual(&#39;+&#39;, False)
-        self.set_external_enable(False)
-        self.set_max_velocity(self.MAX_VELOCITY)
-        self.set_freewheel_mode(2) # Short phases to ground when not moving.
-        self.set_running_current(0.150)
-        self.set_acceleration_current(0.150)
-        self.set_limit_stop_mode(1) # Set hard stop mode.
-
+        
+        self.emergency_stop()
+        # Clear any triggered flags
+        self.clear_flags()
+        
+        # Attempt to home the hartmann mask
+        home_thread = Thread(target=self.homing_procedure, daemon=True)
+        home_thread.start()
+        
+    # General methods
     def get_idn(self):
-        return self._query(self._commands[&#39;get_idn&#39;].get_cmd_string())[2]
-
+        return self._query(&#39;SER\r\n&#39;)
+    
     def get_version(self):
-        return self._query(self._commands[&#39;get_version&#39;].get_cmd_string())[2]
-
+        return self._query(&#39;FW\r\n&#39;)
+    
+    def clear_flags(self):
+        return self._query(&#39;CLR\r\n&#39;)
+    
+    def load_configuration(self):
+        return self._query(&#39;LOAD\r\n&#39;)
+    
+    def store_configuration(self):
+        return self._query(&#39;STORE\r\n&#39;)
+    
+    def load_factory_defaults(self):
+        return self._query(&#39;LOADFD\r\n&#39;)
+    
+    def select_mode(self, mode: Smd3Mode):
+        return self._query(&#39;MODE,{}\r\n&#39;.format(mode))
+    
     def get_status(self):
-        return int(self._query(self._commands[&#39;get_status&#39;].get_cmd_string())[0], 16)
-
-    def get_errors(self):
-        return int(self._query(self._commands[&#39;get_errors&#39;].get_cmd_string())[1], 16)
-
-    def clear_errors(self):
-        self._query(self._commands[&#39;clear_errors&#39;].get_cmd_string())
-
-    def is_moving(self):
-        return not bool(self.get_status() &amp; 0x0040)
-
-    def get_mode(self):
-        return int(self._query(self._commands[&#39;get_mode&#39;].get_cmd_string())[2][0])
-
-    def set_mode(self, mode):
-        self._query(self._commands[&#39;set_mode&#39;].get_cmd_string(mode=mode))
-
-    def get_max_velocity(self):
-        return float(self._query(self._commands[&#39;get_max_velocity&#39;].get_cmd_string())[2][1])
-
-    def set_max_velocity(self, velocity):
-        self._query(self._commands[&#39;set_max_velocity&#39;].get_cmd_string(velocity=velocity))
-
-    def get_external_enable(self):
-        return bool(int(self._query(self._commands[&#39;get_external_enable&#39;].get_cmd_string())[2]))
-
-    def set_external_enable(self, enable):
-        self._query(self._commands[&#39;set_external_enable&#39;].get_cmd_string(enable=int(enable)))
-
-    def get_position_absolute_steps(self):
-        return int(float(self._query(
-            self._commands[&#39;get_position_absolute_steps&#39;].get_cmd_string())[2]))
-
-    def get_position_absolute_mm(self):
-        return float(self.get_position_absolute_steps() * self.STEP_SIZE_MM)
-
-    def zero_position_absolute(self):
-        self._query(self._commands[&#39;zero_position_absolute&#39;].get_cmd_string())
-        self._store_position(0)
-
-    def set_position_absolute_steps(self, position):
-        self._query(self._commands[&#39;set_position_absolute_steps&#39;].get_cmd_string(position=position))
-        self._store_position(position)
-
-    def _home_limitless_software_direction(self, direction):
-        assert direction in [-1, 1]
-
-        self._query(self._commands[&#39;move_position_absolute_steps&#39;].get_cmd_string(
-            position=(1000000 * direction)))
-
-        while self.is_moving():
-            act = self._query(&#39;VACT\r\n&#39;)
-
-            print(f&#34;Position: {self.get_position_absolute_steps()}, Speed CMD: {self.get_max_velocity()}, Speed ACT: {act[2][1]}&#34;)
-
-            time.sleep(2)
-
-        self.stop()
-        # prev_pos = 0
-
-        # while self.is_moving():
-        #     print(self.get_position_absolute_steps(), prev_pos)
-        #     speed = prev_pos - self.get_position_absolute_steps() / 5
-        #     print(speed)
-        #     prev_pos = self.get_position_absolute_steps()
-        #     time.sleep(5)
-
-        # logger.info(&#39;No more movement detected, limit asserted&#39;)
-
-        # self.stop() # Stop moving.
-
-        # self.set_max_velocity(self.MAX_VELOCITY) # Restore nominal speed setting.
-
-    def _home_software_direction(self, direction):
-
-        assert direction in [-1, 1]
-
-        limit_mask = 0x02 if direction == -1 else 0x04 # Create bit mask for limit input in status word.
-
-        # Move into limit. (can&#39;t use move_position_absolute_steps before device is homed)
-        self._query(self._commands[&#39;move_position_absolute_steps&#39;].get_cmd_string(
-            position=(1000000 * direction)))
-
-        while (not self.get_status() &amp; limit_mask): # Wait until limit switch is asserted.
-            logger.info(f&#39;homing, status = 0x{self.get_status():X} position = {self.get_position_absolute_steps()}&#39;)
-            time.sleep(1)
-
-
-        logger.info(&#39;limit asserted&#39;)
-
-        self.set_max_velocity(30) # Set speed to 30 Hz.
-
-        # Move out of limit. (can&#39;t use move_position_absolute_steps before device is homed)
-        self._query(self._commands[&#39;move_position_absolute_steps&#39;].get_cmd_string(
-            position=(-1000000 * direction)))
-
-        while (self.get_status() &amp; limit_mask): # Wait until limit is de-asserted.
-            logger.info(f&#39;reversing, status = 0x{self.get_status():X} position = {self.get_position_absolute_steps()}&#39;)
-            time.sleep(1)
-
-        self.stop() # Stop moving.
-        logger.info(&#39;limit cleared&#39;)
-
-        self.set_max_velocity(self.MAX_VELOCITY) # Restore nominal speed setting.
-
-    def home_software(self):
-
-        logger.info(&#39;start homing in positive direction...&#39;)
-        self._home_limitless_software_direction(1)
-        self.zero_position_absolute() # set absolute 0 to negative limit (also stores position to yaml)
-        self.limit_positive = 0
-        logger.info(&#39;homing in positive direction completed&#39;)
-
-        logger.info(&#39;start homing in negative direction...&#39;)
-        self._home_limitless_software_direction(-1)
-        self.limit_negative = self.get_position_absolute_steps()
-        self._store_position(self.limit_negative)
-        logger.info(&#39;homing in negative direction completed&#39;)
-
-    def get_motor_temperature(self):
-        return int(self._query(self._commands[&#39;get_motor_temperature&#39;].get_cmd_string())[2])
-
-    def stop(self):
-        # TODO: store position after stop command?
-        self._query(self._commands[&#39;stop&#39;].get_cmd_string())
-
-    def emergency_stop(self):
-        # TODO: store position after stop command?
-        self._query(self._commands[&#39;emergency_stop&#39;].get_cmd_string())
-
-    def move_position_absolute_steps(self, position):
-
-        # if self.limit_negative is None or self.limit_positive is None:
-        #     raise Smd3Exception(&#39;Device is not homed&#39;)
-
-        # if position &lt; self.limit_negative:
-        #     raise Smd3Exception(f&#39;Outside negative limit ({position} &lt; {self._limit_negative})&#39;)
-        #
-        # elif position &gt; self.limit_positive:
-        #     raise Smd3Exception(f&#39;Outside positive limit ({position} &gt; {self._limit_positive})&#39;)
-        #
-        # else:
-
-        self._query(self._commands[&#39;move_position_absolute_steps&#39;].get_cmd_string(position=position))[2]
-        self._store_position(position)
-
-    def move_position_absolute_mm(self, position):
-        self.move_position_absolute_steps(int(position / self.STEP_SIZE_MM))
-
-    def move_mask_fov(self, enable):
-        position = self.POS_ENABLE_STEPS if enable else self.POS_DISABLE_STEPS
-        self.move_position_absolute_steps(position)
-
-    def mask_in_fov(self):
-        if self.get_position_absolute_steps() == self.POS_ENABLE_STEPS:
-            return True
-        elif self.get_position_absolute_steps() == self.POS_DISABLE_STEPS:
-            return False
+        return self._query(&#39;FLAGS\r\n&#39;)
+    
+    
+    # Command movement methods
+    def velocity_move(self, direction: str):
+        if direction in [&#39;-&#39;, &#39;+&#39;]:
+            return self._query(&#39;RUNV,{}\r\n&#39;.format(direction))
         else:
-            raise Smd3Exception(&#39;Mask is in an undefined position (not opened or closed)&#39;)
+            raise Smd3Exception(&#34;Direction can only be &#39;-&#39; or &#39;+&#39;&#34;)
+    
+    def absolute_move(self, absolute_position: float):
+        return self._query(&#39;RUNA,{}\r\n&#39;.format(absolute_position))
+    
+    def relative_move(self, relative_position: float):
+        return self._query(&#39;RUNR,{}\r\n&#39;.format(relative_position))
+    
+    def bake(self):
+        return self._query(&#39;RUNB\r\n&#39;)
+    
+    def home(self, direction: str):
+        if direction in [&#39;-&#39;, &#39;+&#39;]:
+            return self._query(&#39;RUNH,{}\r\n&#39;.format(direction))
+        else:
+            raise Smd3Exception(&#34;Direction can only be &#39;-&#39; or &#39;+&#39;&#34;)
+    
+    def stop(self):
+        return self._query(&#39;STOP\r\n&#39;)
+    
+    def quick_stop(self):
+        return self._query(&#39;SSTOP\r\n&#39;)
+    
+    def emergency_stop(self):
+        return self._query(&#39;ESTOP\r\n&#39;)
+    
+    
+    # Motor methods
+    def select_tsensor(self, sensor_type=None):
+        if sensor_type == None:
+            return self._query(&#39;TSEL\r\n&#39;)
+        else:
+            return self._query(&#39;TSEL,{}\r\n&#39;.format(sensor_type))
+    
+    def get_temperature(self):
+        return self._query(&#39;TMOT\r\n&#39;)
+    
+    def run_current(self, current=None):
+        if current != None:
+            return self._query(&#39;IR,{}\r\n&#39;.format(current))
+        else:
+            return self._query(&#39;IR\r\n&#39;)
+    
+    def acceleration_current(self, current=None):
+        if current != None:
+            return self._query(&#39;IA,{}\r\n&#39;.format(current))
+        else:
+            return self._query(&#39;IA\r\n&#39;)
+            
+    
+    def hold_current(self, current=None):
+        if current != None:
+            return self._query(&#39;IH,{}\r\n&#39;.format(current))
+        else:
+            return self._query(&#39;IH\r\n&#39;)
+    
+    def power_down_delay(self, delay=None):
+        if delay != None:
+            return self._query(&#39;PDDEL\r\n&#39;)
+        else:
+            return self._query(&#39;PDDEL,{}\r\n&#39;.format(delay))
+    
+    def power_down_ramp_delay(self, delay):
+        pass
+    
+    def set_freewheel(self, fw=None):
+        if fw != None:
+            return self._query(&#39;FW,{}\r\n&#39;.format(fw))
+        else:
+            return self._query(&#39;FW\r\n&#39;)
+    
+    def resolution(self, res=None):
+        if res != None:
+            return self._query(&#39;RES,{}\r\n&#39;.format(res))
+        else:
+            return self._query(&#39;RES\r\n&#39;)
+    
+    
+    # Limit input methods
+    def global_limit(self, enable=None):
+        if enable != None:
+            return self._query(&#39;L,{}\r\n&#39;.format(enable))
+        else:
+            return self._query(&#39;L\r\n&#39;)
+    
+    def positive_limit(self, enable=None):
+        if enable != None:
+            return self._query(&#39;L+,{}\r\n&#39;.format(enable))
+        else:
+            return self._query(&#39;L+\r\n&#39;)
+        
+    def negative_limit(self, enable=None):
+        if enable != None:
+            return self._query(&#39;L-,{}\r\n&#39;.format(enable))
+        else:
+            return self._query(&#39;L-\r\n&#39;.format(enable))
+    
+    def positive_limit_polarity(self, polarity=None):
+        if polarity != None:
+            return self._query(&#39;LP+,{}\r\n&#39;.format(polarity))
+        else:
+            return self._query(&#39;LP+\r\n&#39;)
+        
+    def negative_limit_polarity(self, polarity=None):
+        if polarity != None:
+            return self._query(&#39;LP-,{}\r\n&#39;.format(polarity))
+        else:
+            return self._query(&#39;LP-\r\n&#39;)
+        
+    def limit_polarity(self, polarity):
+        return self.query(&#39;LP,{}\r\n&#39;.format(polarity))
+    
+    def limit_stop_mode(self, stop_mode):
+        return self._query(&#39;LSM,{}\r\n&#39;.format(stop_mode))
+    
+    
+    # Profile methods
+    def acceleration(self, acceleration=None):
+        if acceleration != None:
+            return self._query(&#39;AMAX,{}\r\n&#39;.format(acceleration))
+        else:
+            return self._query(&#39;AMAX\r\n&#39;)
+    
+    def deceleration(self, deceleration=None):
+        if deceleration != None:
+            return self._query(&#39;DMAX,{}\r\n&#39;.format(deceleration))
+        else:
+            return self._query(&#39;DMAX\r\n&#39;)
+    
+    def start_frequency(self, frequency=None):
+        if frequency != None:
+            return self._query(&#39;VSTART,{}\r\n&#39;.format(frequency))
+        else:
+            return self._query(&#39;VSTART\r\n&#39;)
+    
+    def stop_frequency(self, frequency=None):
+        if frequency != None:
+            return self._query(&#39;VSTOP,{}\r\n&#39;.format(frequency))
+        else:
+            return self._query(&#39;VSTOP\r\n&#39;)
+    
+    def target_frequency(self, frequency=None):
+        if frequency != None:
+            return self._query(&#39;VMAX,{}\r\n&#39;.format(frequency))
+        else:
+            return self._query(&#39;VMAX\r\n&#39;)
+    
+    def actual_frequency(self):
+        return self._query(&#39;VACT\r\n&#39;)
+    
+    def actual_position(self, position=None):
+        if position != None:
+            return self._query(&#39;PACT,{}\r\n&#39;.format(position))
+        else:
+            return self._query(&#39;PACT\r\n&#39;)
+    
+    def relative_position(self, position=None):
+        if position != None:
+            return self._query(&#39;PREL,{}\r\n&#39;.format(position))
+        else:
+            return self._query(&#39;PREL\r\n&#39;)
+    
+    def time_stop_before_move(self, time):
+        if time != None:
+            return self._query(&#39;TZW,{}\r\n&#39;.format(time))
+        else:
+            return self._query(&#39;TZW\r\n&#39;)
+    
+    def full_step(self, step):
+        if step != None:
+            return self._query(&#39;THIGH,{}\r\n&#39;.format(step))
+        else:
+            return self._query(&#39;THIGH\r\n&#39;)
+    
+    
+    # Step/Direction methods
+    def step_edge(self, edge):
+        if edge != None:
+            return self._query(&#39;EDGE,{}\r\n&#39;.format(edge))
+        else:
+            return self._query(&#39;EDGE\r\n&#39;)
+    
+    def interpolate(self, enable):
+        if enable != None:
+            return self._query(&#39;INTERP,{}\r\n&#39;.format(enable))
+        else:
+            return self._query(&#39;INTERP\r\n&#39;)
+ 
+    # Bake methods
+    def bakeout_setpoint(self, setpoint):
+        if setpoint != None:
+            return self._query(&#39;BAKET,{}\r\n&#39;.format(setpoint))
+        else:
+            return self._query(&#39;BAKET\r\n&#39;)
+    
+    
+    # Advanced methods
+    def configure_limits(self):
+        self.global_limit(1)
+        self.positive_limit(1)
+        self.negative_limit(1)
+        self.limit_polarity(0)
+        self.negative_limit_polarity(0)
+        self.positive_limit_polarity(0)
+        self.limit_stop_mode(0)
+    
+    def configure_homing(self):
+        self.select_mode(Smd3Mode.HOME)
+        self.acceleration(100)
+        self.deceleration(100)
+        self.acceleration_current(0.150)
+        self.hold_current(0)
+        self.run_current(0.150)
+        self.start_frequency(10)
+        self.target_frequency(1000)
+    
+    def configure_remote(self):
+        self.select_mode(Smd3Mode.REMOTE)
+        self.acceleration(100)
+        self.deceleration(100)
+        self.acceleration_current(0.150)
+        self.hold_current(0)
+        self.run_current(0.150)
+        self.start_frequency(10)
+        self.target_frequency(2000)
+    
+    def save_status(self, status_word):
+        for bits, name in SFLAGS.items():
+            self.status[name] = bool(int(status_word, 0) &amp; (1 &lt;&lt; bits))
+    
+    def save_fault(self, error_word):
+        for bits, name in EFLAGS.items():
+            self.fault[name]  = bool(int(error_word, 0) &amp; (1 &lt;&lt; bits))
+    
+    def homing_procedure(self):
+        self.configure_homing()
+        self.configure_limits()
+        logger.info(&#34;Starting homing procedure...&#34;)
 
-    def get_enable_limit_switches_global(self):
-        return self._query(
-            self._commands[&#39;get_enable_limit_switches_global&#39;].get_cmd_string())[2]
+        # Negative homing procedure
+        # Home negative side
+        self.home(&#39;-&#39;)
 
-    def get_enable_limit_switches_individual(self, direction):
-        return self._query(
-            self._commands[&#39;get_enable_limit_switches_individual&#39;].get_cmd_string(
-                direction=direction))[2]
+        # Wait until we stat moving
+        time.sleep(0.1)
+        _, _, velocity = self.actual_frequency()
+        while float(velocity) != 0.0:
+            _, _, velocity = self.actual_frequency()
+            time.sleep(1)
+        
+        # Wait a little bit until we actually stopped    
+        time.sleep(0.1)
+        
+         # Reset actual position
+        self.actual_position(0.0)
+        self.limits[&#39;negative&#39;] = 0
+        logger.info(&#34;Negative home found! Negative home at: 0&#34;)
 
-    def set_enable_limit_switches_global(self, enable):
-        self._query(
-            self._commands[&#39;set_enable_limit_switches_global&#39;].get_cmd_string(enable=int(enable)))
+        # Positive homing procedure
+        # Home postive side
+        self.home(&#39;+&#39;)
 
-    def set_enable_limit_switches_individual(self, direction, enable):
-        self._query(
-            self._commands[&#39;set_enable_limit_switches_individual&#39;].get_cmd_string(
-                direction=direction, enable=int(enable)))
+        # Wait until we start moving
+        time.sleep(0.1)
+        _, _, velocity = self.actual_frequency()
+        while float(velocity) != 0.0:
+            _, _, velocity = self.actual_frequency()
+            time.sleep(1)
 
-    def set_freewheel_mode(self, mode):
-        self._query(self._commands[&#39;set_freewheel_mode&#39;].get_cmd_string(mode=mode))
+        # Wait a little bit until we actually stopped
+        time.sleep(0.1)
+        
+        _, _, position = self.actual_position()
+        self.limits[&#39;positive&#39;] = float(position)
+        logger.info(&#34;Positive home found!. Positive home at: {}&#34;.format(position))
 
-    def get_limit_stop_mode(self):
-        return int(self._query(self._commands[&#39;get_limit_stop_mode&#39;].get_cmd_string())[2])
-
-    def set_limit_stop_mode(self, mode):
-        self._query(self._commands[&#39;set_limit_stop_mode&#39;].get_cmd_string(mode=mode))
-
-    def set_running_current(self, current):
-        self._query(f&#34;IR,{current}\r\n&#34;)
-
-    def set_acceleration_current(self, current):
-        self._query(f&#34;IA,{current}\r\n&#34;)
-
-    def set_holding_current(self, current):
-        self._query(f&#34;IH,{current}\r\n&#34;)
-
+        self.homed = True
+        
+        logger.info(&#34;Homing procedure completed!&#34;)
+        
+        self.configure_remote()
+    
+    def move_mask_fov(self, enable: bool):
+        if self.homed:
+            if enable:
+                self.absolute_move(self.IN_FOV_POSITION)
+            else:
+                self.absolute_move(self.limits[&#39;negative&#39;])
+        else:
+            raise Smd3Exception(&#34;SMD3 has not been homed. Move has been ignored&#34;)
+    
+    def mask_in_fov(self):
+        if self.homed:
+            _, _, position = self.actual_position()
+            if self.limits[&#39;positive&#39;] - 1 &lt;= round(float(position)) &lt;= self.limits[&#39;positive&#39;] + 1:
+                return True
+            else:
+                return False
+        else:
+            return False
+            
+    def actual_position_mm(self):
+        _, _, position = self.actual_position()
+        return float(position)  * self.STEP_SIZE_MM
+    
     def _query(self, command):
         &#34;&#34;&#34; Uses the parent query function and adds some sanity checks. &#34;&#34;&#34;
-
-        # print(&#39;send:&#39;, repr(command))
         response = super().query(command)
-        # print(&#39;recv:&#39;, repr(response))
 
         if response[-2:] != &#39;\r\n&#39;:
             raise ConnectionError(f&#34;Missing termination characters in response: {response}&#34;)
@@ -788,36 +936,21 @@ if __name__ == &#39;__main__&#39;:
         status_word = msg_parts[0]
         error_word = msg_parts[1]
 
+        self.save_status(status_word)
+        self.save_fault(error_word)
+        
         if len(msg_parts) &gt;= 3 and msg_parts[2][:3] == &#39;ERR&#39;:
             raise ConnectionError(f&#34;Reveived error response. Error flags: {msg_parts[1]}, &#34; +
                                   f&#34;Error code: {msg_parts[2]}&#34;)
 
         # return a list if multiple return values are received
+        
         if len(msg_parts) == 2:
             return status_word, error_word, None
         elif len(msg_parts) &gt; 3:
             return status_word, error_word, msg_parts[2:]
         else:
-            return status_word, error_word, msg_parts[2]
-
-    def _load_position(self):
-
-        try:
-            with open(self.storage_path) as f:
-                d = yaml.full_load(f)
-        except Exception as e:
-            logger.warning(&#39;could not load last position from yaml&#39;)
-            return 0
-
-        return d[&#39;position&#39;]
-
-
-    def _store_position(self, position):
-
-        d = {&#39;position&#39;: position}
-
-        with open(self.storage_path, &#39;w&#39;) as f:
-            yaml.dump(d, f)</code></pre>
+            return status_word, error_word, msg_parts[2]   </code></pre>
 </details>
 <h3>Ancestors</h3>
 <ul class="hlist">
@@ -829,15 +962,7 @@ if __name__ == &#39;__main__&#39;:
 </ul>
 <h3>Class variables</h3>
 <dl>
-<dt id="egse.stages.arun.smd3_controller.Smd3Controller.MAX_VELOCITY"><code class="name">var <span class="ident">MAX_VELOCITY</span></code></dt>
-<dd>
-<div class="desc"></div>
-</dd>
-<dt id="egse.stages.arun.smd3_controller.Smd3Controller.POS_DISABLE_STEPS"><code class="name">var <span class="ident">POS_DISABLE_STEPS</span></code></dt>
-<dd>
-<div class="desc"></div>
-</dd>
-<dt id="egse.stages.arun.smd3_controller.Smd3Controller.POS_ENABLE_STEPS"><code class="name">var <span class="ident">POS_ENABLE_STEPS</span></code></dt>
+<dt id="egse.stages.arun.smd3_controller.Smd3Controller.IN_FOV_POSITION"><code class="name">var <span class="ident">IN_FOV_POSITION</span></code></dt>
 <dd>
 <div class="desc"></div>
 </dd>
@@ -848,8 +973,8 @@ if __name__ == &#39;__main__&#39;:
 </dl>
 <h3>Methods</h3>
 <dl>
-<dt id="egse.stages.arun.smd3_controller.Smd3Controller.clear_errors"><code class="name flex">
-<span>def <span class="ident">clear_errors</span></span>(<span>self)</span>
+<dt id="egse.stages.arun.smd3_controller.Smd3Controller.absolute_move"><code class="name flex">
+<span>def <span class="ident">absolute_move</span></span>(<span>self, absolute_position: float)</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -857,8 +982,200 @@ if __name__ == &#39;__main__&#39;:
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def clear_errors(self):
-    self._query(self._commands[&#39;clear_errors&#39;].get_cmd_string())</code></pre>
+<pre><code class="python">def absolute_move(self, absolute_position: float):
+    return self._query(&#39;RUNA,{}\r\n&#39;.format(absolute_position))</code></pre>
+</details>
+</dd>
+<dt id="egse.stages.arun.smd3_controller.Smd3Controller.acceleration"><code class="name flex">
+<span>def <span class="ident">acceleration</span></span>(<span>self, acceleration=None)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def acceleration(self, acceleration=None):
+    if acceleration != None:
+        return self._query(&#39;AMAX,{}\r\n&#39;.format(acceleration))
+    else:
+        return self._query(&#39;AMAX\r\n&#39;)</code></pre>
+</details>
+</dd>
+<dt id="egse.stages.arun.smd3_controller.Smd3Controller.acceleration_current"><code class="name flex">
+<span>def <span class="ident">acceleration_current</span></span>(<span>self, current=None)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def acceleration_current(self, current=None):
+    if current != None:
+        return self._query(&#39;IA,{}\r\n&#39;.format(current))
+    else:
+        return self._query(&#39;IA\r\n&#39;)</code></pre>
+</details>
+</dd>
+<dt id="egse.stages.arun.smd3_controller.Smd3Controller.actual_frequency"><code class="name flex">
+<span>def <span class="ident">actual_frequency</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def actual_frequency(self):
+    return self._query(&#39;VACT\r\n&#39;)</code></pre>
+</details>
+</dd>
+<dt id="egse.stages.arun.smd3_controller.Smd3Controller.actual_position"><code class="name flex">
+<span>def <span class="ident">actual_position</span></span>(<span>self, position=None)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def actual_position(self, position=None):
+    if position != None:
+        return self._query(&#39;PACT,{}\r\n&#39;.format(position))
+    else:
+        return self._query(&#39;PACT\r\n&#39;)</code></pre>
+</details>
+</dd>
+<dt id="egse.stages.arun.smd3_controller.Smd3Controller.actual_position_mm"><code class="name flex">
+<span>def <span class="ident">actual_position_mm</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def actual_position_mm(self):
+    _, _, position = self.actual_position()
+    return float(position)  * self.STEP_SIZE_MM</code></pre>
+</details>
+</dd>
+<dt id="egse.stages.arun.smd3_controller.Smd3Controller.bake"><code class="name flex">
+<span>def <span class="ident">bake</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def bake(self):
+    return self._query(&#39;RUNB\r\n&#39;)</code></pre>
+</details>
+</dd>
+<dt id="egse.stages.arun.smd3_controller.Smd3Controller.bakeout_setpoint"><code class="name flex">
+<span>def <span class="ident">bakeout_setpoint</span></span>(<span>self, setpoint)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def bakeout_setpoint(self, setpoint):
+    if setpoint != None:
+        return self._query(&#39;BAKET,{}\r\n&#39;.format(setpoint))
+    else:
+        return self._query(&#39;BAKET\r\n&#39;)</code></pre>
+</details>
+</dd>
+<dt id="egse.stages.arun.smd3_controller.Smd3Controller.clear_flags"><code class="name flex">
+<span>def <span class="ident">clear_flags</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def clear_flags(self):
+    return self._query(&#39;CLR\r\n&#39;)</code></pre>
+</details>
+</dd>
+<dt id="egse.stages.arun.smd3_controller.Smd3Controller.configure_homing"><code class="name flex">
+<span>def <span class="ident">configure_homing</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def configure_homing(self):
+    self.select_mode(Smd3Mode.HOME)
+    self.acceleration(100)
+    self.deceleration(100)
+    self.acceleration_current(0.150)
+    self.hold_current(0)
+    self.run_current(0.150)
+    self.start_frequency(10)
+    self.target_frequency(1000)</code></pre>
+</details>
+</dd>
+<dt id="egse.stages.arun.smd3_controller.Smd3Controller.configure_limits"><code class="name flex">
+<span>def <span class="ident">configure_limits</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def configure_limits(self):
+    self.global_limit(1)
+    self.positive_limit(1)
+    self.negative_limit(1)
+    self.limit_polarity(0)
+    self.negative_limit_polarity(0)
+    self.positive_limit_polarity(0)
+    self.limit_stop_mode(0)</code></pre>
+</details>
+</dd>
+<dt id="egse.stages.arun.smd3_controller.Smd3Controller.configure_remote"><code class="name flex">
+<span>def <span class="ident">configure_remote</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def configure_remote(self):
+    self.select_mode(Smd3Mode.REMOTE)
+    self.acceleration(100)
+    self.deceleration(100)
+    self.acceleration_current(0.150)
+    self.hold_current(0)
+    self.run_current(0.150)
+    self.start_frequency(10)
+    self.target_frequency(2000)</code></pre>
+</details>
+</dd>
+<dt id="egse.stages.arun.smd3_controller.Smd3Controller.deceleration"><code class="name flex">
+<span>def <span class="ident">deceleration</span></span>(<span>self, deceleration=None)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def deceleration(self, deceleration=None):
+    if deceleration != None:
+        return self._query(&#39;DMAX,{}\r\n&#39;.format(deceleration))
+    else:
+        return self._query(&#39;DMAX\r\n&#39;)</code></pre>
 </details>
 </dd>
 <dt id="egse.stages.arun.smd3_controller.Smd3Controller.emergency_stop"><code class="name flex">
@@ -871,12 +1188,11 @@ if __name__ == &#39;__main__&#39;:
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def emergency_stop(self):
-    # TODO: store position after stop command?
-    self._query(self._commands[&#39;emergency_stop&#39;].get_cmd_string())</code></pre>
+    return self._query(&#39;ESTOP\r\n&#39;)</code></pre>
 </details>
 </dd>
-<dt id="egse.stages.arun.smd3_controller.Smd3Controller.get_enable_limit_switches_global"><code class="name flex">
-<span>def <span class="ident">get_enable_limit_switches_global</span></span>(<span>self)</span>
+<dt id="egse.stages.arun.smd3_controller.Smd3Controller.full_step"><code class="name flex">
+<span>def <span class="ident">full_step</span></span>(<span>self, step)</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -884,129 +1200,11 @@ if __name__ == &#39;__main__&#39;:
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def get_enable_limit_switches_global(self):
-    return self._query(
-        self._commands[&#39;get_enable_limit_switches_global&#39;].get_cmd_string())[2]</code></pre>
-</details>
-</dd>
-<dt id="egse.stages.arun.smd3_controller.Smd3Controller.get_enable_limit_switches_individual"><code class="name flex">
-<span>def <span class="ident">get_enable_limit_switches_individual</span></span>(<span>self, direction)</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def get_enable_limit_switches_individual(self, direction):
-    return self._query(
-        self._commands[&#39;get_enable_limit_switches_individual&#39;].get_cmd_string(
-            direction=direction))[2]</code></pre>
-</details>
-</dd>
-<dt id="egse.stages.arun.smd3_controller.Smd3Controller.get_errors"><code class="name flex">
-<span>def <span class="ident">get_errors</span></span>(<span>self)</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def get_errors(self):
-    return int(self._query(self._commands[&#39;get_errors&#39;].get_cmd_string())[1], 16)</code></pre>
-</details>
-</dd>
-<dt id="egse.stages.arun.smd3_controller.Smd3Controller.get_external_enable"><code class="name flex">
-<span>def <span class="ident">get_external_enable</span></span>(<span>self)</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def get_external_enable(self):
-    return bool(int(self._query(self._commands[&#39;get_external_enable&#39;].get_cmd_string())[2]))</code></pre>
-</details>
-</dd>
-<dt id="egse.stages.arun.smd3_controller.Smd3Controller.get_limit_stop_mode"><code class="name flex">
-<span>def <span class="ident">get_limit_stop_mode</span></span>(<span>self)</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def get_limit_stop_mode(self):
-    return int(self._query(self._commands[&#39;get_limit_stop_mode&#39;].get_cmd_string())[2])</code></pre>
-</details>
-</dd>
-<dt id="egse.stages.arun.smd3_controller.Smd3Controller.get_max_velocity"><code class="name flex">
-<span>def <span class="ident">get_max_velocity</span></span>(<span>self)</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def get_max_velocity(self):
-    return float(self._query(self._commands[&#39;get_max_velocity&#39;].get_cmd_string())[2][1])</code></pre>
-</details>
-</dd>
-<dt id="egse.stages.arun.smd3_controller.Smd3Controller.get_mode"><code class="name flex">
-<span>def <span class="ident">get_mode</span></span>(<span>self)</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def get_mode(self):
-    return int(self._query(self._commands[&#39;get_mode&#39;].get_cmd_string())[2][0])</code></pre>
-</details>
-</dd>
-<dt id="egse.stages.arun.smd3_controller.Smd3Controller.get_motor_temperature"><code class="name flex">
-<span>def <span class="ident">get_motor_temperature</span></span>(<span>self)</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def get_motor_temperature(self):
-    return int(self._query(self._commands[&#39;get_motor_temperature&#39;].get_cmd_string())[2])</code></pre>
-</details>
-</dd>
-<dt id="egse.stages.arun.smd3_controller.Smd3Controller.get_position_absolute_mm"><code class="name flex">
-<span>def <span class="ident">get_position_absolute_mm</span></span>(<span>self)</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def get_position_absolute_mm(self):
-    return float(self.get_position_absolute_steps() * self.STEP_SIZE_MM)</code></pre>
-</details>
-</dd>
-<dt id="egse.stages.arun.smd3_controller.Smd3Controller.get_position_absolute_steps"><code class="name flex">
-<span>def <span class="ident">get_position_absolute_steps</span></span>(<span>self)</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def get_position_absolute_steps(self):
-    return int(float(self._query(
-        self._commands[&#39;get_position_absolute_steps&#39;].get_cmd_string())[2]))</code></pre>
+<pre><code class="python">def full_step(self, step):
+    if step != None:
+        return self._query(&#39;THIGH,{}\r\n&#39;.format(step))
+    else:
+        return self._query(&#39;THIGH\r\n&#39;)</code></pre>
 </details>
 </dd>
 <dt id="egse.stages.arun.smd3_controller.Smd3Controller.get_status"><code class="name flex">
@@ -1019,7 +1217,20 @@ if __name__ == &#39;__main__&#39;:
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def get_status(self):
-    return int(self._query(self._commands[&#39;get_status&#39;].get_cmd_string())[0], 16)</code></pre>
+    return self._query(&#39;FLAGS\r\n&#39;)</code></pre>
+</details>
+</dd>
+<dt id="egse.stages.arun.smd3_controller.Smd3Controller.get_temperature"><code class="name flex">
+<span>def <span class="ident">get_temperature</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_temperature(self):
+    return self._query(&#39;TMOT\r\n&#39;)</code></pre>
 </details>
 </dd>
 <dt id="egse.stages.arun.smd3_controller.Smd3Controller.get_version"><code class="name flex">
@@ -1032,11 +1243,11 @@ if __name__ == &#39;__main__&#39;:
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def get_version(self):
-    return self._query(self._commands[&#39;get_version&#39;].get_cmd_string())[2]</code></pre>
+    return self._query(&#39;FW\r\n&#39;)</code></pre>
 </details>
 </dd>
-<dt id="egse.stages.arun.smd3_controller.Smd3Controller.home_software"><code class="name flex">
-<span>def <span class="ident">home_software</span></span>(<span>self)</span>
+<dt id="egse.stages.arun.smd3_controller.Smd3Controller.global_limit"><code class="name flex">
+<span>def <span class="ident">global_limit</span></span>(<span>self, enable=None)</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -1044,23 +1255,15 @@ if __name__ == &#39;__main__&#39;:
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def home_software(self):
-
-    logger.info(&#39;start homing in positive direction...&#39;)
-    self._home_limitless_software_direction(1)
-    self.zero_position_absolute() # set absolute 0 to negative limit (also stores position to yaml)
-    self.limit_positive = 0
-    logger.info(&#39;homing in positive direction completed&#39;)
-
-    logger.info(&#39;start homing in negative direction...&#39;)
-    self._home_limitless_software_direction(-1)
-    self.limit_negative = self.get_position_absolute_steps()
-    self._store_position(self.limit_negative)
-    logger.info(&#39;homing in negative direction completed&#39;)</code></pre>
+<pre><code class="python">def global_limit(self, enable=None):
+    if enable != None:
+        return self._query(&#39;L,{}\r\n&#39;.format(enable))
+    else:
+        return self._query(&#39;L\r\n&#39;)</code></pre>
 </details>
 </dd>
-<dt id="egse.stages.arun.smd3_controller.Smd3Controller.is_moving"><code class="name flex">
-<span>def <span class="ident">is_moving</span></span>(<span>self)</span>
+<dt id="egse.stages.arun.smd3_controller.Smd3Controller.hold_current"><code class="name flex">
+<span>def <span class="ident">hold_current</span></span>(<span>self, current=None)</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -1068,8 +1271,153 @@ if __name__ == &#39;__main__&#39;:
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def is_moving(self):
-    return not bool(self.get_status() &amp; 0x0040)</code></pre>
+<pre><code class="python">def hold_current(self, current=None):
+    if current != None:
+        return self._query(&#39;IH,{}\r\n&#39;.format(current))
+    else:
+        return self._query(&#39;IH\r\n&#39;)</code></pre>
+</details>
+</dd>
+<dt id="egse.stages.arun.smd3_controller.Smd3Controller.home"><code class="name flex">
+<span>def <span class="ident">home</span></span>(<span>self, direction: str)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def home(self, direction: str):
+    if direction in [&#39;-&#39;, &#39;+&#39;]:
+        return self._query(&#39;RUNH,{}\r\n&#39;.format(direction))
+    else:
+        raise Smd3Exception(&#34;Direction can only be &#39;-&#39; or &#39;+&#39;&#34;)</code></pre>
+</details>
+</dd>
+<dt id="egse.stages.arun.smd3_controller.Smd3Controller.homing_procedure"><code class="name flex">
+<span>def <span class="ident">homing_procedure</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def homing_procedure(self):
+    self.configure_homing()
+    self.configure_limits()
+    logger.info(&#34;Starting homing procedure...&#34;)
+
+    # Negative homing procedure
+    # Home negative side
+    self.home(&#39;-&#39;)
+
+    # Wait until we stat moving
+    time.sleep(0.1)
+    _, _, velocity = self.actual_frequency()
+    while float(velocity) != 0.0:
+        _, _, velocity = self.actual_frequency()
+        time.sleep(1)
+    
+    # Wait a little bit until we actually stopped    
+    time.sleep(0.1)
+    
+     # Reset actual position
+    self.actual_position(0.0)
+    self.limits[&#39;negative&#39;] = 0
+    logger.info(&#34;Negative home found! Negative home at: 0&#34;)
+
+    # Positive homing procedure
+    # Home postive side
+    self.home(&#39;+&#39;)
+
+    # Wait until we start moving
+    time.sleep(0.1)
+    _, _, velocity = self.actual_frequency()
+    while float(velocity) != 0.0:
+        _, _, velocity = self.actual_frequency()
+        time.sleep(1)
+
+    # Wait a little bit until we actually stopped
+    time.sleep(0.1)
+    
+    _, _, position = self.actual_position()
+    self.limits[&#39;positive&#39;] = float(position)
+    logger.info(&#34;Positive home found!. Positive home at: {}&#34;.format(position))
+
+    self.homed = True
+    
+    logger.info(&#34;Homing procedure completed!&#34;)
+    
+    self.configure_remote()</code></pre>
+</details>
+</dd>
+<dt id="egse.stages.arun.smd3_controller.Smd3Controller.interpolate"><code class="name flex">
+<span>def <span class="ident">interpolate</span></span>(<span>self, enable)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def interpolate(self, enable):
+    if enable != None:
+        return self._query(&#39;INTERP,{}\r\n&#39;.format(enable))
+    else:
+        return self._query(&#39;INTERP\r\n&#39;)</code></pre>
+</details>
+</dd>
+<dt id="egse.stages.arun.smd3_controller.Smd3Controller.limit_polarity"><code class="name flex">
+<span>def <span class="ident">limit_polarity</span></span>(<span>self, polarity)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def limit_polarity(self, polarity):
+    return self.query(&#39;LP,{}\r\n&#39;.format(polarity))</code></pre>
+</details>
+</dd>
+<dt id="egse.stages.arun.smd3_controller.Smd3Controller.limit_stop_mode"><code class="name flex">
+<span>def <span class="ident">limit_stop_mode</span></span>(<span>self, stop_mode)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def limit_stop_mode(self, stop_mode):
+    return self._query(&#39;LSM,{}\r\n&#39;.format(stop_mode))</code></pre>
+</details>
+</dd>
+<dt id="egse.stages.arun.smd3_controller.Smd3Controller.load_configuration"><code class="name flex">
+<span>def <span class="ident">load_configuration</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def load_configuration(self):
+    return self._query(&#39;LOAD\r\n&#39;)</code></pre>
+</details>
+</dd>
+<dt id="egse.stages.arun.smd3_controller.Smd3Controller.load_factory_defaults"><code class="name flex">
+<span>def <span class="ident">load_factory_defaults</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def load_factory_defaults(self):
+    return self._query(&#39;LOADFD\r\n&#39;)</code></pre>
 </details>
 </dd>
 <dt id="egse.stages.arun.smd3_controller.Smd3Controller.mask_in_fov"><code class="name flex">
@@ -1082,16 +1430,18 @@ if __name__ == &#39;__main__&#39;:
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def mask_in_fov(self):
-    if self.get_position_absolute_steps() == self.POS_ENABLE_STEPS:
-        return True
-    elif self.get_position_absolute_steps() == self.POS_DISABLE_STEPS:
-        return False
+    if self.homed:
+        _, _, position = self.actual_position()
+        if self.limits[&#39;positive&#39;] - 1 &lt;= round(float(position)) &lt;= self.limits[&#39;positive&#39;] + 1:
+            return True
+        else:
+            return False
     else:
-        raise Smd3Exception(&#39;Mask is in an undefined position (not opened or closed)&#39;)</code></pre>
+        return False</code></pre>
 </details>
 </dd>
 <dt id="egse.stages.arun.smd3_controller.Smd3Controller.move_mask_fov"><code class="name flex">
-<span>def <span class="ident">move_mask_fov</span></span>(<span>self, enable)</span>
+<span>def <span class="ident">move_mask_fov</span></span>(<span>self, enable: bool)</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -1099,13 +1449,18 @@ if __name__ == &#39;__main__&#39;:
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def move_mask_fov(self, enable):
-    position = self.POS_ENABLE_STEPS if enable else self.POS_DISABLE_STEPS
-    self.move_position_absolute_steps(position)</code></pre>
+<pre><code class="python">def move_mask_fov(self, enable: bool):
+    if self.homed:
+        if enable:
+            self.absolute_move(self.IN_FOV_POSITION)
+        else:
+            self.absolute_move(self.limits[&#39;negative&#39;])
+    else:
+        raise Smd3Exception(&#34;SMD3 has not been homed. Move has been ignored&#34;)</code></pre>
 </details>
 </dd>
-<dt id="egse.stages.arun.smd3_controller.Smd3Controller.move_position_absolute_mm"><code class="name flex">
-<span>def <span class="ident">move_position_absolute_mm</span></span>(<span>self, position)</span>
+<dt id="egse.stages.arun.smd3_controller.Smd3Controller.negative_limit"><code class="name flex">
+<span>def <span class="ident">negative_limit</span></span>(<span>self, enable=None)</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -1113,12 +1468,15 @@ if __name__ == &#39;__main__&#39;:
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def move_position_absolute_mm(self, position):
-    self.move_position_absolute_steps(int(position / self.STEP_SIZE_MM))</code></pre>
+<pre><code class="python">def negative_limit(self, enable=None):
+    if enable != None:
+        return self._query(&#39;L-,{}\r\n&#39;.format(enable))
+    else:
+        return self._query(&#39;L-\r\n&#39;.format(enable))</code></pre>
 </details>
 </dd>
-<dt id="egse.stages.arun.smd3_controller.Smd3Controller.move_position_absolute_steps"><code class="name flex">
-<span>def <span class="ident">move_position_absolute_steps</span></span>(<span>self, position)</span>
+<dt id="egse.stages.arun.smd3_controller.Smd3Controller.negative_limit_polarity"><code class="name flex">
+<span>def <span class="ident">negative_limit_polarity</span></span>(<span>self, polarity=None)</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -1126,25 +1484,15 @@ if __name__ == &#39;__main__&#39;:
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def move_position_absolute_steps(self, position):
-
-    # if self.limit_negative is None or self.limit_positive is None:
-    #     raise Smd3Exception(&#39;Device is not homed&#39;)
-
-    # if position &lt; self.limit_negative:
-    #     raise Smd3Exception(f&#39;Outside negative limit ({position} &lt; {self._limit_negative})&#39;)
-    #
-    # elif position &gt; self.limit_positive:
-    #     raise Smd3Exception(f&#39;Outside positive limit ({position} &gt; {self._limit_positive})&#39;)
-    #
-    # else:
-
-    self._query(self._commands[&#39;move_position_absolute_steps&#39;].get_cmd_string(position=position))[2]
-    self._store_position(position)</code></pre>
+<pre><code class="python">def negative_limit_polarity(self, polarity=None):
+    if polarity != None:
+        return self._query(&#39;LP-,{}\r\n&#39;.format(polarity))
+    else:
+        return self._query(&#39;LP-\r\n&#39;)</code></pre>
 </details>
 </dd>
-<dt id="egse.stages.arun.smd3_controller.Smd3Controller.set_acceleration_current"><code class="name flex">
-<span>def <span class="ident">set_acceleration_current</span></span>(<span>self, current)</span>
+<dt id="egse.stages.arun.smd3_controller.Smd3Controller.positive_limit"><code class="name flex">
+<span>def <span class="ident">positive_limit</span></span>(<span>self, enable=None)</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -1152,12 +1500,15 @@ if __name__ == &#39;__main__&#39;:
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def set_acceleration_current(self, current):
-    self._query(f&#34;IA,{current}\r\n&#34;)</code></pre>
+<pre><code class="python">def positive_limit(self, enable=None):
+    if enable != None:
+        return self._query(&#39;L+,{}\r\n&#39;.format(enable))
+    else:
+        return self._query(&#39;L+\r\n&#39;)</code></pre>
 </details>
 </dd>
-<dt id="egse.stages.arun.smd3_controller.Smd3Controller.set_enable_limit_switches_global"><code class="name flex">
-<span>def <span class="ident">set_enable_limit_switches_global</span></span>(<span>self, enable)</span>
+<dt id="egse.stages.arun.smd3_controller.Smd3Controller.positive_limit_polarity"><code class="name flex">
+<span>def <span class="ident">positive_limit_polarity</span></span>(<span>self, polarity=None)</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -1165,13 +1516,15 @@ if __name__ == &#39;__main__&#39;:
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def set_enable_limit_switches_global(self, enable):
-    self._query(
-        self._commands[&#39;set_enable_limit_switches_global&#39;].get_cmd_string(enable=int(enable)))</code></pre>
+<pre><code class="python">def positive_limit_polarity(self, polarity=None):
+    if polarity != None:
+        return self._query(&#39;LP+,{}\r\n&#39;.format(polarity))
+    else:
+        return self._query(&#39;LP+\r\n&#39;)</code></pre>
 </details>
 </dd>
-<dt id="egse.stages.arun.smd3_controller.Smd3Controller.set_enable_limit_switches_individual"><code class="name flex">
-<span>def <span class="ident">set_enable_limit_switches_individual</span></span>(<span>self, direction, enable)</span>
+<dt id="egse.stages.arun.smd3_controller.Smd3Controller.power_down_delay"><code class="name flex">
+<span>def <span class="ident">power_down_delay</span></span>(<span>self, delay=None)</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -1179,14 +1532,15 @@ if __name__ == &#39;__main__&#39;:
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def set_enable_limit_switches_individual(self, direction, enable):
-    self._query(
-        self._commands[&#39;set_enable_limit_switches_individual&#39;].get_cmd_string(
-            direction=direction, enable=int(enable)))</code></pre>
+<pre><code class="python">def power_down_delay(self, delay=None):
+    if delay != None:
+        return self._query(&#39;PDDEL\r\n&#39;)
+    else:
+        return self._query(&#39;PDDEL,{}\r\n&#39;.format(delay))</code></pre>
 </details>
 </dd>
-<dt id="egse.stages.arun.smd3_controller.Smd3Controller.set_external_enable"><code class="name flex">
-<span>def <span class="ident">set_external_enable</span></span>(<span>self, enable)</span>
+<dt id="egse.stages.arun.smd3_controller.Smd3Controller.power_down_ramp_delay"><code class="name flex">
+<span>def <span class="ident">power_down_ramp_delay</span></span>(<span>self, delay)</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -1194,12 +1548,12 @@ if __name__ == &#39;__main__&#39;:
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def set_external_enable(self, enable):
-    self._query(self._commands[&#39;set_external_enable&#39;].get_cmd_string(enable=int(enable)))</code></pre>
+<pre><code class="python">def power_down_ramp_delay(self, delay):
+    pass</code></pre>
 </details>
 </dd>
-<dt id="egse.stages.arun.smd3_controller.Smd3Controller.set_freewheel_mode"><code class="name flex">
-<span>def <span class="ident">set_freewheel_mode</span></span>(<span>self, mode)</span>
+<dt id="egse.stages.arun.smd3_controller.Smd3Controller.quick_stop"><code class="name flex">
+<span>def <span class="ident">quick_stop</span></span>(<span>self)</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -1207,12 +1561,12 @@ if __name__ == &#39;__main__&#39;:
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def set_freewheel_mode(self, mode):
-    self._query(self._commands[&#39;set_freewheel_mode&#39;].get_cmd_string(mode=mode))</code></pre>
+<pre><code class="python">def quick_stop(self):
+    return self._query(&#39;SSTOP\r\n&#39;)</code></pre>
 </details>
 </dd>
-<dt id="egse.stages.arun.smd3_controller.Smd3Controller.set_holding_current"><code class="name flex">
-<span>def <span class="ident">set_holding_current</span></span>(<span>self, current)</span>
+<dt id="egse.stages.arun.smd3_controller.Smd3Controller.relative_move"><code class="name flex">
+<span>def <span class="ident">relative_move</span></span>(<span>self, relative_position: float)</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -1220,12 +1574,12 @@ if __name__ == &#39;__main__&#39;:
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def set_holding_current(self, current):
-    self._query(f&#34;IH,{current}\r\n&#34;)</code></pre>
+<pre><code class="python">def relative_move(self, relative_position: float):
+    return self._query(&#39;RUNR,{}\r\n&#39;.format(relative_position))</code></pre>
 </details>
 </dd>
-<dt id="egse.stages.arun.smd3_controller.Smd3Controller.set_limit_stop_mode"><code class="name flex">
-<span>def <span class="ident">set_limit_stop_mode</span></span>(<span>self, mode)</span>
+<dt id="egse.stages.arun.smd3_controller.Smd3Controller.relative_position"><code class="name flex">
+<span>def <span class="ident">relative_position</span></span>(<span>self, position=None)</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -1233,12 +1587,15 @@ if __name__ == &#39;__main__&#39;:
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def set_limit_stop_mode(self, mode):
-    self._query(self._commands[&#39;set_limit_stop_mode&#39;].get_cmd_string(mode=mode))</code></pre>
+<pre><code class="python">def relative_position(self, position=None):
+    if position != None:
+        return self._query(&#39;PREL,{}\r\n&#39;.format(position))
+    else:
+        return self._query(&#39;PREL\r\n&#39;)</code></pre>
 </details>
 </dd>
-<dt id="egse.stages.arun.smd3_controller.Smd3Controller.set_max_velocity"><code class="name flex">
-<span>def <span class="ident">set_max_velocity</span></span>(<span>self, velocity)</span>
+<dt id="egse.stages.arun.smd3_controller.Smd3Controller.resolution"><code class="name flex">
+<span>def <span class="ident">resolution</span></span>(<span>self, res=None)</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -1246,12 +1603,15 @@ if __name__ == &#39;__main__&#39;:
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def set_max_velocity(self, velocity):
-    self._query(self._commands[&#39;set_max_velocity&#39;].get_cmd_string(velocity=velocity))</code></pre>
+<pre><code class="python">def resolution(self, res=None):
+    if res != None:
+        return self._query(&#39;RES,{}\r\n&#39;.format(res))
+    else:
+        return self._query(&#39;RES\r\n&#39;)</code></pre>
 </details>
 </dd>
-<dt id="egse.stages.arun.smd3_controller.Smd3Controller.set_mode"><code class="name flex">
-<span>def <span class="ident">set_mode</span></span>(<span>self, mode)</span>
+<dt id="egse.stages.arun.smd3_controller.Smd3Controller.run_current"><code class="name flex">
+<span>def <span class="ident">run_current</span></span>(<span>self, current=None)</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -1259,12 +1619,15 @@ if __name__ == &#39;__main__&#39;:
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def set_mode(self, mode):
-    self._query(self._commands[&#39;set_mode&#39;].get_cmd_string(mode=mode))</code></pre>
+<pre><code class="python">def run_current(self, current=None):
+    if current != None:
+        return self._query(&#39;IR,{}\r\n&#39;.format(current))
+    else:
+        return self._query(&#39;IR\r\n&#39;)</code></pre>
 </details>
 </dd>
-<dt id="egse.stages.arun.smd3_controller.Smd3Controller.set_position_absolute_steps"><code class="name flex">
-<span>def <span class="ident">set_position_absolute_steps</span></span>(<span>self, position)</span>
+<dt id="egse.stages.arun.smd3_controller.Smd3Controller.save_fault"><code class="name flex">
+<span>def <span class="ident">save_fault</span></span>(<span>self, error_word)</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -1272,13 +1635,13 @@ if __name__ == &#39;__main__&#39;:
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def set_position_absolute_steps(self, position):
-    self._query(self._commands[&#39;set_position_absolute_steps&#39;].get_cmd_string(position=position))
-    self._store_position(position)</code></pre>
+<pre><code class="python">def save_fault(self, error_word):
+    for bits, name in EFLAGS.items():
+        self.fault[name]  = bool(int(error_word, 0) &amp; (1 &lt;&lt; bits))</code></pre>
 </details>
 </dd>
-<dt id="egse.stages.arun.smd3_controller.Smd3Controller.set_running_current"><code class="name flex">
-<span>def <span class="ident">set_running_current</span></span>(<span>self, current)</span>
+<dt id="egse.stages.arun.smd3_controller.Smd3Controller.save_status"><code class="name flex">
+<span>def <span class="ident">save_status</span></span>(<span>self, status_word)</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -1286,8 +1649,86 @@ if __name__ == &#39;__main__&#39;:
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def set_running_current(self, current):
-    self._query(f&#34;IR,{current}\r\n&#34;)</code></pre>
+<pre><code class="python">def save_status(self, status_word):
+    for bits, name in SFLAGS.items():
+        self.status[name] = bool(int(status_word, 0) &amp; (1 &lt;&lt; bits))</code></pre>
+</details>
+</dd>
+<dt id="egse.stages.arun.smd3_controller.Smd3Controller.select_mode"><code class="name flex">
+<span>def <span class="ident">select_mode</span></span>(<span>self, mode: <a title="egse.stages.arun.smd3_controller.Smd3Mode" href="#egse.stages.arun.smd3_controller.Smd3Mode">Smd3Mode</a>)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def select_mode(self, mode: Smd3Mode):
+    return self._query(&#39;MODE,{}\r\n&#39;.format(mode))</code></pre>
+</details>
+</dd>
+<dt id="egse.stages.arun.smd3_controller.Smd3Controller.select_tsensor"><code class="name flex">
+<span>def <span class="ident">select_tsensor</span></span>(<span>self, sensor_type=None)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def select_tsensor(self, sensor_type=None):
+    if sensor_type == None:
+        return self._query(&#39;TSEL\r\n&#39;)
+    else:
+        return self._query(&#39;TSEL,{}\r\n&#39;.format(sensor_type))</code></pre>
+</details>
+</dd>
+<dt id="egse.stages.arun.smd3_controller.Smd3Controller.set_freewheel"><code class="name flex">
+<span>def <span class="ident">set_freewheel</span></span>(<span>self, fw=None)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def set_freewheel(self, fw=None):
+    if fw != None:
+        return self._query(&#39;FW,{}\r\n&#39;.format(fw))
+    else:
+        return self._query(&#39;FW\r\n&#39;)</code></pre>
+</details>
+</dd>
+<dt id="egse.stages.arun.smd3_controller.Smd3Controller.start_frequency"><code class="name flex">
+<span>def <span class="ident">start_frequency</span></span>(<span>self, frequency=None)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def start_frequency(self, frequency=None):
+    if frequency != None:
+        return self._query(&#39;VSTART,{}\r\n&#39;.format(frequency))
+    else:
+        return self._query(&#39;VSTART\r\n&#39;)</code></pre>
+</details>
+</dd>
+<dt id="egse.stages.arun.smd3_controller.Smd3Controller.step_edge"><code class="name flex">
+<span>def <span class="ident">step_edge</span></span>(<span>self, edge)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def step_edge(self, edge):
+    if edge != None:
+        return self._query(&#39;EDGE,{}\r\n&#39;.format(edge))
+    else:
+        return self._query(&#39;EDGE\r\n&#39;)</code></pre>
 </details>
 </dd>
 <dt id="egse.stages.arun.smd3_controller.Smd3Controller.stop"><code class="name flex">
@@ -1300,12 +1741,11 @@ if __name__ == &#39;__main__&#39;:
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def stop(self):
-    # TODO: store position after stop command?
-    self._query(self._commands[&#39;stop&#39;].get_cmd_string())</code></pre>
+    return self._query(&#39;STOP\r\n&#39;)</code></pre>
 </details>
 </dd>
-<dt id="egse.stages.arun.smd3_controller.Smd3Controller.zero_position_absolute"><code class="name flex">
-<span>def <span class="ident">zero_position_absolute</span></span>(<span>self)</span>
+<dt id="egse.stages.arun.smd3_controller.Smd3Controller.stop_frequency"><code class="name flex">
+<span>def <span class="ident">stop_frequency</span></span>(<span>self, frequency=None)</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -1313,9 +1753,72 @@ if __name__ == &#39;__main__&#39;:
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def zero_position_absolute(self):
-    self._query(self._commands[&#39;zero_position_absolute&#39;].get_cmd_string())
-    self._store_position(0)</code></pre>
+<pre><code class="python">def stop_frequency(self, frequency=None):
+    if frequency != None:
+        return self._query(&#39;VSTOP,{}\r\n&#39;.format(frequency))
+    else:
+        return self._query(&#39;VSTOP\r\n&#39;)</code></pre>
+</details>
+</dd>
+<dt id="egse.stages.arun.smd3_controller.Smd3Controller.store_configuration"><code class="name flex">
+<span>def <span class="ident">store_configuration</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def store_configuration(self):
+    return self._query(&#39;STORE\r\n&#39;)</code></pre>
+</details>
+</dd>
+<dt id="egse.stages.arun.smd3_controller.Smd3Controller.target_frequency"><code class="name flex">
+<span>def <span class="ident">target_frequency</span></span>(<span>self, frequency=None)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def target_frequency(self, frequency=None):
+    if frequency != None:
+        return self._query(&#39;VMAX,{}\r\n&#39;.format(frequency))
+    else:
+        return self._query(&#39;VMAX\r\n&#39;)</code></pre>
+</details>
+</dd>
+<dt id="egse.stages.arun.smd3_controller.Smd3Controller.time_stop_before_move"><code class="name flex">
+<span>def <span class="ident">time_stop_before_move</span></span>(<span>self, time)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def time_stop_before_move(self, time):
+    if time != None:
+        return self._query(&#39;TZW,{}\r\n&#39;.format(time))
+    else:
+        return self._query(&#39;TZW\r\n&#39;)</code></pre>
+</details>
+</dd>
+<dt id="egse.stages.arun.smd3_controller.Smd3Controller.velocity_move"><code class="name flex">
+<span>def <span class="ident">velocity_move</span></span>(<span>self, direction: str)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def velocity_move(self, direction: str):
+    if direction in [&#39;-&#39;, &#39;+&#39;]:
+        return self._query(&#39;RUNV,{}\r\n&#39;.format(direction))
+    else:
+        raise Smd3Exception(&#34;Direction can only be &#39;-&#39; or &#39;+&#39;&#34;)</code></pre>
 </details>
 </dd>
 </dl>
@@ -1430,43 +1933,61 @@ if __name__ == &#39;__main__&#39;:
 <li>
 <h4><code><a title="egse.stages.arun.smd3_controller.Smd3Controller" href="#egse.stages.arun.smd3_controller.Smd3Controller">Smd3Controller</a></code></h4>
 <ul class="">
-<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.MAX_VELOCITY" href="#egse.stages.arun.smd3_controller.Smd3Controller.MAX_VELOCITY">MAX_VELOCITY</a></code></li>
-<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.POS_DISABLE_STEPS" href="#egse.stages.arun.smd3_controller.Smd3Controller.POS_DISABLE_STEPS">POS_DISABLE_STEPS</a></code></li>
-<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.POS_ENABLE_STEPS" href="#egse.stages.arun.smd3_controller.Smd3Controller.POS_ENABLE_STEPS">POS_ENABLE_STEPS</a></code></li>
+<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.IN_FOV_POSITION" href="#egse.stages.arun.smd3_controller.Smd3Controller.IN_FOV_POSITION">IN_FOV_POSITION</a></code></li>
 <li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.STEP_SIZE_MM" href="#egse.stages.arun.smd3_controller.Smd3Controller.STEP_SIZE_MM">STEP_SIZE_MM</a></code></li>
-<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.clear_errors" href="#egse.stages.arun.smd3_controller.Smd3Controller.clear_errors">clear_errors</a></code></li>
+<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.absolute_move" href="#egse.stages.arun.smd3_controller.Smd3Controller.absolute_move">absolute_move</a></code></li>
+<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.acceleration" href="#egse.stages.arun.smd3_controller.Smd3Controller.acceleration">acceleration</a></code></li>
+<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.acceleration_current" href="#egse.stages.arun.smd3_controller.Smd3Controller.acceleration_current">acceleration_current</a></code></li>
+<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.actual_frequency" href="#egse.stages.arun.smd3_controller.Smd3Controller.actual_frequency">actual_frequency</a></code></li>
+<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.actual_position" href="#egse.stages.arun.smd3_controller.Smd3Controller.actual_position">actual_position</a></code></li>
+<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.actual_position_mm" href="#egse.stages.arun.smd3_controller.Smd3Controller.actual_position_mm">actual_position_mm</a></code></li>
+<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.bake" href="#egse.stages.arun.smd3_controller.Smd3Controller.bake">bake</a></code></li>
+<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.bakeout_setpoint" href="#egse.stages.arun.smd3_controller.Smd3Controller.bakeout_setpoint">bakeout_setpoint</a></code></li>
+<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.clear_flags" href="#egse.stages.arun.smd3_controller.Smd3Controller.clear_flags">clear_flags</a></code></li>
+<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.configure_homing" href="#egse.stages.arun.smd3_controller.Smd3Controller.configure_homing">configure_homing</a></code></li>
+<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.configure_limits" href="#egse.stages.arun.smd3_controller.Smd3Controller.configure_limits">configure_limits</a></code></li>
+<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.configure_remote" href="#egse.stages.arun.smd3_controller.Smd3Controller.configure_remote">configure_remote</a></code></li>
+<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.deceleration" href="#egse.stages.arun.smd3_controller.Smd3Controller.deceleration">deceleration</a></code></li>
 <li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.emergency_stop" href="#egse.stages.arun.smd3_controller.Smd3Controller.emergency_stop">emergency_stop</a></code></li>
-<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.get_enable_limit_switches_global" href="#egse.stages.arun.smd3_controller.Smd3Controller.get_enable_limit_switches_global">get_enable_limit_switches_global</a></code></li>
-<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.get_enable_limit_switches_individual" href="#egse.stages.arun.smd3_controller.Smd3Controller.get_enable_limit_switches_individual">get_enable_limit_switches_individual</a></code></li>
-<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.get_errors" href="#egse.stages.arun.smd3_controller.Smd3Controller.get_errors">get_errors</a></code></li>
-<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.get_external_enable" href="#egse.stages.arun.smd3_controller.Smd3Controller.get_external_enable">get_external_enable</a></code></li>
-<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.get_limit_stop_mode" href="#egse.stages.arun.smd3_controller.Smd3Controller.get_limit_stop_mode">get_limit_stop_mode</a></code></li>
-<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.get_max_velocity" href="#egse.stages.arun.smd3_controller.Smd3Controller.get_max_velocity">get_max_velocity</a></code></li>
-<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.get_mode" href="#egse.stages.arun.smd3_controller.Smd3Controller.get_mode">get_mode</a></code></li>
-<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.get_motor_temperature" href="#egse.stages.arun.smd3_controller.Smd3Controller.get_motor_temperature">get_motor_temperature</a></code></li>
-<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.get_position_absolute_mm" href="#egse.stages.arun.smd3_controller.Smd3Controller.get_position_absolute_mm">get_position_absolute_mm</a></code></li>
-<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.get_position_absolute_steps" href="#egse.stages.arun.smd3_controller.Smd3Controller.get_position_absolute_steps">get_position_absolute_steps</a></code></li>
+<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.full_step" href="#egse.stages.arun.smd3_controller.Smd3Controller.full_step">full_step</a></code></li>
 <li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.get_status" href="#egse.stages.arun.smd3_controller.Smd3Controller.get_status">get_status</a></code></li>
+<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.get_temperature" href="#egse.stages.arun.smd3_controller.Smd3Controller.get_temperature">get_temperature</a></code></li>
 <li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.get_version" href="#egse.stages.arun.smd3_controller.Smd3Controller.get_version">get_version</a></code></li>
-<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.home_software" href="#egse.stages.arun.smd3_controller.Smd3Controller.home_software">home_software</a></code></li>
-<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.is_moving" href="#egse.stages.arun.smd3_controller.Smd3Controller.is_moving">is_moving</a></code></li>
+<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.global_limit" href="#egse.stages.arun.smd3_controller.Smd3Controller.global_limit">global_limit</a></code></li>
+<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.hold_current" href="#egse.stages.arun.smd3_controller.Smd3Controller.hold_current">hold_current</a></code></li>
+<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.home" href="#egse.stages.arun.smd3_controller.Smd3Controller.home">home</a></code></li>
+<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.homing_procedure" href="#egse.stages.arun.smd3_controller.Smd3Controller.homing_procedure">homing_procedure</a></code></li>
+<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.interpolate" href="#egse.stages.arun.smd3_controller.Smd3Controller.interpolate">interpolate</a></code></li>
+<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.limit_polarity" href="#egse.stages.arun.smd3_controller.Smd3Controller.limit_polarity">limit_polarity</a></code></li>
+<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.limit_stop_mode" href="#egse.stages.arun.smd3_controller.Smd3Controller.limit_stop_mode">limit_stop_mode</a></code></li>
+<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.load_configuration" href="#egse.stages.arun.smd3_controller.Smd3Controller.load_configuration">load_configuration</a></code></li>
+<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.load_factory_defaults" href="#egse.stages.arun.smd3_controller.Smd3Controller.load_factory_defaults">load_factory_defaults</a></code></li>
 <li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.mask_in_fov" href="#egse.stages.arun.smd3_controller.Smd3Controller.mask_in_fov">mask_in_fov</a></code></li>
 <li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.move_mask_fov" href="#egse.stages.arun.smd3_controller.Smd3Controller.move_mask_fov">move_mask_fov</a></code></li>
-<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.move_position_absolute_mm" href="#egse.stages.arun.smd3_controller.Smd3Controller.move_position_absolute_mm">move_position_absolute_mm</a></code></li>
-<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.move_position_absolute_steps" href="#egse.stages.arun.smd3_controller.Smd3Controller.move_position_absolute_steps">move_position_absolute_steps</a></code></li>
-<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.set_acceleration_current" href="#egse.stages.arun.smd3_controller.Smd3Controller.set_acceleration_current">set_acceleration_current</a></code></li>
-<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.set_enable_limit_switches_global" href="#egse.stages.arun.smd3_controller.Smd3Controller.set_enable_limit_switches_global">set_enable_limit_switches_global</a></code></li>
-<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.set_enable_limit_switches_individual" href="#egse.stages.arun.smd3_controller.Smd3Controller.set_enable_limit_switches_individual">set_enable_limit_switches_individual</a></code></li>
-<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.set_external_enable" href="#egse.stages.arun.smd3_controller.Smd3Controller.set_external_enable">set_external_enable</a></code></li>
-<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.set_freewheel_mode" href="#egse.stages.arun.smd3_controller.Smd3Controller.set_freewheel_mode">set_freewheel_mode</a></code></li>
-<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.set_holding_current" href="#egse.stages.arun.smd3_controller.Smd3Controller.set_holding_current">set_holding_current</a></code></li>
-<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.set_limit_stop_mode" href="#egse.stages.arun.smd3_controller.Smd3Controller.set_limit_stop_mode">set_limit_stop_mode</a></code></li>
-<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.set_max_velocity" href="#egse.stages.arun.smd3_controller.Smd3Controller.set_max_velocity">set_max_velocity</a></code></li>
-<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.set_mode" href="#egse.stages.arun.smd3_controller.Smd3Controller.set_mode">set_mode</a></code></li>
-<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.set_position_absolute_steps" href="#egse.stages.arun.smd3_controller.Smd3Controller.set_position_absolute_steps">set_position_absolute_steps</a></code></li>
-<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.set_running_current" href="#egse.stages.arun.smd3_controller.Smd3Controller.set_running_current">set_running_current</a></code></li>
+<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.negative_limit" href="#egse.stages.arun.smd3_controller.Smd3Controller.negative_limit">negative_limit</a></code></li>
+<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.negative_limit_polarity" href="#egse.stages.arun.smd3_controller.Smd3Controller.negative_limit_polarity">negative_limit_polarity</a></code></li>
+<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.positive_limit" href="#egse.stages.arun.smd3_controller.Smd3Controller.positive_limit">positive_limit</a></code></li>
+<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.positive_limit_polarity" href="#egse.stages.arun.smd3_controller.Smd3Controller.positive_limit_polarity">positive_limit_polarity</a></code></li>
+<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.power_down_delay" href="#egse.stages.arun.smd3_controller.Smd3Controller.power_down_delay">power_down_delay</a></code></li>
+<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.power_down_ramp_delay" href="#egse.stages.arun.smd3_controller.Smd3Controller.power_down_ramp_delay">power_down_ramp_delay</a></code></li>
+<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.quick_stop" href="#egse.stages.arun.smd3_controller.Smd3Controller.quick_stop">quick_stop</a></code></li>
+<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.relative_move" href="#egse.stages.arun.smd3_controller.Smd3Controller.relative_move">relative_move</a></code></li>
+<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.relative_position" href="#egse.stages.arun.smd3_controller.Smd3Controller.relative_position">relative_position</a></code></li>
+<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.resolution" href="#egse.stages.arun.smd3_controller.Smd3Controller.resolution">resolution</a></code></li>
+<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.run_current" href="#egse.stages.arun.smd3_controller.Smd3Controller.run_current">run_current</a></code></li>
+<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.save_fault" href="#egse.stages.arun.smd3_controller.Smd3Controller.save_fault">save_fault</a></code></li>
+<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.save_status" href="#egse.stages.arun.smd3_controller.Smd3Controller.save_status">save_status</a></code></li>
+<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.select_mode" href="#egse.stages.arun.smd3_controller.Smd3Controller.select_mode">select_mode</a></code></li>
+<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.select_tsensor" href="#egse.stages.arun.smd3_controller.Smd3Controller.select_tsensor">select_tsensor</a></code></li>
+<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.set_freewheel" href="#egse.stages.arun.smd3_controller.Smd3Controller.set_freewheel">set_freewheel</a></code></li>
+<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.start_frequency" href="#egse.stages.arun.smd3_controller.Smd3Controller.start_frequency">start_frequency</a></code></li>
+<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.step_edge" href="#egse.stages.arun.smd3_controller.Smd3Controller.step_edge">step_edge</a></code></li>
 <li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.stop" href="#egse.stages.arun.smd3_controller.Smd3Controller.stop">stop</a></code></li>
-<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.zero_position_absolute" href="#egse.stages.arun.smd3_controller.Smd3Controller.zero_position_absolute">zero_position_absolute</a></code></li>
+<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.stop_frequency" href="#egse.stages.arun.smd3_controller.Smd3Controller.stop_frequency">stop_frequency</a></code></li>
+<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.store_configuration" href="#egse.stages.arun.smd3_controller.Smd3Controller.store_configuration">store_configuration</a></code></li>
+<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.target_frequency" href="#egse.stages.arun.smd3_controller.Smd3Controller.target_frequency">target_frequency</a></code></li>
+<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.time_stop_before_move" href="#egse.stages.arun.smd3_controller.Smd3Controller.time_stop_before_move">time_stop_before_move</a></code></li>
+<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.velocity_move" href="#egse.stages.arun.smd3_controller.Smd3Controller.velocity_move">velocity_move</a></code></li>
 </ul>
 </li>
 <li>

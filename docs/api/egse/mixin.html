@@ -38,6 +38,8 @@ classes without strict inheritance.
 Be careful, some of the Mixin classes require certain attributes to be defined in the
 outer sub-class. Read the docstrings carefully to understand what is needed.
 &#34;&#34;&#34;
+
+import contextlib
 import enum
 import functools
 import inspect
@@ -335,6 +337,7 @@ class DynamicCommandMixin:
             has not been listed.
         &#34;&#34;&#34;
 
+        @functools.wraps(attr)
         def command_wrapper(*args, **kwargs):
             &#34;&#34;&#34;Generates command strings and executes the transport functions.&#34;&#34;&#34;
             try:
@@ -357,11 +360,9 @@ class DynamicCommandMixin:
                 raise CommandError(f&#34;Interface method &#39;{attr.__name__}&#39; shall be decorated with &#34;
                                    f&#34;a command type decorator.&#34;)
 
-            try:
+            with contextlib.suppress(AttributeError):
                 process_response = getattr(attr, &#34;__process_response&#34;)
                 response = process_response(response)
-            except AttributeError:
-                pass
 
             return response
 
@@ -806,6 +807,7 @@ methods to read, write, and query an instrument.</p>
             has not been listed.
         &#34;&#34;&#34;
 
+        @functools.wraps(attr)
         def command_wrapper(*args, **kwargs):
             &#34;&#34;&#34;Generates command strings and executes the transport functions.&#34;&#34;&#34;
             try:
@@ -828,11 +830,9 @@ methods to read, write, and query an instrument.</p>
                 raise CommandError(f&#34;Interface method &#39;{attr.__name__}&#39; shall be decorated with &#34;
                                    f&#34;a command type decorator.&#34;)
 
-            try:
+            with contextlib.suppress(AttributeError):
                 process_response = getattr(attr, &#34;__process_response&#34;)
                 response = process_response(response)
-            except AttributeError:
-                pass
 
             return response
 
@@ -1034,6 +1034,7 @@ for that method in the corresponding Interface class.</p>
         has not been listed.
     &#34;&#34;&#34;
 
+    @functools.wraps(attr)
     def command_wrapper(*args, **kwargs):
         &#34;&#34;&#34;Generates command strings and executes the transport functions.&#34;&#34;&#34;
         try:
@@ -1056,11 +1057,9 @@ for that method in the corresponding Interface class.</p>
             raise CommandError(f&#34;Interface method &#39;{attr.__name__}&#39; shall be decorated with &#34;
                                f&#34;a command type decorator.&#34;)
 
-        try:
+        with contextlib.suppress(AttributeError):
             process_response = getattr(attr, &#34;__process_response&#34;)
             response = process_response(response)
-        except AttributeError:
-            pass
 
         return response
 

@@ -29,14 +29,14 @@
 <pre><code class="python">import argparse
 import logging
 import pickle
-import threading
+from pathlib import Path
 
 import sys
 import zmq
-from PyQt5.QtCore import QThread, QObject, pyqtSignal, pyqtSlot
+from PyQt5.QtCore import QThread, QObject, pyqtSignal, pyqtSlot, QLockFile
 from PyQt5.QtGui import QCloseEvent, QPixmap, QIcon
 from PyQt5.QtWidgets import QMainWindow, QApplication, QLabel, QFrame, QHBoxLayout, QVBoxLayout, QGroupBox, QGridLayout, \
-    QAction
+    QAction, QMessageBox
 from deepdiff import DeepDiff
 from zmq import ZMQError
 
@@ -45,9 +45,8 @@ from egse.aeu.aeu import CTRL_SETTINGS
 from egse.config import find_file
 from egse.gui.led import Led, Indic
 from egse.observer import Observer, Observable
-from egse.process import ProcessStatus
+from egse.resource import get_resource
 from egse.settings import Settings
-from egse.system import do_every
 from egse.zmq_ser import connect_address
 
 MODULE_LOGGER = logging.getLogger(__name__)
@@ -845,44 +844,56 @@ def parse_arguments():
 
 def main():
     &#34;&#34;&#34; Main method to launch the AEU GUI.&#34;&#34;&#34;
+    lock_file = QLockFile(str(Path(&#34;~/aeu_ui.app.lock&#34;).expanduser()))
 
     args = list(sys.argv)
     app = QApplication(args)
+    app.setWindowIcon(QIcon(str(get_resource(&#34;:/icons/aeu-cs.svg&#34;))))
 
-    # process_status = ProcessStatus()
-    #
-    # timer_thread = threading.Thread(target=do_every, args=(10, process_status.update))
-    # timer_thread.daemon = True
-    # timer_thread.start()
-    #
-    # start_http_server(8541)
+    if lock_file.tryLock(100):
 
-    args = parse_arguments()
-
-    if args.profile:
-        Settings.set_profiling(True)
-
-    if args.type == &#34;proxy&#34;:
-        proxy = CRIOProxy()
-        # if not proxy.ping():
-        #     description = &#34;Could not connect to Stages Control Server&#34;
-        #     info_text = (
-        #         &#34;The GUI will start, but the connection button will show a disconnected state. &#34;
-        #         &#34;Please check if the Control Server is running and start the server if needed. &#34;
-        #         &#34;Otherwise, check if the correct HOSTNAME for the control server is set in the &#34;
-        #         &#34;Settings.yaml &#34;
-        #         &#34;configuration file.&#34;
-        #     )
+        # process_status = ProcessStatus()
         #
-        #     show_warning_message(description, info_text)
+        # timer_thread = threading.Thread(target=do_every, args=(10, process_status.update))
+        # timer_thread.daemon = True
+        # timer_thread.start()
+        #
+        # start_http_server(8541)
+
+        args = parse_arguments()
+
+        if args.profile:
+            Settings.set_profiling(True)
+
+        if args.type == &#34;proxy&#34;:
+            proxy = CRIOProxy()
+            # if not proxy.ping():
+            #     description = &#34;Could not connect to Stages Control Server&#34;
+            #     info_text = (
+            #         &#34;The GUI will start, but the connection button will show a disconnected state. &#34;
+            #         &#34;Please check if the Control Server is running and start the server if needed. &#34;
+            #         &#34;Otherwise, check if the correct HOSTNAME for the control server is set in the &#34;
+            #         &#34;Settings.yaml &#34;
+            #         &#34;configuration file.&#34;
+            #     )
+            #
+            #     show_warning_message(description, info_text)
 
 
-    view = AEUUIView()
-    model = AEUUIModel(args.type)
-    controller = AEUUIController(model, view)
+        view = AEUUIView()
+        model = AEUUIModel(args.type)
+        controller = AEUUIController(model, view)
 
-    view.show()
-    sys.exit(app.exec_())
+        view.show()
+        sys.exit(app.exec_())
+    else:
+        error_message = QMessageBox()
+        error_message.setIcon(QMessageBox.Warning)
+        error_message.setWindowTitle(&#34;Error&#34;)
+        error_message.setText(&#34;The AEU GUI application is already running!&#34;)
+        error_message.setStandardButtons(QMessageBox.Ok)
+
+        return error_message.exec()
 
 
 if __name__ == &#34;__main__&#34;:
@@ -908,44 +919,56 @@ if __name__ == &#34;__main__&#34;:
 </summary>
 <pre><code class="python">def main():
     &#34;&#34;&#34; Main method to launch the AEU GUI.&#34;&#34;&#34;
+    lock_file = QLockFile(str(Path(&#34;~/aeu_ui.app.lock&#34;).expanduser()))
 
     args = list(sys.argv)
     app = QApplication(args)
+    app.setWindowIcon(QIcon(str(get_resource(&#34;:/icons/aeu-cs.svg&#34;))))
 
-    # process_status = ProcessStatus()
-    #
-    # timer_thread = threading.Thread(target=do_every, args=(10, process_status.update))
-    # timer_thread.daemon = True
-    # timer_thread.start()
-    #
-    # start_http_server(8541)
+    if lock_file.tryLock(100):
 
-    args = parse_arguments()
-
-    if args.profile:
-        Settings.set_profiling(True)
-
-    if args.type == &#34;proxy&#34;:
-        proxy = CRIOProxy()
-        # if not proxy.ping():
-        #     description = &#34;Could not connect to Stages Control Server&#34;
-        #     info_text = (
-        #         &#34;The GUI will start, but the connection button will show a disconnected state. &#34;
-        #         &#34;Please check if the Control Server is running and start the server if needed. &#34;
-        #         &#34;Otherwise, check if the correct HOSTNAME for the control server is set in the &#34;
-        #         &#34;Settings.yaml &#34;
-        #         &#34;configuration file.&#34;
-        #     )
+        # process_status = ProcessStatus()
         #
-        #     show_warning_message(description, info_text)
+        # timer_thread = threading.Thread(target=do_every, args=(10, process_status.update))
+        # timer_thread.daemon = True
+        # timer_thread.start()
+        #
+        # start_http_server(8541)
+
+        args = parse_arguments()
+
+        if args.profile:
+            Settings.set_profiling(True)
+
+        if args.type == &#34;proxy&#34;:
+            proxy = CRIOProxy()
+            # if not proxy.ping():
+            #     description = &#34;Could not connect to Stages Control Server&#34;
+            #     info_text = (
+            #         &#34;The GUI will start, but the connection button will show a disconnected state. &#34;
+            #         &#34;Please check if the Control Server is running and start the server if needed. &#34;
+            #         &#34;Otherwise, check if the correct HOSTNAME for the control server is set in the &#34;
+            #         &#34;Settings.yaml &#34;
+            #         &#34;configuration file.&#34;
+            #     )
+            #
+            #     show_warning_message(description, info_text)
 
 
-    view = AEUUIView()
-    model = AEUUIModel(args.type)
-    controller = AEUUIController(model, view)
+        view = AEUUIView()
+        model = AEUUIModel(args.type)
+        controller = AEUUIController(model, view)
 
-    view.show()
-    sys.exit(app.exec_())</code></pre>
+        view.show()
+        sys.exit(app.exec_())
+    else:
+        error_message = QMessageBox()
+        error_message.setIcon(QMessageBox.Warning)
+        error_message.setWindowTitle(&#34;Error&#34;)
+        error_message.setText(&#34;The AEU GUI application is already running!&#34;)
+        error_message.setStandardButtons(QMessageBox.Ok)
+
+        return error_message.exec()</code></pre>
 </details>
 </dd>
 <dt id="egse.aeu.aeu_ui.parse_arguments"><code class="name flex">

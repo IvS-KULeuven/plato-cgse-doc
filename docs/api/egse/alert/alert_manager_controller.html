@@ -46,7 +46,7 @@ CTRL_SETTINGS = Settings.load(&#34;Alert Manager Control Server&#34;)
     
 class AlertManagerController(AlertManagerInterface):
     def __init__(self, phase = None):
-        self.phase = &#39;none&#39;
+        self.phase = phase
         self.running = False
         
         self.alerts = {}
@@ -87,13 +87,28 @@ class AlertManagerController(AlertManagerInterface):
             self.load_configuration(self.phase)            
             self.start_alert_monitor()
 
+    def connect(self):
+        return True
+    
+    def disconnect(self):
+        return True
+    
+    def reconnect(self):
+        return True
+    
+    def is_connected(self):
+        return True
+    
+    def is_simulator(self):
+        return False
+    
     def reset_alert_dict(self):
         self.running = False
         
         self.alerts = {}
         self.alerts[&#39;sensors&#39;] = {}
         self.alerts[&#39;cs&#39;]      = {}
-        
+
         self._configuration = {}
         
         self.values = {}
@@ -128,9 +143,16 @@ class AlertManagerController(AlertManagerInterface):
         # Create a current value dict with all the alerts from the configuration
         self.values = {f&#39;{name}&#39; : 0  for name, conf in self._configuration[&#39;alerts&#39;].items()}        
     
-    def get_alerts(self):
-        rich.print(self.alerts)
-        return self.alerts
+    def get_alerts(self, sensor=None):
+        if sensor == None:
+            return self._configuration[&#39;alerts&#39;]
+        else:
+            alerts = []
+            for key, value in self._configuration[&#39;alerts&#39;].items():
+                if value[&#39;sensor&#39;] == sensor:
+                    alerts.append(self._configuration[&#39;alerts&#39;][key])
+            return alerts
+
     
     def start_alert_monitor(self):
         if self.phase != &#39;none&#39;:
@@ -185,10 +207,21 @@ class AlertManagerController(AlertManagerInterface):
             self.stop_alert_monitor()
             self.reset_alert_dict()
             
-    def device_connection_lost(self, device):
-        logger.info(f&#34;Connection has been lost for the {device}&#34;)
-        device_intro = f&#34;The {device} has lost its connection to its control server!\n&#34;
-        device_text  = f&#34;Please reconnect the {device}&#34;
+    def device_connection_lost(self, device_code: str, args=None):
+        logger.info(f&#34;Connection has been lost to the device with code: {device_code}&#34;)
+        device_intro = f&#34;The device with code: {device_code} has lost its connection to its control server!\n\n&#34;
+        device_text = &#34;&#34;
+        try:
+            with FdirManagerProxy() as fdir:
+                fdir.signal_fdir(f&#34;FDIR_{device_code}_HW&#34;, args)
+        except Exception as e:
+            logger.critical(f&#34;Could not fire FDIR signal: {e}&#34;)
+            device_text += f&#34;Could not fire FDIR signal: &#39;FDIR_{device_code}_HW&#39;\n&#34;
+        else:
+            device_text += f&#34;FDIR signal: &#39;FDIR_{device_code}_HW&#39; has been fired\n&#34;
+                
+        
+        device_text  += f&#34;Please reconnect the device with code: {device_code}&#34;
         send_email(subject=&#39;PLATO device connection lost&#39;, message=device_intro+device_text,  recipients=replace_environment_variable(CTRL_SETTINGS.EMAIL_WARNING_RECIPIENTS))
         
 
@@ -219,7 +252,7 @@ if __name__ == &#34;__main__&#34;:
 </summary>
 <pre><code class="python">class AlertManagerController(AlertManagerInterface):
     def __init__(self, phase = None):
-        self.phase = &#39;none&#39;
+        self.phase = phase
         self.running = False
         
         self.alerts = {}
@@ -260,13 +293,28 @@ if __name__ == &#34;__main__&#34;:
             self.load_configuration(self.phase)            
             self.start_alert_monitor()
 
+    def connect(self):
+        return True
+    
+    def disconnect(self):
+        return True
+    
+    def reconnect(self):
+        return True
+    
+    def is_connected(self):
+        return True
+    
+    def is_simulator(self):
+        return False
+    
     def reset_alert_dict(self):
         self.running = False
         
         self.alerts = {}
         self.alerts[&#39;sensors&#39;] = {}
         self.alerts[&#39;cs&#39;]      = {}
-        
+
         self._configuration = {}
         
         self.values = {}
@@ -301,9 +349,16 @@ if __name__ == &#34;__main__&#34;:
         # Create a current value dict with all the alerts from the configuration
         self.values = {f&#39;{name}&#39; : 0  for name, conf in self._configuration[&#39;alerts&#39;].items()}        
     
-    def get_alerts(self):
-        rich.print(self.alerts)
-        return self.alerts
+    def get_alerts(self, sensor=None):
+        if sensor == None:
+            return self._configuration[&#39;alerts&#39;]
+        else:
+            alerts = []
+            for key, value in self._configuration[&#39;alerts&#39;].items():
+                if value[&#39;sensor&#39;] == sensor:
+                    alerts.append(self._configuration[&#39;alerts&#39;][key])
+            return alerts
+
     
     def start_alert_monitor(self):
         if self.phase != &#39;none&#39;:
@@ -358,10 +413,21 @@ if __name__ == &#34;__main__&#34;:
             self.stop_alert_monitor()
             self.reset_alert_dict()
             
-    def device_connection_lost(self, device):
-        logger.info(f&#34;Connection has been lost for the {device}&#34;)
-        device_intro = f&#34;The {device} has lost its connection to its control server!\n&#34;
-        device_text  = f&#34;Please reconnect the {device}&#34;
+    def device_connection_lost(self, device_code: str, args=None):
+        logger.info(f&#34;Connection has been lost to the device with code: {device_code}&#34;)
+        device_intro = f&#34;The device with code: {device_code} has lost its connection to its control server!\n\n&#34;
+        device_text = &#34;&#34;
+        try:
+            with FdirManagerProxy() as fdir:
+                fdir.signal_fdir(f&#34;FDIR_{device_code}_HW&#34;, args)
+        except Exception as e:
+            logger.critical(f&#34;Could not fire FDIR signal: {e}&#34;)
+            device_text += f&#34;Could not fire FDIR signal: &#39;FDIR_{device_code}_HW&#39;\n&#34;
+        else:
+            device_text += f&#34;FDIR signal: &#39;FDIR_{device_code}_HW&#39; has been fired\n&#34;
+                
+        
+        device_text  += f&#34;Please reconnect the device with code: {device_code}&#34;
         send_email(subject=&#39;PLATO device connection lost&#39;, message=device_intro+device_text,  recipients=replace_environment_variable(CTRL_SETTINGS.EMAIL_WARNING_RECIPIENTS))</code></pre>
 </details>
 <h3>Ancestors</h3>
@@ -370,8 +436,8 @@ if __name__ == &#34;__main__&#34;:
 </ul>
 <h3>Methods</h3>
 <dl>
-<dt id="egse.alert.alert_manager_controller.AlertManagerController.device_connection_lost"><code class="name flex">
-<span>def <span class="ident">device_connection_lost</span></span>(<span>self, device)</span>
+<dt id="egse.alert.alert_manager_controller.AlertManagerController.connect"><code class="name flex">
+<span>def <span class="ident">connect</span></span>(<span>self)</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -379,15 +445,39 @@ if __name__ == &#34;__main__&#34;:
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def device_connection_lost(self, device):
-    logger.info(f&#34;Connection has been lost for the {device}&#34;)
-    device_intro = f&#34;The {device} has lost its connection to its control server!\n&#34;
-    device_text  = f&#34;Please reconnect the {device}&#34;
+<pre><code class="python">def connect(self):
+    return True</code></pre>
+</details>
+</dd>
+<dt id="egse.alert.alert_manager_controller.AlertManagerController.device_connection_lost"><code class="name flex">
+<span>def <span class="ident">device_connection_lost</span></span>(<span>self, device_code: str, args=None)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def device_connection_lost(self, device_code: str, args=None):
+    logger.info(f&#34;Connection has been lost to the device with code: {device_code}&#34;)
+    device_intro = f&#34;The device with code: {device_code} has lost its connection to its control server!\n\n&#34;
+    device_text = &#34;&#34;
+    try:
+        with FdirManagerProxy() as fdir:
+            fdir.signal_fdir(f&#34;FDIR_{device_code}_HW&#34;, args)
+    except Exception as e:
+        logger.critical(f&#34;Could not fire FDIR signal: {e}&#34;)
+        device_text += f&#34;Could not fire FDIR signal: &#39;FDIR_{device_code}_HW&#39;\n&#34;
+    else:
+        device_text += f&#34;FDIR signal: &#39;FDIR_{device_code}_HW&#39; has been fired\n&#34;
+            
+    
+    device_text  += f&#34;Please reconnect the device with code: {device_code}&#34;
     send_email(subject=&#39;PLATO device connection lost&#39;, message=device_intro+device_text,  recipients=replace_environment_variable(CTRL_SETTINGS.EMAIL_WARNING_RECIPIENTS))</code></pre>
 </details>
 </dd>
-<dt id="egse.alert.alert_manager_controller.AlertManagerController.get_alerts"><code class="name flex">
-<span>def <span class="ident">get_alerts</span></span>(<span>self)</span>
+<dt id="egse.alert.alert_manager_controller.AlertManagerController.disconnect"><code class="name flex">
+<span>def <span class="ident">disconnect</span></span>(<span>self)</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -395,9 +485,54 @@ if __name__ == &#34;__main__&#34;:
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def get_alerts(self):
-    rich.print(self.alerts)
-    return self.alerts</code></pre>
+<pre><code class="python">def disconnect(self):
+    return True</code></pre>
+</details>
+</dd>
+<dt id="egse.alert.alert_manager_controller.AlertManagerController.get_alerts"><code class="name flex">
+<span>def <span class="ident">get_alerts</span></span>(<span>self, sensor=None)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_alerts(self, sensor=None):
+    if sensor == None:
+        return self._configuration[&#39;alerts&#39;]
+    else:
+        alerts = []
+        for key, value in self._configuration[&#39;alerts&#39;].items():
+            if value[&#39;sensor&#39;] == sensor:
+                alerts.append(self._configuration[&#39;alerts&#39;][key])
+        return alerts</code></pre>
+</details>
+</dd>
+<dt id="egse.alert.alert_manager_controller.AlertManagerController.is_connected"><code class="name flex">
+<span>def <span class="ident">is_connected</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def is_connected(self):
+    return True</code></pre>
+</details>
+</dd>
+<dt id="egse.alert.alert_manager_controller.AlertManagerController.is_simulator"><code class="name flex">
+<span>def <span class="ident">is_simulator</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def is_simulator(self):
+    return False</code></pre>
 </details>
 </dd>
 <dt id="egse.alert.alert_manager_controller.AlertManagerController.load_configuration"><code class="name flex">
@@ -475,6 +610,19 @@ if __name__ == &#34;__main__&#34;:
     self.values = {f&#39;{name}&#39; : 0  for name, conf in self._configuration[&#39;alerts&#39;].items()}        </code></pre>
 </details>
 </dd>
+<dt id="egse.alert.alert_manager_controller.AlertManagerController.reconnect"><code class="name flex">
+<span>def <span class="ident">reconnect</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def reconnect(self):
+    return True</code></pre>
+</details>
+</dd>
 <dt id="egse.alert.alert_manager_controller.AlertManagerController.reset_alert_dict"><code class="name flex">
 <span>def <span class="ident">reset_alert_dict</span></span>(<span>self)</span>
 </code></dt>
@@ -490,7 +638,7 @@ if __name__ == &#34;__main__&#34;:
     self.alerts = {}
     self.alerts[&#39;sensors&#39;] = {}
     self.alerts[&#39;cs&#39;]      = {}
-    
+
     self._configuration = {}
     
     self.values = {}
@@ -565,10 +713,15 @@ if __name__ == &#34;__main__&#34;:
 <li>
 <h4><code><a title="egse.alert.alert_manager_controller.AlertManagerController" href="#egse.alert.alert_manager_controller.AlertManagerController">AlertManagerController</a></code></h4>
 <ul class="">
+<li><code><a title="egse.alert.alert_manager_controller.AlertManagerController.connect" href="#egse.alert.alert_manager_controller.AlertManagerController.connect">connect</a></code></li>
 <li><code><a title="egse.alert.alert_manager_controller.AlertManagerController.device_connection_lost" href="#egse.alert.alert_manager_controller.AlertManagerController.device_connection_lost">device_connection_lost</a></code></li>
+<li><code><a title="egse.alert.alert_manager_controller.AlertManagerController.disconnect" href="#egse.alert.alert_manager_controller.AlertManagerController.disconnect">disconnect</a></code></li>
 <li><code><a title="egse.alert.alert_manager_controller.AlertManagerController.get_alerts" href="#egse.alert.alert_manager_controller.AlertManagerController.get_alerts">get_alerts</a></code></li>
+<li><code><a title="egse.alert.alert_manager_controller.AlertManagerController.is_connected" href="#egse.alert.alert_manager_controller.AlertManagerController.is_connected">is_connected</a></code></li>
+<li><code><a title="egse.alert.alert_manager_controller.AlertManagerController.is_simulator" href="#egse.alert.alert_manager_controller.AlertManagerController.is_simulator">is_simulator</a></code></li>
 <li><code><a title="egse.alert.alert_manager_controller.AlertManagerController.load_configuration" href="#egse.alert.alert_manager_controller.AlertManagerController.load_configuration">load_configuration</a></code></li>
 <li><code><a title="egse.alert.alert_manager_controller.AlertManagerController.populate_alert_dict" href="#egse.alert.alert_manager_controller.AlertManagerController.populate_alert_dict">populate_alert_dict</a></code></li>
+<li><code><a title="egse.alert.alert_manager_controller.AlertManagerController.reconnect" href="#egse.alert.alert_manager_controller.AlertManagerController.reconnect">reconnect</a></code></li>
 <li><code><a title="egse.alert.alert_manager_controller.AlertManagerController.reset_alert_dict" href="#egse.alert.alert_manager_controller.AlertManagerController.reset_alert_dict">reset_alert_dict</a></code></li>
 <li><code><a title="egse.alert.alert_manager_controller.AlertManagerController.start_alert_monitor" href="#egse.alert.alert_manager_controller.AlertManagerController.start_alert_monitor">start_alert_monitor</a></code></li>
 <li><code><a title="egse.alert.alert_manager_controller.AlertManagerController.stop_alert_monitor" href="#egse.alert.alert_manager_controller.AlertManagerController.stop_alert_monitor">stop_alert_monitor</a></code></li>
