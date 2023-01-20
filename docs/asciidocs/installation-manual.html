@@ -515,13 +515,13 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <h1>Common-EGSE : Installation Manual</h1>
 <div class="details">
 <span id="author" class="author">Sara Regibo, Rik Huygen</span><br>
-<span id="revnumber">version 1.1,</span>
-<span id="revdate">03/11/2022</span>
+<span id="revnumber">version 1.2,</span>
+<span id="revdate">20/01/2023</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
 <ul class="sectlevel1">
-<li><a href="#_todo">TODO</a></li>
+<li><a href="#_changelog">Changelog</a></li>
 <li><a href="#_colophon">Colophon</a></li>
 <li><a href="#_conventions_used_in_this_book">Conventions used in this Book</a></li>
 <li><a href="#_introduction">1. Introduction</a></li>
@@ -533,12 +533,17 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <li><a href="#_disk_and_storage">2.1.2. Disk and Storage</a></li>
 <li><a href="#_installation_of_python_3_8">2.1.3. Installation of Python 3.8</a></li>
 <li><a href="#_open_ports_on_the_firewall">2.1.4. Open Ports on the Firewall</a></li>
-<li><a href="#_setup_services_for_core_control_servers_with_systemd">2.1.5. Setup Services for Core Control Servers with Systemd</a></li>
+<li><a href="#core-services">2.1.5. Setup Services for Core Control Servers with Systemd</a></li>
 <li><a href="#_disable_selinux">2.1.6. Disable SELinux</a></li>
 <li><a href="#_check_your_services">2.1.7. Check your services</a></li>
+<li><a href="#export-mount-point">2.1.8. Export the /data folder</a></li>
 </ul>
 </li>
-<li><a href="#egse-client-install">2.2. Client Installation</a></li>
+<li><a href="#egse-client-install">2.2. Client Installation</a>
+<ul class="sectlevel3">
+<li><a href="#mount">2.2.1. NFS mount the /data folder from the egse-server</a></li>
+</ul>
+</li>
 <li><a href="#_user_administration">2.3. User Administration</a></li>
 </ul>
 </li>
@@ -555,27 +560,35 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <li><a href="#test-scripts-install">8. Installing the Test Scripts</a></li>
 <li><a href="#cgse-conf-install">9. Installation of Setups</a></li>
 <li><a href="#desktop-entry-install">10. Installation of Desktop Entries</a></li>
-<li><a href="#_setting_up_the_environment">11. Setting up the environment</a>
+<li><a href="#install-vnc">11. Installation of a VNC Server</a>
 <ul class="sectlevel2">
-<li><a href="#_environment_variables">11.1. Environment Variables</a></li>
+<li><a href="#_install_packages">11.1. Install packages</a></li>
+<li><a href="#_configure_the_gnome_display_manager">11.2. Configure the GNOME Display Manager</a></li>
+<li><a href="#_install_and_activate_the_vnc_service">11.3. Install and Activate the VNC service</a></li>
 </ul>
 </li>
-<li><a href="#github-deploy">12. Setting up ssh access and GitHub deploy keys</a>
+<li><a href="#setup-environment">12. Setting up the environment</a>
 <ul class="sectlevel2">
-<li><a href="#deploy-key-egse-server">12.1. Create a deploy key for the plato-common-egse</a></li>
-<li><a href="#_create_a_deploy_key_for_the_plato_test_scripts">12.2. Create a deploy key for the plato-test-scripts</a></li>
-<li><a href="#deploy-key-cgse-conf">12.3. Create a deploy key for the plato-cgse-conf</a></li>
+<li><a href="#_environment_variables">12.1. Environment Variables</a></li>
+<li><a href="#_the_environment_for_systemd_services">12.2. The environment for Systemd services</a></li>
 </ul>
 </li>
-<li><a href="#cgse-update">13. Update the Common-EGSE to the latest release</a></li>
-<li><a href="#test-scripts-update">14. Update the Test Scripts to the latest release</a></li>
-<li><a href="#_update_python_packages">15. Update Python packages</a></li>
-<li><a href="#_data_propagation">16. Data Propagation</a></li>
-<li><a href="#_shared_libraries">17. Shared Libraries</a></li>
-<li><a href="#_installating_external_tools">18. Installating External Tools</a>
+<li><a href="#github-deploy">13. Setting up ssh access and GitHub deploy keys</a>
 <ul class="sectlevel2">
-<li><a href="#_cutelog_gui">18.1. Cutelog GUI</a></li>
-<li><a href="#_textualog_tui">18.2. Textualog TUI</a></li>
+<li><a href="#deploy-key-egse-server">13.1. Create a deploy key for the plato-common-egse</a></li>
+<li><a href="#_create_a_deploy_key_for_the_plato_test_scripts">13.2. Create a deploy key for the plato-test-scripts</a></li>
+<li><a href="#deploy-key-cgse-conf">13.3. Create a deploy key for the plato-cgse-conf</a></li>
+</ul>
+</li>
+<li><a href="#cgse-update">14. Update the Common-EGSE to the latest release</a></li>
+<li><a href="#test-scripts-update">15. Update the Test Scripts to the latest release</a></li>
+<li><a href="#python-package-update">16. Update Python packages</a></li>
+<li><a href="#_data_propagation">17. Data Propagation</a></li>
+<li><a href="#_shared_libraries">18. Shared Libraries</a></li>
+<li><a href="#_installating_external_tools">19. Installating External Tools</a>
+<ul class="sectlevel2">
+<li><a href="#_cutelog_gui">19.1. Cutelog GUI</a></li>
+<li><a href="#_textualog_tui">19.2. Textualog TUI</a></li>
 </ul>
 </li>
 </ul>
@@ -583,23 +596,39 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 </div>
 <div id="content">
 <div class="sect1">
-<h2 id="_todo">TODO</h2>
+<h2 id="_changelog">Changelog</h2>
 <div class="sectionbody">
-<div class="ulist checklist">
-<ul class="checklist">
+<div class="dlist">
+<dl>
+<dt class="hdlist1">20/01/2023 – v1.2</dt>
+<dd>
+<div class="ulist">
+<ul>
 <li>
-<p><i class="fa fa-square-o"></i> Describe the deploy keys that are needed for updates of TS, and for upload of Setups.</p>
+<p>We will now try to maintain a changelog.</p>
 </li>
 <li>
-<p><i class="fa fa-square-o"></i> Describe that we need a link from <code>/data/IAS/conf</code> to <code>~/git/plato-cgse-conf/data/IAS/conf</code>. That link will then point to the same folder on the egse-client machine also.</p>
+<p>Documented the installation and activation of a VNC Server on Ubuntu, see <a href="#install-vnc">Chapter 11</a></p>
 </li>
 <li>
-<p><i class="fa fa-square-o"></i> Describe how to NFS mount the /data folder on the <code>egse-client</code></p>
+<p>Improved section on 'Setting up the environment', see <a href="#setup-environment">Chapter 12</a></p>
 </li>
 <li>
-<p><i class="fa fa-square-o"></i> Describe the <code>/cgse/env.txt</code> file</p>
+<p>Updated the version numbering used for releases in update commands, see <a href="#cgse-update">Chapter 14</a> and <a href="#test-scripts-update">Chapter 15</a></p>
+</li>
+<li>
+<p>Added info on how to set the terminal title, see <a href="#set-terminal-title">[set-terminal-title]</a></p>
+</li>
+<li>
+<p>Added explanation of <code>--ignore-installed</code> optional argument for <code>pip</code>, see <a href="#python-package-update">Chapter 16</a></p>
+</li>
+<li>
+<p>Added a brief explanation on exporting a mount point on the egse-server <a href="#export-mount-point">Section 2.1.8</a> and mounting the mount point <a href="#mount">Section 2.2.1</a> on the egse-client.</p>
 </li>
 </ul>
+</div>
+</dd>
+</dl>
 </div>
 </div>
 </div>
@@ -683,6 +712,9 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 </div>
 <div class="paragraph">
 <p>We will also spend some time in this manual on how to update your system for security updates and how to update the Common-EGSE and test-scripts with new releases.</p>
+</div>
+<div class="paragraph">
+<p>This manual was originally written for installation of and on CentOS-8, but in the mean time we moved to Ubuntu 20.04 LTS. When feasible, we will use TABs to allow you to switch between information and code for either OS.</p>
 </div>
 </div>
 </div>
@@ -926,7 +958,7 @@ sudo firewall-cmd --reload</pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_setup_services_for_core_control_servers_with_systemd">2.1.5. Setup Services for Core Control Servers with Systemd</h4>
+<h4 id="core-services">2.1.5. Setup Services for Core Control Servers with Systemd</h4>
 <div class="admonitionblock note">
 <table>
 <tr>
@@ -1054,6 +1086,18 @@ ExecStartPre=/bin/sleep 3</pre>
 </div>
 <div class="sect3">
 <h4 id="_disable_selinux">2.1.6. Disable SELinux</h4>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+This section is only relevant if your have installed a CentOS-8 system, Ubuntu does not install SELinux by default and it is therefore probably not activated..
+</td>
+</tr>
+</table>
+</div>
 <div class="paragraph">
 <p>When you run into a authentication error while starting the control servers, you will need to disable SELinux (Security-Enhanced Linux). The error will look something like this (excerpt from <code>/var/log/messages</code>):</p>
 </div>
@@ -1095,6 +1139,37 @@ plato-d+ 2633916       1  2 Jun21 ?        04:28:20 /usr/bin/python3 /cgse/bin/p
 </div>
 </div>
 </div>
+<div class="sect3">
+<h4 id="export-mount-point">2.1.8. Export the /data folder</h4>
+<div class="paragraph">
+<p>We will need access to the <code>/data</code> folder on the egse-client machine and will add the following to the <code>/etc/exports</code> file. Adding this info will need root permissions (you can use the sudo command too). Make sure you use the correct IP address of the egse-server from which this mount is accessed.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>/data    192.168.0.74/26(rw,sync)</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Some of our servers have two ethernet interfaces and you might want to add an additional IP address to the exports, e.g.:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>/data/IAS	egse-server.ivs.kuleuven.be(rw,sync) 192.168.80.14(rw,sync)</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>The only thing to do now is to restart the NFS server on the egse-server machine:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>service nfs-server status
+sudo service nfs-server restart</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>How you need to NFS mount this <code>/data</code> folder on the egse-client machine is explained in the section on Client Installation, see<a href="#egse-client-install">Section 2.2</a>.</p>
+</div>
+</div>
 </div>
 <div class="sect2">
 <h3 id="egse-client-install">2.2. Client Installation</h3>
@@ -1114,6 +1189,92 @@ plato-d+ 2633916       1  2 Jun21 ?        04:28:20 /usr/bin/python3 /cgse/bin/p
 *</p>
 </li>
 </ul>
+</div>
+<div class="sect3">
+<h4 id="mount">2.2.1. NFS mount the /data folder from the egse-server</h4>
+<div class="paragraph">
+<p>The first thing to do is to check which mounts are exported by the egse-server. That can easily be done with the <code>showmounts</code> command.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>$ showmount -e 139.xxx.yyy.74
+Export list for 139.xxx.yyy.74:
+/data 139.xxx.yyy.74/26</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>With this knowledge you can already mount the directory on the egse-client:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>$ sudo mount 139.xxx.yyy.74:/data /data</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>We will need to make this mount permanently available, also after rebooting the system. This can be done as a static mount or by using the autmounter daemon.</p>
+</div>
+<div id="_tabset_3" class="tabset is-loading">
+<div class="ulist tabs">
+<ul>
+<li id="_tabset_3_static_mount">
+<p>Static mount</p>
+</li>
+<li id="_tabset_3_automounter">
+<p>Automounter</p>
+</li>
+</ul>
+</div>
+<div class="content">
+<div class="tab-pane" aria-labelledby="_tabset_3_static_mount">
+<div class="paragraph">
+<p>With <code>fstab</code> we will create a static mount for the <code>/data</code> location. We add the mount point to <code>/etc/fstab</code> which will automatically mount the folder at startup and it will remain mounted until system shutdown or explicitly unmounted.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>$ sudo vi /etc/fstab
+...
+139.xxx.yyy.74:/data /data        nfs     rw,sync 0 0</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>This now also provides us a simpler way to mount the directory:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>$ sudo mount /data</pre>
+</div>
+</div>
+</div>
+<div class="tab-pane" aria-labelledby="_tabset_3_automounter">
+<div class="paragraph">
+<p>The automounter daemon is controlled by the <code>autofs</code> service. In the master configuration file for <code>autofs</code>, add a new line to specify a direct map for the file <code>/etc/auto.cgse</code>:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>$ sudo vi /etc/auto.master
+...
+/- /etc/auto.cgse</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>The <code>/etc/auto.cgse</code> file shall then contain the following:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>/data	-fstype=nfs	139.xxx.yyy.74:/data</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Finally you should reload the <code>autofs</code> configuration:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>$ sudo service autofs reload</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
 </div>
 </div>
 <div class="sect2">
@@ -1437,7 +1598,7 @@ ENABLE_USER_SITE: True
 <p>The installation will be done as the <code>plato-data</code> user. We will <em>clone</em> the IvS-KULeuven <code>plato-test-scripts</code> repository. There is no need to <em>fork</em> because we will not develop from this account and will therefore not do any pushes or  pull requests.</p>
 </div>
 <div class="paragraph">
-<p>Create a <code>~/git</code> folder in the home directory of the <code>plato-data</code> user, move into that directory and clone the GitHub repository. Then move into the <code>plato-test-scripts</code> folder that was created by the <em>clone</em> command. If this is a first-time installation, you must first create a deploy key for the <code>plato-test-scripts</code>, see <a href="#github-deploy">Chapter 12</a>.</p>
+<p>Create a <code>~/git</code> folder in the home directory of the <code>plato-data</code> user, move into that directory and clone the GitHub repository. Then move into the <code>plato-test-scripts</code> folder that was created by the <em>clone</em> command. If this is a first-time installation, you must first create a deploy key for the <code>plato-test-scripts</code>, see <a href="#github-deploy">Chapter 13</a>.</p>
 </div>
 <div class="listingblock">
 <div class="content">
@@ -1466,7 +1627,7 @@ $ source venv/bin/activate</pre>
 </div>
 <h3 id="_installation_on_the_server" class="discrete">Installation on the server</h3>
 <div class="paragraph">
-<p>The <code>plato-cgse-conf</code> repository shall be cloned on the server in the folder <code>~/git</code> where also the <code>plato-common-egse</code> resides. To clone the repo, you need access to this repository first, follow the steps described in <a href="#deploy-key-cgse-conf">Section 12.3</a>. When you have executed that procedure, you should have the repository up-to-date on your system.</p>
+<p>The <code>plato-cgse-conf</code> repository shall be cloned on the server in the folder <code>~/git</code> where also the <code>plato-common-egse</code> resides. To clone the repo, you need access to this repository first, follow the steps described in <a href="#deploy-key-cgse-conf">Section 13.3</a>. When you have executed that procedure, you should have the repository up-to-date on your system.</p>
 </div>
 <div class="admonitionblock warning">
 <table>
@@ -1498,7 +1659,7 @@ Check that the <em>upload</em> remote is indeed a tracking branch, see <a href="
 </div>
 <h3 id="_installation_on_the_client" class="discrete">Installation on the client</h3>
 <div class="paragraph">
-<p>For the client follow the same procedure to create a deploy key and clone the repository (see <a href="#deploy-key-cgse-conf">Section 12.3</a>), but <strong>do not</strong> allow write access on GitHub and only create the remote <em>updates</em> (the <em>upload</em> remote is not used on the client).</p>
+<p>For the client follow the same procedure to create a deploy key and clone the repository (see <a href="#deploy-key-cgse-conf">Section 13.3</a>), but <strong>do not</strong> allow write access on GitHub and only create the remote <em>updates</em> (the <em>upload</em> remote is not used on the client).</p>
 </div>
 <div class="paragraph">
 <p>Alternatively, the folder <code>~/git/plato-cgse-conf</code> can be mounted read-only from the server. make sure the location is also <code>~/git/plato-cgse-conf</code>.</p>
@@ -1595,10 +1756,152 @@ $ update-desktop-database ~/.local/share/applications/</pre>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_setting_up_the_environment">11. Setting up the environment</h2>
+<h2 id="install-vnc">11. Installation of a VNC Server</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>This section describes how to install a VNC Server on your client machine. The VNC server will run on <code>display=:0</code> and will allow remote users to connect to the main desktop that is used by the operator. This remote connection will then be able to provide support and in case of emergency take over the desktop from the operator.</p>
+</div>
+<div class="paragraph">
+<p>We will install the packages <code>x11vnc</code> and <code>net-tools</code>, then we will configure the GNOME Display Manager (<code>gdm3</code>) and finally install and activate the X11 VNC service.</p>
+</div>
+<div class="sect2">
+<h3 id="_install_packages">11.1. Install packages</h3>
+<div class="paragraph">
+<p>Use the following command to install the necessary packages. You can do this as user 'plato-data' and when asked for a password, provide the password of that user<sup class="footnote">[<a id="_footnoteref_5" class="footnote" href="#_footnotedef_5" title="View footnote.">5</a>]</sup>.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>$ sudo apt-get install x11vnc net-tools</pre>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_configure_the_gnome_display_manager">11.2. Configure the GNOME Display Manager</h3>
+<div class="paragraph">
+<p>Edit the file <code>/etc/gdm3/custom.conf</code> to disable Wayland and enable automatic login by the 'plato-data' user. The changes are all in the daemon section of the configuration file. If some entries do not exist on your system, create them. You should edit this file as 'root' or with <code>sudo</code> under the 'plato-data' user.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>[daemon]
+# Uncomment the line below to force the login screen to use Xorg
+WaylandEnable=false
+
+# Enabling automatic login
+AutomaticLoginEnable = true
+AutomaticLogin = plato-data</pre>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_install_and_activate_the_vnc_service">11.3. Install and Activate the VNC service</h3>
+<div class="paragraph">
+<p>To install the X11 VNC service under Systemd, create a file <code>/etc/systemd/system/x11vnc.service</code> with the following content.</p>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+In the text below, change the <code>####</code> into the <code>id</code> of the user that was set in the configuration file above. The <code>id</code> must be an integer number, e.g. 1003.
+</td>
+</tr>
+</table>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>[Unit]
+Description=x11vnc service
+After=display-manager.service network.target syslog.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/x11vnc -forever -shared -display :0 -auth /run/user/####/gdm/Xauthority
+ExecStop=/usr/bin/killall x11vnc
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Then, reload the daemon configuration and start the service:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>$ sudo systemctl daemon-reload
+$ sudo systemctl enable x11vnc.service
+$ sudo systemctl start x11vnc.service</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="setup-environment">12. Setting up the environment</h2>
 <div class="sectionbody">
 <div class="sect2">
-<h3 id="_environment_variables">11.1. Environment Variables</h3>
+<h3 id="_environment_variables">12.1. Environment Variables</h3>
+<div class="paragraph">
+<p>The environment variables that are used by the CGSE or test scripts are listed in the table below. It is best practice to define those variable in <code>~/.bash_profile</code> to have them loaded on login. With the below definitions, a standard <code>~/.bash_profile</code> would look like this (example taken from the CSL1 egse-client <em>daiquiri</em>)</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="nowrap"># <strong><em>plato-data@daiquiri:~$ cat ~/.bash_profile</em></strong>
+source ~/.bashrc
+
+export PATH=/cgse/bin:~/git/plato-test-scripts/venv/bin:~/.local/bin:$PATH
+
+export PYTHONPATH=/cgse/lib/python:/cgse/lib/python3.8/site-packages:~/git/plato-test-scripts/src:~/git/plato-test-scripts/venv/lib/python3.8/site-packages
+export PYTHONSTARTUP=~/git/plato-test-scripts/startup.py
+
+export PLATO_LOCAL_SETTINGS=/cgse/local_settings.yaml
+export PLATO_DATA_STORAGE_LOCATION=/data/CSL1/
+export PLATO_CONF_DATA_LOCATION=/data/CSL1/conf/
+export PLATO_LOG_FILE_LOCATION=/data/CSL1/log/
+export PLATO_INSTALL_LOCATION=/cgse
+export PLATO_COMMON_EGSE_PATH=/home/plato-data/git/plato-common-egse
+
+export LD_LIBRARY_PATH=~/git/plato-common-egse/src/egse/lib/ximc/libximc.framework/
+
+alias cd2cgse="cd ~/git/plato-common-egse"
+alias cd2ts="cd ~/git/plato-test-scripts"</pre>
+</div>
+</div>
+<div id="set-terminal-title" class="exampleblock">
+<div class="content">
+<div class="dlist">
+<dl>
+<dt class="hdlist1">A Terminal Title</dt>
+<dd>
+<p>Something else that you can add to your <code>~/.bash_profile</code> on the client machine is the following function (not really an environment setting, but still useful):</p>
+</dd>
+</dl>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">function term_title(){
+  if [ -z "$PS1_BACK" ];  # set backup if it is empty
+  then
+    PS1_BACK="$PS1"
+  fi
+
+  TITLE="\[\e]0;$*\a\]"
+  PS1="${PS1_BACK}${TITLE}"
+}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>This function will allow you to set the title of a Terminal window or a TAB in a Terminal window. This was possible on CentOS-8 with a context menu entry when right-clicking on the terminal TAB, but unfortunately that menu entry doesn&#8217;t exist on Ubuntu. Run the function from within the terminal session that needs a new title, e.g. <code>TS-venv</code>:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>$ term_title TS-venv</pre>
+</div>
+</div>
+</div>
+</div>
 <table class="tableblock frame-all grid-all stretch">
 <caption class="title">Table 1. Overview of all the environment variables</caption>
 <colgroup>
@@ -1613,8 +1916,12 @@ $ update-desktop-database ~/.local/share/applications/</pre>
 </thead>
 <tbody>
 <tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock">PYTHONPATH</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>/cgse/lib/python/</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">PYTHONPATH – egse-server</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>/cgse/lib/python/:/cgse/lib/python3.8/site-packages</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">PYTHONPATH – egse-client<sup class="footnote">[<a id="_footnoteref_6" class="footnote" href="#_footnotedef_6" title="View footnote.">6</a>]</sup></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>/cgse/lib/python:/cgse/lib/python3.8/site-packages:/home/plato-data/git/plato-test-scripts/src:/home/plato-data/git/plato-test-scripts/venv/lib/python3.8/site-packages/</code></p></td>
 </tr>
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">PLATO_COMMON_EGSE_PATH</p></td>
@@ -1622,10 +1929,10 @@ $ update-desktop-database ~/.local/share/applications/</pre>
 </tr>
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">PLATO_CONF_DATA_LOCATION</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>/data/IAS/conf</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>/data/&lt;SITE_ID&gt;/conf</code></p></td>
 </tr>
 <tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock">PLATO_CONF_REPO_LOCATION<sup class="footnote">[<a id="_footnoteref_5" class="footnote" href="#_footnotedef_5" title="View footnote.">5</a>]</sup></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">PLATO_CONF_REPO_LOCATION<sup class="footnote">[<a id="_footnoteref_7" class="footnote" href="#_footnotedef_7" title="View footnote.">7</a>]</sup></p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock"><code>/home/plato-data/git/plato-cgse-conf</code></p></td>
 </tr>
 <tr>
@@ -1642,7 +1949,7 @@ $ update-desktop-database ~/.local/share/applications/</pre>
 </tr>
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">PLATO_LOG_FILE_LOCATION</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>/data/IAS/log</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>/data/&lt;SITE_ID&gt;/log</code></p></td>
 </tr>
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">LD_LIBRARY_PATH</p></td>
@@ -1651,16 +1958,33 @@ $ update-desktop-database ~/.local/share/applications/</pre>
 </tbody>
 </table>
 </div>
+<div class="sect2">
+<h3 id="_the_environment_for_systemd_services">12.2. The environment for Systemd services</h3>
+<div class="paragraph">
+<p>For the CGSE core services, that are started by the Systemd on the egse-server, the environment variable are defined in the file <code>/cgse/env.txt</code>. The example below shows the content of this file from the CSL1 egse-server <em>strawberry</em></p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="nowrap"># <strong><em>plato-data@strawberry:~$ cat /cgse/env.txt</em></strong>
+PYTHONPATH=/cgse/lib/python/:/cgse/lib/python3.8/site-packages
+PLATO_LOCAL_SETTINGS=/cgse/local_settings.yaml
+PLATO_CONF_DATA_LOCATION=/data/CSL1/conf
+PLATO_CONF_REPO_LOCATION=/home/plato-data/git/plato-cgse-conf
+PLATO_DATA_STORAGE_LOCATION=/data/CSL1
+PLATO_LOG_FILE_LOCATION=/data/CSL1/log</pre>
+</div>
+</div>
+</div>
 </div>
 </div>
 <div class="sect1">
-<h2 id="github-deploy">12. Setting up ssh access and GitHub deploy keys</h2>
+<h2 id="github-deploy">13. Setting up ssh access and GitHub deploy keys</h2>
 <div class="sectionbody">
 <div class="paragraph">
-<p>We have a semi-automatic update procedure in place for the Common-EGSE and the Test Scripts. This procedure will be described in <a href="#cgse-update">Chapter 13</a> and <a href="#test-scripts-update">Chapter 14</a>, but before we can use that we need to have the proper permissions to fetch changes from the different GitHub repositories without the need to provide our credentials every time. The best way to do that is to set up deploy keys on the GitHub repos.</p>
+<p>We have a semi-automatic update procedure in place for the Common-EGSE and the Test Scripts. This procedure will be described in <a href="#cgse-update">Chapter 14</a> and <a href="#test-scripts-update">Chapter 15</a>, but before we can use that we need to have the proper permissions to fetch changes from the different GitHub repositories without the need to provide our credentials every time. The best way to do that is to set up deploy keys on the GitHub repos.</p>
 </div>
 <div class="sect2">
-<h3 id="deploy-key-egse-server">12.1. Create a deploy key for the plato-common-egse</h3>
+<h3 id="deploy-key-egse-server">13.1. Create a deploy key for the plato-common-egse</h3>
 <div class="paragraph">
 <p>You can create an ssh key-pair for the CGSE with the following command. Execute this code on the <code>egse-server</code> as user <code>plato-data</code> in the folder <code>~/.ssh</code> (create the folder if it doesn&#8217;t exist).</p>
 </div>
@@ -1769,7 +2093,7 @@ $ git remote add updates git@repo-common-egse:IvS-KULeuven/plato-common-egse.git
 </div>
 </div>
 <div class="sect2">
-<h3 id="_create_a_deploy_key_for_the_plato_test_scripts">12.2. Create a deploy key for the plato-test-scripts</h3>
+<h3 id="_create_a_deploy_key_for_the_plato_test_scripts">13.2. Create a deploy key for the plato-test-scripts</h3>
 <div class="paragraph">
 <p>You can create an ssh key-pair for the test scripts with the following command. Execute this code on the <code>egse-client</code> as user <code>plato-data</code> in the folder <code>~/.ssh</code> (create the folder if it doesn&#8217;t exist).</p>
 </div>
@@ -1882,7 +2206,7 @@ $ python3 -m pip install -e .</pre>
 </div>
 </div>
 <div class="sect2">
-<h3 id="deploy-key-cgse-conf">12.3. Create a deploy key for the plato-cgse-conf</h3>
+<h3 id="deploy-key-cgse-conf">13.3. Create a deploy key for the plato-cgse-conf</h3>
 <div class="paragraph">
 <p>You can create an ssh key-pair for the plato-cgse-conf with the following command. Execute this code on the <code>egse-server</code> as user <code>plato-data</code> in the folder <code>~/.ssh</code> (create the folder if it doesn&#8217;t exist).</p>
 </div>
@@ -1955,7 +2279,7 @@ The key's randomart image is:
 </table>
 </div>
 <div class="paragraph">
-<p>Check the permissions of the <code>~/.ssh</code> directory and the files in it (see <a href="#deploy-key-egse-server">Section 12.1</a>).</p>
+<p>Check the permissions of the <code>~/.ssh</code> directory and the files in it (see <a href="#deploy-key-egse-server">Section 13.1</a>).</p>
 </div>
 <div class="paragraph">
 <p>If you have not yet cloned the plato-cgse-conf repository, you can do that now with the following command:</p>
@@ -2013,7 +2337,7 @@ $ git branch -vv
 </div>
 </div>
 <div class="sect1">
-<h2 id="cgse-update">13. Update the Common-EGSE to the latest release</h2>
+<h2 id="cgse-update">14. Update the Common-EGSE to the latest release</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>At some point you will be asked to update to a specific release. Make sure you are in the develop branch, then execute the following commands:</p>
@@ -2021,14 +2345,14 @@ $ git branch -vv
 <div class="listingblock">
 <div class="content">
 <pre>$ cd ~/plato-common-egse
-$ update_cgse ops --tag=2022.2.16-IAS-CGSE  <i class="conum" data-value="1"></i><b>(1)</b></pre>
+$ update_cgse ops --tag=2022.3.4+CGSE  <i class="conum" data-value="1"></i><b>(1)</b></pre>
 </div>
 </div>
 <div class="colist arabic">
 <table>
 <tr>
 <td><i class="conum" data-value="1"></i><b>1</b></td>
-<td>as a reminder, the release tag takes the following form: <code>YYYY.MAJOR.MINOR-TH-CGSE</code></td>
+<td>as a reminder, the release tag for the Common-EGSE takes the following form: <code>YYYY.MAJOR.MINOR+CGSE</code></td>
 </tr>
 </table>
 </div>
@@ -2038,13 +2362,14 @@ $ update_cgse ops --tag=2022.2.16-IAS-CGSE  <i class="conum" data-value="1"></i>
 <div class="listingblock">
 <div class="content">
 <pre>$ python3 -m egse.version
-CGSE installed version = 2022.2.16-IAS-CGSE</pre>
+CGSE version in Settings: 2022.3.4+CGSE
+CGSE installed version = 2022.3.4+cgse</pre>
 </div>
 </div>
 </div>
 </div>
 <div class="sect1">
-<h2 id="test-scripts-update">14. Update the Test Scripts to the latest release</h2>
+<h2 id="test-scripts-update">15. Update the Test Scripts to the latest release</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>When you need to update the test scripts on your <code>egse-client</code> machine, use the following commands:</p>
@@ -2064,7 +2389,8 @@ $ update_ts</pre>
 <div class="listingblock">
 <div class="content">
 <pre>$ python3 -m camtest.version
-$ CAMTEST git version = 2022.2.11-IAS-TS-0-g5eeca72  <i class="conum" data-value="1"></i><b>(1)</b></pre>
+CAMTEST version in Settings: 2022.3.6+TS
+CAMTEST git version = 2022.3.6+TS-0-g602f139  <i class="conum" data-value="1"></i><b>(1)</b></pre>
 </div>
 </div>
 <div class="colist arabic">
@@ -2078,7 +2404,7 @@ $ CAMTEST git version = 2022.2.11-IAS-TS-0-g5eeca72  <i class="conum" data-value
 </div>
 </div>
 <div class="sect1">
-<h2 id="_update_python_packages">15. Update Python packages</h2>
+<h2 id="python-package-update">16. Update Python packages</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Ideally, the installed third party packages should be the versions that are given the requirements file of the project. If the requirements file is updated, you can use the following command to update your installation:</p>
@@ -2086,14 +2412,18 @@ $ CAMTEST git version = 2022.2.11-IAS-TS-0-g5eeca72  <i class="conum" data-value
 <div class="listingblock">
 <div class="content">
 <pre>$ cd $PLATO_COMMON_EGSE_PATH
-$ python3 -m pip install --upgrade --target=/cgse/lib/python -r requirements.txt  <i class="conum" data-value="1"></i><b>(1)</b></pre>
+$ python3 -m pip install --upgrade --prefix=/cgse -r requirements.txt  <i class="conum" data-value="1"></i><b>(1)</b> <i class="conum" data-value="2"></i><b>(2)</b></pre>
 </div>
 </div>
 <div class="colist arabic">
 <table>
 <tr>
 <td><i class="conum" data-value="1"></i><b>1</b></td>
-<td>note the <code>--target</code> to make sure the upgrade of the packages is done in the correct location and not in the system folders. You will have to specify the full absolute path to the location where the packages need to be installed. Specifying the <code>$PLATO_INSTALL_LOCATION</code> is not sufficient.</td>
+<td>note the <code>--prefix</code> to make sure the upgrade of the packages is done in the correct location and not in the system folders. Instead of <code>/cgse</code> you can also use <code>$PLATO_INSTALL_LOCATION</code> for the <code>--prefix</code> value.</td>
+</tr>
+<tr>
+<td><i class="conum" data-value="2"></i><b>2</b></td>
+<td>on Ubuntu, the system Python installation has packages installed in <code>/usr/lib/python3/dist-packages</code> and that location is not writable for the 'plato-data' user. When you get an error during installation, add the option <code>--ignore-installed</code> to the <code>pip</code> command.</td>
 </tr>
 </table>
 </div>
@@ -2111,14 +2441,14 @@ $ python3 -m pip install --upgrade -r requirements.txt</pre>
 <table>
 <tr>
 <td><i class="conum" data-value="1"></i><b>1</b></td>
-<td>it&#8217;s important that you are in the virtual environment before performing the upgrade, then the packages will be installed —as intended— in your virtual environment.</td>
+<td>it&#8217;s important that you are in the virtual environment before performing the upgrade, then the packages will be installed—as intended—in your virtual environment.</td>
 </tr>
 </table>
 </div>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_data_propagation">16. Data Propagation</h2>
+<h2 id="_data_propagation">17. Data Propagation</h2>
 <div class="sectionbody">
 <div class="ulist checklist">
 <ul class="checklist">
@@ -2177,7 +2507,7 @@ $ python3 -m pip install --upgrade -r requirements.txt</pre>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_shared_libraries">17. Shared Libraries</h2>
+<h2 id="_shared_libraries">18. Shared Libraries</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Some components use a shared library that is loaded by the Python interpreter. In order to load the library, the absolute path to the shared object file must be known. Different modules handle this in their own way.</p>
@@ -2202,10 +2532,10 @@ $ python3 -m pip install --upgrade -r requirements.txt</pre>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_installating_external_tools">18. Installating External Tools</h2>
+<h2 id="_installating_external_tools">19. Installating External Tools</h2>
 <div class="sectionbody">
 <div class="sect2">
-<h3 id="_cutelog_gui">18.1. Cutelog GUI</h3>
+<h3 id="_cutelog_gui">19.1. Cutelog GUI</h3>
 <div class="paragraph">
 <p>Cutelog is a GUI that can be installed in your virtual environment using <code>pip</code>.</p>
 </div>
@@ -2224,7 +2554,7 @@ $ python3 -m pip install --upgrade -r requirements.txt</pre>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_textualog_tui">18.2. Textualog TUI</h3>
+<h3 id="_textualog_tui">19.2. Textualog TUI</h3>
 <div class="paragraph">
 <p>Textualog is a terminal application (TUI) that allows you to inspect the log files in <code>$PLATO_LOG_FILE_LOCATION</code>. The package is open-source and can be installed in your virtual environment from PyPI using <code>pip</code>:</p>
 </div>
@@ -2234,7 +2564,7 @@ $ python3 -m pip install --upgrade -r requirements.txt</pre>
 </div>
 </div>
 <div class="paragraph">
-<p>Textualog is extremely useful to inspect and follow logging messages in a remote terminal. It is inpired on the <code>cutelog</code> app and developed specifically for the remote users. After installation, the current log file can be inspected with the following command<sup class="footnote">[<a id="_footnoteref_6" class="footnote" href="#_footnotedef_6" title="View footnote.">6</a>]</sup>:</p>
+<p>Textualog is extremely useful to inspect and follow logging messages in a remote terminal. It is inpired on the <code>cutelog</code> app and developed specifically for the remote users. After installation, the current log file can be inspected with the following command<sup class="footnote">[<a id="_footnoteref_8" class="footnote" href="#_footnotedef_8" title="View footnote.">8</a>]</sup>:</p>
 </div>
 <div class="listingblock">
 <div class="content">
@@ -2265,16 +2595,22 @@ $ python3 -m pip install --upgrade -r requirements.txt</pre>
 <a href="#_footnoteref_4">4</a>. The latest release tag can be found on the GitHub pages of the repository
 </div>
 <div class="footnote" id="_footnotedef_5">
-<a href="#_footnoteref_5">5</a>. this environment variable is usually only set in the <code>/cgse/env.txt</code> file and used by the <code>cm_cs</code>.
+<a href="#_footnoteref_5">5</a>. The 'plato-data' user is supposed to have sudo rights.
 </div>
 <div class="footnote" id="_footnotedef_6">
-<a href="#_footnoteref_6">6</a>. the textualog package is already installed on the egse-server at SRON and IAS.
+<a href="#_footnoteref_6">6</a>. The PYTHONPATH on the client is different because it also has the plato-test-scripts installed, so in addition to the CGSE packages, it needs to have access to the test scripts Python code and packages that were installed as part of the plato-test-scripts virtual environment.
+</div>
+<div class="footnote" id="_footnotedef_7">
+<a href="#_footnoteref_7">7</a>. This variable only needs to be defined in the <code>/cgse/env.txt</code> file on the egse-server.
+</div>
+<div class="footnote" id="_footnotedef_8">
+<a href="#_footnoteref_8">8</a>. the textualog package might already installed on the egse-server at the test houses.
 </div>
 </div>
 <div id="footer">
 <div id="footer-text">
-Version 1.1<br>
-Last updated 2022-11-06 13:32:47 +0100
+Version 1.2<br>
+Last updated 2023-01-20 23:01:20 +0100
 </div>
 </div>
 <script>

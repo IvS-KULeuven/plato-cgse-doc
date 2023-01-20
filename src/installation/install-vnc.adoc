@@ -1,0 +1,58 @@
+[#install-vnc]
+== Installation of a VNC Server
+:imagesdir: ../images
+
+This section describes how to install a VNC Server on your client machine. The VNC server will run on `display=:0` and will allow remote users to connect to the main desktop that is used by the operator. This remote connection will then be able to provide support and in case of emergency take over the desktop from the operator.
+
+We will install the packages `x11vnc` and `net-tools`, then we will configure the GNOME Display Manager (`gdm3`) and finally install and activate the X11 VNC service.
+
+=== Install packages
+
+Use the following command to install the necessary packages. You can do this as user 'plato-data' and when asked for a password, provide the password of that userfootnote:[The 'plato-data' user is supposed to have sudo rights.].
+
+----
+$ sudo apt-get install x11vnc net-tools
+----
+
+=== Configure the GNOME Display Manager
+
+Edit the file `/etc/gdm3/custom.conf` to disable Wayland and enable automatic login by the 'plato-data' user. The changes are all in the daemon section of the configuration file. If some entries do not exist on your system, create them. You should edit this file as 'root' or with `sudo` under the 'plato-data' user.
+
+----
+[daemon]
+# Uncomment the line below to force the login screen to use Xorg
+WaylandEnable=false
+
+# Enabling automatic login
+AutomaticLoginEnable = true
+AutomaticLogin = plato-data
+----
+
+=== Install and Activate the VNC service
+
+To install the X11 VNC service under Systemd, create a file `/etc/systemd/system/x11vnc.service` with the following content.
+
+[NOTE]
+In the text below, change the `\####` into the `id` of the user that was set in the configuration file above. The `id` must be an integer number, e.g. 1003.
+----
+[Unit]
+Description=x11vnc service
+After=display-manager.service network.target syslog.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/x11vnc -forever -shared -display :0 -auth /run/user/####/gdm/Xauthority
+ExecStop=/usr/bin/killall x11vnc
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+----
+
+Then, reload the daemon configuration and start the service:
+
+----
+$ sudo systemctl daemon-reload
+$ sudo systemctl enable x11vnc.service
+$ sudo systemctl start x11vnc.service
+----

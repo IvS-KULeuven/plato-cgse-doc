@@ -1,8 +1,65 @@
 [#egse-client-install]
 == Client Installation
+:tabs:
 
 * Perform a normal/default desktop installation of CentOS-8 or Ubuntu 20.
 * Create a user plato-user
 * Log in as user plato-user
 * install the plato-common-egse in ~/git (see <<cgse-install>>)
 *
+
+[#mount]
+=== NFS mount the /data folder from the egse-server
+
+The first thing to do is to check which mounts are exported by the egse-server. That can easily be done with the `showmounts` command.
+
+----
+$ showmount -e 139.xxx.yyy.74
+Export list for 139.xxx.yyy.74:
+/data 139.xxx.yyy.74/26
+----
+
+With this knowledge you can already mount the directory on the egse-client:
+
+----
+$ sudo mount 139.xxx.yyy.74:/data /data
+----
+
+We will need to make this mount permanently available, also after rebooting the system. This can be done as a static mount or by using the autmounter daemon.
+
+[tabs]
+======
+Static mount::
++
+--
+With `fstab` we will create a static mount for the `/data` location. We add the mount point to `/etc/fstab` which will automatically mount the folder at startup and it will remain mounted until system shutdown or explicitly unmounted.
+
+----
+$ sudo vi /etc/fstab
+...
+139.xxx.yyy.74:/data /data        nfs     rw,sync 0 0
+----
+This now also provides us a simpler way to mount the directory:
+----
+$ sudo mount /data
+----
+--
+Automounter::
++
+--
+The automounter daemon is controlled by the `autofs` service. In the master configuration file for `autofs`, add a new line to specify a direct map for the file `/etc/auto.cgse`:
+----
+$ sudo vi /etc/auto.master
+...
+/- /etc/auto.cgse
+----
+The `/etc/auto.cgse` file shall then contain the following:
+----
+/data	-fstype=nfs	139.xxx.yyy.74:/data
+----
+Finally you should reload the `autofs` configuration:
+----
+$ sudo service autofs reload
+----
+--
+======

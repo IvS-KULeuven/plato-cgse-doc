@@ -1,19 +1,86 @@
+[#setup-environment]
 == Setting up the environment
 
 === Environment Variables
+
+The environment variables that are used by the CGSE or test scripts are listed in the table below. It is best practice to define those variable in `~/.bash_profile` to have them loaded on login. With the below definitions, a standard `~/.bash_profile` would look like this (example taken from the CSL1 egse-client _daiquiri_)
+
+[%nowrap,subs=+quotes]
+----
+# *_plato-data@daiquiri:~$ cat ~/.bash_profile_*
+source ~/.bashrc
+
+export PATH=/cgse/bin:\~/git/plato-test-scripts/venv/bin:~/.local/bin:$PATH
+
+export PYTHONPATH=/cgse/lib/python:/cgse/lib/python3.8/site-packages:\~/git/plato-test-scripts/src:~/git/plato-test-scripts/venv/lib/python3.8/site-packages
+export PYTHONSTARTUP=~/git/plato-test-scripts/startup.py
+
+export PLATO_LOCAL_SETTINGS=/cgse/local_settings.yaml
+export PLATO_DATA_STORAGE_LOCATION=/data/CSL1/
+export PLATO_CONF_DATA_LOCATION=/data/CSL1/conf/
+export PLATO_LOG_FILE_LOCATION=/data/CSL1/log/
+export PLATO_INSTALL_LOCATION=/cgse
+export PLATO_COMMON_EGSE_PATH=/home/plato-data/git/plato-common-egse
+
+export LD_LIBRARY_PATH=~/git/plato-common-egse/src/egse/lib/ximc/libximc.framework/
+
+alias cd2cgse="cd ~/git/plato-common-egse"
+alias cd2ts="cd ~/git/plato-test-scripts"
+----
+
+[#set-terminal-title]
+[tabs]
+======
+A Terminal Title::
+
+Something else that you can add to your `~/.bash_profile` on the client machine is the following function (not really an environment setting, but still useful):
+[source,bash]
+----
+function term_title(){
+  if [ -z "$PS1_BACK" ];  # set backup if it is empty
+  then
+    PS1_BACK="$PS1"
+  fi
+
+  TITLE="\[\e]0;$*\a\]"
+  PS1="${PS1_BACK}${TITLE}"
+}
+----
+This function will allow you to set the title of a Terminal window or a TAB in a Terminal window. This was possible on CentOS-8 with a context menu entry when right-clicking on the terminal TAB, but unfortunately that menu entry doesn't exist on Ubuntu. Run the function from within the terminal session that needs a new title, e.g. `TS-venv`:
+----
+$ term_title TS-venv
+----
+======
 
 .Overview of all the environment variables
 [options="header",cols="2,3"]
 |====
 |Variable Name | Default value
-|PYTHONPATH|`/cgse/lib/python/`
+|PYTHONPATH – egse-server|`/cgse/lib/python/:/cgse/lib/python3.8/site-packages`
+|PYTHONPATH – egse-clientfootnote:[The PYTHONPATH on the client is different because it also has the plato-test-scripts installed, so in addition to the CGSE packages, it needs to have access to the test scripts Python code and packages that were installed as part of the plato-test-scripts virtual environment.]
+|`/cgse/lib/python:/cgse/lib/python3.8/site-packages:/home/plato-data/git/plato-test-scripts/src:/home/plato-data/git/plato-test-scripts/venv/lib/python3.8/site-packages/`
 |PLATO_COMMON_EGSE_PATH|`/home/plato-data/git/plato-common-egse`
-|PLATO_CONF_DATA_LOCATION|`/data/IAS/conf`
-|PLATO_CONF_REPO_LOCATIONfootnote:[this environment variable is usually only set in the `/cgse/env.txt` file and used by the `cm_cs`.]
-    |`/home/plato-data/git/plato-cgse-conf`
+|PLATO_CONF_DATA_LOCATION|`/data/<SITE_ID>/conf`
+|PLATO_CONF_REPO_LOCATIONfootnote:[This variable only needs to be defined in the `/cgse/env.txt` file on the egse-server.]
+|`/home/plato-data/git/plato-cgse-conf`
 |PLATO_DATA_STORAGE_LOCATION|`/data/<SITE_ID>`
 |PLATO_INSTALL_LOCATION|`/cgse`
 |PLATO_LOCAL_SETTINGS|`/cgse/local_settings.yaml`
-|PLATO_LOG_FILE_LOCATION|`/data/IAS/log`
+|PLATO_LOG_FILE_LOCATION|`/data/<SITE_ID>/log`
 |LD_LIBRARY_PATH|`/home/plato-data/git/plato-common-egse/src/egse/lib/ximc/libximc.framework`
 |====
+
+=== The environment for Systemd services
+
+For the CGSE core services, that are started by the Systemd on the egse-server, the environment variable are defined in the file `/cgse/env.txt`. The example below shows the content of this file from the CSL1 egse-server _strawberry_
+
+[%nowrap,subs=+quotes]
+----
+# *_plato-data@strawberry:~$ cat /cgse/env.txt_*
+PYTHONPATH=/cgse/lib/python/:/cgse/lib/python3.8/site-packages
+PLATO_LOCAL_SETTINGS=/cgse/local_settings.yaml
+PLATO_CONF_DATA_LOCATION=/data/CSL1/conf
+PLATO_CONF_REPO_LOCATION=/home/plato-data/git/plato-cgse-conf
+PLATO_DATA_STORAGE_LOCATION=/data/CSL1
+PLATO_LOG_FILE_LOCATION=/data/CSL1/log
+----
