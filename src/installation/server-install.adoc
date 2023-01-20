@@ -116,6 +116,7 @@ Opening ports and port ranges can be done by introducing a new service on the se
 Repeat the same sequence for the other control services and processes.
 
 
+[[core-services]]
 === Setup Services for Core Control Servers with Systemd
 
 [NOTE]
@@ -195,6 +196,9 @@ When you want to check and follow the output in ``/var/log/messages`` for the sp
 
 === Disable SELinux
 
+[NOTE]
+This section is only relevant if your have installed a CentOS-8 system, Ubuntu does not install SELinux by default and it is therefore probably not activated..
+
 When you run into a authentication error while starting the control servers, you will need to disable SELinux (Security-Enhanced Linux). The error will look something like this (excerpt from `/var/log/messages`):
 
 [source%nowrap]
@@ -229,3 +233,27 @@ plato-d+ 2543093       1  0 Jun21 ?        00:28:03 /usr/bin/python3 /cgse/bin/l
 plato-d+ 2633916       1  2 Jun21 ?        04:28:20 /usr/bin/python3 /cgse/bin/pm_cs start
 [plato-data@egse-server]$
 ----
+
+[#export-mount-point]
+=== Export the /data folder
+
+We will need access to the `/data` folder on the egse-client machine and will add the following to the `/etc/exports` file. Adding this info will need root permissions (you can use the sudo command too). Make sure you use the correct IP address of the egse-server from which this mount is accessed.
+
+----
+/data    192.168.0.74/26(rw,sync)
+----
+
+Some of our servers have two ethernet interfaces and you might want to add an additional IP address to the exports, e.g.:
+
+----
+/data/IAS	egse-server.ivs.kuleuven.be(rw,sync) 192.168.80.14(rw,sync)
+----
+
+The only thing to do now is to restart the NFS server on the egse-server machine:
+
+----
+service nfs-server status
+sudo service nfs-server restart
+----
+
+How you need to NFS mount this `/data` folder on the egse-client machine is explained in the section on Client Installation, see<<egse-client-install>>.

@@ -1,28 +1,29 @@
 == Starting the Core Services
 
-The _core services_ of the Common-EGSE are those services that should be running all the time and preferably on the dedicated EGSE server. In the production environment, i.e. when we are actually running the tests in the lab, these services will be started automatically when the system boots [XXXXX: make a reference to the server installation procedure Systemd]. During our development and when using the Common-EGSE outside of the Camera Test environment, we can start the core services on our local machine.
+The _core services_ of the Common-EGSE are those services that should be running all the time and preferably on the dedicated EGSE server. In the production environment, i.e. when we are actually running the tests in the lab, these services will be started automatically when the system boots, see the section on link:installation-manual.html#_setup_services_for_core_control_servers_with_systemd:[the core services in systemd]. During our development and when using the Common-EGSE outside of the Camera Test environment, we can start the core services on our local machine.
 
-When the system is properly installed, you should have an `invoke` command available from the terminal. When you run it with the `--list` option, it will show which commands are available.
+When the system is properly installed, you should have an `invoke` command available from the terminal. When you run it with the `--list` option, it will show which commands are available. Make sure you execute this command in the CGSE project folder.
 
-    $ invoke --list
+----
+$ cd ~/git/plato-common-egse
+$ invoke --list
 
-    Available tasks:
+Available tasks:
 
-      generate-docs     Generate the documentation for this project.
-      pytests           Run the tests for this project.
-      start-core-egse   Start the Core Common-EGSE services.
-      stop-core-egse    Stop the Core Common-EGSE services.
-      upload-docs       Upload the documentation to GitHub pages.
-
+  pytests           Run the tests for this project.
+  start-core-egse   Start the CGSE core services.
+  stop-core-egse    Stop the CEGSE core services.
+  status-core-egse  Print the status information of the CGSE core services
+----
 Some of these commands are for development purposes, but the `start-core-egse` and the `stop-core-egse` commands can be used to start/stop the core services.
-
-    $ invoke start-core-egse
-    Starting log manager..
-    Starting storage manager..
-    Starting configuration manager..
-    Starting process manager..
-    Starting synoptics manager..
-
+----
+$ invoke start-core-egse
+Starting log manager..
+Starting storage manager..
+Starting configuration manager..
+Starting process manager..
+Starting synoptics manager..
+----
 The servers are started in a background job.footnote:[After the storage manager started, there will be a short delay of 2 seconds, this allows the service to fully start and initialise before the other services (confman & procman) try to register to the storage.] To see if they are indeed started, you can run the following in your terminal:
 
 [%nowrap]
@@ -36,4 +37,6 @@ $ ps -ef|grep _cs
 ----
 Keep the core services running, they do not harm and other components of the Common-EGSE need these services. But, if you want to stop them anyway at the end of a long working day, just use:
 
-    $ invoke stop-core-egse
+----
+$ invoke stop-core-egse
+----
