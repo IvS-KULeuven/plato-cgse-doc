@@ -1,3 +1,4 @@
+[#user-admin]
 == User Administration
 
 There are 4 specific PLATO users defined:
@@ -6,3 +7,18 @@ There are 4 specific PLATO users defined:
 * `plato-ops`: is used to administer and control the Common-EGSE core services. This user can start and stop the Common-EGSE control servers as a service with the systemd command `systemctl`. Log in to this account to monitor the systemd services with `systemctl` and `journalctl`. This user can also control and monitor the Prometheus and Grafana servers using `systemctl` and `journalctl`.
 * `plato-data`: all services should run under `plato-data`, data locations will be writable by `plato-data` and readable by `plato-user`. You do not normally log into this account, but the services are started under this account. All the software (Common-EGSE and Test Scripts), and all the data created by the different processes and control servers can best be run and created by the `plato-data` user for consistency. If device control servers need to be started manually, use this account.
 * `plato-user`: the generic user account for running the test scripts, start GUIs and analysing the data. This user has no `sudo` rights, but has read access to the `/data` directory. This is the account used to execute the test scripts. Don't use this account on the `egse-server` unless you know what you are doing.
+
+=== Provide sudo permission for plato-data
+
+In a terminal session, log in as root, then add the following line in the file `/etc/sudoers`. You will need to edit this file using the `visudo` commandfootnote:[The `visudo` command uses the EDITOR environment variable to start your favorite editor. I have set `export EDITOR=vi`].
+
+----
+# visudo
+----
+Now add the line. This is best done in the section 'User privilege specification' to keep the file clean:
+----
+plato-data      ALL=(ALL:ALL) ALL
+----
+This will give 'root' privileges to the plato-data user. You might not want to do that on your system! It should be plato-admin with these rights and plato-data with some execution rights for systemctl and journalctl, ....
+
+TODO: Describe the other sudo way....

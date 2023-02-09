@@ -13,11 +13,11 @@ Before committing and pushing the code, you should generate the CGSE manuals. Th
 
 To create a PDF file for e.g. the developer manual, go into the `src/develop` folder and run the following command:
 ```
-$ asciidoctor-pdf developer-manual.adoc
+$ asciidoctor-pdf -o ../../docs/pdfs/developer-manual.pdf developer-manual.adoc
 ```
 To create the HTML file for this manual use:
 ```
-$ asciidoctor -r asciidoctor-tabs developer-manual.adoc
+$ asciidoctor -r asciidoctor-tabs -o ../../docs/asciidocs/developer-manual.html developer-manual.adoc
 ```
 Other manuals are created with the same commands.
 

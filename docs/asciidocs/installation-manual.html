@@ -515,8 +515,8 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <h1>Common-EGSE : Installation Manual</h1>
 <div class="details">
 <span id="author" class="author">Sara Regibo, Rik Huygen</span><br>
-<span id="revnumber">version 1.2,</span>
-<span id="revdate">20/01/2023</span>
+<span id="revnumber">version 1.3,</span>
+<span id="revdate">09/02/2023</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -537,6 +537,7 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <li><a href="#_disable_selinux">2.1.6. Disable SELinux</a></li>
 <li><a href="#_check_your_services">2.1.7. Check your services</a></li>
 <li><a href="#export-mount-point">2.1.8. Export the /data folder</a></li>
+<li><a href="#etc-hosts">2.1.9. Knowing your hosts</a></li>
 </ul>
 </li>
 <li><a href="#egse-client-install">2.2. Client Installation</a>
@@ -544,51 +545,62 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <li><a href="#mount">2.2.1. NFS mount the /data folder from the egse-server</a></li>
 </ul>
 </li>
-<li><a href="#_user_administration">2.3. User Administration</a></li>
+<li><a href="#user-admin">2.3. User Administration</a>
+<ul class="sectlevel3">
+<li><a href="#_provide_sudo_permission_for_plato_data">2.3.1. Provide sudo permission for plato-data</a></li>
+</ul>
+</li>
 </ul>
 </li>
 <li><a href="#prometheus-install">3. Install the Prometheus server</a></li>
 <li><a href="#grafana-install">4. Install the Grafana server</a></li>
-<li><a href="#python-install">5. Install Python</a>
+<li><a href="#node-exporter-install">5. Install the Linux node-exporter</a>
 <ul class="sectlevel2">
-<li><a href="#_python_download_pages">5.1. Python Download Pages</a></li>
-<li><a href="#_anaconda">5.2. Anaconda</a></li>
+<li><a href="#_install_the_exporter">5.1. Install the exporter</a></li>
+<li><a href="#_install_the_dashboard">5.2. Install the dashboard</a></li>
+<li><a href="#_testing_the_node_exporter_metrics">5.3. Testing the node exporter metrics</a></li>
 </ul>
 </li>
-<li><a href="#_installation_of_pycharm">6. Installation of PyCharm</a></li>
-<li><a href="#cgse-install">7. Installation of the Common-EGSE</a></li>
-<li><a href="#test-scripts-install">8. Installing the Test Scripts</a></li>
-<li><a href="#cgse-conf-install">9. Installation of Setups</a></li>
-<li><a href="#desktop-entry-install">10. Installation of Desktop Entries</a></li>
-<li><a href="#install-vnc">11. Installation of a VNC Server</a>
+<li><a href="#python-install">6. Install Python</a>
 <ul class="sectlevel2">
-<li><a href="#_install_packages">11.1. Install packages</a></li>
-<li><a href="#_configure_the_gnome_display_manager">11.2. Configure the GNOME Display Manager</a></li>
-<li><a href="#_install_and_activate_the_vnc_service">11.3. Install and Activate the VNC service</a></li>
+<li><a href="#_python_download_pages">6.1. Python Download Pages</a></li>
+<li><a href="#_anaconda">6.2. Anaconda</a></li>
 </ul>
 </li>
-<li><a href="#setup-environment">12. Setting up the environment</a>
+<li><a href="#_installation_of_pycharm">7. Installation of PyCharm</a></li>
+<li><a href="#cgse-install">8. Installation of the Common-EGSE</a></li>
+<li><a href="#test-scripts-install">9. Installing the Test Scripts</a></li>
+<li><a href="#cgse-conf-install">10. Installation of Setups</a></li>
+<li><a href="#desktop-entry-install">11. Installation of Desktop Entries</a></li>
+<li><a href="#install-vnc">12. Installation of a VNC Server</a>
 <ul class="sectlevel2">
-<li><a href="#_environment_variables">12.1. Environment Variables</a></li>
-<li><a href="#_the_environment_for_systemd_services">12.2. The environment for Systemd services</a></li>
+<li><a href="#_install_packages">12.1. Install packages</a></li>
+<li><a href="#_configure_the_gnome_display_manager">12.2. Configure the GNOME Display Manager</a></li>
+<li><a href="#_install_and_activate_the_vnc_service">12.3. Install and Activate the VNC service</a></li>
 </ul>
 </li>
-<li><a href="#github-deploy">13. Setting up ssh access and GitHub deploy keys</a>
+<li><a href="#setup-environment">13. Setting up the environment</a>
 <ul class="sectlevel2">
-<li><a href="#deploy-key-egse-server">13.1. Create a deploy key for the plato-common-egse</a></li>
-<li><a href="#_create_a_deploy_key_for_the_plato_test_scripts">13.2. Create a deploy key for the plato-test-scripts</a></li>
-<li><a href="#deploy-key-cgse-conf">13.3. Create a deploy key for the plato-cgse-conf</a></li>
+<li><a href="#_environment_variables">13.1. Environment Variables</a></li>
+<li><a href="#_the_environment_for_systemd_services">13.2. The environment for Systemd services</a></li>
 </ul>
 </li>
-<li><a href="#cgse-update">14. Update the Common-EGSE to the latest release</a></li>
-<li><a href="#test-scripts-update">15. Update the Test Scripts to the latest release</a></li>
-<li><a href="#python-package-update">16. Update Python packages</a></li>
-<li><a href="#_data_propagation">17. Data Propagation</a></li>
-<li><a href="#_shared_libraries">18. Shared Libraries</a></li>
-<li><a href="#_installating_external_tools">19. Installating External Tools</a>
+<li><a href="#github-deploy">14. Setting up ssh access and GitHub deploy keys</a>
 <ul class="sectlevel2">
-<li><a href="#_cutelog_gui">19.1. Cutelog GUI</a></li>
-<li><a href="#_textualog_tui">19.2. Textualog TUI</a></li>
+<li><a href="#deploy-key-egse-server">14.1. Create a deploy key for the plato-common-egse</a></li>
+<li><a href="#_create_a_deploy_key_for_the_plato_test_scripts">14.2. Create a deploy key for the plato-test-scripts</a></li>
+<li><a href="#deploy-key-cgse-conf">14.3. Create a deploy key for the plato-cgse-conf</a></li>
+</ul>
+</li>
+<li><a href="#cgse-update">15. Update the Common-EGSE to the latest release</a></li>
+<li><a href="#test-scripts-update">16. Update the Test Scripts to the latest release</a></li>
+<li><a href="#python-package-update">17. Update Python packages</a></li>
+<li><a href="#_data_propagation">18. Data Propagation</a></li>
+<li><a href="#_shared_libraries">19. Shared Libraries</a></li>
+<li><a href="#_installating_external_tools">20. Installating External Tools</a>
+<ul class="sectlevel2">
+<li><a href="#_cutelog_gui">20.1. Cutelog GUI</a></li>
+<li><a href="#_textualog_tui">20.2. Textualog TUI</a></li>
 </ul>
 </li>
 </ul>
@@ -600,6 +612,28 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <div class="sectionbody">
 <div class="dlist">
 <dl>
+<dt class="hdlist1">09/02/2023 — v1.3</dt>
+<dd>
+<div class="ulist">
+<ul>
+<li>
+<p>Added description for the PLATO_CAMERA_IS_EM environment variable, see <a href="#setup-environment">Chapter 13</a></p>
+</li>
+<li>
+<p>Added section on providing <em>sudo</em> permissions to plato-data in the user administration, see <a href="#user-admin">Section 2.3</a>.</p>
+</li>
+<li>
+<p>Added section about install and set up a node exporter dashboard, see <a href="#node-exporter-install">Chapter 5</a>.</p>
+</li>
+<li>
+<p>Added info on the 'hosts' file, see <a href="#etc-hosts">Section 2.1.9</a>.</p>
+</li>
+<li>
+<p>Small fixes and updates in several sections</p>
+</li>
+</ul>
+</div>
+</dd>
 <dt class="hdlist1">20/01/2023 – v1.2</dt>
 <dd>
 <div class="ulist">
@@ -608,19 +642,19 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <p>We will now try to maintain a changelog.</p>
 </li>
 <li>
-<p>Documented the installation and activation of a VNC Server on Ubuntu, see <a href="#install-vnc">Chapter 11</a></p>
+<p>Documented the installation and activation of a VNC Server on Ubuntu, see <a href="#install-vnc">Chapter 12</a></p>
 </li>
 <li>
-<p>Improved section on 'Setting up the environment', see <a href="#setup-environment">Chapter 12</a></p>
+<p>Improved section on 'Setting up the environment', see <a href="#setup-environment">Chapter 13</a></p>
 </li>
 <li>
-<p>Updated the version numbering used for releases in update commands, see <a href="#cgse-update">Chapter 14</a> and <a href="#test-scripts-update">Chapter 15</a></p>
+<p>Updated the version numbering used for releases in update commands, see <a href="#cgse-update">Chapter 15</a> and <a href="#test-scripts-update">Chapter 16</a></p>
 </li>
 <li>
 <p>Added info on how to set the terminal title, see <a href="#set-terminal-title">[set-terminal-title]</a></p>
 </li>
 <li>
-<p>Added explanation of <code>--ignore-installed</code> optional argument for <code>pip</code>, see <a href="#python-package-update">Chapter 16</a></p>
+<p>Added explanation of <code>--ignore-installed</code> optional argument for <code>pip</code>, see <a href="#python-package-update">Chapter 17</a></p>
 </li>
 <li>
 <p>Added a brief explanation on exporting a mount point on the egse-server <a href="#export-mount-point">Section 2.1.8</a> and mounting the mount point <a href="#mount">Section 2.2.1</a> on the egse-client.</p>
@@ -636,10 +670,10 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <h2 id="_colophon">Colophon</h2>
 <div class="sectionbody">
 <div class="paragraph">
-<p>Copyright &#169; 2022 by the KU Leuven PLATO CGSE Team</p>
+<p>Copyright &#169; 2022, 2023 by the KU Leuven PLATO CGSE Team</p>
 </div>
 <div class="paragraph">
-<p>1<sup>st</sup> Edition — November 2022</p>
+<p>1<sup>st</sup> Edition — February 2023</p>
 </div>
 <div class="paragraph">
 <p>This manual is written in PyCharm using the AsciiDoc plugin. The PDF Book version is processed with asciidoctor-pdf.</p>
@@ -833,7 +867,7 @@ housekeeping data, logging information, metrics, etc. This is the mounted SSD di
 <div class="sect3">
 <h4 id="_installation_of_python_3_8">2.1.3. Installation of Python 3.8</h4>
 <div class="paragraph">
-<p>We will install Python from the official Python website, as described in <a href="#python-install">Chapter 5</a>. The procedure is as follows: We first install the development tools for CentOS and a number of <code>devel</code> packages that are needed for header files during compilation. We then get the Python source distribution from <code>www.python.org</code>, unpack, configure and compile. Use <code>altinstall</code> instead of <code>install</code> if you don&#8217;t want previous installations of Python to be overwritten. This will install <code>python3.8</code> in <code>/usr/local/bin</code>. All the commands need to be executes as root.</p>
+<p>We will install Python from the official Python website, as described in <a href="#python-install">Chapter 6</a>. The procedure is as follows: We first install the development tools for CentOS and a number of <code>devel</code> packages that are needed for header files during compilation. We then get the Python source distribution from <code>www.python.org</code>, unpack, configure and compile. Use <code>altinstall</code> instead of <code>install</code> if you don&#8217;t want previous installations of Python to be overwritten. This will install <code>python3.8</code> in <code>/usr/local/bin</code>. All the commands need to be executes as root.</p>
 </div>
 <div id="_tabset_2" class="tabset is-loading">
 <div class="ulist tabs">
@@ -946,7 +980,7 @@ systemctl mask firewalld</code></pre>
 </div>
 <div class="literalblock">
 <div class="content">
-<pre>sudo firewall-cmd --permanent --new-service=puna-conrol
+<pre>sudo firewall-cmd --permanent --new-service=puna-control
 sudo firewall-cmd --permanent --service=puna-control --set-description="Hexapod PUNA Control Services"
 sudo firewall-cmd --permanent --service=puna-control --add-port=6700-6703/tcp
 sudo firewall-cmd --permanent --zone=public --add-service=puna-control
@@ -967,7 +1001,7 @@ sudo firewall-cmd --reload</pre>
 </td>
 <td class="content">
 <div class="paragraph">
-<p>You might want to do these steps only after you have installed Prometheus [<a href="#prometheus-install">Chapter 3</a>], Grafana [<a href="#grafana-install">Chapter 4</a>] and the Common-EGSE [<a href="#cgse-install">Chapter 7</a>]</p>
+<p>You might want to do these steps only after you have installed Prometheus [<a href="#prometheus-install">Chapter 3</a>], Grafana [<a href="#grafana-install">Chapter 4</a>] and the Common-EGSE [<a href="#cgse-install">Chapter 8</a>]</p>
 </div>
 </td>
 </tr>
@@ -1170,6 +1204,20 @@ sudo service nfs-server restart</pre>
 <p>How you need to NFS mount this <code>/data</code> folder on the egse-client machine is explained in the section on Client Installation, see<a href="#egse-client-install">Section 2.2</a>.</p>
 </div>
 </div>
+<div class="sect3">
+<h4 id="etc-hosts">2.1.9. Knowing your hosts</h4>
+<div class="paragraph">
+<p>For several reasons you will need to access other computers or devices in your network, e.g. as the URL for the Grafana monitoring web pages. It will therefore be very useful to access them with their usual name instead of using an IP address. The easiest way to accomplish this is adding entries in the <code>/etc/hosts</code> file. This needs to be done as root, and the following lines illustrates an example (IPv6 entries are not shown):</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>$ sudo vi /etc/hosts
+127.0.0.1 localhost
+137.145.177.84 sour server-csl2
+137.145.177.85 pisco client-csl2</pre>
+</div>
+</div>
+</div>
 </div>
 <div class="sect2">
 <h3 id="egse-client-install">2.2. Client Installation</h3>
@@ -1185,7 +1233,7 @@ sudo service nfs-server restart</pre>
 <p>Log in as user plato-user</p>
 </li>
 <li>
-<p>install the plato-common-egse in ~/git (see <a href="#cgse-install">Chapter 7</a>)
+<p>install the plato-common-egse in ~/git (see <a href="#cgse-install">Chapter 8</a>)
 *</p>
 </li>
 </ul>
@@ -1278,7 +1326,7 @@ Export list for 139.xxx.yyy.74:
 </div>
 </div>
 <div class="sect2">
-<h3 id="_user_administration">2.3. User Administration</h3>
+<h3 id="user-admin">2.3. User Administration</h3>
 <div class="paragraph">
 <p>There are 4 specific PLATO users defined:</p>
 </div>
@@ -1297,6 +1345,31 @@ Export list for 139.xxx.yyy.74:
 <p><code>plato-user</code>: the generic user account for running the test scripts, start GUIs and analysing the data. This user has no <code>sudo</code> rights, but has read access to the <code>/data</code> directory. This is the account used to execute the test scripts. Don&#8217;t use this account on the <code>egse-server</code> unless you know what you are doing.</p>
 </li>
 </ul>
+</div>
+<div class="sect3">
+<h4 id="_provide_sudo_permission_for_plato_data">2.3.1. Provide sudo permission for plato-data</h4>
+<div class="paragraph">
+<p>In a terminal session, log in as root, then add the following line in the file <code>/etc/sudoers</code>. You will need to edit this file using the <code>visudo</code> command<sup class="footnote">[<a id="_footnoteref_3" class="footnote" href="#_footnotedef_3" title="View footnote.">3</a>]</sup>.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre># visudo</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Now add the line. This is best done in the section 'User privilege specification' to keep the file clean:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>plato-data      ALL=(ALL:ALL) ALL</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>This will give 'root' privileges to the plato-data user. You might not want to do that on your system! It should be plato-admin with these rights and plato-data with some execution rights for systemctl and journalctl, &#8230;&#8203;.</p>
+</div>
+<div class="paragraph">
+<p>TODO: Describe the other sudo way&#8230;&#8203;.</p>
+</div>
 </div>
 </div>
 </div>
@@ -1358,7 +1431,7 @@ $ sudo systemctl start prometheus</pre>
 <h2 id="grafana-install">4. Install the Grafana server</h2>
 <div class="sectionbody">
 <div class="paragraph">
-<p>Please note that in the developer documentation under the section <a href="../develop/monitoring.html#monitoring">Monitoring</a> there is a description on <em>Installing Grafana</em>. I will here only describe the setup for the <code>egse-server</code>. The best is to create a dedicated directory for the software installations, e.g. <code>~/software</code>. Then install Grafana into that folder.<sup class="footnote">[<a id="_footnoteref_3" class="footnote" href="#_footnotedef_3" title="View footnote.">3</a>]</sup></p>
+<p>Please note that in the developer documentation under the section <a href="../develop/monitoring.html#monitoring">Monitoring</a> there is a description on <em>Installing Grafana</em>. I will here only describe the setup for the <code>egse-server</code>. The best is to create a dedicated directory for the software installations, e.g. <code>~/software</code>. Then install Grafana into that folder.<sup class="footnote">[<a id="_footnoteref_4" class="footnote" href="#_footnotedef_4" title="View footnote.">4</a>]</sup></p>
 </div>
 <div class="listingblock">
 <div class="content">
@@ -1376,7 +1449,83 @@ $ ln -s grafana-8.5.6 grafana</pre>
 </div>
 </div>
 <div class="sect1">
-<h2 id="python-install">5. Install Python</h2>
+<h2 id="node-exporter-install">5. Install the Linux node-exporter</h2>
+<div class="sectionbody">
+<div class="sect2">
+<h3 id="_install_the_exporter">5.1. Install the exporter</h3>
+<div class="paragraph">
+<p>One of the useful dashboards that we have in Grafana is the <em>Linux Host Dashboard</em>. This dashboard pulls data from Prometheus and the node exporter. Install the node exporter on the egse-server and egse-client with the following commands as explained on the <a href="https://prometheus.io/docs/guides/node-exporter/#monitoring-linux-host-metrics-with-the-node-exporter">node-exporter guide page</a>.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>$ cd ~/software
+$ wget https://github.com/prometheus/node_exporter/releases/download/v1.5.0/node_exporter-1.5.0.linux-amd64.tar.gz
+$ tar xzvf node_exporter-1.5.0.linux-amd64.tar.gz
+$ ln -s node_exporter-1.5.0.linux-amd64 node_exporter</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Then create a service in the <code>/etc/systemd/system</code> directory by copying the file <code>node_exporter.service</code> from the repository.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>$ sudo cp ~/git/plato-common-egse/server/node_exporter.service /etc/systemd/system</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Now enable the service, reload the systemd daemon and start the service with<sup class="footnote">[<a id="_footnoteref_5" class="footnote" href="#_footnotedef_5" title="View footnote.">5</a>]</sup>:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>$ sudo systemctl enable node_exporter
+$ sudo systemctl daemon-reload
+$ sudo systemctl start node_exporter</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Finally, the Prometheus service shall be restarted. Since this service is running on the egse-server, the configuration file <code>prometheus.yml</code> shall contain a scraping job for both the server and the client. The example below shows the entries for the machines at CSL where the server is 'localhost' and the client is 'pisco'.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>  - job_name: node-server
+    static_configs:
+      - targets: ['localhost:41091']
+
+  - job_name: node-client
+    static_configs:
+      - targets: ['pisco:41091']</pre>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_install_the_dashboard">5.2. Install the dashboard</h3>
+<div class="paragraph">
+<p>The node exporter dashboard can be imported directly from Grafana with ID 1860 (see <a href="https://grafana.com/grafana/dashboards/1860-node-exporter-full/">node exporter dashboard</a>). Configure the dashboard at the top of the dashboard setting the 'Job' and the 'Host'. From the example scrape jobs above use 'node-server', 'node-client' for the Job and 'localhost', 'pisco' for the Host respectively for the server and client dashboards.</p>
+</div>
+<div id="ccd-numbering-cgse" class="imageblock text-center">
+<div class="content">
+<img src="../images/node-exporter-dashboard-top.png" alt="node exporter dashboard top" width="50%">
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_testing_the_node_exporter_metrics">5.3. Testing the node exporter metrics</h3>
+<div class="paragraph">
+<p>On the server machine where the node exporter is running, you can test its proper functioning with the following command:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>$ curl localhost:41091/metrics  | egrep -v "^#"</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>That will print all metrics from the node exporter in the terminal.</p>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="python-install">6. Install Python</h2>
 <div class="sectionbody">
 <div class="admonitionblock note">
 <table>
@@ -1392,7 +1541,7 @@ This code is written for <strong>Python 3</strong> and uses features of Python 3
 </table>
 </div>
 <div class="sect2">
-<h3 id="_python_download_pages">5.1. Python Download Pages</h3>
+<h3 id="_python_download_pages">6.1. Python Download Pages</h3>
 <div class="paragraph">
 <p>Download the required version of Python from the <a href="https://www.python.org/downloads/">official Python download website</a>.  When you press the "Download" button, you should automatically be re-directed to the download page for your operating system.</p>
 </div>
@@ -1410,7 +1559,7 @@ This code is written for <strong>Python 3</strong> and uses features of Python 3
 </div>
 </div>
 <div class="sect2">
-<h3 id="_anaconda">5.2. Anaconda</h3>
+<h3 id="_anaconda">6.2. Anaconda</h3>
 <div class="admonitionblock warning">
 <table>
 <tr>
@@ -1474,7 +1623,7 @@ Make sure you install the official release of Python on any operational machine 
 </div>
 </div>
 <div class="sect1">
-<h2 id="_installation_of_pycharm">6. Installation of PyCharm</h2>
+<h2 id="_installation_of_pycharm">7. Installation of PyCharm</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>PyCharm is the IDE that we will use to execute test scripts. For this purpose the PyCharm Community edition is sufficient.</p>
@@ -1485,7 +1634,7 @@ Make sure you install the official release of Python on any operational machine 
 </div>
 </div>
 <div class="sect1">
-<h2 id="cgse-install">7. Installation of the Common-EGSE</h2>
+<h2 id="cgse-install">8. Installation of the Common-EGSE</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>The installation will be done as the <code>plato-data</code> user. We will <em>clone</em> the IvS-KULeuven <code>plato-common-egse</code> repository. There is no need to <em>fork</em> because we will not develop from this account and will therefore not do any
@@ -1522,7 +1671,7 @@ drwxr-xr-x. 4 plato-data plato-data 4096 Sep 11 16:55 /cgse</pre>
 </div>
 </div>
 <div class="paragraph">
-<p>Before actually installing the Common-EGSE, we have to set the <code>PATH</code> and <code>PYTHONPATH</code> environment variables, and checkout the branch of the releae that we want to install<sup class="footnote">[<a id="_footnoteref_4" class="footnote" href="#_footnotedef_4" title="View footnote.">4</a>]</sup>.</p>
+<p>Before actually installing the Common-EGSE, we have to set the <code>PATH</code> and <code>PYTHONPATH</code> environment variables, and checkout the branch of the releae that we want to install<sup class="footnote">[<a id="_footnoteref_6" class="footnote" href="#_footnotedef_6" title="View footnote.">6</a>]</sup>.</p>
 </div>
 <div class="listingblock">
 <div class="content">
@@ -1592,13 +1741,13 @@ ENABLE_USER_SITE: True
 </div>
 </div>
 <div class="sect1">
-<h2 id="test-scripts-install">8. Installing the Test Scripts</h2>
+<h2 id="test-scripts-install">9. Installing the Test Scripts</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>The installation will be done as the <code>plato-data</code> user. We will <em>clone</em> the IvS-KULeuven <code>plato-test-scripts</code> repository. There is no need to <em>fork</em> because we will not develop from this account and will therefore not do any pushes or  pull requests.</p>
 </div>
 <div class="paragraph">
-<p>Create a <code>~/git</code> folder in the home directory of the <code>plato-data</code> user, move into that directory and clone the GitHub repository. Then move into the <code>plato-test-scripts</code> folder that was created by the <em>clone</em> command. If this is a first-time installation, you must first create a deploy key for the <code>plato-test-scripts</code>, see <a href="#github-deploy">Chapter 13</a>.</p>
+<p>Create a <code>~/git</code> folder in the home directory of the <code>plato-data</code> user, move into that directory and clone the GitHub repository. Then move into the <code>plato-test-scripts</code> folder that was created by the <em>clone</em> command. If this is a first-time installation, you must first create a deploy key for the <code>plato-test-scripts</code>, see <a href="#github-deploy">Chapter 14</a>.</p>
 </div>
 <div class="listingblock">
 <div class="content">
@@ -1620,14 +1769,14 @@ $ source venv/bin/activate</pre>
 </div>
 </div>
 <div class="sect1">
-<h2 id="cgse-conf-install">9. Installation of Setups</h2>
+<h2 id="cgse-conf-install">10. Installation of Setups</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>The Setups are the configuration files for your test house and define all the configuration settings for your equipment and for the camera (SUT). All the Setups for all the test houses live in the <code>plato-cgse-conf</code> repository. This section explains how to install this repo on the server and on the client.</p>
 </div>
 <h3 id="_installation_on_the_server" class="discrete">Installation on the server</h3>
 <div class="paragraph">
-<p>The <code>plato-cgse-conf</code> repository shall be cloned on the server in the folder <code>~/git</code> where also the <code>plato-common-egse</code> resides. To clone the repo, you need access to this repository first, follow the steps described in <a href="#deploy-key-cgse-conf">Section 13.3</a>. When you have executed that procedure, you should have the repository up-to-date on your system.</p>
+<p>The <code>plato-cgse-conf</code> repository shall be cloned on the server in the folder <code>~/git</code> where also the <code>plato-common-egse</code> resides. To clone the repo, you need access to this repository first, follow the steps described in <a href="#deploy-key-cgse-conf">Section 14.3</a>. When you have executed that procedure, you should have the repository up-to-date on your system.</p>
 </div>
 <div class="admonitionblock warning">
 <table>
@@ -1659,7 +1808,7 @@ Check that the <em>upload</em> remote is indeed a tracking branch, see <a href="
 </div>
 <h3 id="_installation_on_the_client" class="discrete">Installation on the client</h3>
 <div class="paragraph">
-<p>For the client follow the same procedure to create a deploy key and clone the repository (see <a href="#deploy-key-cgse-conf">Section 13.3</a>), but <strong>do not</strong> allow write access on GitHub and only create the remote <em>updates</em> (the <em>upload</em> remote is not used on the client).</p>
+<p>For the client follow the same procedure to create a deploy key and clone the repository (see <a href="#deploy-key-cgse-conf">Section 14.3</a>), but <strong>do not</strong> allow write access on GitHub and only create the remote <em>updates</em> (the <em>upload</em> remote is not used on the client).</p>
 </div>
 <div class="paragraph">
 <p>Alternatively, the folder <code>~/git/plato-cgse-conf</code> can be mounted read-only from the server. make sure the location is also <code>~/git/plato-cgse-conf</code>.</p>
@@ -1670,7 +1819,7 @@ Check that the <em>upload</em> remote is indeed a tracking branch, see <a href="
 </div>
 </div>
 <div class="sect1">
-<h2 id="desktop-entry-install">10. Installation of Desktop Entries</h2>
+<h2 id="desktop-entry-install">11. Installation of Desktop Entries</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>This section explains how to install a Desktop icon for one of the GUI applications. In the screenshot below, you see the icon for the <em>Mechanical Positions Hexapod GUI</em> in the toolbar on the left side of the screen. Click that icon to start the Task GUI.</p>
@@ -1756,7 +1905,7 @@ $ update-desktop-database ~/.local/share/applications/</pre>
 </div>
 </div>
 <div class="sect1">
-<h2 id="install-vnc">11. Installation of a VNC Server</h2>
+<h2 id="install-vnc">12. Installation of a VNC Server</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>This section describes how to install a VNC Server on your client machine. The VNC server will run on <code>display=:0</code> and will allow remote users to connect to the main desktop that is used by the operator. This remote connection will then be able to provide support and in case of emergency take over the desktop from the operator.</p>
@@ -1765,9 +1914,9 @@ $ update-desktop-database ~/.local/share/applications/</pre>
 <p>We will install the packages <code>x11vnc</code> and <code>net-tools</code>, then we will configure the GNOME Display Manager (<code>gdm3</code>) and finally install and activate the X11 VNC service.</p>
 </div>
 <div class="sect2">
-<h3 id="_install_packages">11.1. Install packages</h3>
+<h3 id="_install_packages">12.1. Install packages</h3>
 <div class="paragraph">
-<p>Use the following command to install the necessary packages. You can do this as user 'plato-data' and when asked for a password, provide the password of that user<sup class="footnote">[<a id="_footnoteref_5" class="footnote" href="#_footnotedef_5" title="View footnote.">5</a>]</sup>.</p>
+<p>Use the following command to install the necessary packages. You can do this as user 'plato-data' and when asked for a password, provide the password of that user<sup class="footnote">[<a id="_footnoteref_7" class="footnote" href="#_footnotedef_7" title="View footnote.">7</a>]</sup>.</p>
 </div>
 <div class="listingblock">
 <div class="content">
@@ -1776,7 +1925,7 @@ $ update-desktop-database ~/.local/share/applications/</pre>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_configure_the_gnome_display_manager">11.2. Configure the GNOME Display Manager</h3>
+<h3 id="_configure_the_gnome_display_manager">12.2. Configure the GNOME Display Manager</h3>
 <div class="paragraph">
 <p>Edit the file <code>/etc/gdm3/custom.conf</code> to disable Wayland and enable automatic login by the 'plato-data' user. The changes are all in the daemon section of the configuration file. If some entries do not exist on your system, create them. You should edit this file as 'root' or with <code>sudo</code> under the 'plato-data' user.</p>
 </div>
@@ -1793,7 +1942,7 @@ AutomaticLogin = plato-data</pre>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_install_and_activate_the_vnc_service">11.3. Install and Activate the VNC service</h3>
+<h3 id="_install_and_activate_the_vnc_service">12.3. Install and Activate the VNC service</h3>
 <div class="paragraph">
 <p>To install the X11 VNC service under Systemd, create a file <code>/etc/systemd/system/x11vnc.service</code> with the following content.</p>
 </div>
@@ -1839,10 +1988,10 @@ $ sudo systemctl start x11vnc.service</pre>
 </div>
 </div>
 <div class="sect1">
-<h2 id="setup-environment">12. Setting up the environment</h2>
+<h2 id="setup-environment">13. Setting up the environment</h2>
 <div class="sectionbody">
 <div class="sect2">
-<h3 id="_environment_variables">12.1. Environment Variables</h3>
+<h3 id="_environment_variables">13.1. Environment Variables</h3>
 <div class="paragraph">
 <p>The environment variables that are used by the CGSE or test scripts are listed in the table below. It is best practice to define those variable in <code>~/.bash_profile</code> to have them loaded on login. With the below definitions, a standard <code>~/.bash_profile</code> would look like this (example taken from the CSL1 egse-client <em>daiquiri</em>)</p>
 </div>
@@ -1920,7 +2069,7 @@ alias cd2ts="cd ~/git/plato-test-scripts"</pre>
 <td class="tableblock halign-left valign-top"><p class="tableblock"><code>/cgse/lib/python/:/cgse/lib/python3.8/site-packages</code></p></td>
 </tr>
 <tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock">PYTHONPATH – egse-client<sup class="footnote">[<a id="_footnoteref_6" class="footnote" href="#_footnotedef_6" title="View footnote.">6</a>]</sup></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">PYTHONPATH – egse-client<sup class="footnote">[<a id="_footnoteref_8" class="footnote" href="#_footnotedef_8" title="View footnote.">8</a>]</sup></p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock"><code>/cgse/lib/python:/cgse/lib/python3.8/site-packages:/home/plato-data/git/plato-test-scripts/src:/home/plato-data/git/plato-test-scripts/venv/lib/python3.8/site-packages/</code></p></td>
 </tr>
 <tr>
@@ -1932,7 +2081,7 @@ alias cd2ts="cd ~/git/plato-test-scripts"</pre>
 <td class="tableblock halign-left valign-top"><p class="tableblock"><code>/data/&lt;SITE_ID&gt;/conf</code></p></td>
 </tr>
 <tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock">PLATO_CONF_REPO_LOCATION<sup class="footnote">[<a id="_footnoteref_7" class="footnote" href="#_footnotedef_7" title="View footnote.">7</a>]</sup></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">PLATO_CONF_REPO_LOCATION<sup class="footnote">[<a id="_footnoteref_9" class="footnote" href="#_footnotedef_9" title="View footnote.">9</a>]</sup></p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock"><code>/home/plato-data/git/plato-cgse-conf</code></p></td>
 </tr>
 <tr>
@@ -1955,11 +2104,15 @@ alias cd2ts="cd ~/git/plato-test-scripts"</pre>
 <td class="tableblock halign-left valign-top"><p class="tableblock">LD_LIBRARY_PATH</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock"><code>/home/plato-data/git/plato-common-egse/src/egse/lib/ximc/libximc.framework</code></p></td>
 </tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">PLATO_CAMERA_IS_EM<sup class="footnote">[<a id="_footnoteref_10" class="footnote" href="#_footnotedef_10" title="View footnote.">10</a>]</sup></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>True</code> | <code>False</code></p></td>
+</tr>
 </tbody>
 </table>
 </div>
 <div class="sect2">
-<h3 id="_the_environment_for_systemd_services">12.2. The environment for Systemd services</h3>
+<h3 id="_the_environment_for_systemd_services">13.2. The environment for Systemd services</h3>
 <div class="paragraph">
 <p>For the CGSE core services, that are started by the Systemd on the egse-server, the environment variable are defined in the file <code>/cgse/env.txt</code>. The example below shows the content of this file from the CSL1 egse-server <em>strawberry</em></p>
 </div>
@@ -1978,13 +2131,13 @@ PLATO_LOG_FILE_LOCATION=/data/CSL1/log</pre>
 </div>
 </div>
 <div class="sect1">
-<h2 id="github-deploy">13. Setting up ssh access and GitHub deploy keys</h2>
+<h2 id="github-deploy">14. Setting up ssh access and GitHub deploy keys</h2>
 <div class="sectionbody">
 <div class="paragraph">
-<p>We have a semi-automatic update procedure in place for the Common-EGSE and the Test Scripts. This procedure will be described in <a href="#cgse-update">Chapter 14</a> and <a href="#test-scripts-update">Chapter 15</a>, but before we can use that we need to have the proper permissions to fetch changes from the different GitHub repositories without the need to provide our credentials every time. The best way to do that is to set up deploy keys on the GitHub repos.</p>
+<p>We have a semi-automatic update procedure in place for the Common-EGSE and the Test Scripts. This procedure will be described in <a href="#cgse-update">Chapter 15</a> and <a href="#test-scripts-update">Chapter 16</a>, but before we can use that we need to have the proper permissions to fetch changes from the different GitHub repositories without the need to provide our credentials every time. The best way to do that is to set up deploy keys on the GitHub repos.</p>
 </div>
 <div class="sect2">
-<h3 id="deploy-key-egse-server">13.1. Create a deploy key for the plato-common-egse</h3>
+<h3 id="deploy-key-egse-server">14.1. Create a deploy key for the plato-common-egse</h3>
 <div class="paragraph">
 <p>You can create an ssh key-pair for the CGSE with the following command. Execute this code on the <code>egse-server</code> as user <code>plato-data</code> in the folder <code>~/.ssh</code> (create the folder if it doesn&#8217;t exist).</p>
 </div>
@@ -1993,11 +2146,11 @@ PLATO_LOG_FILE_LOCATION=/data/CSL1/log</pre>
 <pre>$ cd ~/.ssh
 $ ssh-keygen -t ed25519 -C plato-data@egse-server-inta  <i class="conum" data-value="1"></i><b>(1)</b>
 Generating public/private ed25519 key pair.
-Enter file in which to save the key (/home/plato-data/.ssh/id_ed25519): id_cgse_egse_server_inta  <i class="conum" data-value="2"></i><b>(2)</b>
+Enter file in which to save the key (/home/plato-data/.ssh/id_ed25519): id_cgse_server_inta  <i class="conum" data-value="2"></i><b>(2)</b>
 Enter passphrase (empty for no passphrase):  <i class="conum" data-value="3"></i><b>(3)</b>
 Enter same passphrase again:
-Your identification has been saved in id_cgse_egse_server_inta
-Your public key has been saved in id_cgse_egse_server_inta.pub
+Your identification has been saved in id_cgse_server_inta
+Your public key has been saved in id_cgse_server_inta.pub
 The key fingerprint is:
 SHA256:kOUBdc***************************7NSgd1WX+Ds plato-data@egse-server-inta
 The key's randomart image is:
@@ -2022,7 +2175,7 @@ The key's randomart image is:
 </tr>
 <tr>
 <td><i class="conum" data-value="2"></i><b>2</b></td>
-<td>name of the file: <code>id_cgse_egse_server_&lt;th&gt;</code>, again <code>&lt;th&gt;</code> is the test house site id.</td>
+<td>name of the file: <code>id_cgse_server_&lt;th&gt;</code>, again <code>&lt;th&gt;</code> is the test house site id.</td>
 </tr>
 <tr>
 <td><i class="conum" data-value="3"></i><b>3</b></td>
@@ -2031,7 +2184,7 @@ The key's randomart image is:
 </table>
 </div>
 <div class="paragraph">
-<p>Send the <code>id_cgse_egse_server_&lt;th&gt;.pub</code> file to the maintainer of the GitHub repository. She will copy the content of this file into a new deploy key for the <code>plato-common-egse</code> @ GitHub.</p>
+<p>Send the <code>id_cgse_server_&lt;th&gt;.pub</code> file to the maintainer of the GitHub repository. She will copy the content of this file into a new deploy key for the <code>plato-common-egse</code> @ GitHub.</p>
 </div>
 <div class="paragraph">
 <p>Now we need to create a generic hostname for the repository such that this can be picked up by the ssh protocol when accessing the repository at GitHub. Add the following lines to the file <code>~/.ssh/config</code>:</p>
@@ -2040,7 +2193,7 @@ The key's randomart image is:
 <div class="content">
 <pre class="highlight"><code>Host repo-common-egse
     Hostname github.com
-    IdentityFile ~/.ssh/id_cgse_egse_server_&lt;th&gt;  <i class="conum" data-value="1"></i><b>(1)</b></code></pre>
+    IdentityFile ~/.ssh/id_cgse_server_&lt;th&gt;  <i class="conum" data-value="1"></i><b>(1)</b></code></pre>
 </div>
 </div>
 <div class="colist arabic">
@@ -2061,8 +2214,8 @@ drwx------. 2 plato-data plato-data 4096 May 25 12:24 .ssh
 
 $ ls -l .ssh
 -rw-r--r--  1 plato-data plato-data   412 May 23 14:19 config
--rw-------  1 plato-data plato-data   419 May 23 14:16 id_cgse_egse_server_inta
--rw-r--r--  1 plato-data plato-data   109 May 23 14:16 id_cgse_egse_server_inta.pub</pre>
+-rw-------  1 plato-data plato-data   419 May 23 14:16 id_cgse_server_inta
+-rw-r--r--  1 plato-data plato-data   109 May 23 14:16 id_cgse_server_inta.pub</pre>
 </div>
 </div>
 <div class="paragraph">
@@ -2093,7 +2246,7 @@ $ git remote add updates git@repo-common-egse:IvS-KULeuven/plato-common-egse.git
 </div>
 </div>
 <div class="sect2">
-<h3 id="_create_a_deploy_key_for_the_plato_test_scripts">13.2. Create a deploy key for the plato-test-scripts</h3>
+<h3 id="_create_a_deploy_key_for_the_plato_test_scripts">14.2. Create a deploy key for the plato-test-scripts</h3>
 <div class="paragraph">
 <p>You can create an ssh key-pair for the test scripts with the following command. Execute this code on the <code>egse-client</code> as user <code>plato-data</code> in the folder <code>~/.ssh</code> (create the folder if it doesn&#8217;t exist).</p>
 </div>
@@ -2206,7 +2359,7 @@ $ python3 -m pip install -e .</pre>
 </div>
 </div>
 <div class="sect2">
-<h3 id="deploy-key-cgse-conf">13.3. Create a deploy key for the plato-cgse-conf</h3>
+<h3 id="deploy-key-cgse-conf">14.3. Create a deploy key for the plato-cgse-conf</h3>
 <div class="paragraph">
 <p>You can create an ssh key-pair for the plato-cgse-conf with the following command. Execute this code on the <code>egse-server</code> as user <code>plato-data</code> in the folder <code>~/.ssh</code> (create the folder if it doesn&#8217;t exist).</p>
 </div>
@@ -2279,7 +2432,7 @@ The key's randomart image is:
 </table>
 </div>
 <div class="paragraph">
-<p>Check the permissions of the <code>~/.ssh</code> directory and the files in it (see <a href="#deploy-key-egse-server">Section 13.1</a>).</p>
+<p>Check the permissions of the <code>~/.ssh</code> directory and the files in it (see <a href="#deploy-key-egse-server">Section 14.1</a>).</p>
 </div>
 <div class="paragraph">
 <p>If you have not yet cloned the plato-cgse-conf repository, you can do that now with the following command:</p>
@@ -2337,7 +2490,7 @@ $ git branch -vv
 </div>
 </div>
 <div class="sect1">
-<h2 id="cgse-update">14. Update the Common-EGSE to the latest release</h2>
+<h2 id="cgse-update">15. Update the Common-EGSE to the latest release</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>At some point you will be asked to update to a specific release. Make sure you are in the develop branch, then execute the following commands:</p>
@@ -2369,7 +2522,7 @@ CGSE installed version = 2022.3.4+cgse</pre>
 </div>
 </div>
 <div class="sect1">
-<h2 id="test-scripts-update">15. Update the Test Scripts to the latest release</h2>
+<h2 id="test-scripts-update">16. Update the Test Scripts to the latest release</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>When you need to update the test scripts on your <code>egse-client</code> machine, use the following commands:</p>
@@ -2404,7 +2557,7 @@ CAMTEST git version = 2022.3.6+TS-0-g602f139  <i class="conum" data-value="1"></
 </div>
 </div>
 <div class="sect1">
-<h2 id="python-package-update">16. Update Python packages</h2>
+<h2 id="python-package-update">17. Update Python packages</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Ideally, the installed third party packages should be the versions that are given the requirements file of the project. If the requirements file is updated, you can use the following command to update your installation:</p>
@@ -2448,7 +2601,7 @@ $ python3 -m pip install --upgrade -r requirements.txt</pre>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_data_propagation">17. Data Propagation</h2>
+<h2 id="_data_propagation">18. Data Propagation</h2>
 <div class="sectionbody">
 <div class="ulist checklist">
 <ul class="checklist">
@@ -2507,7 +2660,7 @@ $ python3 -m pip install --upgrade -r requirements.txt</pre>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_shared_libraries">18. Shared Libraries</h2>
+<h2 id="_shared_libraries">19. Shared Libraries</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Some components use a shared library that is loaded by the Python interpreter. In order to load the library, the absolute path to the shared object file must be known. Different modules handle this in their own way.</p>
@@ -2532,10 +2685,10 @@ $ python3 -m pip install --upgrade -r requirements.txt</pre>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_installating_external_tools">19. Installating External Tools</h2>
+<h2 id="_installating_external_tools">20. Installating External Tools</h2>
 <div class="sectionbody">
 <div class="sect2">
-<h3 id="_cutelog_gui">19.1. Cutelog GUI</h3>
+<h3 id="_cutelog_gui">20.1. Cutelog GUI</h3>
 <div class="paragraph">
 <p>Cutelog is a GUI that can be installed in your virtual environment using <code>pip</code>.</p>
 </div>
@@ -2554,7 +2707,7 @@ $ python3 -m pip install --upgrade -r requirements.txt</pre>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_textualog_tui">19.2. Textualog TUI</h3>
+<h3 id="_textualog_tui">20.2. Textualog TUI</h3>
 <div class="paragraph">
 <p>Textualog is a terminal application (TUI) that allows you to inspect the log files in <code>$PLATO_LOG_FILE_LOCATION</code>. The package is open-source and can be installed in your virtual environment from PyPI using <code>pip</code>:</p>
 </div>
@@ -2564,7 +2717,7 @@ $ python3 -m pip install --upgrade -r requirements.txt</pre>
 </div>
 </div>
 <div class="paragraph">
-<p>Textualog is extremely useful to inspect and follow logging messages in a remote terminal. It is inpired on the <code>cutelog</code> app and developed specifically for the remote users. After installation, the current log file can be inspected with the following command<sup class="footnote">[<a id="_footnoteref_8" class="footnote" href="#_footnotedef_8" title="View footnote.">8</a>]</sup>:</p>
+<p>Textualog is extremely useful to inspect and follow logging messages in a remote terminal. It is inpired on the <code>cutelog</code> app and developed specifically for the remote users. After installation, the current log file can be inspected with the following command<sup class="footnote">[<a id="_footnoteref_11" class="footnote" href="#_footnotedef_11" title="View footnote.">11</a>]</sup>:</p>
 </div>
 <div class="listingblock">
 <div class="content">
@@ -2589,28 +2742,37 @@ $ python3 -m pip install --upgrade -r requirements.txt</pre>
 <a href="#_footnoteref_2">2</a>. The installation of Grafana is explained in <a href="#grafana-install">Chapter 4</a>
 </div>
 <div class="footnote" id="_footnotedef_3">
-<a href="#_footnoteref_3">3</a>. Don&#8217;t try  to install Grafana using <code>yum</code>, because that will bring you into trouble with configuration files etc.
+<a href="#_footnoteref_3">3</a>. The <code>visudo</code> command uses the EDITOR environment variable to start your favorite editor. I have set <code>export EDITOR=vi</code>
 </div>
 <div class="footnote" id="_footnotedef_4">
-<a href="#_footnoteref_4">4</a>. The latest release tag can be found on the GitHub pages of the repository
+<a href="#_footnoteref_4">4</a>. Don&#8217;t try  to install Grafana using <code>yum</code>, because that will bring you into trouble with configuration files etc.
 </div>
 <div class="footnote" id="_footnotedef_5">
-<a href="#_footnoteref_5">5</a>. The 'plato-data' user is supposed to have sudo rights.
+<a href="#_footnoteref_5">5</a>. the daemon shall be reloaded because the service file was added
 </div>
 <div class="footnote" id="_footnotedef_6">
-<a href="#_footnoteref_6">6</a>. The PYTHONPATH on the client is different because it also has the plato-test-scripts installed, so in addition to the CGSE packages, it needs to have access to the test scripts Python code and packages that were installed as part of the plato-test-scripts virtual environment.
+<a href="#_footnoteref_6">6</a>. The latest release tag can be found on the GitHub pages of the repository
 </div>
 <div class="footnote" id="_footnotedef_7">
-<a href="#_footnoteref_7">7</a>. This variable only needs to be defined in the <code>/cgse/env.txt</code> file on the egse-server.
+<a href="#_footnoteref_7">7</a>. The 'plato-data' user is supposed to have sudo rights.
 </div>
 <div class="footnote" id="_footnotedef_8">
-<a href="#_footnoteref_8">8</a>. the textualog package might already installed on the egse-server at the test houses.
+<a href="#_footnoteref_8">8</a>. The PYTHONPATH on the client is different because it also has the plato-test-scripts installed, so in addition to the CGSE packages, it needs to have access to the test scripts Python code and packages that were installed as part of the plato-test-scripts virtual environment.
+</div>
+<div class="footnote" id="_footnotedef_9">
+<a href="#_footnoteref_9">9</a>. This variable only needs to be defined in the <code>/cgse/env.txt</code> file on the egse-server.
+</div>
+<div class="footnote" id="_footnotedef_10">
+<a href="#_footnoteref_10">10</a>. PLATO_CAMERA_IS_EM was introduced in release 2022.3.2+CGSE to handle the difference between EM and pFM camera with respect to the format of image and housekeeping data provided by the FPGA. The EM camera data was in twos-complement.
+</div>
+<div class="footnote" id="_footnotedef_11">
+<a href="#_footnoteref_11">11</a>. the textualog package might already installed on the egse-server at the test houses.
 </div>
 </div>
 <div id="footer">
 <div id="footer-text">
-Version 1.2<br>
-Last updated 2023-01-20 23:01:20 +0100
+Version 1.3<br>
+Last updated 2023-02-09 19:00:06 +0100
 </div>
 </div>
 <script>
