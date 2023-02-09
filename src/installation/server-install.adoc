@@ -107,7 +107,7 @@ All the port numbers for the different processes are defined in the `settings.ya
 
 Opening ports and port ranges can be done by introducing a new service on the server. The example below opens up the ports for the Hexapod PUNA Control Server. The commands to set up the service on the `firewalld` are:
 
-    sudo firewall-cmd --permanent --new-service=puna-conrol
+    sudo firewall-cmd --permanent --new-service=puna-control
     sudo firewall-cmd --permanent --service=puna-control --set-description="Hexapod PUNA Control Services"
     sudo firewall-cmd --permanent --service=puna-control --add-port=6700-6703/tcp
     sudo firewall-cmd --permanent --zone=public --add-service=puna-control
@@ -257,3 +257,14 @@ sudo service nfs-server restart
 ----
 
 How you need to NFS mount this `/data` folder on the egse-client machine is explained in the section on Client Installation, see<<egse-client-install>>.
+
+[#etc-hosts]
+=== Knowing your hosts
+
+For several reasons you will need to access other computers or devices in your network, e.g. as the URL for the Grafana monitoring web pages. It will therefore be very useful to access them with their usual name instead of using an IP address. The easiest way to accomplish this is adding entries in the `/etc/hosts` file. This needs to be done as root, and the following lines illustrates an example (IPv6 entries are not shown):
+----
+$ sudo vi /etc/hosts
+127.0.0.1 localhost
+137.145.177.84 sour server-csl2
+137.145.177.85 pisco client-csl2
+----
