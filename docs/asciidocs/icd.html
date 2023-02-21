@@ -437,6 +437,78 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 @media amzn-kf8{#header,#content,#footnotes,#footer{padding:0}}
 </style>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
+<style>
+/*! Asciidoctor Tabs | Copyright (c) 2018-present Dan Allen | MIT License */
+.tabs > ul {
+  display: flex;
+  flex-wrap: wrap;
+  list-style: none;
+  margin: 0 -0.25em 0 0;
+  padding: 0;
+}
+
+.tabs > ul li {
+  align-items: center;
+  border: 1px solid black;
+  border-bottom: 0;
+  cursor: pointer;
+  display: flex;
+  font-weight: bold;
+  height: 2em;
+  line-height: 1;
+  margin-right: 0.25em;
+  padding: 0 1em;
+  position: relative;
+}
+
+.tabs > ul li, .tabs > ul p {
+  margin-bottom: 0;
+}
+
+.tabs > ul li + li[id] {
+  margin-top: 0;
+}
+
+.tabset {
+  margin-bottom: 1.25em;
+}
+
+.tabset.is-loading .tabs li:not(:first-child),
+.tabset:not(.is-loading) .tabs li:not(.is-active) {
+  background-color: black;
+  color: white;
+}
+
+.tabset.is-loading .tabs li:first-child::after,
+.tabs li.is-active::after {
+  background-color: white;
+  content: "";
+  display: block;
+  height: 3px; /* Chrome doesn't always paint the line accurately, so add a little extra */
+  position: absolute;
+  bottom: -1.5px;
+  left: 0;
+  right: 0;
+}
+
+.tabset > .content {
+  border: 1px solid gray;
+  padding: 1.25em;
+}
+
+.tabset.is-loading .tab-pane:not(:first-child),
+.tabset:not(.is-loading) .tab-pane:not(.is-active) {
+  display: none;
+}
+
+.tab-pane > :first-child {
+  margin-top: 0;
+}
+
+.tab-pane > :last-child > :last-child {
+  margin-bottom: 0;
+}
+</style>
 </head>
 <body class="book toc2 toc-left">
 <div id="header">
@@ -456,7 +528,8 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <ul class="sectlevel2">
 <li><a href="#_the_format_of_the_fits_files">4.1. The format of the FITS files</a></li>
 <li><a href="#_the_format_of_the_hdf5_files">4.2. The format of the HDF5 files</a></li>
-<li><a href="#_the_telemetry_tm_dictionary">4.3. The Telemetry (TM) Dictionary</a></li>
+<li><a href="#_inspecting_hdf5_files_with_the_toolset_from_the_cgse">4.3. Inspecting HDF5 files with the toolset from the CGSE</a></li>
+<li><a href="#_the_telemetry_tm_dictionary">4.4. The Telemetry (TM) Dictionary</a></li>
 </ul>
 </li>
 </ul>
@@ -711,22 +784,740 @@ The following extensions can be included in the FITS files:</p>
 </div>
 <div class="sect2">
 <h3 id="_the_format_of_the_hdf5_files">4.2. The format of the HDF5 files</h3>
+<div class="paragraph">
+<p>The HDF5 files contain the raw data that is read out from the camera through the spacewire interface that is connected to the front-end-electronics (FEE).</p>
+</div>
+<div class="paragraph">
+<p>In contrast to the FITS files, which are organised around the image data, the HDF5 files are organised around the readout sequence and the telemetry that is sent out by the camera. Each HDF5 file contains exactly one readout sequence, i.e. four frames in external sync mode and one frame for internal sync. The data is not processed, but the raw data packets are saved as an Numpy array of type <code>uint8</code>, all values are unsigned integers of 8 bits, i.e. a byte.</p>
+</div>
+<div class="paragraph">
+<p>Inspecting the HDF5 files can be done with the <code>h5py</code> module or you can use the CGSE module <code>egse.h5</code> which provides convenience functions to work with HDF5 files. We normally use the CGSE module to explore the HDF5 files, but will provide equivalent code for inspection with the <code>h5py</code> module where possible.</p>
+</div>
+<div id="_tabset_1" class="tabset is-loading">
+<div class="ulist tabs">
+<ul>
+<li id="_tabset_1_egse_h5">
+<p>egse.h5</p>
+</li>
+<li id="_tabset_1_h5py">
+<p>h5py</p>
+</li>
+</ul>
+</div>
+<div class="content">
+<div class="tab-pane" aria-labelledby="_tabset_1_egse_h5">
+<div class="listingblock">
+<div class="content">
+<pre>&gt;&gt;&gt; from egse import h5</pre>
+</div>
+</div>
+</div>
+<div class="tab-pane" aria-labelledby="_tabset_1_h5py">
+<div class="listingblock">
+<div class="content">
+<pre>&gt;&gt;&gt; import h5py</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="paragraph">
+<p>Let&#8217;s take an example file from IAS taken on 7th February 2023. The file is loaded with the <code>h5.get_file()</code> function and we can visualize the top level structure as follows:</p>
+</div>
+<div id="_tabset_2" class="tabset is-loading">
+<div class="ulist tabs">
+<ul>
+<li id="_tabset_2_egse_h5">
+<p>egse.h5</p>
+</li>
+<li id="_tabset_2_h5py">
+<p>h5py</p>
+</li>
+</ul>
+</div>
+<div class="content">
+<div class="tab-pane" aria-labelledby="_tabset_2_egse_h5">
+<div class="listingblock">
+<div class="content">
+<pre>&gt;&gt;&gt; h5_fd = h5.get_file("20230207_IAS_N-FEE_SPW_06174.hdf5")
+&gt;&gt;&gt; h5.show_file(h5_fd)
+[G] 0
+[G] 1
+[G] 2
+[G] 3
+[D] dpu (104 bytes)
+[D] obsid (104 bytes)
+[D] register (2.109 KB)
+[G] versions
+Total size of Group = 159.597 MB
+Total size of attributes: 0 bytes</pre>
+</div>
+</div>
+</div>
+<div class="tab-pane" aria-labelledby="_tabset_2_h5py">
+<div class="listingblock">
+<div class="content">
+<pre>&gt;&gt;&gt; h5_fd = h5py.File("20230207_IAS_N-FEE_SPW_06174.hdf5")
+&gt;&gt;&gt; [x for x in h5_fd]
+['0', '1', '2', '3', 'dpu', 'obsid', 'register', 'versions']</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="paragraph">
+<p>We can see that there are five top-level groups and three datasets. This is data taken in external sync mode, so we have four readouts per cycle. The data from each readout is in the groups 0, 1, 2, and 3. These numbers correspond to the frame number. Each of these groups has the following structure:</p>
+</div>
+<div id="_tabset_3" class="tabset is-loading">
+<div class="ulist tabs">
+<ul>
+<li id="_tabset_3_egse_h5">
+<p>egse.h5</p>
+</li>
+<li id="_tabset_3_h5py">
+<p>h5py</p>
+</li>
+</ul>
+</div>
+<div class="content">
+<div class="tab-pane" aria-labelledby="_tabset_3_egse_h5">
+<div class="listingblock">
+<div class="content">
+<pre>&gt;&gt;&gt; h5.show_groups(h5_fd["/0"], max_level=1)
+[G] data
+[D] hk (266 bytes)
+[D] timecode (104 bytes)
+Total size of Group = 39.899 MB</pre>
+</div>
+</div>
+</div>
+<div class="tab-pane" aria-labelledby="_tabset_3_h5py">
+<div class="listingblock">
+<div class="content">
+<pre>&gt;&gt;&gt; [x for x in h5_fd["/0"]]
+['data', 'hk', 'timecode']</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="paragraph">
+<p>The <code>data</code> group contains all the SpaceWire packets that have image data, i.e. normal data packets and overscan packets. The <code>data</code> group also has the following attributes that are used to decode the SpaceWire packets into image data arrays. We will describe the <code>data</code> groups into more detail later in this section.</p>
+</div>
+<div id="_tabset_4" class="tabset is-loading">
+<div class="ulist tabs">
+<ul>
+<li id="_tabset_4_egse_h5">
+<p>egse.h5</p>
+</li>
+<li id="_tabset_4_h5py">
+<p>h5py</p>
+</li>
+</ul>
+</div>
+<div class="content">
+<div class="tab-pane" aria-labelledby="_tabset_4_egse_h5">
+<div class="listingblock">
+<div class="content">
+<pre>&gt;&gt;&gt; h5.show_attributes(h5_fd["/0/data"])
+DG_en: 0 (32 bytes)
+ccd_mode_config: 5 (32 bytes)
+ccd_read_en: 1 (32 bytes)
+ccd_readout_order: 228 (32 bytes)
+digitise_en: 1 (32 bytes)
+h_end: 2294 (32 bytes)
+int_sync_period: 2500 (32 bytes)
+n_final_dump: 0 (32 bytes)
+sensor_sel: 3 (32 bytes)
+sync_sel: 0 (32 bytes)
+v_end: 4539 (32 bytes)
+v_start: 0 (32 bytes)
+Total size of attributes: 384 bytes</pre>
+</div>
+</div>
+</div>
+<div class="tab-pane" aria-labelledby="_tabset_4_h5py">
+<div class="listingblock">
+<div class="content">
+<pre>&gt;&gt;&gt; [x for x in h5_fd["/0/data"].attrs]
+[
+    'DG_en',
+    'ccd_mode_config',
+    'ccd_read_en',
+    'ccd_readout_order',
+    'digitise_en',
+    'h_end',
+    'int_sync_period',
+    'n_final_dump',
+    'sensor_sel',
+    'sync_sel',
+    'v_end',
+    'v_start'
+]</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="paragraph">
+<p>The two datasets in group <code>'/0'</code> contain the timecode and the housekeeping information that is sent on every sync pulse. The <code>timecode</code> dataset contains the timecode itself and the timestamp when this timecode was received by the DPU Processor. Remember the timecode is an integer from 0 to 63. The <code>timecode</code> dataset is an array with one integer element, the timestamp is an attribute of the <code>timecode</code> dataset. The <code>timecode</code> dataset and the timestamp can be visualised as follows.</p>
+</div>
+<div id="_tabset_5" class="tabset is-loading">
+<div class="ulist tabs">
+<ul>
+<li id="_tabset_5_egse_h5">
+<p>egse.h5</p>
+</li>
+<li id="_tabset_5_h5py">
+<p>h5py</p>
+</li>
+</ul>
+</div>
+<div class="content">
+<div class="tab-pane" aria-labelledby="_tabset_5_egse_h5">
+<div class="listingblock">
+<div class="content">
+<pre>&gt;&gt;&gt; h5.get_data(h5_fd["/0/timecode"])
+array(53)
+&gt;&gt;&gt; h5.get_attribute_value(h5_fd["/0/timecode"], "timestamp")
+'2023-02-07T15:13:10.397+0000'</pre>
+</div>
+</div>
+</div>
+<div class="tab-pane" aria-labelledby="_tabset_5_h5py">
+<div class="listingblock">
+<div class="content">
+<pre>&gt;&gt;&gt; h5_fd["/0/timecode"][()]
+53
+&gt;&gt;&gt; h5_fd["/0/timecode"].attrs["timestamp"]
+'2023-02-07T15:13:10.397+0000'</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="paragraph">
+<p>The raw content of the <code>hk</code> dataset can be shown as follows. The <code>hk</code> dataset has no attributes currently.</p>
+</div>
+<div id="_tabset_6" class="tabset is-loading">
+<div class="ulist tabs">
+<ul>
+<li id="_tabset_6_egse_h5">
+<p>egse.h5</p>
+</li>
+<li id="_tabset_6_h5py">
+<p>h5py</p>
+</li>
+</ul>
+</div>
+<div class="content">
+<div class="tab-pane" aria-labelledby="_tabset_6_egse_h5">
+<div class="listingblock">
+<div class="content">
+<pre>&gt;&gt;&gt; h5.get_data(h5_fd["/0/hk"])
+array([ 80, 240,   0, 144,   5, 130,  24,  29,   0,   0, 128,   0, 128,
+         0, 128,   0, 128,   0, 128,   0, 128,   0, 127, 255, 127, 255,
+       127, 255, 127, 255, 127, 255, 127, 255, 127, 255, 127, 255, 127,
+       255, 128,  21,   0,   0, 128,  88, 128,  87, 128,  88, 128,  88,
+       128,  88, 128,  87, 128,  88, 128,  88, 128,  85, 128,  86, 128,
+        86,  57, 191, 252, 138, 250, 233, 128,  87, 128,  88,  26, 159,
+       231,  93,  25, 121, 231, 110,  26, 140, 223,  53,  26, 128,  83,
+       191,  64, 186,   7,  68, 251, 124,  58, 236,  10, 181,   0,   0,
+       128,  87, 128,  88, 148, 193, 128,  85, 128,  89, 148, 193, 128,
+        88, 128,  88, 148, 186, 128,  86, 128,  89, 148, 202, 128,  86,
+       128,  87, 128,  85, 128,  89, 128,  90,   0,  53,   0,   1,  24,
+        29,   0,   0,   0,   0,   0,   0,   0,   0,   0,  24], dtype=uint8)</pre>
+</div>
+</div>
+</div>
+<div class="tab-pane" aria-labelledby="_tabset_6_h5py">
+<div class="listingblock">
+<div class="content">
+<pre>&gt;&gt;&gt; h5_fd["/0/hk"][()]
+array([ 80, 240,   0, 144,   5, 130,  24,  29,   0,   0, 128,   0, 128,
+         0, 128,   0, 128,   0, 128,   0, 128,   0, 127, 255, 127, 255,
+       127, 255, 127, 255, 127, 255, 127, 255, 127, 255, 127, 255, 127,
+       255, 128,  21,   0,   0, 128,  88, 128,  87, 128,  88, 128,  88,
+       128,  88, 128,  87, 128,  88, 128,  88, 128,  85, 128,  86, 128,
+        86,  57, 191, 252, 138, 250, 233, 128,  87, 128,  88,  26, 159,
+       231,  93,  25, 121, 231, 110,  26, 140, 223,  53,  26, 128,  83,
+       191,  64, 186,   7,  68, 251, 124,  58, 236,  10, 181,   0,   0,
+       128,  87, 128,  88, 148, 193, 128,  85, 128,  89, 148, 193, 128,
+        88, 128,  88, 148, 186, 128,  86, 128,  89, 148, 202, 128,  86,
+       128,  87, 128,  85, 128,  89, 128,  90,   0,  53,   0,   1,  24,
+        29,   0,   0,   0,   0,   0,   0,   0,   0,   0,  24], dtype=uint8)</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="paragraph">
+<p>The CGSE provides a module to inspect and work with PLATO SpaceWire packets. The above housekeeping packet can be inspected using the <code>HousekeepingPacket</code> class from the <code>egse.spw</code> package:</p>
+</div>
+<div id="_tabset_7" class="tabset is-loading">
+<div class="ulist tabs">
+<ul>
+<li id="_tabset_7_egse_h5">
+<p>egse.h5</p>
+</li>
+<li id="_tabset_7_h5py">
+<p>h5py</p>
+</li>
+</ul>
+</div>
+<div class="content">
+<div class="tab-pane" aria-labelledby="_tabset_7_egse_h5">
+<div class="listingblock">
+<div class="content">
+<pre>&gt;&gt;&gt; from egse.spw import HousekeepingPacket
+&gt;&gt;&gt; hk_data = h5.get_data(h5_fd["/0/hk"])
+&gt;&gt;&gt; hk = HousekeepingPacket(hk_data)
+&gt;&gt;&gt; print(hk)
+print(hk)
+HousekeepingPacket:
+  Logical Address = 0x50
+  Protocol ID = 0xF0
+  Length = 144
+  Type = mode:FULL_IMAGE_MODE, last_packet:True, CCD side:E, CCD number:0, Frame number:0, Packet Type:HOUSEKEEPING_DATA
+  Frame Counter = 6173
+  Sequence Counter = 0
+  Data =
+b'\x80\x00\x80\x00\x80\x00\x80\x00\x80\x00\x80\x00\x7f\xff\x7f\xff\x7f\xff\x7f\xff\x7f\xff\x7f\xff\x7f\xff\x7f\xff\x7f\xff\x80\x15\x00\x00\x80X\x80W\x80X\x80X\x80X\x80W\x80X\x80X\x80U\x80V\x80V9\xbf\xfc\x8a\xfa\xe9\x80W\x80X\x1a\x9f\xe7]\x19y\xe7n\x1a\x8c\xdf5\x1a\x80S\xbf@\xba\x07D\xfb|:\xec\n\xb5\x00\x00\x80W\x80X\x94\xc1\x80U\x80Y\x94\xc1\x80X\x80X\x94\xba\x80V\x80Y\x94\xca\x80V\x80W\x80U\x80Y\x80Z\x005\x00\x01\x18\x1d\x00\x00\x00\x00\x00\x00\x00\x00\x00\x18'</pre>
+</div>
+</div>
+</div>
+<div class="tab-pane" aria-labelledby="_tabset_7_h5py">
+<div class="paragraph">
+<p>In this case only the retrieving of the <code>hk_data</code> is different:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>&gt;&gt;&gt; hk_data = h5_fd["/0/hk"][()]</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="paragraph">
+<p>Thus far we have explored the following format of the HDF5 file:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>h5_file
+  ├──── 0
+  │     ├──── data
+  │     ├──── hk
+  │     └──── timecode
+  ├──── 1
+  │     ├──── data
+  │     ├──── hk
+  │     └──── timecode
+  ├──── 2
+  │     ├──── data
+  │     ├──── hk
+  │     └──── timecode
+  ├──── 3
+  │     ├──── data
+  │     ├──── hk
+  │     └──── timecode
+  ├──── dpu
+  ├──── obsid
+  ├──── register
+  └──── versions
+        └──── format_version</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>We haven&#8217;t inspected the <code>versions</code> group yet, it currently contains only one dataset, <code>format_version</code>. This version describes the changes in the HDF5 file with respect to available groups, datasets and attributes. The format version can be accessed as follows.</p>
+</div>
+<div id="_tabset_8" class="tabset is-loading">
+<div class="ulist tabs">
+<ul>
+<li id="_tabset_8_egse_h5">
+<p>egse.h5</p>
+</li>
+<li id="_tabset_8_h5py">
+<p>h5py</p>
+</li>
+</ul>
+</div>
+<div class="content">
+<div class="tab-pane" aria-labelledby="_tabset_8_egse_h5">
+<div class="listingblock">
+<div class="content">
+<pre>&gt;&gt;&gt; h5.show_attributes(h5_fd["/versions/format_version"])
+major_version: 2 (32 bytes)
+minor_version: 4 (32 bytes)
+Total size of attributes: 64 bytes</pre>
+</div>
+</div>
+</div>
+<div class="tab-pane" aria-labelledby="_tabset_8_h5py">
+<div class="listingblock">
+<div class="content">
+<pre>&gt;&gt;&gt; list(h5_fd["/versions/format_version"].attrs)
+['major_version', 'minor_version']
+&gt;&gt;&gt; h5_fd["/versions/format_version"].attrs["major_version"]
+2
+&gt;&gt;&gt; h5_fd["/versions/format_version"].attrs["minor_version"]
+4</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="paragraph">
+<p>Up to now, the format versions have changed from 2.0 to 2.4 as follows:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>2.0 - introduced the format_version
+2.1 - Added obsid as a dataset to the HDF5 file
+2.2 - Multiple commands can now be saved under the same frame number
+2.3 - introduced /dpu/num_cycles attribute
+2.4 - introduced /dpu/slicing_num_cycles attribute</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Before we dive into the <code>data</code> groups, let&#8217;s first inspect the three remaining datasets <code>dpu</code>, <code>obsid</code> and <code>register</code>. The <code>obsid</code> dataset contains the full observation identifier where this HDF5 file belongs to as a bytes object. If the <code>obsid</code> is empty, no observation was running.</p>
+</div>
+<div id="_tabset_9" class="tabset is-loading">
+<div class="ulist tabs">
+<ul>
+<li id="_tabset_9_egse_h5">
+<p>egse.h5</p>
+</li>
+<li id="_tabset_9_h5py">
+<p>h5py</p>
+</li>
+</ul>
+</div>
+<div class="content">
+<div class="tab-pane" aria-labelledby="_tabset_9_egse_h5">
+<div class="listingblock">
+<div class="content">
+<pre>&gt;&gt;&gt; h5.get_data(h5_fd["/obsid"]).item()
+b'IAS_00088_00938'</pre>
+</div>
+</div>
+</div>
+<div class="tab-pane" aria-labelledby="_tabset_9_h5py">
+<div class="listingblock">
+<div class="content">
+<pre>&gt;&gt;&gt; h5_fd["/obsid"][()]
+b'IAS_00088_00938'</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="paragraph">
+<p>The <code>dpu</code> dataset contains DPU Processor specific parameters that are needed to properly process the data. These parameters are available as attributes to this dataset and are mainly used by the FITS generation process.</p>
+</div>
+<div id="_tabset_10" class="tabset is-loading">
+<div class="ulist tabs">
+<ul>
+<li id="_tabset_10_egse_h5">
+<p>egse.h5</p>
+</li>
+<li id="_tabset_10_h5py">
+<p>h5py</p>
+</li>
+</ul>
+</div>
+<div class="content">
+<div class="tab-pane" aria-labelledby="_tabset_10_egse_h5">
+<div class="listingblock">
+<div class="content">
+<pre>&gt;&gt;&gt; h5.show_attributes(h5_fd["/dpu"])
+num_cycles: 10 (32 bytes)
+slicing_num_cycles: 0 (32 bytes)
+Total size of attributes: 64 bytes</pre>
+</div>
+</div>
+</div>
+<div class="tab-pane" aria-labelledby="_tabset_10_h5py">
+<div class="listingblock">
+<div class="content">
+<pre>&gt;&gt;&gt; list(h5_fd["/dpu"].attrs)
+['num_cycles', 'slicing_num_cycles']
+&gt;&gt;&gt; h5_fd["/dpu"].attrs["num_cycles"]
+10</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="paragraph">
+<p>Finally, the <code>register</code> dataset is a Numpy array that is a mirror of the register memory map in the N-FEE at the time of the sync pulse.</p>
+</div>
+<div id="_tabset_11" class="tabset is-loading">
+<div class="ulist tabs">
+<ul>
+<li id="_tabset_11_egse_h5">
+<p>egse.h5</p>
+</li>
+<li id="_tabset_11_h5py">
+<p>h5py</p>
+</li>
+</ul>
+</div>
+<div class="content">
+<div class="tab-pane" aria-labelledby="_tabset_11_egse_h5">
+<div class="listingblock">
+<div class="content">
+<pre>&gt;&gt;&gt; h5.get_data(h5_fd["/register"])
+array([ 17, 187,   0, ...,   0,   0,   0], dtype=uint8)</pre>
+</div>
+</div>
+</div>
+<div class="tab-pane" aria-labelledby="_tabset_11_h5py">
+<div class="listingblock">
+<div class="content">
+<pre>&gt;&gt;&gt; h5_fd["/register"][()]
+array([ 17, 187,   0, ...,   0,   0,   0], dtype=uint8)</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="paragraph">
+<p>The content of the <code>register</code> dataset can be inspected using the <code>RegisterMap</code> class from the CGSE. If you are using a slightly older version of the CGSE, your output might looks different, i.e. not in a nicely formatted table. The content is however the same.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>&gt;&gt;&gt; import rich
+&gt;&gt;&gt; from egse.reg import RegisterMap
+&gt;&gt;&gt; reg_data = h5.get_data(h5_fd["/register"])
+&gt;&gt;&gt; reg = RegisterMap(name="N-FEE", memory_map=reg_data)
+&gt;&gt;&gt; rich.print(reg)
+┏━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━┓
+┃ Register      ┃ Parameter                    ┃ HEX    ┃
+┡━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━┩
+│ reg_0_config  │ v_start                      │ 0x0    │
+│ reg_0_config  │ v_end                        │ 0x11bb │
+│ reg_1_config  │ charge_injection_width       │ 0x64   │
+│ reg_1_config  │ charge_injection_gap         │ 0x64   │
+│ reg_2_config  │ parallel_toi_period          │ 0x36b  │
+│ reg_2_config  │ parallel_clk_overlap         │ 0xfa   │
+│ reg_2_config  │ ccd_readout_order            │ 0xe4   │
+│ reg_3_config  │ n_final_dump                 │ 0x0    │
+│ reg_3_config  │ h_end                        │ 0x8f6  │
+│ reg_3_config  │ charge_injection_en          │ 0x0    │
+│ reg_3_config  │ tri_level_clk_en             │ 0x0    │
+│ reg_3_config  │ img_clk_dir                  │ 0x0    │
+│ reg_3_config  │ reg_clk_dir                  │ 0x0    │
+│ reg_4_config  │ packet_size                  │ 0x7d8c │
+│ reg_4_config  │ int_sync_period              │ 0x9c4  │
+│ reg_5_config  │ Trap_Pumping_Dwell_counter   │ 0x30d4 │
+│ reg_5_config  │ sync_sel                     │ 0x0    │
+│ reg_5_config  │ sensor_sel                   │ 0x3    │
+│ reg_5_config  │ digitise_en                  │ 0x1    │
+│ reg_5_config  │ DG_en                        │ 0x0    │
+│ reg_5_config  │ ccd_read_en                  │ 0x1    │
+│ reg_5_config  │ conv_dly                     │ 0xf    │
+│ reg_5_config  │ High_precision_HK_en         │ 0x0    │
+│ reg_6_config  │ ccd1_win_list_ptr            │ 0x0    │
+│ reg_7_config  │ ccd1_pktorder_list_ptr       │ 0x0    │
+│ reg_8_config  │ ccd1_win_list_length         │ 0x0    │
+│ reg_8_config  │ ccd1_win_size_x              │ 0x0    │
+│ reg_8_config  │ ccd1_win_size_y              │ 0x0    │
+│ reg_8_config  │ reg_8_config_reserved        │ 0x0    │
+│ reg_9_config  │ ccd2_win_list_ptr            │ 0x0    │
+│ reg_10_config │ ccd2_pktorder_list_ptr       │ 0x0    │
+│ reg_11_config │ ccd2_win_list_length         │ 0x0    │
+│ reg_11_config │ ccd2_win_size_x              │ 0x0    │
+│ reg_11_config │ ccd2_win_size_y              │ 0x0    │
+│ reg_11_config │ reg_11_config_reserved       │ 0x0    │
+│ reg_12_config │ ccd3_win_list_ptr            │ 0x0    │
+│ reg_13_config │ ccd3_pktorder_list_ptr       │ 0x0    │
+│ reg_14_config │ ccd3_win_list_length         │ 0x0    │
+│ reg_14_config │ ccd3_win_size_x              │ 0x0    │
+│ reg_14_config │ ccd3_win_size_y              │ 0x0    │
+│ reg_14_config │ reg_14_config_reserved       │ 0x0    │
+│ reg_15_config │ ccd4_win_list_ptr            │ 0x0    │
+│ reg_16_config │ ccd4_pktorder_list_ptr       │ 0x0    │
+│ reg_17_config │ ccd4_win_list_length         │ 0x0    │
+│ reg_17_config │ ccd4_win_size_x              │ 0x0    │
+│ reg_17_config │ ccd4_win_size_y              │ 0x0    │
+│ reg_17_config │ reg_17_config_reserved       │ 0x0    │
+│ reg_18_config │ ccd_vod_config               │ 0xeef  │
+│ reg_18_config │ ccd1_vrd_config              │ 0xe65  │
+│ reg_18_config │ ccd2_vrd_config              │ 0x65   │
+│ reg_19_config │ ccd2_vrd_config              │ 0xe    │
+│ reg_19_config │ ccd3_vrd_config              │ 0xe65  │
+│ reg_19_config │ ccd4_vrd_config              │ 0xe65  │
+│ reg_19_config │ ccd_vgd_config               │ 0x9    │
+│ reg_20_config │ ccd_vgd_config               │ 0xb1   │
+│ reg_20_config │ ccd_vog_config               │ 0x19a  │
+│ reg_20_config │ ccd_ig_hi_config             │ 0xfff  │
+│ reg_21_config │ ccd_ig_lo_config             │ 0x0    │
+│ reg_21_config │ trk_hld_hi                   │ 0x4    │
+│ reg_21_config │ trk_hld_lo                   │ 0xe    │
+│ reg_21_config │ cont_rst_on                  │ 0x0    │
+│ reg_21_config │ cont_cdsclp_on               │ 0x0    │
+│ reg_21_config │ ccd_mode_config              │ 0x5    │
+│ reg_21_config │ cont_rowclp_on               │ 0x0    │
+│ reg_21_config │ reg_21_config_reserved       │ 0x0    │
+│ reg_21_config │ clear_error_flag             │ 0x1    │
+│ reg_22_config │ r_cfg1                       │ 0x7    │
+│ reg_22_config │ r_cfg2                       │ 0xb    │
+│ reg_22_config │ cdsclp_lo                    │ 0x9    │
+│ reg_22_config │ adc_pwrdn_en                 │ 0x1    │
+│ reg_22_config │ reg_22_config_reserved_1     │ 0x0    │
+│ reg_22_config │ cdsclp_hi                    │ 0x0    │
+│ reg_22_config │ rowclp_hi                    │ 0x0    │
+│ reg_22_config │ rowclp_lo                    │ 0x2    │
+│ reg_22_config │ reg_22_config_reserved_2     │ 0x0    │
+│ reg_23_config │ ccd1_last_Epacket            │ 0x0    │
+│ reg_23_config │ ccd1_last_Fpacket            │ 0x0    │
+│ reg_23_config │ ccd2_last_Epacket            │ 0x0    │
+│ reg_23_config │ reg_23_config_reserved       │ 0x0    │
+│ reg_24_config │ ccd2_last_Fpacket            │ 0x0    │
+│ reg_24_config │ ccd3_last_Epacket            │ 0x0    │
+│ reg_24_config │ ccd3_last_Fpacket            │ 0x0    │
+│ reg_24_config │ reg_24_config_reserved       │ 0x0    │
+│ reg_25_config │ ccd4_last_Epacket            │ 0x0    │
+│ reg_25_config │ ccd4_last_Fpacket            │ 0x0    │
+│ reg_25_config │ Surface_Inversion_counter    │ 0x64   │
+│ reg_25_config │ reg_25_config_reserved       │ 0x0    │
+│ reg_26_config │ Readout_pause_counter        │ 0x7d0  │
+│ reg_26_config │ Trap_Pumping_Shuffle_counter │ 0x3e8  │
+└───────────────┴──────────────────────────────┴────────┘</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>The last group to inspect is the <code>data</code> group which is part of each of the readout groups. The <code>data</code> group contains all the SpaceWire packets that contain the CCD image data. The packets contain the serial prescan, serial overscan, the actual image data and the parallel overscan (if present). From the attributes of the <code>dpu</code> dataset we learned that <code>h_end=2294</code>, <code>v_start=0</code> and <code>v_end=4539</code>. The <code>h_end</code> attribute defines what is in the row data. The value <code>h_end=2294</code> means 25 pixels of serial prescan, 2255 pixels of image data, and 15 pixels of serial overscan data. Each packet in the <code>data</code> group is a Numpy array of type <code>uint8</code>, but the actual pixel data is a 16bit integer. The header of a SpW data packet is 10 bytes, so from this information we can calculate that there are 7 lines contained in each packet of length 32140. We also have data packets of 9190 bytes which contain only two rows of data.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>&gt;&gt;&gt; (32140-10)/2/2295
+7.0
+&gt;&gt;&gt; (9190-10)/2/2295
+2.0</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>We requested 4540 rows (<code>v_end - v_start + 1</code>) which is a full CCD of 4510 rows + 30 rows parallel overscan data. Image data and overscan data are sent in separate packets, so we have 644 + 1 packets of image data and 4 + 1 packets of parallel overscan data.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>&gt;&gt;&gt; 644*7 + 1*2  # 644 packets of 32140 bytes + 1 packet of 9190 bytes
+4510
+&gt;&gt;&gt; 4*7 + 1*2  # 4 packets of 32140 bytes + 1 packet of 9190 bytes
+30</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>This gives us a total of 650 packets for one side of the CCD, but since we requested both sides of the CCD (see <code>sensor_sel=3</code> in the <code>dpu</code> attributes or the <code>register</code> dataset above), we end up with a total of 1300 packets (datasets) in each of the <code>data</code> groups in <code>/0</code>, <code>/1</code>, <code>/2</code>, and <code>/3</code>.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>&gt;&gt;&gt; len(h5_fd["/0/data"])
+1300</pre>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_inspecting_hdf5_files_with_the_toolset_from_the_cgse">4.3. Inspecting HDF5 files with the toolset from the CGSE</h3>
+<div class="paragraph">
+<p>So far, we have been inspecting the HDF5 files using code entered in the Python REPL. The Common-EGSE however also provides a nice GUI to visualise all groups, datasets and attributes from the PLATO HDF5 files. If you were involved in camera testing, you have probably seen the DPU Image Display GUI that in real-time updates the image data and other metadata received from the camera. The life data is constructed from the SpaceWire data packets on-the-fly, not from an HDF5 file. An example of a measurement at CSL during alignment is given in the screenshot below.</p>
+</div>
+<div class="imageblock text-center">
+<div class="content">
+<img src="../images/dpu_ui.png" alt="dpu ui" width="80%">
+</div>
+</div>
+<div class="paragraph">
+<p>The same visualisation is provided by the stand-alone application <code>hdf5_ui</code> that can be started from the terminal. This N-FEE Data Inspector GUI re-uses parts of the code from the DPU Image Display GUI, only the data that is shown is now read from an HDF5 file. Let&#8217;s explore the functionality provided by the HDF5 GUI using a dataset that was taken at CSL during Short Functional Tests (SFT), i.e. data taken with the N-FEE simulator instead of the real instrument. When the GUI starts up, select the dataset '3' which will show the simulated image data as in the screenshot below.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>$ hdf5_ui 20221222_CSL1_N-FEE_SPW_00433.hdf5</pre>
+</div>
+</div>
+<div class="imageblock text-center">
+<div class="content">
+<img src="../images/hdf5_ui-01.png" alt="hdf5 ui 01" width="80%">
+</div>
+</div>
+<div class="paragraph">
+<p>Now you can start navigating through the data by clicking and unfolding items in the upper-left panel. The screenshots below show typically some of the actions you can do and what type of data is presented.</p>
+</div>
+<table class="tableblock frame-none grid-none stretch">
+<colgroup>
+<col style="width: 50%;">
+<col style="width: 50%;">
+</colgroup>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><div class="content"><div class="imageblock">
+<div class="content">
+<img src="../images/hdf5_ui-02.png" alt="hdf5 ui 02">
+</div>
+<div class="title">Screenshot 1 – Inspecting the Register Map</div>
+</div></div></td>
+<td class="tableblock halign-left valign-top"><div class="content"><div class="imageblock">
+<div class="content">
+<img src="../images/hdf5_ui-03.png" alt="hdf5 ui 03">
+</div>
+<div class="title">Screenshot 2 – The Housekeeping Packet</div>
+</div></div></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><div class="content"><div class="imageblock">
+<div class="content">
+<img src="../images/hdf5_ui-04.png" alt="hdf5 ui 04">
+</div>
+<div class="title">Screenshot 3 – Image zoom and data attributes</div>
+</div></div></td>
+<td class="tableblock halign-left valign-top"><div class="content"><div class="imageblock">
+<div class="content">
+<img src="../images/hdf5_ui-05.png" alt="hdf5 ui 05">
+</div>
+<div class="title">Screenshot 4 – Inspection of individual data packets</div>
+</div></div></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p><strong>Screenshot 1</strong> shows the Register Map for this cycle. There is only one Register Map per HDF5 file. The register map is the status at the time the timecode is sent for the first readout frame. Commanding is possible at the end of any readout, but the changes are only activated in the FPGA on a long pulse of 400ms. That is when also the register map is stored in the HDF5 file. There are two register parameters<sup class="footnote">[<a id="_footnoteref_1" class="footnote" href="#_footnotedef_1" title="View footnote.">1</a>]</sup> that are updated on every pulse, long and short pulse. Those parameters are <code>sensor_sel</code> and <code>ccd_readout_order</code> and because of this more regular update possibility these parameters are also available as attributes in each of the <code>data</code> groups. So, in principle, the CCD side can be changed at every readout, and this will be recorded in the <code>sensor_sel</code> attribute to the <code>data</code> group. Above the register map table, you can see an empty text field. In this field you can type a string pattern to filter the parameters shown in the table. The string pattern shall be a simple string or a regular expression and it will match either the register name or the parameter name. For example, to list only parameters for register '3' enter 'reg_3_config' in this search field, to see all windowing size parameters you can enter something like <code>win.*size</code>.</p>
+</div>
+<div class="paragraph">
+<p><strong>Screenshot 2</strong> shows the view of the housekeeping packet for that readout frame. The housekeeping packet is sent for each sync pulse (long and short) right after the timecode. So, you will find a <code>hk</code> dataset for each of the readout frames. The housekeeping view currently only shows the data as raw values, no conversion to engineering values like voltages or temperatures is done at this stage.</p>
+</div>
+<div class="paragraph">
+<p><strong>Screenshot 3</strong> shows a combination of information. The images are zoomed in to show (1) that we have 25 serial prescan pixels, these are the pixels before the red line in the left part of the screenshot (F-side), and (2) we have 30 parallel overscan pixels, above the red horizontal line in the right part of the screenshot (E-side). We can now also clearly see that we have image pattern data (XXXX add reference here). The cross that is visible in the image data is put there by the N-FEE simulator to ease the validation of the image coordinates and pixel positions. Clicking the '3' group in the tree view will show the image data, if you expand the entry by clicking the small handle before the '3', you can then click the <code>data</code> group. This will not change the image display, but will update the details panel in the lower-left part of the screenshot. Select 'attributes' to see the specific parameters attached to this 'data' group.</p>
+</div>
+<div class="paragraph">
+<p>In <strong>Screenshot 4</strong> I have further expanded the <code>data</code> group and the tree view now shows the individual SpaceWire data packets. If you click on one of them, the content of the packet is printed in different formats and also the header is printed in a human readable format. The parameter 'w' is the number of pixels in the data part of the SpW packet. As said above, we have 7 rows per packet &#8594; 16065 / 7 = 2295, which is the number op pixels per row. This view is mainly there for debugging and can change in the future.</p>
+</div>
+<hr>
+<div class="paragraph">
+<p>TBW</p>
+</div>
 <div class="ulist checklist">
 <ul class="checklist">
 <li>
-<p><i class="fa fa-square-o"></i> format version</p>
+<p><i class="fa fa-square-o"></i> How can we inspect the content of the data packets &#8594; DataPackets class</p>
 </li>
 <li>
-<p><i class="fa fa-square-o"></i> top-level groups</p>
+<p><i class="fa fa-square-o"></i> Explain when we have a commands group and what it contains</p>
 </li>
 <li>
-<p><i class="fa fa-square-o"></i> attributes</p>
+<p><i class="fa fa-square-o"></i> What is the relation between the number of HDF5 files and the <code>num_cycles</code> value?</p>
+</li>
+<li>
+<p><i class="fa fa-check-square-o"></i> How to visualize the HDF5 files with the GUI <code>hdf5_ui</code></p>
+</li>
+<li>
+<p><i class="fa fa-square-o"></i> Which scripts do we have to inspect and check HDF5 files?</p>
 </li>
 </ul>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_the_telemetry_tm_dictionary">4.3. The Telemetry (TM) Dictionary</h3>
+<h3 id="_the_telemetry_tm_dictionary">4.4. The Telemetry (TM) Dictionary</h3>
 <div class="paragraph">
 <p>The <code>tm-dicionary.csv</code> file (further referred to as the "telemetry &#8482; dictionary") provides an overview of all housekeeping (HK) and metrics parameters in the EGSE system.  It is used:</p>
 </div>
@@ -744,7 +1535,7 @@ The following extensions can be included in the FITS files:</p>
 </ul>
 </div>
 <div class="sect3">
-<h4 id="_the_files_content">4.3.1. The File&#8217;s Content</h4>
+<h4 id="_the_files_content">4.4.1. The File&#8217;s Content</h4>
 <div class="paragraph">
 <p>For each device we need to add all HK parameters to the TM dictionary.  For each of these parameters you need to add one line with the following information (in the designated columns):</p>
 </div>
@@ -866,7 +1657,7 @@ The following extensions can be included in the FITS files:</p>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_egse_conform_parameter_names">4.3.2. EGSE-Conform Parameter Names</h4>
+<h4 id="_egse_conform_parameter_names">4.4.2. EGSE-Conform Parameter Names</h4>
 <div class="paragraph">
 <p>The correct (i.e. EGSE-conform) naming of the telemetry should be taken care of in the <code>get_housekeeping</code> method of the device protocols.</p>
 </div>
@@ -960,7 +1751,7 @@ The following extensions can be included in the FITS files:</p>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_synoptics">4.3.3. Synoptics</h4>
+<h4 id="_synoptics">4.4.3. Synoptics</h4>
 <div class="paragraph">
 <p>The Synoptics Manager groups a pre-defined set of HK values in a single file.  It&#8217;s not the original EGSE-conform names that are use in the synoptics, but names with the prefix <code>GSYN_</code>.  The following information is comprised in the synoptics:</p>
 </div>
@@ -997,7 +1788,7 @@ The following extensions can be included in the FITS files:</p>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_translation_tables">4.3.4. Translation Tables</h4>
+<h4 id="_translation_tables">4.4.4. Translation Tables</h4>
 <div class="paragraph">
 <p>The translation tables that were mentioned in the introduction, can be created by the <code>read_conversion_dict</code> function in <code>egse.hk</code>.  It takes the following input parameters:</p>
 </div>
@@ -1026,7 +1817,7 @@ The following extensions can be included in the FITS files:</p>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_sending_hk_to_synoptics">4.3.5. Sending HK to Synoptics</h4>
+<h4 id="_sending_hk_to_synoptics">4.4.5. Sending HK to Synoptics</h4>
 <div class="paragraph">
 <p>When you want to include HK of your devices, you need to take the following actions:</p>
 </div>
@@ -1068,11 +1859,65 @@ The following extensions can be included in the FITS files:</p>
 </div>
 </div>
 </div>
+<div id="footnotes">
+<hr>
+<div class="footnote" id="_footnotedef_1">
+<a href="#_footnoteref_1">1</a>. There are actually more register parameters that are updated on every sync pulse, but those are all windowing parameters that are not used in camera testing.
+</div>
+</div>
 <div id="footer">
 <div id="footer-text">
 Version 0.1<br>
 Last updated 2022-07-01 18:10:52 +0200
 </div>
 </div>
+<script>
+/*! Asciidoctor Tabs | Copyright (c) 2018-present Dan Allen | MIT License */
+;(function () {
+  'use strict'
+
+  var hash = window.location.hash
+  find('.tabset').forEach(function (tabset) {
+    var active
+    var tabs = tabset.querySelector('.tabs')
+    if (tabs) {
+      var first
+      find('li', tabs).forEach(function (tab, idx) {
+        var id = (tab.querySelector('a[id]') || tab).id
+        if (!id) return
+        var pane = tabset.querySelector('.tab-pane[aria-labelledby~="' + id + '"]')
+        if (!pane) return
+        if (!idx) first = { tab: tab, pane: pane }
+        if (!active && hash === '#' + id && (active = true)) {
+          tab.classList.add('is-active')
+          if (pane) pane.classList.add('is-active')
+        } else if (!idx) {
+          tab.classList.remove('is-active')
+          if (pane) pane.classList.remove('is-active')
+        }
+        tab.addEventListener('click', activateTab.bind({ tabset: tabset, tab: tab, pane: pane }))
+      })
+      if (!active && first) {
+        first.tab.classList.add('is-active')
+        if (first.pane) first.pane.classList.add('is-active')
+      }
+    }
+    tabset.classList.remove('is-loading')
+  })
+
+  function activateTab (e) {
+    var tab = this.tab
+    var pane = this.pane
+    find('.tabs li, .tab-pane', this.tabset).forEach(function (it) {
+      it === tab || it === pane ? it.classList.add('is-active') : it.classList.remove('is-active')
+    })
+    e.preventDefault()
+  }
+
+  function find (selector, from) {
+    return Array.prototype.slice.call((from || document).querySelectorAll(selector))
+  }
+})()
+</script>
 </body>
 </html>
