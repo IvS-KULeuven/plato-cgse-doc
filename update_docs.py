@@ -18,16 +18,17 @@ import rich
 HERE = Path(__file__).parent.resolve()
 
 for folder, name in [
-    ("installation", "installation"),
-    ("develop", "developer"),
-    ("user", "user"),
+    ("installation", "installation-manual"),
+    ("develop", "developer-manual"),
+    ("user", "user-manual"),
+    ("icd", "icd"),
 ]:
 
-    rich.print(f"Processing {name} manual: html.", end="", flush=True)
+    rich.print(f"Processing {name}: html.", end="", flush=True)
     subprocess.run(
         [
             f"asciidoctor "
-            f"--require asciidoctor-tabs --out-file ../../docs/asciidocs/{name}-manual.html {name}-manual.adoc"
+            f"--require asciidoctor-tabs --out-file ../../docs/asciidocs/{name}.html {name}.adoc"
         ],
         cwd=HERE / f"src/{folder}",
         shell=True,
@@ -37,7 +38,7 @@ for folder, name in [
     subprocess.run(
         [
             f"asciidoctor-pdf "
-            f"--out-file ../../docs/pdfs/{name}-manual.pdf {name}-manual.adoc"
+            f"--out-file ../../docs/pdfs/{name}.pdf {name}.adoc"
         ],
         cwd=HERE / f"src/{folder}",
         shell=True,
