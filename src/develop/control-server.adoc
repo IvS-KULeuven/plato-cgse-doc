@@ -1,6 +1,142 @@
 ==	The Control Server
+:source-highlighter: rouge
 
 TODO:
 
 * Explain what the CS does during startup and what happens when this fails.
 * description of the `control.py` module
+
+[#multiple-idential-devices]
+=== Create multiple control servers for identical devices
+
+This section describes what you can do when you have identical devices, such as two LakeShore Temperature Controllers or multiple power supplies, and need to use them in the same project at the same site. While the control servers are configured in the Settings YAML file with, among other things, IP address and port numbers, they still need to be addressed in the Setup for configuring your equipment at a certain time and location. Specifically, you will need to create the proper `Proxy` class to communicate with your control server.
+
+The specificity of the equipment used in your lab is defined in the Setup, and from the Setup, you will usually create the `Controller` or `Proxy` objects to access and control your equipment. This can be done in two different ways, which are explained in the next two sections.
+
+==== Directly define the device controller class
+
+In the Setup, you will define your devices as in the excerpt below. This will create a `PunaProxy` object whenever you request the device from the Setup.
+
+[source]
+----
+gse:
+    hexapod:
+        device: class//egse.hexapod.symetrie.PunaProxy
+----
+
+Some devices contain more than one controller and need several control servers to manage that device. An example of this type is the AEU Test EGSE. This device contains six power supply units and two analog wave generators. When requesting a `Proxy` object to access the device, say PSU 2, the PSU identifier (the number '2' in this case) needs to be passed into the `\\__init__()` method of the `Proxy` class. To accomplish this, the Setup for this device contains an additional device argument:
+
+[source]
+----
+gse:
+    aeu:
+        psu2:
+            device: class//egse.aeu.aeu.PSUProxy
+            device_args: [2]
+----
+All the values that are given in the list for the `device_args` are passed as positional arguments to the `\\__init__()` method of the `PSUProxy` class. When requesting the device from the Setup, you will get a `PSUProxy` object. The super class was however instantiated with the port number that was defined for PSU 2 in the settings file.
+
+[source]
+----
+>>> psu = setup.gse.aeu.psu2.device
+>>> psu
+<egse.aeu.aeu.PSUProxy object at 0x7f83dafc2460>
+>>> psu.name
+'PSU2'
+>>> psu.get_endpoint()
+'tcp://localhost:30010'
+----
+
+==== Use a factory to create a device
+
+In the Setup you can, instead of a `class//` definition, use a `factory//` definition. A Factory is a class with a specific interface to create the class object that you intended based on a number of arguments that are also specified in the Setup. Let's first look at an example for the PUNA Hexapod. The following excerpt from a Setup defines the hexapod device as a `ControllerFactory`. There are also two device arguments defined, a device name and an idenditier.
+
+[source]
+----
+gse:
+    hexapod:
+        device: factory//egse.hexapod.symetrie.ControllerFactory
+        device_args:
+            device_name: PUNA Hexapod
+            device_id: 1A
+----
+
+So, what happens when you access this device from the Setup. Let's look at the following code snippet from your Python REPL. The Setup has been loaded already in the `setup` variable. To access the device, use the dot (.) notation.
+
+[source%linenums]
+----
+>>> puna = setup.gse.hexapod.device
+>>> puna
+<egse.hexapod.symetrie.puna.PunaController object at 0x7f83e039ba60>
+>>> setup.gse.hexapod.device_args.device_id = "1B"
+>>> puna = setup.gse.hexapod.device
+>>> puna
+<egse.hexapod.symetrie.punaplus.PunaPlusController object at 0x7f83dab8ed00>
+----
+When we –with the given Setup– request the hexapod device, we get a `PunaController` object as you can see on line 3,
+when we change the `device_id` to '1B' and request the hexapod device, we get the `PunaPlusController` object (line 7). Changing the `device_id` resulted in a different class created by the Factroy. Any Factory class that is used this way in a Setup shall implement the `create(..)` method which is defined by the `DeviceFactoryInterface` class. Our `ControllerFactory` for the hexapod inherits from this interface and implements the method.
+
+[source,python]
+----
+class DeviceFactoryInterface:
+    def create(self, **kwargs):
+        ...
+
+
+class ControllerFactory(DeviceFactoryInterface):
+    """
+    A factory class that will create the Controller that matches the given device name
+    and identifier.
+
+    The device name is matched against the string 'puna' or 'zonda'. If the device name
+    doesn't contain one of these names, a ValueError will be raised. If the device_name
+    matches against 'puna', the additional `device_id` argument shall also be specified.
+    """
+    def create(self, device_name: str, *, device_id: str = None, **_ignored):
+
+        if "puna" in device_name.lower():
+            from egse.hexapod.symetrie.puna import PunaController
+            from egse.hexapod.symetrie.punaplus import PunaPlusController
+
+            if not device_id.startswith("H_"):
+                device_id = f"H_{device_id}"
+
+            hostname = PUNA_SETTINGS[device_id]["HOSTNAME"]
+            port = PUNA_SETTINGS[device_id]["PORT"]
+            controller_type = PUNA_SETTINGS[device_id]["TYPE"]
+
+            if controller_type == "ALPHA":
+                return PunaController(hostname=hostname, port=port)
+            elif controller_type == "ALPHA_PLUS":
+                return PunaPlusController(hostname=hostname, port=port)
+            else:
+                raise ValueError(
+                    f"Unknown controller_type ({controller_type}) for {device_name} "
+                    f"– {device_id}"
+                )
+
+        elif "zonda" in device_name.lower():
+            from egse.hexapod.symetrie.zonda import ZondaController
+            return ZondaController()
+
+        else:
+            raise ValueError(f"Unknown device name: {device_name}")
+----
+
+The `create(..)` method returns a device controller object for either the PUNA Alhpa or Alpha+ Controller, or for the ZONDA Controller. Each of these represent a Symétrie hexapod. The decision for which type of controller to return is first based on the device name, then on settings that depend on the device identifier. Both of these parameters are specified in the Setup (see above) and passed into the `create()` method of the factory class at the time the user requests the device from the setup.
+
+The `TYPE`, `HOSTNAME`, and `PORT` are loaded from the `PUNA_SETTINGS` dictionary. These settings are device specific and are defined in the local setting for your site. The `PUNA_SETTINGS` is a dictionary that represents part of the overall Settings. The factory class uses these device configuration settings to decide which controller object shall be instantiated and what the parameters for the creation shall be.
+
+----
+└── PMAC Controller
+    ├── H_1A
+    │   ├── TYPE: ALPHA
+    │   ├── HOSTNAME: XXX.XXX.XXX.X1A
+    │   └── PORT: 1025
+    └── H_1B
+        ├── TYPE: ALPHA_PLUS
+        ├── HOSTNAME: XXX.XXX.XXX.X1B
+        └── PORT: 23
+----
+
+You might think that it would be simpler to specify the device configuration settings also in the Setup and pass all this information to the create method when requesting the device from the Setup. However, this would undermine the specific difference between Settings and Setup and also would invalidate the direct creation of the controller object without the use of a factory class.

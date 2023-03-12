@@ -9,9 +9,9 @@
 
 '''
 
-Two of the requirements that were formulated when we started the analysis and design of the CGSE was that (1) it shouldn't be too difficult to implement device controllers and (2) the definition of the commands shall be done at one place only.So we started out with a design where the commands were defined in a YAML file (called the _command yaml file_) and the code would use this information to build the API for the device.That would make it —from the device developer point of view— rather easy to create the commanding interface for a new device.Unfortunately, the implementation was not that easy or straightforward.We are working in a client-server or even microservices environment which means the device commanding should be available on both the server side (what we call the Controller) and on the client side (what we call the Proxy).
+Two of the requirements that were formulated when we started the analysis and design of the CGSE was that (1) it shouldn't be too difficult to implement device controllers and (2) the definition of the commands shall be done at one place only. So we started out with a design where the commands were defined in a YAML file (called the _command yaml file_) and the code would use this information to build the API for the device. That would make it —from the device developer point of view— rather easy to create the commanding interface for a new device. Unfortunately, the implementation was not that easy or straightforward. We are working in a client-server or even microservices environment which means the device commanding should be available on both the server side (what we call the Controller) and on the client side (what we call the Proxy).
 
-
+[#_dynamic_interface_decorator]
 === The Dynamic Interface Decorator
 
 A `@dynamic_interface` decorator adds a private static variable to a function or method. The variable name that is attributed is `__dynamic_interface` and it is used as a marker on the function.
@@ -53,10 +53,14 @@ So, during the creation of the Proxy object, the command list is requested from 
 
 - [ ] describe how the `client_call()` method then works.
 
+[#_dynamic_command_decorator]
 === The Dynamic Command Decorator
 
-One of the of the dynamic interface decorator is that during construction of the Proxy class, the control server must be contacted to request the list of commands, other wise, the Proxy is not functional.
+One of the problems of the dynamic interface decorator is that during construction of the Proxy class, the control server must be contacted to request the list of commands, when this fails and the control server is not available, the Proxy is not functional.
 
+TBW: add more description of what the decorator is, what happens behind the scenes, how it is perceived on the client and on the server side etc...
+
+So, since the `@dynamic_command` is the successor of the `@dynamic_interface`, how do we refactor our code for this new commanding scheme. That will be explained in the next section.
 
 === Update your code to use the @dynamic_command decorator
 
@@ -131,5 +135,39 @@ The _Controller_ class still inherits from the _Interface_ class, but additional
 ----
 
 * Finally, remove all device command definitions from the device YAML file, in our case `smc9300.yaml`.
+
+Thus far we have touch on the following arguments that can be used with `@dynamic_command`.
+
+* `cmd_type` can be one of the following 'read', 'write', 'transaction', and 'query'. This is the only required argument for the decorator.
+
+* `cmd_string` defines the formatting of the eventual command string that will be passed to the transport functions. The `cmd_string` is a template string that contains `$`-based substitutions for the function arguments. When you specify the `use_format=True` keyword, the `cmd_string` will be formatted using the format() function instead of the template substitution. The format option is less secure, but provides the functionality to format the arguments.
++
+A template string looks like:
++
+    cmd_string="CREATE:SENS:TEMP ${name} ${type} default=${default}"
++
+The same `cmd_string` as a format option:
++
+    cmd_string="CREATE:SENS:TEMP {name} {type} default={default:0.4f}"
+    use_format=True
+
+* `process_response` is a pure functionfootnote:[A pure function is a function that has no side effects and always returns the same output for the same input.] to process the response from the device before it is returned
+
+* `process_cmd_string` is a pure function to process the given command string to make it ready for sending to the device.
+
+Then, there are these additional arguments that can be used with `@dynamic_command` to tune the command string and pre- and post-processing.
+
+* `use_format` defines if the `cmd_str` shall be formatted as a template string or with the `format()` method.
+
+* `process_kwargs` is a function that processes the keyword arguments and returns a string representation of those arguments. By default, keyword arguments are expanded in a string containing `key=value` pairs separated by spaces. This function is used when the arguments are given as `**kwargs` to the function definition.
+
+* `pre_cmd` specifies a function that will be executed before the processed command string is sent to the device.
+
+* `post_cmd` specifies a function that will be executed after the command is executed, i.e. sent to the device and potentially retrieved a response.
+
+The `pre_cmd` and `post_cmd` keywords specify a callable/function to be executed before and/or after the actual command was executed. These functions are called with specific keyword arguments that allow additional device interaction and response processing. The `pre_cmd` function is called with the keyword argument `transport=` which passes the device transport. This allows the function to interact with the device again through the methods defined by the DeviceTransport interface. Additionally, the name of the called function (`function_name`), the processed command string (`cmd_string`) and the original positional (`args`) and keyword arguments (`kwargs`) are passed into the `pre_cmd` function. These additional arguments should not be changed, but can be used by the function for processing, logging, etc. The `pre_cmd` function must not return anything.
+
+The `post_cmd` function is called with the keyword arguments `transport=` and `response=`. The response argument contains the response from the command that was previously sent to the device. The `post_cmd` function can use this response to parse its content and act against this content, although possible, it is usually not a good idea to alter the content of the response argument. The `post_cmd` function shall return (i.e. pass through) the response or return it's own information e.g. a status that was retrieved from the device with an additional command sent over transport.
+
 
 We now have walked through all the steps to upgrade your device commanding. The next thing to do is testing!
