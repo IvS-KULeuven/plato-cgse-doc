@@ -515,8 +515,8 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <h1>Common–EGSE : Developer Manual</h1>
 <div class="details">
 <span id="author" class="author">Rik Huygen, Sara Regibo</span><br>
-<span id="revnumber">version 1.3,</span>
-<span id="revdate">09/02/2023</span>
+<span id="revnumber">version 1.4,</span>
+<span id="revdate">12/03/2023</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -720,6 +720,19 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <div class="sectionbody">
 <div class="dlist">
 <dl>
+<dt class="hdlist1">12/03/2023 — v1.4</dt>
+<dd>
+<div class="ulist">
+<ul>
+<li>
+<p>Added description of the arguments that can be used with the <code>@dynamic_command</code> decorator, see <a href="#_dynamic_command_decorator">Section 6.5.3</a></p>
+</li>
+<li>
+<p>Added a section on creating multiple control servers for identical devices, see <a href="#multiple-idential-devices">Section 6.1.1</a>.</p>
+</li>
+</ul>
+</div>
+</dd>
 <dt class="hdlist1">09/02/2023 — v1.3</dt>
 <dd>
 <div class="ulist">
@@ -904,7 +917,7 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <p><i class="fa fa-square-o"></i> Somewhere it shall be clearly explained where all these processes need to be started, on the egse-server or egse-client, manually or by Systemd, &#8230;&#8203; or clicking an icon?</p>
 </li>
 <li>
-<p><i class="fa fa-square-o"></i> Should we maybe divide the developer manual in part 1 with coding advice and part 2 with the description of the CGSE code?</p>
+<p><i class="fa fa-check-square-o"></i> Should we maybe divide the developer manual in part 1 with coding advice and part 2 with the description of the CGSE code?</p>
 </li>
 <li>
 <p><i class="fa fa-square-o"></i> Explain how the Failure — Success — Response classes work</p>
@@ -920,6 +933,18 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 </li>
 <li>
 <p><i class="fa fa-square-o"></i> Describe how to detect which process is holding a connection on Linux and macOS. This happens sometimes when a process crashes or when the developer did not properly close all connection, or when a process is hanging. You will get a <code>OSError: [Errno 48] Address already in use</code>.</p>
+</li>
+<li>
+<p><i class="fa fa-square-o"></i> Describe the RegisterMap of the N-FEE and how and when it is synced with the DPU Processor. What is the equivalent of the FPGA (loading the Registers on every long pulse) in the DPU Processor (DPU Internals vs NFEEState).</p>
+</li>
+<li>
+<p><i class="fa fa-square-o"></i> Describe what the num_cycles parameter is and how this is used in the DPU Processor. That this parameter can be negative and what this means and why this decision (to not have too many if statements in the run() of the DPU Processor.)</p>
+</li>
+<li>
+<p><i class="fa fa-square-o"></i> Describe that the DPU Processor is time critical</p>
+</li>
+<li>
+<p><i class="fa fa-square-o"></i> Describe why certain control servers start a sub-process &#8594; TCS, DPU, &#8230;&#8203;</p>
 </li>
 </ul>
 </div>
@@ -2386,6 +2411,157 @@ $ invoke start-core-egse</pre>
 </li>
 </ul>
 </div>
+<div class="sect3">
+<h4 id="multiple-idential-devices">6.1.1. Create multiple control servers for identical devices</h4>
+<div class="paragraph">
+<p>This section describes what you can do when you have identical devices, such as two LakeShore Temperature Controllers or multiple power supplies, and need to use them in the same project at the same site. While the control servers are configured in the Settings YAML file with, among other things, IP address and port numbers, they still need to be addressed in the Setup for configuring your equipment at a certain time and location. Specifically, you will need to create the proper <code>Proxy</code> class to communicate with your control server.</p>
+</div>
+<div class="paragraph">
+<p>The specificity of the equipment used in your lab is defined in the Setup, and from the Setup, you will usually create the <code>Controller</code> or <code>Proxy</code> objects to access and control your equipment. This can be done in two different ways, which are explained in the next two sections.</p>
+</div>
+<div class="sect4">
+<h5 id="_directly_define_the_device_controller_class">Directly define the device controller class</h5>
+<div class="paragraph">
+<p>In the Setup, you will define your devices as in the excerpt below. This will create a <code>PunaProxy</code> object whenever you request the device from the Setup.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code>gse:
+    hexapod:
+        device: class//egse.hexapod.symetrie.PunaProxy</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Some devices contain more than one controller and need several control servers to manage that device. An example of this type is the AEU Test EGSE. This device contains six power supply units and two analog wave generators. When requesting a <code>Proxy</code> object to access the device, say PSU 2, the PSU identifier (the number '2' in this case) needs to be passed into the <code>__init__()</code> method of the <code>Proxy</code> class. To accomplish this, the Setup for this device contains an additional device argument:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code>gse:
+    aeu:
+        psu2:
+            device: class//egse.aeu.aeu.PSUProxy
+            device_args: [2]</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>All the values that are given in the list for the <code>device_args</code> are passed as positional arguments to the <code>__init__()</code> method of the <code>PSUProxy</code> class. When requesting the device from the Setup, you will get a <code>PSUProxy</code> object. The super class was however instantiated with the port number that was defined for PSU 2 in the settings file.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code>&gt;&gt;&gt; psu = setup.gse.aeu.psu2.device
+&gt;&gt;&gt; psu
+&lt;egse.aeu.aeu.PSUProxy object at 0x7f83dafc2460&gt;
+&gt;&gt;&gt; psu.name
+'PSU2'
+&gt;&gt;&gt; psu.get_endpoint()
+'tcp://localhost:30010'</code></pre>
+</div>
+</div>
+</div>
+<div class="sect4">
+<h5 id="_use_a_factory_to_create_a_device">Use a factory to create a device</h5>
+<div class="paragraph">
+<p>In the Setup you can, instead of a <code>class//</code> definition, use a <code>factory//</code> definition. A Factory is a class with a specific interface to create the class object that you intended based on a number of arguments that are also specified in the Setup. Let&#8217;s first look at an example for the PUNA Hexapod. The following excerpt from a Setup defines the hexapod device as a <code>ControllerFactory</code>. There are also two device arguments defined, a device name and an idenditier.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code>gse:
+    hexapod:
+        device: factory//egse.hexapod.symetrie.ControllerFactory
+        device_args:
+            device_name: PUNA Hexapod
+            device_id: 1A</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>So, what happens when you access this device from the Setup. Let&#8217;s look at the following code snippet from your Python REPL. The Setup has been loaded already in the <code>setup</code> variable. To access the device, use the dot (.) notation.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code>&gt;&gt;&gt; puna = setup.gse.hexapod.device
+&gt;&gt;&gt; puna
+&lt;egse.hexapod.symetrie.puna.PunaController object at 0x7f83e039ba60&gt;
+&gt;&gt;&gt; setup.gse.hexapod.device_args.device_id = "1B"
+&gt;&gt;&gt; puna = setup.gse.hexapod.device
+&gt;&gt;&gt; puna
+&lt;egse.hexapod.symetrie.punaplus.PunaPlusController object at 0x7f83dab8ed00&gt;</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>When we –with the given Setup– request the hexapod device, we get a <code>PunaController</code> object as you can see on line 3,
+when we change the <code>device_id</code> to '1B' and request the hexapod device, we get the <code>PunaPlusController</code> object (line 7). Changing the <code>device_id</code> resulted in a different class created by the Factroy. Any Factory class that is used this way in a Setup shall implement the <code>create(..)</code> method which is defined by the <code>DeviceFactoryInterface</code> class. Our <code>ControllerFactory</code> for the hexapod inherits from this interface and implements the method.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-python" data-lang="python">class DeviceFactoryInterface:
+    def create(self, **kwargs):
+        ...
+
+
+class ControllerFactory(DeviceFactoryInterface):
+    """
+    A factory class that will create the Controller that matches the given device name
+    and identifier.
+
+    The device name is matched against the string 'puna' or 'zonda'. If the device name
+    doesn't contain one of these names, a ValueError will be raised. If the device_name
+    matches against 'puna', the additional `device_id` argument shall also be specified.
+    """
+    def create(self, device_name: str, *, device_id: str = None, **_ignored):
+
+        if "puna" in device_name.lower():
+            from egse.hexapod.symetrie.puna import PunaController
+            from egse.hexapod.symetrie.punaplus import PunaPlusController
+
+            if not device_id.startswith("H_"):
+                device_id = f"H_{device_id}"
+
+            hostname = PUNA_SETTINGS[device_id]["HOSTNAME"]
+            port = PUNA_SETTINGS[device_id]["PORT"]
+            controller_type = PUNA_SETTINGS[device_id]["TYPE"]
+
+            if controller_type == "ALPHA":
+                return PunaController(hostname=hostname, port=port)
+            elif controller_type == "ALPHA_PLUS":
+                return PunaPlusController(hostname=hostname, port=port)
+            else:
+                raise ValueError(
+                    f"Unknown controller_type ({controller_type}) for {device_name} "
+                    f"– {device_id}"
+                )
+
+        elif "zonda" in device_name.lower():
+            from egse.hexapod.symetrie.zonda import ZondaController
+            return ZondaController()
+
+        else:
+            raise ValueError(f"Unknown device name: {device_name}")</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>The <code>create(..)</code> method returns a device controller object for either the PUNA Alhpa or Alpha+ Controller, or for the ZONDA Controller. Each of these represent a Symétrie hexapod. The decision for which type of controller to return is first based on the device name, then on settings that depend on the device identifier. Both of these parameters are specified in the Setup (see above) and passed into the <code>create()</code> method of the factory class at the time the user requests the device from the setup.</p>
+</div>
+<div class="paragraph">
+<p>The <code>TYPE</code>, <code>HOSTNAME</code>, and <code>PORT</code> are loaded from the <code>PUNA_SETTINGS</code> dictionary. These settings are device specific and are defined in the local setting for your site. The <code>PUNA_SETTINGS</code> is a dictionary that represents part of the overall Settings. The factory class uses these device configuration settings to decide which controller object shall be instantiated and what the parameters for the creation shall be.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>└── PMAC Controller
+    ├── H_1A
+    │   ├── TYPE: ALPHA
+    │   ├── HOSTNAME: XXX.XXX.XXX.X1A
+    │   └── PORT: 1025
+    └── H_1B
+        ├── TYPE: ALPHA_PLUS
+        ├── HOSTNAME: XXX.XXX.XXX.X1B
+        └── PORT: 23</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>You might think that it would be simpler to specify the device configuration settings also in the Setup and pass all this information to the create method when requesting the device from the Setup. However, this would undermine the specific difference between Settings and Setup and also would invalidate the direct creation of the controller object without the use of a factory class.</p>
+</div>
+</div>
+</div>
 </div>
 <div class="sect2">
 <h3 id="_the_proxy_class">6.2. The Proxy Class</h3>
@@ -2430,11 +2606,11 @@ $ invoke start-core-egse</pre>
 </div>
 <hr>
 <div class="paragraph">
-<p>Two of the requirements that were formulated when we started the analysis and design of the CGSE was that (1) it shouldn&#8217;t be too difficult to implement device controllers and (2) the definition of the commands shall be done at one place only.So we started out with a design where the commands were defined in a YAML file (called the <em>command yaml file</em>) and the code would use this information to build the API for the device.That would make it —from the device developer point of view— rather easy to create the commanding interface for a new device.Unfortunately, the implementation was not that easy or straightforward.We are working in a client-server or even microservices environment which means the device commanding should be available on both the server side (what we call the Controller) and on the client side (what we call the Proxy).</p>
+<p>Two of the requirements that were formulated when we started the analysis and design of the CGSE was that (1) it shouldn&#8217;t be too difficult to implement device controllers and (2) the definition of the commands shall be done at one place only. So we started out with a design where the commands were defined in a YAML file (called the <em>command yaml file</em>) and the code would use this information to build the API for the device. That would make it —from the device developer point of view— rather easy to create the commanding interface for a new device. Unfortunately, the implementation was not that easy or straightforward. We are working in a client-server or even microservices environment which means the device commanding should be available on both the server side (what we call the Controller) and on the client side (what we call the Proxy).</p>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_the_dynamic_interface_decorator">6.5.2. The Dynamic Interface Decorator</h4>
+<h4 id="_dynamic_interface_decorator">6.5.2. The Dynamic Interface Decorator</h4>
 <div class="paragraph">
 <p>A <code>@dynamic_interface</code> decorator adds a private static variable to a function or method. The variable name that is attributed is <code>__dynamic_interface</code> and it is used as a marker on the function.</p>
 </div>
@@ -2488,9 +2664,15 @@ $ invoke start-core-egse</pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_the_dynamic_command_decorator">6.5.3. The Dynamic Command Decorator</h4>
+<h4 id="_dynamic_command_decorator">6.5.3. The Dynamic Command Decorator</h4>
 <div class="paragraph">
-<p>One of the of the dynamic interface decorator is that during construction of the Proxy class, the control server must be contacted to request the list of commands, other wise, the Proxy is not functional.</p>
+<p>One of the problems of the dynamic interface decorator is that during construction of the Proxy class, the control server must be contacted to request the list of commands, when this fails and the control server is not available, the Proxy is not functional.</p>
+</div>
+<div class="paragraph">
+<p>TBW: add more description of what the decorator is, what happens behind the scenes, how it is perceived on the client and on the server side etc&#8230;&#8203;</p>
+</div>
+<div class="paragraph">
+<p>So, since the <code>@dynamic_command</code> is the successor of the <code>@dynamic_interface</code>, how do we refactor our code for this new commanding scheme. That will be explained in the next section.</p>
 </div>
 </div>
 <div class="sect3">
@@ -2593,6 +2775,67 @@ The <em>Controller</em> class still inherits from the <em>Interface</em> class, 
 </ul>
 </div>
 <div class="paragraph">
+<p>Thus far we have touch on the following arguments that can be used with <code>@dynamic_command</code>.</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>cmd_type</code> can be one of the following 'read', 'write', 'transaction', and 'query'. This is the only required argument for the decorator.</p>
+</li>
+<li>
+<p><code>cmd_string</code> defines the formatting of the eventual command string that will be passed to the transport functions. The <code>cmd_string</code> is a template string that contains <code>$</code>-based substitutions for the function arguments. When you specify the <code>use_format=True</code> keyword, the <code>cmd_string</code> will be formatted using the format() function instead of the template substitution. The format option is less secure, but provides the functionality to format the arguments.</p>
+<div class="paragraph">
+<p>A template string looks like:</p>
+</div>
+<div class="literalblock">
+<div class="content">
+<pre>cmd_string="CREATE:SENS:TEMP ${name} ${type} default=${default}"</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>The same <code>cmd_string</code> as a format option:</p>
+</div>
+<div class="literalblock">
+<div class="content">
+<pre>cmd_string="CREATE:SENS:TEMP {name} {type} default={default:0.4f}"
+use_format=True</pre>
+</div>
+</div>
+</li>
+<li>
+<p><code>process_response</code> is a pure function<sup class="footnote">[<a id="_footnoteref_2" class="footnote" href="#_footnotedef_2" title="View footnote.">2</a>]</sup> to process the response from the device before it is returned</p>
+</li>
+<li>
+<p><code>process_cmd_string</code> is a pure function to process the given command string to make it ready for sending to the device.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Then, there are these additional arguments that can be used with <code>@dynamic_command</code> to tune the command string and pre- and post-processing.</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>use_format</code> defines if the <code>cmd_str</code> shall be formatted as a template string or with the <code>format()</code> method.</p>
+</li>
+<li>
+<p><code>process_kwargs</code> is a function that processes the keyword arguments and returns a string representation of those arguments. By default, keyword arguments are expanded in a string containing <code>key=value</code> pairs separated by spaces. This function is used when the arguments are given as <code>**kwargs</code> to the function definition.</p>
+</li>
+<li>
+<p><code>pre_cmd</code> specifies a function that will be executed before the processed command string is sent to the device.</p>
+</li>
+<li>
+<p><code>post_cmd</code> specifies a function that will be executed after the command is executed, i.e. sent to the device and potentially retrieved a response.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>The <code>pre_cmd</code> and <code>post_cmd</code> keywords specify a callable/function to be executed before and/or after the actual command was executed. These functions are called with specific keyword arguments that allow additional device interaction and response processing. The <code>pre_cmd</code> function is called with the keyword argument <code>transport=</code> which passes the device transport. This allows the function to interact with the device again through the methods defined by the DeviceTransport interface. Additionally, the name of the called function (<code>function_name</code>), the processed command string (<code>cmd_string</code>) and the original positional (<code>args</code>) and keyword arguments (<code>kwargs</code>) are passed into the <code>pre_cmd</code> function. These additional arguments should not be changed, but can be used by the function for processing, logging, etc. The <code>pre_cmd</code> function must not return anything.</p>
+</div>
+<div class="paragraph">
+<p>The <code>post_cmd</code> function is called with the keyword arguments <code>transport=</code> and <code>response=</code>. The response argument contains the response from the command that was previously sent to the device. The <code>post_cmd</code> function can use this response to parse its content and act against this content, although possible, it is usually not a good idea to alter the content of the response argument. The <code>post_cmd</code> function shall return (i.e. pass through) the response or return it&#8217;s own information e.g. a status that was retrieved from the device with an additional command sent over transport.</p>
+</div>
+<div class="paragraph">
 <p>We now have walked through all the steps to upgrade your device commanding. The next thing to do is testing!</p>
 </div>
 </div>
@@ -2635,7 +2878,7 @@ The content of this section needs to be split between the developer manual and t
 </table>
 </div>
 <div class="paragraph">
-<p>The <em>Setup</em> is the name we give to the set of configuration items that make up your test environment. A configuration item is e.g. a device like a temperature controller, a mechanism like a Hexapod, a camera (which is the SUT: System Under Test). The <em>Setup</em> groups all these items in one <em>configuration</em>.<sup class="footnote">[<a id="_footnoteref_2" class="footnote" href="#_footnotedef_2" title="View footnote.">2</a>]</sup></p>
+<p>The <em>Setup</em> is the name we give to the set of configuration items that make up your test environment. A configuration item is e.g. a device like a temperature controller, a mechanism like a Hexapod, a camera (which is the SUT: System Under Test). The <em>Setup</em> groups all these items in one <em>configuration</em>.<sup class="footnote">[<a id="_footnoteref_3" class="footnote" href="#_footnotedef_3" title="View footnote.">3</a>]</sup></p>
 </div>
 <div class="paragraph">
 <p>This section will explain what the Setup contains, when and where it is used, how the different Setups are managed and how you can create a new Setup.</p>
@@ -4260,7 +4503,7 @@ end_observation()</code></pre>
 <p>Let&#8217;s build our own simple Task GUI and start with the most stated and useless function, <em>Hello, World!</em>. We will eventually build a Task GUI with tasks of increasing complexity and guide you through the different steps.</p>
 </div>
 <div class="paragraph">
-<p>Create a folder <code>yakka<sup class="footnote">[<a id="_footnoteref_3" class="footnote" href="#_footnotedef_3" title="View footnote.">3</a>]</sup></code> that will be our Task GUI package. In the folder create an empty file <code>__init__.py</code> and a file named <code>hello.py</code>.</p>
+<p>Create a folder <code>yakka<sup class="footnote">[<a id="_footnoteref_4" class="footnote" href="#_footnotedef_4" title="View footnote.">4</a>]</sup></code> that will be our Task GUI package. In the folder create an empty file <code>__init__.py</code> and a file named <code>hello.py</code>.</p>
 </div>
 <div class="listingblock">
 <div class="content">
@@ -5211,16 +5454,19 @@ Below this point we have miscellaneous topics that still need their place in the
 <a href="#_footnoteref_1">1</a>. The full git hash is a much longer number and is an SHA-1 hash — a checksum of the content of the commit plus a header.
 </div>
 <div class="footnote" id="_footnotedef_2">
-<a href="#_footnoteref_2">2</a>. Both <em>Setup</em> and <em>configuration</em> are overloaded words, if not clear from the context, I&#8217;ll try to explain them when used.
+<a href="#_footnoteref_2">2</a>. A pure function is a function that has no side effects and always returns the same output for the same input.
 </div>
 <div class="footnote" id="_footnotedef_3">
-<a href="#_footnoteref_3">3</a>. 'yakka' means 'work' in informal Australian English
+<a href="#_footnoteref_3">3</a>. Both <em>Setup</em> and <em>configuration</em> are overloaded words, if not clear from the context, I&#8217;ll try to explain them when used.
+</div>
+<div class="footnote" id="_footnotedef_4">
+<a href="#_footnoteref_4">4</a>. 'yakka' means 'work' in informal Australian English
 </div>
 </div>
 <div id="footer">
 <div id="footer-text">
-Version 1.3<br>
-Last updated 2023-02-09 21:30:14 +0100
+Version 1.4<br>
+Last updated 2023-03-12 16:47:41 +0100
 </div>
 </div>
 <script type="text/x-mathjax-config">
