@@ -57,16 +57,19 @@ import logging
 from collections import namedtuple
 from typing import Optional
 
+import numpy as np
+
 from egse.fee import n_fee_mode
-from egse.fee import sensor_sel
 from egse.reg import Register
 from egse.reg import RegisterMap
 from egse.spw import SpaceWireInterface
+from egse.state import GlobalState
 from egse.system import Timer
 
 MODULE_LOGGER = logging.getLogger(__name__)
 
 DEFAULT_CCD_READOUT_ORDER = 0b11100100
+SENSOR_SEL_BOTH_SIDES = 3
 &#34;&#34;&#34;The default for pFM -&gt; CCD 1, 2, 3, 4 (reading from the right).
 We use this default value only for going to DUMP mode because there the ccd_readout_order parameter
 is not passed. For all other command functions, the ccd_readout_order is explicitly passed.&#34;&#34;&#34;
@@ -286,7 +289,7 @@ def command_noop(*args, **kwargs):
     MODULE_LOGGER.debug(&#34;No commanding during this sync period.&#34;)
 
 
-def command_get_full_register(transport: SpaceWireInterface, register_map: RegisterMap):
+def command_sync_register_map(transport: SpaceWireInterface, register_map: RegisterMap):
     &#34;&#34;&#34;
     Reads the full register from the N-FEE and initializes the local register map with
     the returned data.
@@ -310,6 +313,30 @@ def command_get_full_register(transport: SpaceWireInterface, register_map: Regis
     return register_map
 
 
+def command_set_nfee_fpga_defaults(transport: SpaceWireInterface, register_map: RegisterMap):
+    &#34;&#34;&#34; Set the default FPGA parameters for the N-FEE.
+
+    Args:
+        transport (SpaceWireInterface): interface to use for SpaceWire communication
+        register_map (RegisterMap): the N-FEE register map
+    &#34;&#34;&#34;
+
+    MODULE_LOGGER.info(&#34;Set default values for the FPGA&#34;)
+
+    default_values = GlobalState.setup.camera.fee.fpga_defaults
+
+    for reg_name in default_values:
+        hex_string = str(default_values[reg_name])
+        byte_string = int(hex_string, 16).to_bytes(length=4, byteorder=&#39;big&#39;, signed=False)
+
+        MODULE_LOGGER.info(f&#34;Set default value for {reg_name} ({default_values[reg_name]})&#34;)
+
+        register_map.set_register_data(reg_name, byte_string)
+        write_register_on_n_fee(transport, register_map, reg_name)
+
+    return True
+
+
 def command_get_mode(transport: SpaceWireInterface, register_map: RegisterMap):
     MODULE_LOGGER.info(&#34;Request mode from N-FEE.&#34;)
 
@@ -320,7 +347,8 @@ def command_get_mode(transport: SpaceWireInterface, register_map: RegisterMap):
     return register_map.get_value(&#34;reg_21_config&#34;, &#34;ccd_mode_config&#34;)
 
 
-def prio_command_is_dump_mode(n_fee_state: NFEEState.StateTuple, dpu_internals: &#34;DPUInternals&#34;) -&gt; bool:
+def prio_command_is_dump_mode(n_fee_state: NFEEState.StateTuple,
+                              dpu_internals: &#34;DPUInternals&#34;, register_map: RegisterMap) -&gt; bool:
     MODULE_LOGGER.info(&#34;Request N-FEE if in DUMP mode (prio).&#34;)
 
     # This is a prio command which means it will be executed as soon as possible and return quickly.
@@ -333,7 +361,19 @@ def prio_command_is_dump_mode(n_fee_state: NFEEState.StateTuple, dpu_internals: 
     )
 
 
-def prio_command_get_mode(n_fee_state: NFEEState.StateTuple, dpu_internals: &#34;DPUInternals&#34;):
+def prio_command_get_register_map(n_fee_state: NFEEState.StateTuple,
+                                  dpu_internals: &#34;DPUInternals&#34;, register_map: RegisterMap):
+    MODULE_LOGGER.info(&#34;Request register map from DPU Processor (prio).&#34;)
+
+    # This is a prio command which means it will be executed as soon as possible and return quickly.
+    # Mode change in the N-FEE happens only on long (400ms) pulses, therefore prio commands act on
+    # the N-FEE State instead of the RegisterMap.
+
+    return register_map
+
+
+def prio_command_get_mode(n_fee_state: NFEEState.StateTuple,
+                          dpu_internals: &#34;DPUInternals&#34;, register_map: RegisterMap):
     MODULE_LOGGER.info(&#34;Request mode from N-FEE (prio).&#34;)
 
     # This is a prio command which means it will be executed as soon as possible and return quickly.
@@ -343,7 +383,8 @@ def prio_command_get_mode(n_fee_state: NFEEState.StateTuple, dpu_internals: &#34
     return n_fee_state.ccd_mode_config
 
 
-def prio_command_get_sync_mode(n_fee_state: NFEEState.StateTuple, dpu_internals: &#34;DPUInternals&#34;):
+def prio_command_get_sync_mode(n_fee_state: NFEEState.StateTuple,
+                               dpu_internals: &#34;DPUInternals&#34;, register_map: RegisterMap):
     MODULE_LOGGER.info(&#34;Request sync mode from N-FEE (prio).&#34;)
 
     # This is a prio command which means it will be executed as soon as possible and return quickly.
@@ -353,7 +394,8 @@ def prio_command_get_sync_mode(n_fee_state: NFEEState.StateTuple, dpu_internals:
     return n_fee_state.sync_sel
 
 
-def prio_command_set_slicing(n_fee_state: namedtuple, dpu_internals: &#34;DPUInternals&#34;, num_cycles: int):
+def prio_command_set_slicing(n_fee_state: namedtuple,
+                             dpu_internals: &#34;DPUInternals&#34;, register_map: RegisterMap, num_cycles: int):
     MODULE_LOGGER.info(f&#34;Set slicing parameter: {num_cycles = } (prio)&#34;)
 
     # This is a prio command which means it will be executed as soon as possible and return quickly.
@@ -365,7 +407,8 @@ def prio_command_set_slicing(n_fee_state: namedtuple, dpu_internals: &#34;DPUInt
     return num_cycles
 
 
-def prio_command_get_slicing(n_fee_state: namedtuple, dpu_internals: &#34;DPUInternals&#34;) -&gt; int:
+def prio_command_get_slicing(n_fee_state: namedtuple,
+                             dpu_internals: &#34;DPUInternals&#34;, register_map: RegisterMap) -&gt; int:
     MODULE_LOGGER.info(&#34;Request slicing parameter (prio)&#34;)
 
     # This is a prio command which means it will be executed as soon as possible and return quickly.
@@ -431,7 +474,7 @@ def command_set_standby_mode(transport: SpaceWireInterface, register_map: Regist
 def command_set_dump_mode(
         transport: SpaceWireInterface,
         register_map: RegisterMap,
-        v_start: int = 0, v_end: int = 4509, sensor_sel_=sensor_sel.BOTH_SIDES,
+        v_start: int = 0, v_end: int = 4509, sensor_sel_=SENSOR_SEL_BOTH_SIDES,
         ccd_readout_order: int = DEFAULT_CCD_READOUT_ORDER,
         n_final_dump: int = 0, sync_sel: int = 0
 ):
@@ -445,7 +488,7 @@ def command_set_dump_mode(
     _set_register(transport, register_map, &#34;reg_3_config&#34;,
                   n_final_dump=n_final_dump, charge_injection_en=0, img_clk_dir=0, reg_clk_dir=0)
     _set_register(transport, register_map, &#34;reg_5_config&#34;,
-                  sensor_sel=sensor_sel_.value, digitise_en=0b00, DG_en=0b01, sync_sel=sync_sel)
+                  sensor_sel=sensor_sel_, digitise_en=0b00, DG_en=0b01, sync_sel=sync_sel)
     _set_register(transport, register_map, &#34;reg_21_config&#34;,
                   ccd_mode_config=n_fee_mode.FULL_IMAGE_MODE)
 
@@ -460,7 +503,7 @@ def command_set_dump_mode(
 def command_set_dump_mode_int_sync(
         transport: SpaceWireInterface,
         register_map: RegisterMap,
-        v_start: int = 0, v_end: int = 10, sensor_sel_=sensor_sel.BOTH_SIDES,
+        v_start: int = 0, v_end: int = 10, sensor_sel_=SENSOR_SEL_BOTH_SIDES,
         ccd_readout_order: int = DEFAULT_CCD_READOUT_ORDER,
         n_final_dump: int = 4509, int_sync_period: int = 2500, sync_sel: int = 1
 ):
@@ -475,7 +518,7 @@ def command_set_dump_mode_int_sync(
                   n_final_dump=n_final_dump, charge_injection_en=0, img_clk_dir=0, reg_clk_dir=0)
     _set_register(transport, register_map, &#34;reg_4_config&#34;, int_sync_period=int_sync_period)
     _set_register(transport, register_map, &#34;reg_5_config&#34;,
-                  sensor_sel=sensor_sel_.value, digitise_en=0b00, DG_en=0b01, sync_sel=sync_sel)
+                  sensor_sel=sensor_sel_, digitise_en=0b00, DG_en=0b01, sync_sel=sync_sel)
     _set_register(transport, register_map, &#34;reg_21_config&#34;,
                   ccd_mode_config=n_fee_mode.FULL_IMAGE_MODE)
 
@@ -513,7 +556,7 @@ def _set_register(transport: SpaceWireInterface, register_map: RegisterMap, reg_
 def command_set_full_image_mode(
         transport: SpaceWireInterface,
         register_map: RegisterMap,
-        v_start: int = 0, v_end: int = 4509, sensor_sel_=sensor_sel.BOTH_SIDES,
+        v_start: int = 0, v_end: int = 4509, sensor_sel_=SENSOR_SEL_BOTH_SIDES,
         ccd_readout_order=None, n_final_dump=0
 ):
     MODULE_LOGGER.info(&#34;Commanding N-FEE into Full Image mode.&#34;)
@@ -534,7 +577,7 @@ def command_set_full_image_mode(
 def command_set_full_image_mode_int_sync(
         transport: SpaceWireInterface,
         register_map: RegisterMap,
-        v_start: int = 0, v_end: int = 4509, sensor_sel_=sensor_sel.BOTH_SIDES,
+        v_start: int = 0, v_end: int = 4509, sensor_sel_=SENSOR_SEL_BOTH_SIDES,
         ccd_readout_order=None, n_final_dump=0,
         int_sync_period=6250
 ):
@@ -601,7 +644,7 @@ def command_set_full_image_pattern_mode(
         register_map: RegisterMap,
         v_start: int = 0,
         v_end: int = 4509,
-        sensor_sel_=sensor_sel.BOTH_SIDES,
+        sensor_sel_=SENSOR_SEL_BOTH_SIDES,
 ):
     &#34;&#34;&#34;
     Command the N-FEE into Full Image Pattern mode. This mode can only be reached from the ON_MODE,
@@ -656,7 +699,7 @@ def command_set_reverse_clocking(
         register_map: RegisterMap,
         v_start: int = 0,
         v_end: int = 4509,
-        sensor_sel_=sensor_sel.BOTH_SIDES,
+        sensor_sel_=SENSOR_SEL_BOTH_SIDES,
         ccd_readout_order=None,
         n_final_dump=0,
         img_clk_dir=0,
@@ -684,7 +727,7 @@ def command_set_charge_injection(
         v_start: int = 0,
         v_end: int = 4509,
         n_final_dump=0,
-        sensor_sel_=sensor_sel.BOTH_SIDES,
+        sensor_sel_=SENSOR_SEL_BOTH_SIDES,
         ccd_readout_order=None,
         charge_injection_width=0,
         charge_injection_gap=0,
@@ -758,7 +801,7 @@ def command_set_vgd(
 <section>
 <h2 class="section-title" id="header-variables">Global variables</h2>
 <dl>
-<dt id="egse.dpu.dpu.DEFAULT_CCD_READOUT_ORDER"><code class="name">var <span class="ident">DEFAULT_CCD_READOUT_ORDER</span></code></dt>
+<dt id="egse.dpu.dpu.SENSOR_SEL_BOTH_SIDES"><code class="name">var <span class="ident">SENSOR_SEL_BOTH_SIDES</span></code></dt>
 <dd>
 <div class="desc"><p>The default for pFM -&gt; CCD 1, 2, 3, 4 (reading from the right).
 We use this default value only for going to DUMP mode because there the ccd_readout_order parameter
@@ -785,47 +828,6 @@ is not passed. For all other command functions, the ccd_readout_order is explici
     MODULE_LOGGER.debug(&#34;Commanding N-FEE to use the external clock.&#34;)
 
     _set_register(transport, register_map, &#34;reg_5_config&#34;, sync_sel=0)</code></pre>
-</details>
-</dd>
-<dt id="egse.dpu.dpu.command_get_full_register"><code class="name flex">
-<span>def <span class="ident">command_get_full_register</span></span>(<span>transport: <a title="egse.spw.SpaceWireInterface" href="../spw.html#egse.spw.SpaceWireInterface">SpaceWireInterface</a>, register_map: <a title="egse.reg.RegisterMap" href="../reg.html#egse.reg.RegisterMap">RegisterMap</a>)</span>
-</code></dt>
-<dd>
-<div class="desc"><p>Reads the full register from the N-FEE and initializes the local register map with
-the returned data.</p>
-<h2 id="args">Args</h2>
-<dl>
-<dt><strong><code>transport</code></strong> :&ensp;<code>SpaceWireInterface</code></dt>
-<dd>interface to use for SpaceWire communication</dd>
-<dt><strong><code>register_map</code></strong> :&ensp;<code>RegisterMap</code></dt>
-<dd>the N-FEE register map</dd>
-</dl></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def command_get_full_register(transport: SpaceWireInterface, register_map: RegisterMap):
-    &#34;&#34;&#34;
-    Reads the full register from the N-FEE and initializes the local register map with
-    the returned data.
-
-    Args:
-        transport (SpaceWireInterface): interface to use for SpaceWire communication
-        register_map (RegisterMap): the N-FEE register map
-    &#34;&#34;&#34;
-
-    # In principle we should request each register separately, but the N-FEE allows even in
-    # critical memory to read the full register at once. I leave the original code here should
-    # the behaviour of the N-FEE become more restrictive again.
-    #
-    # for reg_name in register_map:
-    #     read_register_from_n_fee(transport, register_map, reg_name)
-
-    with Timer(&#34;Request full register from N-FEE&#34;):
-        data = transport.read_register(0x0000_0000, 0x800, strict=False)
-        register_map.set_data(0x0000_0000, data, 0x800)
-
-    return register_map</code></pre>
 </details>
 </dd>
 <dt id="egse.dpu.dpu.command_get_mode"><code class="name flex">
@@ -899,7 +901,7 @@ the returned data.</p>
 </details>
 </dd>
 <dt id="egse.dpu.dpu.command_set_charge_injection"><code class="name flex">
-<span>def <span class="ident">command_set_charge_injection</span></span>(<span>transport: <a title="egse.spw.SpaceWireInterface" href="../spw.html#egse.spw.SpaceWireInterface">SpaceWireInterface</a>, register_map: <a title="egse.reg.RegisterMap" href="../reg.html#egse.reg.RegisterMap">RegisterMap</a>, v_start: int = 0, v_end: int = 4509, n_final_dump=0, sensor_sel_=sensor_sel.BOTH_SIDES, ccd_readout_order=None, charge_injection_width=0, charge_injection_gap=0)</span>
+<span>def <span class="ident">command_set_charge_injection</span></span>(<span>transport: <a title="egse.spw.SpaceWireInterface" href="../spw.html#egse.spw.SpaceWireInterface">SpaceWireInterface</a>, register_map: <a title="egse.reg.RegisterMap" href="../reg.html#egse.reg.RegisterMap">RegisterMap</a>, v_start: int = 0, v_end: int = 4509, n_final_dump=0, sensor_sel_=3, ccd_readout_order=None, charge_injection_width=0, charge_injection_gap=0)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>TBW</p></div>
@@ -913,7 +915,7 @@ the returned data.</p>
         v_start: int = 0,
         v_end: int = 4509,
         n_final_dump=0,
-        sensor_sel_=sensor_sel.BOTH_SIDES,
+        sensor_sel_=SENSOR_SEL_BOTH_SIDES,
         ccd_readout_order=None,
         charge_injection_width=0,
         charge_injection_gap=0,
@@ -980,7 +982,7 @@ set again.</p></div>
 </details>
 </dd>
 <dt id="egse.dpu.dpu.command_set_dump_mode"><code class="name flex">
-<span>def <span class="ident">command_set_dump_mode</span></span>(<span>transport: <a title="egse.spw.SpaceWireInterface" href="../spw.html#egse.spw.SpaceWireInterface">SpaceWireInterface</a>, register_map: <a title="egse.reg.RegisterMap" href="../reg.html#egse.reg.RegisterMap">RegisterMap</a>, v_start: int = 0, v_end: int = 4509, sensor_sel_=sensor_sel.BOTH_SIDES, ccd_readout_order: int = 228, n_final_dump: int = 0, sync_sel: int = 0)</span>
+<span>def <span class="ident">command_set_dump_mode</span></span>(<span>transport: <a title="egse.spw.SpaceWireInterface" href="../spw.html#egse.spw.SpaceWireInterface">SpaceWireInterface</a>, register_map: <a title="egse.reg.RegisterMap" href="../reg.html#egse.reg.RegisterMap">RegisterMap</a>, v_start: int = 0, v_end: int = 4509, sensor_sel_=3, ccd_readout_order: int = 228, n_final_dump: int = 0, sync_sel: int = 0)</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -991,7 +993,7 @@ set again.</p></div>
 <pre><code class="python">def command_set_dump_mode(
         transport: SpaceWireInterface,
         register_map: RegisterMap,
-        v_start: int = 0, v_end: int = 4509, sensor_sel_=sensor_sel.BOTH_SIDES,
+        v_start: int = 0, v_end: int = 4509, sensor_sel_=SENSOR_SEL_BOTH_SIDES,
         ccd_readout_order: int = DEFAULT_CCD_READOUT_ORDER,
         n_final_dump: int = 0, sync_sel: int = 0
 ):
@@ -1005,7 +1007,7 @@ set again.</p></div>
     _set_register(transport, register_map, &#34;reg_3_config&#34;,
                   n_final_dump=n_final_dump, charge_injection_en=0, img_clk_dir=0, reg_clk_dir=0)
     _set_register(transport, register_map, &#34;reg_5_config&#34;,
-                  sensor_sel=sensor_sel_.value, digitise_en=0b00, DG_en=0b01, sync_sel=sync_sel)
+                  sensor_sel=sensor_sel_, digitise_en=0b00, DG_en=0b01, sync_sel=sync_sel)
     _set_register(transport, register_map, &#34;reg_21_config&#34;,
                   ccd_mode_config=n_fee_mode.FULL_IMAGE_MODE)
 
@@ -1018,7 +1020,7 @@ set again.</p></div>
 </details>
 </dd>
 <dt id="egse.dpu.dpu.command_set_dump_mode_int_sync"><code class="name flex">
-<span>def <span class="ident">command_set_dump_mode_int_sync</span></span>(<span>transport: <a title="egse.spw.SpaceWireInterface" href="../spw.html#egse.spw.SpaceWireInterface">SpaceWireInterface</a>, register_map: <a title="egse.reg.RegisterMap" href="../reg.html#egse.reg.RegisterMap">RegisterMap</a>, v_start: int = 0, v_end: int = 10, sensor_sel_=sensor_sel.BOTH_SIDES, ccd_readout_order: int = 228, n_final_dump: int = 4509, int_sync_period: int = 2500, sync_sel: int = 1)</span>
+<span>def <span class="ident">command_set_dump_mode_int_sync</span></span>(<span>transport: <a title="egse.spw.SpaceWireInterface" href="../spw.html#egse.spw.SpaceWireInterface">SpaceWireInterface</a>, register_map: <a title="egse.reg.RegisterMap" href="../reg.html#egse.reg.RegisterMap">RegisterMap</a>, v_start: int = 0, v_end: int = 10, sensor_sel_=3, ccd_readout_order: int = 228, n_final_dump: int = 4509, int_sync_period: int = 2500, sync_sel: int = 1)</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -1029,7 +1031,7 @@ set again.</p></div>
 <pre><code class="python">def command_set_dump_mode_int_sync(
         transport: SpaceWireInterface,
         register_map: RegisterMap,
-        v_start: int = 0, v_end: int = 10, sensor_sel_=sensor_sel.BOTH_SIDES,
+        v_start: int = 0, v_end: int = 10, sensor_sel_=SENSOR_SEL_BOTH_SIDES,
         ccd_readout_order: int = DEFAULT_CCD_READOUT_ORDER,
         n_final_dump: int = 4509, int_sync_period: int = 2500, sync_sel: int = 1
 ):
@@ -1044,7 +1046,7 @@ set again.</p></div>
                   n_final_dump=n_final_dump, charge_injection_en=0, img_clk_dir=0, reg_clk_dir=0)
     _set_register(transport, register_map, &#34;reg_4_config&#34;, int_sync_period=int_sync_period)
     _set_register(transport, register_map, &#34;reg_5_config&#34;,
-                  sensor_sel=sensor_sel_.value, digitise_en=0b00, DG_en=0b01, sync_sel=sync_sel)
+                  sensor_sel=sensor_sel_, digitise_en=0b00, DG_en=0b01, sync_sel=sync_sel)
     _set_register(transport, register_map, &#34;reg_21_config&#34;,
                   ccd_mode_config=n_fee_mode.FULL_IMAGE_MODE)
 
@@ -1052,7 +1054,7 @@ set again.</p></div>
 </details>
 </dd>
 <dt id="egse.dpu.dpu.command_set_full_image_mode"><code class="name flex">
-<span>def <span class="ident">command_set_full_image_mode</span></span>(<span>transport: <a title="egse.spw.SpaceWireInterface" href="../spw.html#egse.spw.SpaceWireInterface">SpaceWireInterface</a>, register_map: <a title="egse.reg.RegisterMap" href="../reg.html#egse.reg.RegisterMap">RegisterMap</a>, v_start: int = 0, v_end: int = 4509, sensor_sel_=sensor_sel.BOTH_SIDES, ccd_readout_order=None, n_final_dump=0)</span>
+<span>def <span class="ident">command_set_full_image_mode</span></span>(<span>transport: <a title="egse.spw.SpaceWireInterface" href="../spw.html#egse.spw.SpaceWireInterface">SpaceWireInterface</a>, register_map: <a title="egse.reg.RegisterMap" href="../reg.html#egse.reg.RegisterMap">RegisterMap</a>, v_start: int = 0, v_end: int = 4509, sensor_sel_=3, ccd_readout_order=None, n_final_dump=0)</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -1063,7 +1065,7 @@ set again.</p></div>
 <pre><code class="python">def command_set_full_image_mode(
         transport: SpaceWireInterface,
         register_map: RegisterMap,
-        v_start: int = 0, v_end: int = 4509, sensor_sel_=sensor_sel.BOTH_SIDES,
+        v_start: int = 0, v_end: int = 4509, sensor_sel_=SENSOR_SEL_BOTH_SIDES,
         ccd_readout_order=None, n_final_dump=0
 ):
     MODULE_LOGGER.info(&#34;Commanding N-FEE into Full Image mode.&#34;)
@@ -1082,7 +1084,7 @@ set again.</p></div>
 </details>
 </dd>
 <dt id="egse.dpu.dpu.command_set_full_image_mode_int_sync"><code class="name flex">
-<span>def <span class="ident">command_set_full_image_mode_int_sync</span></span>(<span>transport: <a title="egse.spw.SpaceWireInterface" href="../spw.html#egse.spw.SpaceWireInterface">SpaceWireInterface</a>, register_map: <a title="egse.reg.RegisterMap" href="../reg.html#egse.reg.RegisterMap">RegisterMap</a>, v_start: int = 0, v_end: int = 4509, sensor_sel_=sensor_sel.BOTH_SIDES, ccd_readout_order=None, n_final_dump=0, int_sync_period=6250)</span>
+<span>def <span class="ident">command_set_full_image_mode_int_sync</span></span>(<span>transport: <a title="egse.spw.SpaceWireInterface" href="../spw.html#egse.spw.SpaceWireInterface">SpaceWireInterface</a>, register_map: <a title="egse.reg.RegisterMap" href="../reg.html#egse.reg.RegisterMap">RegisterMap</a>, v_start: int = 0, v_end: int = 4509, sensor_sel_=3, ccd_readout_order=None, n_final_dump=0, int_sync_period=6250)</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -1093,7 +1095,7 @@ set again.</p></div>
 <pre><code class="python">def command_set_full_image_mode_int_sync(
         transport: SpaceWireInterface,
         register_map: RegisterMap,
-        v_start: int = 0, v_end: int = 4509, sensor_sel_=sensor_sel.BOTH_SIDES,
+        v_start: int = 0, v_end: int = 4509, sensor_sel_=SENSOR_SEL_BOTH_SIDES,
         ccd_readout_order=None, n_final_dump=0,
         int_sync_period=6250
 ):
@@ -1115,7 +1117,7 @@ set again.</p></div>
 </details>
 </dd>
 <dt id="egse.dpu.dpu.command_set_full_image_pattern_mode"><code class="name flex">
-<span>def <span class="ident">command_set_full_image_pattern_mode</span></span>(<span>transport: <a title="egse.spw.SpaceWireInterface" href="../spw.html#egse.spw.SpaceWireInterface">SpaceWireInterface</a>, register_map: <a title="egse.reg.RegisterMap" href="../reg.html#egse.reg.RegisterMap">RegisterMap</a>, v_start: int = 0, v_end: int = 4509, sensor_sel_=sensor_sel.BOTH_SIDES)</span>
+<span>def <span class="ident">command_set_full_image_pattern_mode</span></span>(<span>transport: <a title="egse.spw.SpaceWireInterface" href="../spw.html#egse.spw.SpaceWireInterface">SpaceWireInterface</a>, register_map: <a title="egse.reg.RegisterMap" href="../reg.html#egse.reg.RegisterMap">RegisterMap</a>, v_start: int = 0, v_end: int = 4509, sensor_sel_=3)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Command the N-FEE into Full Image Pattern mode. This mode can only be reached from the ON_MODE,
@@ -1147,7 +1149,7 @@ but this is not checked by this function (it is an assumption that the caller ha
         register_map: RegisterMap,
         v_start: int = 0,
         v_end: int = 4509,
-        sensor_sel_=sensor_sel.BOTH_SIDES,
+        sensor_sel_=SENSOR_SEL_BOTH_SIDES,
 ):
     &#34;&#34;&#34;
     Command the N-FEE into Full Image Pattern mode. This mode can only be reached from the ON_MODE,
@@ -1235,6 +1237,46 @@ but this is not checked by this function (it is an assumption that the caller ha
     return n_fee_mode.IMMEDIATE_ON_MODE.value</code></pre>
 </details>
 </dd>
+<dt id="egse.dpu.dpu.command_set_nfee_fpga_defaults"><code class="name flex">
+<span>def <span class="ident">command_set_nfee_fpga_defaults</span></span>(<span>transport: <a title="egse.spw.SpaceWireInterface" href="../spw.html#egse.spw.SpaceWireInterface">SpaceWireInterface</a>, register_map: <a title="egse.reg.RegisterMap" href="../reg.html#egse.reg.RegisterMap">RegisterMap</a>)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Set the default FPGA parameters for the N-FEE.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>transport</code></strong> :&ensp;<code>SpaceWireInterface</code></dt>
+<dd>interface to use for SpaceWire communication</dd>
+<dt><strong><code>register_map</code></strong> :&ensp;<code>RegisterMap</code></dt>
+<dd>the N-FEE register map</dd>
+</dl></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def command_set_nfee_fpga_defaults(transport: SpaceWireInterface, register_map: RegisterMap):
+    &#34;&#34;&#34; Set the default FPGA parameters for the N-FEE.
+
+    Args:
+        transport (SpaceWireInterface): interface to use for SpaceWire communication
+        register_map (RegisterMap): the N-FEE register map
+    &#34;&#34;&#34;
+
+    MODULE_LOGGER.info(&#34;Set default values for the FPGA&#34;)
+
+    default_values = GlobalState.setup.camera.fee.fpga_defaults
+
+    for reg_name in default_values:
+        hex_string = str(default_values[reg_name])
+        byte_string = int(hex_string, 16).to_bytes(length=4, byteorder=&#39;big&#39;, signed=False)
+
+        MODULE_LOGGER.info(f&#34;Set default value for {reg_name} ({default_values[reg_name]})&#34;)
+
+        register_map.set_register_data(reg_name, byte_string)
+        write_register_on_n_fee(transport, register_map, reg_name)
+
+    return True</code></pre>
+</details>
+</dd>
 <dt id="egse.dpu.dpu.command_set_on_mode"><code class="name flex">
 <span>def <span class="ident">command_set_on_mode</span></span>(<span>transport: <a title="egse.spw.SpaceWireInterface" href="../spw.html#egse.spw.SpaceWireInterface">SpaceWireInterface</a>, register_map: <a title="egse.reg.RegisterMap" href="../reg.html#egse.reg.RegisterMap">RegisterMap</a>)</span>
 </code></dt>
@@ -1274,7 +1316,7 @@ but this is not checked by this function (it is an assumption that the caller ha
 </details>
 </dd>
 <dt id="egse.dpu.dpu.command_set_reverse_clocking"><code class="name flex">
-<span>def <span class="ident">command_set_reverse_clocking</span></span>(<span>transport: <a title="egse.spw.SpaceWireInterface" href="../spw.html#egse.spw.SpaceWireInterface">SpaceWireInterface</a>, register_map: <a title="egse.reg.RegisterMap" href="../reg.html#egse.reg.RegisterMap">RegisterMap</a>, v_start: int = 0, v_end: int = 4509, sensor_sel_=sensor_sel.BOTH_SIDES, ccd_readout_order=None, n_final_dump=0, img_clk_dir=0, reg_clk_dir=0)</span>
+<span>def <span class="ident">command_set_reverse_clocking</span></span>(<span>transport: <a title="egse.spw.SpaceWireInterface" href="../spw.html#egse.spw.SpaceWireInterface">SpaceWireInterface</a>, register_map: <a title="egse.reg.RegisterMap" href="../reg.html#egse.reg.RegisterMap">RegisterMap</a>, v_start: int = 0, v_end: int = 4509, sensor_sel_=3, ccd_readout_order=None, n_final_dump=0, img_clk_dir=0, reg_clk_dir=0)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Command the N-FEE into full image reverse clocking mode.</p></div>
@@ -1287,7 +1329,7 @@ but this is not checked by this function (it is an assumption that the caller ha
         register_map: RegisterMap,
         v_start: int = 0,
         v_end: int = 4509,
-        sensor_sel_=sensor_sel.BOTH_SIDES,
+        sensor_sel_=SENSOR_SEL_BOTH_SIDES,
         ccd_readout_order=None,
         n_final_dump=0,
         img_clk_dir=0,
@@ -1372,8 +1414,49 @@ but this is not checked by this function (it is an assumption that the caller ha
     return False</code></pre>
 </details>
 </dd>
+<dt id="egse.dpu.dpu.command_sync_register_map"><code class="name flex">
+<span>def <span class="ident">command_sync_register_map</span></span>(<span>transport: <a title="egse.spw.SpaceWireInterface" href="../spw.html#egse.spw.SpaceWireInterface">SpaceWireInterface</a>, register_map: <a title="egse.reg.RegisterMap" href="../reg.html#egse.reg.RegisterMap">RegisterMap</a>)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Reads the full register from the N-FEE and initializes the local register map with
+the returned data.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>transport</code></strong> :&ensp;<code>SpaceWireInterface</code></dt>
+<dd>interface to use for SpaceWire communication</dd>
+<dt><strong><code>register_map</code></strong> :&ensp;<code>RegisterMap</code></dt>
+<dd>the N-FEE register map</dd>
+</dl></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def command_sync_register_map(transport: SpaceWireInterface, register_map: RegisterMap):
+    &#34;&#34;&#34;
+    Reads the full register from the N-FEE and initializes the local register map with
+    the returned data.
+
+    Args:
+        transport (SpaceWireInterface): interface to use for SpaceWire communication
+        register_map (RegisterMap): the N-FEE register map
+    &#34;&#34;&#34;
+
+    # In principle we should request each register separately, but the N-FEE allows even in
+    # critical memory to read the full register at once. I leave the original code here should
+    # the behaviour of the N-FEE become more restrictive again.
+    #
+    # for reg_name in register_map:
+    #     read_register_from_n_fee(transport, register_map, reg_name)
+
+    with Timer(&#34;Request full register from N-FEE&#34;):
+        data = transport.read_register(0x0000_0000, 0x800, strict=False)
+        register_map.set_data(0x0000_0000, data, 0x800)
+
+    return register_map</code></pre>
+</details>
+</dd>
 <dt id="egse.dpu.dpu.prio_command_get_mode"><code class="name flex">
-<span>def <span class="ident">prio_command_get_mode</span></span>(<span>n_fee_state: egse.dpu.dpu.StateTuple, dpu_internals: DPUInternals)</span>
+<span>def <span class="ident">prio_command_get_mode</span></span>(<span>n_fee_state: egse.dpu.dpu.StateTuple, dpu_internals: DPUInternals, register_map: <a title="egse.reg.RegisterMap" href="../reg.html#egse.reg.RegisterMap">RegisterMap</a>)</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -1381,7 +1464,8 @@ but this is not checked by this function (it is an assumption that the caller ha
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def prio_command_get_mode(n_fee_state: NFEEState.StateTuple, dpu_internals: &#34;DPUInternals&#34;):
+<pre><code class="python">def prio_command_get_mode(n_fee_state: NFEEState.StateTuple,
+                          dpu_internals: &#34;DPUInternals&#34;, register_map: RegisterMap):
     MODULE_LOGGER.info(&#34;Request mode from N-FEE (prio).&#34;)
 
     # This is a prio command which means it will be executed as soon as possible and return quickly.
@@ -1391,8 +1475,8 @@ but this is not checked by this function (it is an assumption that the caller ha
     return n_fee_state.ccd_mode_config</code></pre>
 </details>
 </dd>
-<dt id="egse.dpu.dpu.prio_command_get_slicing"><code class="name flex">
-<span>def <span class="ident">prio_command_get_slicing</span></span>(<span>n_fee_state: <function namedtuple at 0x7f826805d700>, dpu_internals: DPUInternals) ‑> int</span>
+<dt id="egse.dpu.dpu.prio_command_get_register_map"><code class="name flex">
+<span>def <span class="ident">prio_command_get_register_map</span></span>(<span>n_fee_state: egse.dpu.dpu.StateTuple, dpu_internals: DPUInternals, register_map: <a title="egse.reg.RegisterMap" href="../reg.html#egse.reg.RegisterMap">RegisterMap</a>)</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -1400,7 +1484,28 @@ but this is not checked by this function (it is an assumption that the caller ha
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def prio_command_get_slicing(n_fee_state: namedtuple, dpu_internals: &#34;DPUInternals&#34;) -&gt; int:
+<pre><code class="python">def prio_command_get_register_map(n_fee_state: NFEEState.StateTuple,
+                                  dpu_internals: &#34;DPUInternals&#34;, register_map: RegisterMap):
+    MODULE_LOGGER.info(&#34;Request register map from DPU Processor (prio).&#34;)
+
+    # This is a prio command which means it will be executed as soon as possible and return quickly.
+    # Mode change in the N-FEE happens only on long (400ms) pulses, therefore prio commands act on
+    # the N-FEE State instead of the RegisterMap.
+
+    return register_map</code></pre>
+</details>
+</dd>
+<dt id="egse.dpu.dpu.prio_command_get_slicing"><code class="name flex">
+<span>def <span class="ident">prio_command_get_slicing</span></span>(<span>n_fee_state: <function namedtuple at 0x7fd50001ef70>, dpu_internals: DPUInternals, register_map: <a title="egse.reg.RegisterMap" href="../reg.html#egse.reg.RegisterMap">RegisterMap</a>) ‑> int</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def prio_command_get_slicing(n_fee_state: namedtuple,
+                             dpu_internals: &#34;DPUInternals&#34;, register_map: RegisterMap) -&gt; int:
     MODULE_LOGGER.info(&#34;Request slicing parameter (prio)&#34;)
 
     # This is a prio command which means it will be executed as soon as possible and return quickly.
@@ -1411,7 +1516,7 @@ but this is not checked by this function (it is an assumption that the caller ha
 </details>
 </dd>
 <dt id="egse.dpu.dpu.prio_command_get_sync_mode"><code class="name flex">
-<span>def <span class="ident">prio_command_get_sync_mode</span></span>(<span>n_fee_state: egse.dpu.dpu.StateTuple, dpu_internals: DPUInternals)</span>
+<span>def <span class="ident">prio_command_get_sync_mode</span></span>(<span>n_fee_state: egse.dpu.dpu.StateTuple, dpu_internals: DPUInternals, register_map: <a title="egse.reg.RegisterMap" href="../reg.html#egse.reg.RegisterMap">RegisterMap</a>)</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -1419,7 +1524,8 @@ but this is not checked by this function (it is an assumption that the caller ha
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def prio_command_get_sync_mode(n_fee_state: NFEEState.StateTuple, dpu_internals: &#34;DPUInternals&#34;):
+<pre><code class="python">def prio_command_get_sync_mode(n_fee_state: NFEEState.StateTuple,
+                               dpu_internals: &#34;DPUInternals&#34;, register_map: RegisterMap):
     MODULE_LOGGER.info(&#34;Request sync mode from N-FEE (prio).&#34;)
 
     # This is a prio command which means it will be executed as soon as possible and return quickly.
@@ -1430,7 +1536,7 @@ but this is not checked by this function (it is an assumption that the caller ha
 </details>
 </dd>
 <dt id="egse.dpu.dpu.prio_command_is_dump_mode"><code class="name flex">
-<span>def <span class="ident">prio_command_is_dump_mode</span></span>(<span>n_fee_state: egse.dpu.dpu.StateTuple, dpu_internals: DPUInternals) ‑> bool</span>
+<span>def <span class="ident">prio_command_is_dump_mode</span></span>(<span>n_fee_state: egse.dpu.dpu.StateTuple, dpu_internals: DPUInternals, register_map: <a title="egse.reg.RegisterMap" href="../reg.html#egse.reg.RegisterMap">RegisterMap</a>) ‑> bool</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -1438,7 +1544,8 @@ but this is not checked by this function (it is an assumption that the caller ha
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def prio_command_is_dump_mode(n_fee_state: NFEEState.StateTuple, dpu_internals: &#34;DPUInternals&#34;) -&gt; bool:
+<pre><code class="python">def prio_command_is_dump_mode(n_fee_state: NFEEState.StateTuple,
+                              dpu_internals: &#34;DPUInternals&#34;, register_map: RegisterMap) -&gt; bool:
     MODULE_LOGGER.info(&#34;Request N-FEE if in DUMP mode (prio).&#34;)
 
     # This is a prio command which means it will be executed as soon as possible and return quickly.
@@ -1452,7 +1559,7 @@ but this is not checked by this function (it is an assumption that the caller ha
 </details>
 </dd>
 <dt id="egse.dpu.dpu.prio_command_set_slicing"><code class="name flex">
-<span>def <span class="ident">prio_command_set_slicing</span></span>(<span>n_fee_state: <function namedtuple at 0x7f826805d700>, dpu_internals: DPUInternals, num_cycles: int)</span>
+<span>def <span class="ident">prio_command_set_slicing</span></span>(<span>n_fee_state: <function namedtuple at 0x7fd50001ef70>, dpu_internals: DPUInternals, register_map: <a title="egse.reg.RegisterMap" href="../reg.html#egse.reg.RegisterMap">RegisterMap</a>, num_cycles: int)</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -1460,7 +1567,8 @@ but this is not checked by this function (it is an assumption that the caller ha
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def prio_command_set_slicing(n_fee_state: namedtuple, dpu_internals: &#34;DPUInternals&#34;, num_cycles: int):
+<pre><code class="python">def prio_command_set_slicing(n_fee_state: namedtuple,
+                             dpu_internals: &#34;DPUInternals&#34;, register_map: RegisterMap, num_cycles: int):
     MODULE_LOGGER.info(f&#34;Set slicing parameter: {num_cycles = } (prio)&#34;)
 
     # This is a prio command which means it will be executed as soon as possible and return quickly.
@@ -2061,13 +2169,12 @@ frame number is the housekeeping packet is zero, frame_number==0.</p>
 </li>
 <li><h3><a href="#header-variables">Global variables</a></h3>
 <ul class="">
-<li><code><a title="egse.dpu.dpu.DEFAULT_CCD_READOUT_ORDER" href="#egse.dpu.dpu.DEFAULT_CCD_READOUT_ORDER">DEFAULT_CCD_READOUT_ORDER</a></code></li>
+<li><code><a title="egse.dpu.dpu.SENSOR_SEL_BOTH_SIDES" href="#egse.dpu.dpu.SENSOR_SEL_BOTH_SIDES">SENSOR_SEL_BOTH_SIDES</a></code></li>
 </ul>
 </li>
 <li><h3><a href="#header-functions">Functions</a></h3>
 <ul class="">
 <li><code><a title="egse.dpu.dpu.command_external_clock" href="#egse.dpu.dpu.command_external_clock">command_external_clock</a></code></li>
-<li><code><a title="egse.dpu.dpu.command_get_full_register" href="#egse.dpu.dpu.command_get_full_register">command_get_full_register</a></code></li>
 <li><code><a title="egse.dpu.dpu.command_get_mode" href="#egse.dpu.dpu.command_get_mode">command_get_mode</a></code></li>
 <li><code><a title="egse.dpu.dpu.command_internal_clock" href="#egse.dpu.dpu.command_internal_clock">command_internal_clock</a></code></li>
 <li><code><a title="egse.dpu.dpu.command_noop" href="#egse.dpu.dpu.command_noop">command_noop</a></code></li>
@@ -2081,12 +2188,15 @@ frame number is the housekeeping packet is zero, frame_number==0.</p>
 <li><code><a title="egse.dpu.dpu.command_set_full_image_pattern_mode" href="#egse.dpu.dpu.command_set_full_image_pattern_mode">command_set_full_image_pattern_mode</a></code></li>
 <li><code><a title="egse.dpu.dpu.command_set_high_precision_hk_mode" href="#egse.dpu.dpu.command_set_high_precision_hk_mode">command_set_high_precision_hk_mode</a></code></li>
 <li><code><a title="egse.dpu.dpu.command_set_immediate_on_mode" href="#egse.dpu.dpu.command_set_immediate_on_mode">command_set_immediate_on_mode</a></code></li>
+<li><code><a title="egse.dpu.dpu.command_set_nfee_fpga_defaults" href="#egse.dpu.dpu.command_set_nfee_fpga_defaults">command_set_nfee_fpga_defaults</a></code></li>
 <li><code><a title="egse.dpu.dpu.command_set_on_mode" href="#egse.dpu.dpu.command_set_on_mode">command_set_on_mode</a></code></li>
 <li><code><a title="egse.dpu.dpu.command_set_register_value" href="#egse.dpu.dpu.command_set_register_value">command_set_register_value</a></code></li>
 <li><code><a title="egse.dpu.dpu.command_set_reverse_clocking" href="#egse.dpu.dpu.command_set_reverse_clocking">command_set_reverse_clocking</a></code></li>
 <li><code><a title="egse.dpu.dpu.command_set_standby_mode" href="#egse.dpu.dpu.command_set_standby_mode">command_set_standby_mode</a></code></li>
 <li><code><a title="egse.dpu.dpu.command_set_vgd" href="#egse.dpu.dpu.command_set_vgd">command_set_vgd</a></code></li>
+<li><code><a title="egse.dpu.dpu.command_sync_register_map" href="#egse.dpu.dpu.command_sync_register_map">command_sync_register_map</a></code></li>
 <li><code><a title="egse.dpu.dpu.prio_command_get_mode" href="#egse.dpu.dpu.prio_command_get_mode">prio_command_get_mode</a></code></li>
+<li><code><a title="egse.dpu.dpu.prio_command_get_register_map" href="#egse.dpu.dpu.prio_command_get_register_map">prio_command_get_register_map</a></code></li>
 <li><code><a title="egse.dpu.dpu.prio_command_get_slicing" href="#egse.dpu.dpu.prio_command_get_slicing">prio_command_get_slicing</a></code></li>
 <li><code><a title="egse.dpu.dpu.prio_command_get_sync_mode" href="#egse.dpu.dpu.prio_command_get_sync_mode">prio_command_get_sync_mode</a></code></li>
 <li><code><a title="egse.dpu.dpu.prio_command_is_dump_mode" href="#egse.dpu.dpu.prio_command_is_dump_mode">prio_command_is_dump_mode</a></code></li>

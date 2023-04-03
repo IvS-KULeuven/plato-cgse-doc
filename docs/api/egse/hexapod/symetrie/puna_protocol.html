@@ -31,10 +31,10 @@
 from egse.command import ClientServerCommand
 from egse.control import ControlServer
 from egse.device import DeviceConnectionState
-from egse.hexapod.symetrie.puna import PunaController
+from egse.hexapod.symetrie import ControllerFactory
 from egse.hexapod.symetrie.puna import PunaInterface
 from egse.hexapod.symetrie.puna import PunaSimulator
-from egse.hexapod.symetrie.puna import get_endpoint_hexapod_controller
+from egse.hexapod.symetrie import get_hexapod_controller_pars
 from egse.hk import read_conversion_dict, convert_hk_names
 from egse.protocol import CommandProtocol
 from egse.settings import Settings
@@ -62,8 +62,11 @@ class PunaProtocol(CommandProtocol):
         if Settings.simulation_mode():
             self.hexapod = PunaSimulator()
         else:
-            hostname, port = get_endpoint_hexapod_controller()
-            self.hexapod = PunaController(hostname=hostname, port=port)
+            hostname, port, device_id, device_name, controller_type = get_hexapod_controller_pars()
+
+            factory = ControllerFactory()
+            self.hexapod = factory.create(device_name, device_id=device_id)
+            # self.hexapod = PunaController(hostname=hostname, port=port)
             self.hexapod.add_observer(self)
 
         try:
@@ -79,6 +82,9 @@ class PunaProtocol(CommandProtocol):
             self.control_server.get_communication_protocol(),
             self.control_server.get_commanding_port(),
         )
+
+    def get_device(self):
+        return self.hexapod
 
     def get_status(self):
 
@@ -222,8 +228,11 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
         if Settings.simulation_mode():
             self.hexapod = PunaSimulator()
         else:
-            hostname, port = get_endpoint_hexapod_controller()
-            self.hexapod = PunaController(hostname=hostname, port=port)
+            hostname, port, device_id, device_name, controller_type = get_hexapod_controller_pars()
+
+            factory = ControllerFactory()
+            self.hexapod = factory.create(device_name, device_id=device_id)
+            # self.hexapod = PunaController(hostname=hostname, port=port)
             self.hexapod.add_observer(self)
 
         try:
@@ -239,6 +248,9 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
             self.control_server.get_communication_protocol(),
             self.control_server.get_commanding_port(),
         )
+
+    def get_device(self):
+        return self.hexapod
 
     def get_status(self):
 
@@ -319,6 +331,19 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
 </ul>
 <h3>Methods</h3>
 <dl>
+<dt id="egse.hexapod.symetrie.puna_protocol.PunaProtocol.get_device"><code class="name flex">
+<span>def <span class="ident">get_device</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_device(self):
+    return self.hexapod</code></pre>
+</details>
+</dd>
 <dt id="egse.hexapod.symetrie.puna_protocol.PunaProtocol.is_device_connected"><code class="name flex">
 <span>def <span class="ident">is_device_connected</span></span>(<span>self)</span>
 </code></dt>
@@ -383,6 +408,7 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
 <li>
 <h4><code><a title="egse.hexapod.symetrie.puna_protocol.PunaProtocol" href="#egse.hexapod.symetrie.puna_protocol.PunaProtocol">PunaProtocol</a></code></h4>
 <ul class="">
+<li><code><a title="egse.hexapod.symetrie.puna_protocol.PunaProtocol.get_device" href="#egse.hexapod.symetrie.puna_protocol.PunaProtocol.get_device">get_device</a></code></li>
 <li><code><a title="egse.hexapod.symetrie.puna_protocol.PunaProtocol.is_device_connected" href="#egse.hexapod.symetrie.puna_protocol.PunaProtocol.is_device_connected">is_device_connected</a></code></li>
 </ul>
 </li>

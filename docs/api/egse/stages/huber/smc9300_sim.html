@@ -445,6 +445,11 @@ def move_to_position(axis, distance):
     axes[axis].start()
 
 
+def home_position(axis, direction, pos):
+    LOGGER.debug(f&#34;home{axis}:he;{direction}{pos}&#34;)
+    LOGGER.warning(&#34;The home_position() command is not yet implemented.&#34;)
+
+
 def save_configuration():
     print(&#34;Request to save the current configuration, not implemented.&#34;)
 
@@ -498,6 +503,7 @@ COMMAND_PATTERNS_ACTIONS_RESPONSES = {
     r&#34;(edir)(\d):(\d)&#34;: (set_parameter, nothing),
     r&#34;goto(\d):(-?\d+(?:\.\d+)?)&#34;: (goto_position, nothing),
     r&#34;move(\d):(-?\d+(?:\.\d+)?)&#34;: (move_to_position, nothing),
+    r&#34;home(\d):he;(h[mr])(-?\d+(?:\.\d+)?)&#34;: (home_position, nothing),
     r&#34;\?err(\d)&#34;: (pass_args, get_error),
     r&#34;\?p(\d)&#34;: (pass_args, get_current_position),
     r&#34;\?e(\d)&#34;: (pass_args, get_current_encoder_position),
@@ -511,7 +517,7 @@ COMMAND_PATTERNS_ACTIONS_RESPONSES = {
 
 def process_command(command_string: str) -&gt; str:
 
-    # LOGGER.debug(f&#34;{command_string = }&#34;)
+    LOGGER.debug(f&#34;{command_string = }&#34;)
 
     try:
         action, response = COMMAND_ACTIONS_RESPONSES[command_string]
@@ -524,9 +530,9 @@ def process_command(command_string: str) -&gt; str:
         # try to match with a value
         for key, value in COMMAND_PATTERNS_ACTIONS_RESPONSES.items():
             if match := re.match(key, command_string):
-                # LOGGER.debug(f&#34;{match=}, {match.groups()}&#34;)
+                LOGGER.debug(f&#34;{match=}, {match.groups()}&#34;)
                 action, response = value
-                # LOGGER.debug(f&#34;{action=}, {response=}&#34;)
+                LOGGER.debug(f&#34;{action=}, {response=}&#34;)
                 # if action is not None and not isinstance(action, Pass):
                 action and action(*match.groups())
                 if error_msg:
@@ -567,7 +573,7 @@ def start():  # sourcery skip: hoist-statement-from-loop
                         data = read(conn)
                         if (response := process_command(data)) is not None:
                             write(conn, response)
-                        # LOGGER.debug(f&#34;{data = } -&gt; {response = }&#34;)
+                        LOGGER.debug(f&#34;{data = } -&gt; {response = }&#34;)
                         if not data:
                             break  # connection closed by peer
                 except KeyboardInterrupt:
@@ -768,6 +774,20 @@ if __name__ == &#34;__main__&#34;:
     axes[axis].start()</code></pre>
 </details>
 </dd>
+<dt id="egse.stages.huber.smc9300_sim.home_position"><code class="name flex">
+<span>def <span class="ident">home_position</span></span>(<span>axis, direction, pos)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def home_position(axis, direction, pos):
+    LOGGER.debug(f&#34;home{axis}:he;{direction}{pos}&#34;)
+    LOGGER.warning(&#34;The home_position() command is not yet implemented.&#34;)</code></pre>
+</details>
+</dd>
 <dt id="egse.stages.huber.smc9300_sim.move_to_position"><code class="name flex">
 <span>def <span class="ident">move_to_position</span></span>(<span>axis, distance)</span>
 </code></dt>
@@ -811,7 +831,7 @@ if __name__ == &#34;__main__&#34;:
 </summary>
 <pre><code class="python">def process_command(command_string: str) -&gt; str:
 
-    # LOGGER.debug(f&#34;{command_string = }&#34;)
+    LOGGER.debug(f&#34;{command_string = }&#34;)
 
     try:
         action, response = COMMAND_ACTIONS_RESPONSES[command_string]
@@ -824,9 +844,9 @@ if __name__ == &#34;__main__&#34;:
         # try to match with a value
         for key, value in COMMAND_PATTERNS_ACTIONS_RESPONSES.items():
             if match := re.match(key, command_string):
-                # LOGGER.debug(f&#34;{match=}, {match.groups()}&#34;)
+                LOGGER.debug(f&#34;{match=}, {match.groups()}&#34;)
                 action, response = value
-                # LOGGER.debug(f&#34;{action=}, {response=}&#34;)
+                LOGGER.debug(f&#34;{action=}, {response=}&#34;)
                 # if action is not None and not isinstance(action, Pass):
                 action and action(*match.groups())
                 if error_msg:
@@ -1615,6 +1635,7 @@ response function.</p></div>
 <li><code><a title="egse.stages.huber.smc9300_sim.get_state" href="#egse.stages.huber.smc9300_sim.get_state">get_state</a></code></li>
 <li><code><a title="egse.stages.huber.smc9300_sim.get_status" href="#egse.stages.huber.smc9300_sim.get_status">get_status</a></code></li>
 <li><code><a title="egse.stages.huber.smc9300_sim.goto_position" href="#egse.stages.huber.smc9300_sim.goto_position">goto_position</a></code></li>
+<li><code><a title="egse.stages.huber.smc9300_sim.home_position" href="#egse.stages.huber.smc9300_sim.home_position">home_position</a></code></li>
 <li><code><a title="egse.stages.huber.smc9300_sim.move_to_position" href="#egse.stages.huber.smc9300_sim.move_to_position">move_to_position</a></code></li>
 <li><code><a title="egse.stages.huber.smc9300_sim.nothing" href="#egse.stages.huber.smc9300_sim.nothing">nothing</a></code></li>
 <li><code><a title="egse.stages.huber.smc9300_sim.process_command" href="#egse.stages.huber.smc9300_sim.process_command">process_command</a></code></li>

@@ -37,9 +37,11 @@ database or in a filename for test data etc.
 
 &#34;&#34;&#34;
 import os
+from pathlib import Path
 from typing import Union
 
 from egse.config import find_dir
+from egse.env import get_data_storage_location
 from egse.settings import Settings
 
 LAB_SETUP_TEST = 0
@@ -105,48 +107,91 @@ class ObservationIdentifier:
     def __str__(self):
         return self._obsid
 
-    def create_id(self, *, order: int = LAB_SETUP_TEST):
+    def create_id(self, *, order: int = LAB_SETUP_TEST, camera_name: str = None) -&gt; str:
+        &#34;&#34;&#34;
+        Creates a string representation of the observation identifier.
+
+        Args:
+            order: the order in which the parts are concatenated
+            camera_name: if a camera name is given, it will be appended in lower case
+
+        Returns:
+            A string representation of the obsid with or without camera name attached.
+        &#34;&#34;&#34;
+        camera = f&#34;{f&#39;_{camera_name.lower()}&#39; if camera_name else &#39;&#39;}&#34;
+
         if order == TEST_LAB_SETUP:
-            return f&#34;{self._test_id:05d}_{self._lab_id}_{self._setup_id:05d}&#34;
+            return f&#34;{self._test_id:05d}_{self._lab_id}_{self._setup_id:05d}{camera}&#34;
         if order == TEST_LAB:
-            return f&#34;{self._test_id:05d}_{self._lab_id}&#34;
+            return f&#34;{self._test_id:05d}_{self._lab_id}{camera}&#34;
         if order == LAB_SETUP_TEST:
-            return f&#34;{self._lab_id}_{self._setup_id:05d}_{self._test_id:05d}&#34;
+            return f&#34;{self._lab_id}_{self._setup_id:05d}_{self._test_id:05d}{camera}&#34;
 
 
-def obsid_from_storage(obsid: Union[ObservationIdentifier, str, int], data_dir: str = None):
-    &#34;&#34;&#34; Return the name of the folder for the given obsid in the /obs directory.
+def obsid_from_storage(obsid: Union[ObservationIdentifier, str, int], data_dir: str,
+                       site_id: str = None, camera_name: str = None) -&gt; str:
+    &#34;&#34;&#34;
+    Return the name of the folder for the given obsid in the &#39;obs&#39; sub-folder of data_dir.
 
     For the oldest observations, the obsid used in the directory structure and filenames was of the format
     TEST_LAB_SETUP.  All files in this folder also have the obsid in that format in their name.  At some point, we
     decided to change this to TEST_LAB, but we still need to be able to re-process the old data (with the setup ID in
     the names of the directories and files).
 
-    Args:
-         - obsid: Observation identifier.  This can be an ObservationIdentifier object, a string in format TEST_LAB or
-                  TEST_LAB_SETUP, or an integer representing the test ID.
+    For newer observations (&gt;= 2023.6.0+CGSE), the camera name is appended to the folder name and also included
+    in the filenames in that folder.
 
-    Returns: Name of the folder for the given obsid in the /obs directory.
+    Args:
+        obsid: Observation identifier.  This can be an ObservationIdentifier object, a string in format TEST_LAB or
+            TEST_LAB_SETUP, or an integer representing the test ID. In this last case, the site id is taken from the
+            Settings.
+        data_dir: root folder in which the observations are stored. This folder shall have a sub-folder &#39;obs&#39;.
+        site_id: a site id like &#39;CSL1&#39; or &#39;IAS&#39;, when `None`, the `SITE.ID` from the Settings will be used
+        camera_name: if not None, append the camera name to the result
+
+    Returns:
+        The name of the folder for the given obsid in the &#39;obs&#39; sub-folder of data_dir.
     &#34;&#34;&#34;
 
-    data_dir = data_dir or os.environ[&#34;PLATO_DATA_STORAGE_LOCATION&#34;]
     obs_dir = f&#34;{data_dir}/obs/&#34;
+    site_id = site_id or SITE.ID
+    camera = f&#34;_{camera_name.lower()}&#34; if camera_name else &#34;&#34;
 
     if isinstance(obsid, ObservationIdentifier):
         test, site = obsid.test_id, obsid.lab_id
     elif isinstance(obsid, str):    # TEST_LAB or TEST_LAB_SETUP
         test, site = obsid.split(&#34;_&#34;)[:2]
     else:
-        test, site = f&#34;{obsid:05d}&#34;, SITE.ID
+        test, site = obsid, site_id
 
     test = int(test)
 
-    obsid_without_setup = f&#34;{obs_dir}/{test:05d}_{site}&#34;
-    if os.path.isdir(f&#34;{obs_dir}/{obsid_without_setup}&#34;):
-        return obsid_without_setup
-    else:
-        pattern = f&#34;{test:05d}_{site}*&#34;
-        return find_dir(pattern=pattern, root=obs_dir).stem</code></pre>
+    # Remember the camera name can be an empty string, so this will match both
+    # &#39;00313_CSL&#39; and &#39;00313_CSL_achel&#39;.
+
+    result_without_setup = Path(f&#34;{obs_dir}/{test:05d}_{site}{camera}&#34;)
+
+    if result_without_setup.exists():
+        return result_without_setup.stem
+
+    # If a camera name was provided, but we try to find an old observation where the
+    # camera name was not appended to the folder name yet, the following will match
+    # that folder name.
+
+    result_without_camera = Path(f&#34;{obs_dir}/{test:05d}_{site}&#34;)
+
+    if result_without_camera.exists():
+        return result_without_camera.stem
+
+    # When we come here, we can still match old observations that included the setup id in their
+    # folder name.
+
+    pattern = f&#34;{test:05d}_{site}_*{camera}&#34;
+
+    if (match := find_dir(pattern=pattern, root=obs_dir)) is None:
+        raise ValueError(f&#34;Could not find a folder matching &#39;{pattern}&#39; in &#39;{obs_dir}&#39;&#34;)
+
+    return match.stem</code></pre>
 </details>
 </section>
 <section>
@@ -157,60 +202,102 @@ def obsid_from_storage(obsid: Union[ObservationIdentifier, str, int], data_dir: 
 <h2 class="section-title" id="header-functions">Functions</h2>
 <dl>
 <dt id="egse.obsid.obsid_from_storage"><code class="name flex">
-<span>def <span class="ident">obsid_from_storage</span></span>(<span>obsid: Union[<a title="egse.obsid.ObservationIdentifier" href="#egse.obsid.ObservationIdentifier">ObservationIdentifier</a>, str, int], data_dir: str = None)</span>
+<span>def <span class="ident">obsid_from_storage</span></span>(<span>obsid: Union[<a title="egse.obsid.ObservationIdentifier" href="#egse.obsid.ObservationIdentifier">ObservationIdentifier</a>, str, int], data_dir: str, site_id: str = None, camera_name: str = None) ‑> str</span>
 </code></dt>
 <dd>
-<div class="desc"><p>Return the name of the folder for the given obsid in the /obs directory.</p>
+<div class="desc"><p>Return the name of the folder for the given obsid in the 'obs' sub-folder of data_dir.</p>
 <p>For the oldest observations, the obsid used in the directory structure and filenames was of the format
 TEST_LAB_SETUP.
 All files in this folder also have the obsid in that format in their name.
 At some point, we
 decided to change this to TEST_LAB, but we still need to be able to re-process the old data (with the setup ID in
 the names of the directories and files).</p>
+<p>For newer observations (&gt;= 2023.6.0+CGSE), the camera name is appended to the folder name and also included
+in the filenames in that folder.</p>
 <h2 id="args">Args</h2>
-<ul>
-<li>obsid: Observation identifier.
+<dl>
+<dt><strong><code>obsid</code></strong></dt>
+<dd>Observation identifier.
 This can be an ObservationIdentifier object, a string in format TEST_LAB or
-TEST_LAB_SETUP, or an integer representing the test ID.
-Returns: Name of the folder for the given obsid in the /obs directory.</li>
-</ul></div>
+TEST_LAB_SETUP, or an integer representing the test ID. In this last case, the site id is taken from the
+Settings.</dd>
+<dt><strong><code>data_dir</code></strong></dt>
+<dd>root folder in which the observations are stored. This folder shall have a sub-folder 'obs'.</dd>
+<dt><strong><code>site_id</code></strong></dt>
+<dd>a site id like 'CSL1' or 'IAS', when <code>None</code>, the <code>SITE.ID</code> from the Settings will be used</dd>
+<dt><strong><code>camera_name</code></strong></dt>
+<dd>if not None, append the camera name to the result</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<p>The name of the folder for the given obsid in the 'obs' sub-folder of data_dir.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def obsid_from_storage(obsid: Union[ObservationIdentifier, str, int], data_dir: str = None):
-    &#34;&#34;&#34; Return the name of the folder for the given obsid in the /obs directory.
+<pre><code class="python">def obsid_from_storage(obsid: Union[ObservationIdentifier, str, int], data_dir: str,
+                       site_id: str = None, camera_name: str = None) -&gt; str:
+    &#34;&#34;&#34;
+    Return the name of the folder for the given obsid in the &#39;obs&#39; sub-folder of data_dir.
 
     For the oldest observations, the obsid used in the directory structure and filenames was of the format
     TEST_LAB_SETUP.  All files in this folder also have the obsid in that format in their name.  At some point, we
     decided to change this to TEST_LAB, but we still need to be able to re-process the old data (with the setup ID in
     the names of the directories and files).
 
-    Args:
-         - obsid: Observation identifier.  This can be an ObservationIdentifier object, a string in format TEST_LAB or
-                  TEST_LAB_SETUP, or an integer representing the test ID.
+    For newer observations (&gt;= 2023.6.0+CGSE), the camera name is appended to the folder name and also included
+    in the filenames in that folder.
 
-    Returns: Name of the folder for the given obsid in the /obs directory.
+    Args:
+        obsid: Observation identifier.  This can be an ObservationIdentifier object, a string in format TEST_LAB or
+            TEST_LAB_SETUP, or an integer representing the test ID. In this last case, the site id is taken from the
+            Settings.
+        data_dir: root folder in which the observations are stored. This folder shall have a sub-folder &#39;obs&#39;.
+        site_id: a site id like &#39;CSL1&#39; or &#39;IAS&#39;, when `None`, the `SITE.ID` from the Settings will be used
+        camera_name: if not None, append the camera name to the result
+
+    Returns:
+        The name of the folder for the given obsid in the &#39;obs&#39; sub-folder of data_dir.
     &#34;&#34;&#34;
 
-    data_dir = data_dir or os.environ[&#34;PLATO_DATA_STORAGE_LOCATION&#34;]
     obs_dir = f&#34;{data_dir}/obs/&#34;
+    site_id = site_id or SITE.ID
+    camera = f&#34;_{camera_name.lower()}&#34; if camera_name else &#34;&#34;
 
     if isinstance(obsid, ObservationIdentifier):
         test, site = obsid.test_id, obsid.lab_id
     elif isinstance(obsid, str):    # TEST_LAB or TEST_LAB_SETUP
         test, site = obsid.split(&#34;_&#34;)[:2]
     else:
-        test, site = f&#34;{obsid:05d}&#34;, SITE.ID
+        test, site = obsid, site_id
 
     test = int(test)
 
-    obsid_without_setup = f&#34;{obs_dir}/{test:05d}_{site}&#34;
-    if os.path.isdir(f&#34;{obs_dir}/{obsid_without_setup}&#34;):
-        return obsid_without_setup
-    else:
-        pattern = f&#34;{test:05d}_{site}*&#34;
-        return find_dir(pattern=pattern, root=obs_dir).stem</code></pre>
+    # Remember the camera name can be an empty string, so this will match both
+    # &#39;00313_CSL&#39; and &#39;00313_CSL_achel&#39;.
+
+    result_without_setup = Path(f&#34;{obs_dir}/{test:05d}_{site}{camera}&#34;)
+
+    if result_without_setup.exists():
+        return result_without_setup.stem
+
+    # If a camera name was provided, but we try to find an old observation where the
+    # camera name was not appended to the folder name yet, the following will match
+    # that folder name.
+
+    result_without_camera = Path(f&#34;{obs_dir}/{test:05d}_{site}&#34;)
+
+    if result_without_camera.exists():
+        return result_without_camera.stem
+
+    # When we come here, we can still match old observations that included the setup id in their
+    # folder name.
+
+    pattern = f&#34;{test:05d}_{site}_*{camera}&#34;
+
+    if (match := find_dir(pattern=pattern, root=obs_dir)) is None:
+        raise ValueError(f&#34;Could not find a folder matching &#39;{pattern}&#39; in &#39;{obs_dir}&#39;&#34;)
+
+    return match.stem</code></pre>
 </details>
 </dd>
 </dl>
@@ -293,13 +380,25 @@ Returns: Name of the folder for the given obsid in the /obs directory.</li>
     def __str__(self):
         return self._obsid
 
-    def create_id(self, *, order: int = LAB_SETUP_TEST):
+    def create_id(self, *, order: int = LAB_SETUP_TEST, camera_name: str = None) -&gt; str:
+        &#34;&#34;&#34;
+        Creates a string representation of the observation identifier.
+
+        Args:
+            order: the order in which the parts are concatenated
+            camera_name: if a camera name is given, it will be appended in lower case
+
+        Returns:
+            A string representation of the obsid with or without camera name attached.
+        &#34;&#34;&#34;
+        camera = f&#34;{f&#39;_{camera_name.lower()}&#39; if camera_name else &#39;&#39;}&#34;
+
         if order == TEST_LAB_SETUP:
-            return f&#34;{self._test_id:05d}_{self._lab_id}_{self._setup_id:05d}&#34;
+            return f&#34;{self._test_id:05d}_{self._lab_id}_{self._setup_id:05d}{camera}&#34;
         if order == TEST_LAB:
-            return f&#34;{self._test_id:05d}_{self._lab_id}&#34;
+            return f&#34;{self._test_id:05d}_{self._lab_id}{camera}&#34;
         if order == LAB_SETUP_TEST:
-            return f&#34;{self._lab_id}_{self._setup_id:05d}_{self._test_id:05d}&#34;</code></pre>
+            return f&#34;{self._lab_id}_{self._setup_id:05d}_{self._test_id:05d}{camera}&#34;</code></pre>
 </details>
 <h3>Static methods</h3>
 <dl>
@@ -368,21 +467,42 @@ def test_id(self):
 <h3>Methods</h3>
 <dl>
 <dt id="egse.obsid.ObservationIdentifier.create_id"><code class="name flex">
-<span>def <span class="ident">create_id</span></span>(<span>self, *, order: int = 0)</span>
+<span>def <span class="ident">create_id</span></span>(<span>self, *, order: int = 0, camera_name: str = None) ‑> str</span>
 </code></dt>
 <dd>
-<div class="desc"></div>
+<div class="desc"><p>Creates a string representation of the observation identifier.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>order</code></strong></dt>
+<dd>the order in which the parts are concatenated</dd>
+<dt><strong><code>camera_name</code></strong></dt>
+<dd>if a camera name is given, it will be appended in lower case</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<p>A string representation of the obsid with or without camera name attached.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def create_id(self, *, order: int = LAB_SETUP_TEST):
+<pre><code class="python">def create_id(self, *, order: int = LAB_SETUP_TEST, camera_name: str = None) -&gt; str:
+    &#34;&#34;&#34;
+    Creates a string representation of the observation identifier.
+
+    Args:
+        order: the order in which the parts are concatenated
+        camera_name: if a camera name is given, it will be appended in lower case
+
+    Returns:
+        A string representation of the obsid with or without camera name attached.
+    &#34;&#34;&#34;
+    camera = f&#34;{f&#39;_{camera_name.lower()}&#39; if camera_name else &#39;&#39;}&#34;
+
     if order == TEST_LAB_SETUP:
-        return f&#34;{self._test_id:05d}_{self._lab_id}_{self._setup_id:05d}&#34;
+        return f&#34;{self._test_id:05d}_{self._lab_id}_{self._setup_id:05d}{camera}&#34;
     if order == TEST_LAB:
-        return f&#34;{self._test_id:05d}_{self._lab_id}&#34;
+        return f&#34;{self._test_id:05d}_{self._lab_id}{camera}&#34;
     if order == LAB_SETUP_TEST:
-        return f&#34;{self._lab_id}_{self._setup_id:05d}_{self._test_id:05d}&#34;</code></pre>
+        return f&#34;{self._lab_id}_{self._setup_id:05d}_{self._test_id:05d}{camera}&#34;</code></pre>
 </details>
 </dd>
 </dl>

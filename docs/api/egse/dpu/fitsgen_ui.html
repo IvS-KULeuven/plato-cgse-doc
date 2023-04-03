@@ -148,7 +148,7 @@ class FilenamesMonitoringWorker(QObject):
 
             try:
 
-                socket_list, _, _ = zmq.select([self.monitoring_socket], [], [], timeout=15)
+                socket_list, _, _ = zmq.select([self.monitoring_socket], [], [], timeout=5)
 
                 # Monitoring information was received (before timeout)
 
@@ -394,10 +394,13 @@ class FitsgenUIView(QMainWindow):
         &#34;&#34;&#34;
 
         self.filenames_monitoring_worker.active = False
+
         self.filenames_monitoring_thread.quit()
         self.filenames_monitoring_thread.terminate()
 
+        self.filenames_monitoring_thread.wait()
 
+        
 def main():
     &#34;&#34;&#34; Main method to launch the Process Manager GUI.&#34;&#34;&#34;
 
@@ -573,7 +576,7 @@ if __name__ == &#39;__main__&#39;:
 
             try:
 
-                socket_list, _, _ = zmq.select([self.monitoring_socket], [], [], timeout=15)
+                socket_list, _, _ = zmq.select([self.monitoring_socket], [], [], timeout=5)
 
                 # Monitoring information was received (before timeout)
 
@@ -689,7 +692,7 @@ def run(self):
 
         try:
 
-            socket_list, _, _ = zmq.select([self.monitoring_socket], [], [], timeout=15)
+            socket_list, _, _ = zmq.select([self.monitoring_socket], [], [], timeout=5)
 
             # Monitoring information was received (before timeout)
 
@@ -1029,8 +1032,11 @@ def run(self):
         &#34;&#34;&#34;
 
         self.filenames_monitoring_worker.active = False
+
         self.filenames_monitoring_thread.quit()
-        self.filenames_monitoring_thread.terminate()</code></pre>
+        self.filenames_monitoring_thread.terminate()
+
+        self.filenames_monitoring_thread.wait()</code></pre>
 </details>
 <h3>Ancestors</h3>
 <ul class="hlist">
@@ -1064,8 +1070,11 @@ def run(self):
     &#34;&#34;&#34;
 
     self.filenames_monitoring_worker.active = False
+
     self.filenames_monitoring_thread.quit()
-    self.filenames_monitoring_thread.terminate()</code></pre>
+    self.filenames_monitoring_thread.terminate()
+
+    self.filenames_monitoring_thread.wait()</code></pre>
 </details>
 </dd>
 <dt id="egse.dpu.fitsgen_ui.FitsgenUIView.create_statusbar"><code class="name flex">

@@ -1039,14 +1039,6 @@ def stop_egse():
     with ProcessManagerProxy() as pm:
         pm.shut_down_egse()
 
-
-def open_contingency_ui():
-    &#34;&#34;&#34; Open the contingency UI.&#34;&#34;&#34;
-
-    gui_process = SubProcess(&#34;MyApp&#34;, [&#34;contingency_ui&#34;])
-    gui_process.execute(detach_from_parent=True)
-
-
 def open_th_ui():
     &#34;&#34;&#34; Open the TH Operator UI.&#34;&#34;&#34;
 
@@ -1615,12 +1607,6 @@ class ProcessManagerUIView(QMainWindow):
                                             )
         self.stop_aeu_button.clicked.connect(self.stop_all_aeu_cs)
 
-        contingency_icon = QIcon(str(get_resource(&#34;:/icons/radioactive.svg&#34;)))
-        contingency_action = QAction(contingency_icon, &#34;Open the contingency UI&#34;, self)
-        contingency_action.setToolTip(&#34;Open the contingency UI&#34;)
-        contingency_action.setCheckable(False)
-        contingency_action.triggered.connect(open_contingency_ui)
-
         th_ui_icon = QIcon(str(get_resource(&#34;:/icons/th_ui_logo.svg&#34;)))
         th_ui_action = QAction(th_ui_icon, f&#34;Open the {SITE.ID} Operator UI&#34;, self)
         th_ui_action.setToolTip(f&#34;Open the {SITE.ID} Operator UI&#34;)
@@ -1652,12 +1638,11 @@ class ProcessManagerUIView(QMainWindow):
 
         if &#34;CSL&#34; in SITE.ID:
             self.toolbar.addAction(fov_ui_action)
-        if &#34;CSL&#34; in SITE.ID or &#34;INTA&#34; in SITE.ID:   # Should go when SRON and IAS have their own Operator UI
-            self.toolbar.addAction(th_ui_action)
-            self.toolbar.addSeparator()
+
+        self.toolbar.addAction(th_ui_action)
+        self.toolbar.addSeparator()
 
         self.toolbar.addAction(visited_positions_ui_action)
-        self.toolbar.addAction(contingency_action)
 
         return self.toolbar
 
@@ -2270,22 +2255,6 @@ if __name__ == &#39;__main__&#39;:
         error_message.setStandardButtons(QMessageBox.Ok)
 
         return error_message.exec()</code></pre>
-</details>
-</dd>
-<dt id="egse.procman.procman_ui.open_contingency_ui"><code class="name flex">
-<span>def <span class="ident">open_contingency_ui</span></span>(<span>)</span>
-</code></dt>
-<dd>
-<div class="desc"><p>Open the contingency UI.</p></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def open_contingency_ui():
-    &#34;&#34;&#34; Open the contingency UI.&#34;&#34;&#34;
-
-    gui_process = SubProcess(&#34;MyApp&#34;, [&#34;contingency_ui&#34;])
-    gui_process.execute(detach_from_parent=True)</code></pre>
 </details>
 </dd>
 <dt id="egse.procman.procman_ui.open_fov_ui"><code class="name flex">
@@ -4581,12 +4550,6 @@ updates in the process status (in the background) and display these in the GUI.<
                                             )
         self.stop_aeu_button.clicked.connect(self.stop_all_aeu_cs)
 
-        contingency_icon = QIcon(str(get_resource(&#34;:/icons/radioactive.svg&#34;)))
-        contingency_action = QAction(contingency_icon, &#34;Open the contingency UI&#34;, self)
-        contingency_action.setToolTip(&#34;Open the contingency UI&#34;)
-        contingency_action.setCheckable(False)
-        contingency_action.triggered.connect(open_contingency_ui)
-
         th_ui_icon = QIcon(str(get_resource(&#34;:/icons/th_ui_logo.svg&#34;)))
         th_ui_action = QAction(th_ui_icon, f&#34;Open the {SITE.ID} Operator UI&#34;, self)
         th_ui_action.setToolTip(f&#34;Open the {SITE.ID} Operator UI&#34;)
@@ -4618,12 +4581,11 @@ updates in the process status (in the background) and display these in the GUI.<
 
         if &#34;CSL&#34; in SITE.ID:
             self.toolbar.addAction(fov_ui_action)
-        if &#34;CSL&#34; in SITE.ID or &#34;INTA&#34; in SITE.ID:   # Should go when SRON and IAS have their own Operator UI
-            self.toolbar.addAction(th_ui_action)
-            self.toolbar.addSeparator()
+
+        self.toolbar.addAction(th_ui_action)
+        self.toolbar.addSeparator()
 
         self.toolbar.addAction(visited_positions_ui_action)
-        self.toolbar.addAction(contingency_action)
 
         return self.toolbar
 
@@ -5150,12 +5112,6 @@ updates in the process status (in the background) and display these in the GUI.<
                                         )
     self.stop_aeu_button.clicked.connect(self.stop_all_aeu_cs)
 
-    contingency_icon = QIcon(str(get_resource(&#34;:/icons/radioactive.svg&#34;)))
-    contingency_action = QAction(contingency_icon, &#34;Open the contingency UI&#34;, self)
-    contingency_action.setToolTip(&#34;Open the contingency UI&#34;)
-    contingency_action.setCheckable(False)
-    contingency_action.triggered.connect(open_contingency_ui)
-
     th_ui_icon = QIcon(str(get_resource(&#34;:/icons/th_ui_logo.svg&#34;)))
     th_ui_action = QAction(th_ui_icon, f&#34;Open the {SITE.ID} Operator UI&#34;, self)
     th_ui_action.setToolTip(f&#34;Open the {SITE.ID} Operator UI&#34;)
@@ -5187,12 +5143,11 @@ updates in the process status (in the background) and display these in the GUI.<
 
     if &#34;CSL&#34; in SITE.ID:
         self.toolbar.addAction(fov_ui_action)
-    if &#34;CSL&#34; in SITE.ID or &#34;INTA&#34; in SITE.ID:   # Should go when SRON and IAS have their own Operator UI
-        self.toolbar.addAction(th_ui_action)
-        self.toolbar.addSeparator()
+
+    self.toolbar.addAction(th_ui_action)
+    self.toolbar.addSeparator()
 
     self.toolbar.addAction(visited_positions_ui_action)
-    self.toolbar.addAction(contingency_action)
 
     return self.toolbar</code></pre>
 </details>
@@ -6622,7 +6577,6 @@ Indic.ORANGE, or Indic.RED.</li>
 <li><code><a title="egse.procman.procman_ui.get_inta_ui_process" href="#egse.procman.procman_ui.get_inta_ui_process">get_inta_ui_process</a></code></li>
 <li><code><a title="egse.procman.procman_ui.get_sron_ui_process" href="#egse.procman.procman_ui.get_sron_ui_process">get_sron_ui_process</a></code></li>
 <li><code><a title="egse.procman.procman_ui.main" href="#egse.procman.procman_ui.main">main</a></code></li>
-<li><code><a title="egse.procman.procman_ui.open_contingency_ui" href="#egse.procman.procman_ui.open_contingency_ui">open_contingency_ui</a></code></li>
 <li><code><a title="egse.procman.procman_ui.open_fov_ui" href="#egse.procman.procman_ui.open_fov_ui">open_fov_ui</a></code></li>
 <li><code><a title="egse.procman.procman_ui.open_th_ui" href="#egse.procman.procman_ui.open_th_ui">open_th_ui</a></code></li>
 <li><code><a title="egse.procman.procman_ui.open_visited_positions_ui" href="#egse.procman.procman_ui.open_visited_positions_ui">open_visited_positions_ui</a></code></li>

@@ -180,11 +180,16 @@ class StagesMonitoringWorker(MonitoringWorker):
         setup = GlobalState.setup
 
         self.focal_length = setup.camera.fov.focal_length_mm
-        self.distortion_coefficients = setup.camera.fov.distortion_coefficients
-        self.offset_phi = setup.gse.stages.calibration.offset_phi
         self.offset_alpha = setup.gse.stages.calibration.offset_alpha
+        self.offset_phi = setup.gse.stages.calibration.offset_phi
         self.offset_delta_x = setup.gse.stages.calibration.offset_delta_x
+        self.alpha_correction_coefficients = setup.gse.stages.calibration.alpha_correction_coefficients
+        self.phi_correction_coefficients = setup.gse.stages.calibration.phi_correction_coefficients
+
+        self.distortion_coefficients = setup.camera.fov.distortion_coefficients
         self.height_collimated_beam = setup.gse.stages.calibration.height_collimated_beam
+
+
 
     @pyqtSlot()
     def run(self):
@@ -305,8 +310,11 @@ class StagesMonitoringWorker(MonitoringWorker):
 
         # Gnomonic distance to optical axis and in-field angle [degrees]
 
-        theta = 2 * (self.position_small_rotation_stage + self.offset_alpha)
-        phi = self.offset_phi - self.position_big_rotation_stage
+        theta = (self.position_small_rotation_stage + self.offset_alpha - self.alpha_correction_coefficients[0]) \
+            / self.alpha_correction_coefficients[1]
+
+        phi_correction = self.phi_correction_coefficients[1] * theta + self.phi_correction_coefficients[0]
+        phi = -self.position_big_rotation_stage - self.offset_phi - phi_correction
 
         # Focal-plane coordinates [mm]
 
@@ -2387,11 +2395,16 @@ to notify the GUI.</p></div>
         setup = GlobalState.setup
 
         self.focal_length = setup.camera.fov.focal_length_mm
-        self.distortion_coefficients = setup.camera.fov.distortion_coefficients
-        self.offset_phi = setup.gse.stages.calibration.offset_phi
         self.offset_alpha = setup.gse.stages.calibration.offset_alpha
+        self.offset_phi = setup.gse.stages.calibration.offset_phi
         self.offset_delta_x = setup.gse.stages.calibration.offset_delta_x
+        self.alpha_correction_coefficients = setup.gse.stages.calibration.alpha_correction_coefficients
+        self.phi_correction_coefficients = setup.gse.stages.calibration.phi_correction_coefficients
+
+        self.distortion_coefficients = setup.camera.fov.distortion_coefficients
         self.height_collimated_beam = setup.gse.stages.calibration.height_collimated_beam
+
+
 
     @pyqtSlot()
     def run(self):
@@ -2512,8 +2525,11 @@ to notify the GUI.</p></div>
 
         # Gnomonic distance to optical axis and in-field angle [degrees]
 
-        theta = 2 * (self.position_small_rotation_stage + self.offset_alpha)
-        phi = self.offset_phi - self.position_big_rotation_stage
+        theta = (self.position_small_rotation_stage + self.offset_alpha - self.alpha_correction_coefficients[0]) \
+            / self.alpha_correction_coefficients[1]
+
+        phi_correction = self.phi_correction_coefficients[1] * theta + self.phi_correction_coefficients[0]
+        phi = -self.position_big_rotation_stage - self.offset_phi - phi_correction
 
         # Focal-plane coordinates [mm]
 
@@ -2622,8 +2638,11 @@ the field distortion into account.</p>
 
     # Gnomonic distance to optical axis and in-field angle [degrees]
 
-    theta = 2 * (self.position_small_rotation_stage + self.offset_alpha)
-    phi = self.offset_phi - self.position_big_rotation_stage
+    theta = (self.position_small_rotation_stage + self.offset_alpha - self.alpha_correction_coefficients[0]) \
+        / self.alpha_correction_coefficients[1]
+
+    phi_correction = self.phi_correction_coefficients[1] * theta + self.phi_correction_coefficients[0]
+    phi = -self.position_big_rotation_stage - self.offset_phi - phi_correction
 
     # Focal-plane coordinates [mm]
 

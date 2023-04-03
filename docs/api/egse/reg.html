@@ -100,6 +100,7 @@ from typing import List
 from typing import Union
 
 import numpy as np
+from rich.table import Table
 
 from egse.bits import beautify_binary
 from egse.bits import clear_bit
@@ -352,6 +353,27 @@ class RegisterMap:
                 msg += f&#34;    {var_name}={self.get_value(reg.name, var_name)}\n&#34;
         return msg
 
+    def __rich__(self):
+
+        # Create a table with — for each HK parameter — the HEX value, the binary, the decimal, and the
+        # calibrated value.
+        #
+        # To calibrate a value:
+        # * get the list of parameter names for temperatures from
+        # We don&#39;t want this!!!
+        # supply_voltage_calibration = GlobalState.setup.camera.fee.calibration.supply_voltages
+        # temperature_calibration = GlobalState.setup.camera.fee.calibration.temperatures
+
+        table = Table(&#34;Register&#34;, &#34;Parameter&#34;, &#34;Value (int)&#34;, &#34;Value (hex)&#34;)
+
+        for reg_name in self:
+            reg = self.get_register(reg_name)
+            for var_name in reg.keys():
+                value = self.get_value(reg.name, var_name)
+                table.add_row(reg_name, var_name, str(value), hex(value))
+
+        return table
+
     def get_memory_map_as_ndarray(self) -&gt; np.ndarray:
         &#34;&#34;&#34;
         Returns the memory map of the RegisterMap object. This memory map represents the memory
@@ -372,6 +394,9 @@ class RegisterMap:
 
 
     def _load_register_map(self) -&gt; dict:
+
+        # This is not a good idea, the RegisterMap is not really instantiated in a critical context,
+        # but this might happen. Instantiation of this class should be fast.
 
         fee_reg = GlobalState.setup.camera.fee.register_map
 
@@ -1014,6 +1039,27 @@ The type of the memory_map can be a bytearray or a Numpy ndarray.</dd>
                 msg += f&#34;    {var_name}={self.get_value(reg.name, var_name)}\n&#34;
         return msg
 
+    def __rich__(self):
+
+        # Create a table with — for each HK parameter — the HEX value, the binary, the decimal, and the
+        # calibrated value.
+        #
+        # To calibrate a value:
+        # * get the list of parameter names for temperatures from
+        # We don&#39;t want this!!!
+        # supply_voltage_calibration = GlobalState.setup.camera.fee.calibration.supply_voltages
+        # temperature_calibration = GlobalState.setup.camera.fee.calibration.temperatures
+
+        table = Table(&#34;Register&#34;, &#34;Parameter&#34;, &#34;Value (int)&#34;, &#34;Value (hex)&#34;)
+
+        for reg_name in self:
+            reg = self.get_register(reg_name)
+            for var_name in reg.keys():
+                value = self.get_value(reg.name, var_name)
+                table.add_row(reg_name, var_name, str(value), hex(value))
+
+        return table
+
     def get_memory_map_as_ndarray(self) -&gt; np.ndarray:
         &#34;&#34;&#34;
         Returns the memory map of the RegisterMap object. This memory map represents the memory
@@ -1034,6 +1080,9 @@ The type of the memory_map can be a bytearray or a Numpy ndarray.</dd>
 
 
     def _load_register_map(self) -&gt; dict:
+
+        # This is not a good idea, the RegisterMap is not really instantiated in a critical context,
+        # but this might happen. Instantiation of this class should be fast.
 
         fee_reg = GlobalState.setup.camera.fee.register_map
 

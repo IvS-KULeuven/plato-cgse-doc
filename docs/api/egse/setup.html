@@ -63,6 +63,7 @@ following values are treated special if they start with:</p>
 <li><code>class//</code>: the class in instantiated and the object is returned</li>
 <li><code>csv//</code>: the CSV file is loaded and a numpy array is returned</li>
 <li><code>yaml//</code>: the YAML file is loaded and a dictionary is returned</li>
+<li><code>enum//</code>: the enumeration is created dynamically and the object is returned</li>
 </ul>
 <h4 id="device-classes">Device Classes</h4>
 <p>Most of the hardware components in the Setup will have a <code>device</code> key that defines the class for
@@ -158,6 +159,7 @@ following values are treated special if they start with:
 * `class//`: the class in instantiated and the object is returned
 * `csv//`: the CSV file is loaded and a numpy array is returned
 * `yaml//`: the YAML file is loaded and a dictionary is returned
+* `enum//`: the enumeration is created dynamically and the object is returned
 
 #### Device Classes
 
@@ -209,6 +211,9 @@ Note: the resource location is always relative to the path defined by the PLATO_
 environment variable.
 
 &#34;&#34;&#34;
+from __future__ import annotations
+
+import enum
 import importlib
 import logging
 import os
@@ -220,14 +225,14 @@ from typing import Any
 from typing import Optional
 from typing import Union
 
+import pandas
 import rich
 import yaml
 from deepdiff import DeepDiff
 from numpy import genfromtxt
 from rich.tree import Tree
 
-from egse.settings import Settings
-from egse.settings import SettingsError
+from egse.control import Failure
 from egse.system import format_datetime
 from egse.system import sanity_check
 from egse.system import walk_dict_tree
@@ -251,6 +256,8 @@ def _load_class(class_name: str):
     &#34;&#34;&#34;
     if class_name.startswith(&#34;class//&#34;):
         class_name = class_name[7:]
+    elif class_name.startswith(&#34;factory//&#34;):
+        class_name = class_name[9:]
 
     module_name, class_name = class_name.rsplit(&#34;.&#34;, 1)
     module = importlib.import_module(module_name)
@@ -271,8 +278,37 @@ def _load_csv(resource_name: str):
     return content
 
 
+def _load_int_enum(enum_name: str, enum_content):
+    &#34;&#34;&#34; Dynamically build (and return) and IntEnum.
+
+    Args:
+        - enum_name: Enumeration name (potentially prepended with &#34;int_enum//&#34;).
+        - enum_content: Content of the enumeration, as read from the setup.
+    &#34;&#34;&#34;
+    if enum_name.startswith(&#34;int_enum//&#34;):
+        enum_name = enum_name[10:]
+
+    definition = {}
+    for side_name, side_definition in enum_content.items():
+
+        if &#34;alias&#34; in side_definition:
+            aliases = side_definition[&#34;alias&#34;]
+        else:
+            aliases = []
+        value = side_definition[&#34;value&#34;]
+
+        definition[side_name] = value
+
+        for alias in aliases:
+            definition[alias] = value
+    return enum.IntEnum(enum_name, definition)
+
+
 def _load_yaml(resource_name: str):
     &#34;&#34;&#34;Find and return the content of a YAML file.&#34;&#34;&#34;
+    from egse.settings import Settings
+    from egse.settings import SettingsError
+
     parts = resource_name[6:].rsplit(&#34;/&#34;, 1)
     [in_dir, fn] = parts if len(parts) &gt; 1 else [None, parts[0]]
     conf_location = os.environ[&#39;PLATO_CONF_DATA_LOCATION&#39;]
@@ -283,6 +319,33 @@ def _load_yaml(resource_name: str):
         raise ValueError(
             f&#34;Couldn&#39;t load resource &#39;{resource_name}&#39; from default {conf_location=}&#34;) from exc
     return content
+
+
+def _load_pandas(resource_name: str, separator: str):
+    &#34;&#34;&#34; Find and return the content of the given files as a pandas DataFrame object.
+
+    Args:
+        - resource_name: Filename, preceded by &#34;pandas//&#34;.
+        - separator: Column separator.
+    &#34;&#34;&#34;
+    parts = resource_name[8:].rsplit(&#34;/&#34;, 1)
+    [in_dir, fn] = parts if len(parts) &gt; 1 else [None, parts[0]]
+    conf_location = os.environ[&#39;PLATO_CONF_DATA_LOCATION&#39;]
+
+    try:
+        pandas_file_location = Path(conf_location) / in_dir / fn
+        return pandas.read_csv(pandas_file_location, sep=separator)
+    except TypeError as exc:
+        raise ValueError(
+            f&#34;Couldn&#39;t load resource &#39;{resource_name}&#39; from default {conf_location=}&#34;) from exc
+
+
+def _get_attribute(self, name, default):
+    try:
+        attr = object.__getattribute__(self, name)
+    except AttributeError:
+        attr = default
+    return attr
 
 
 def _parse_filename_for_setup_id(filename: str):
@@ -296,6 +359,37 @@ def _parse_filename_for_setup_id(filename: str):
         return match[2]  # match[2] is setup_id
     except (IndexError, TypeError) as exc:
         return None
+
+
+def get_last_setup_id_file_path():
+    return Path(
+        os.environ.get(&#34;PLATO_DATA_STORAGE_LOCATION&#34;) or &#34;~&#34;).expanduser().resolve() / &#34;last_setup_id.txt&#34;
+
+
+def load_last_setup_id() -&gt; int:
+    &#34;&#34;&#34;
+    Returns the ID of the last Setup that was used by the configuration manager.
+    The file shall only contain the Setup ID which must be an integer on the first line of the file.
+    If no such ID can be found, the Setup ID = 0 will be returned.
+    &#34;&#34;&#34;
+
+    last_setup_id_file_path = get_last_setup_id_file_path()
+    try:
+        with last_setup_id_file_path.open(&#39;r&#39;) as fd:
+            setup_id = int(fd.read().strip())
+    except FileNotFoundError:
+        setup_id = 0
+        save_last_setup_id(setup_id)
+
+    return setup_id
+
+
+def save_last_setup_id(setup_id: int | str):
+    &#34;&#34;&#34;Makes the given Setup ID persistent, so it can be restored upon the next startup.&#34;&#34;&#34;
+
+    last_setup_id_file_path = get_last_setup_id_file_path()
+    with last_setup_id_file_path.open(&#39;w&#39;) as fd:
+        fd.write(f&#34;{int(setup_id):d}&#34;)
 
 
 class NavigableDict(dict):
@@ -382,18 +476,27 @@ class NavigableDict(dict):
             except AttributeError:
                 dev_args = ()
             return _load_class(value)(*dev_args)
+        if isinstance(value, str) and value.startswith(&#34;factory//&#34;):
+            factory_args = _get_attribute(self, f&#39;{key}_args&#39;, {})
+            return _load_class(value)().create(**factory_args)
+        if isinstance(value, str) and value.startswith(&#34;int_enum//&#34;):
+            content = object.__getattribute__(self, &#34;content&#34;)
+            return _load_int_enum(value, content)
         if isinstance(value, str) and value.startswith(&#34;csv//&#34;):
             if key in self.__dict__[&#34;_memoized&#34;]:
                 return self.__dict__[&#34;_memoized&#34;][key]
             content = _load_csv(value)
             self.__dict__[&#34;_memoized&#34;][key] = content
             return content
-        elif isinstance(value, str) and value.startswith(&#34;yaml//&#34;):
+        if isinstance(value, str) and value.startswith(&#34;yaml//&#34;):
             if key in self.__dict__[&#34;_memoized&#34;]:
                 return self.__dict__[&#34;_memoized&#34;][key]
             content = _load_yaml(value)
             self.__dict__[&#34;_memoized&#34;][key] = content
             return content
+        if isinstance(value, str) and value.startswith(&#34;pandas//&#34;):
+            separator = object.__getattribute__(self, &#39;separator&#39;)
+            return _load_pandas(value, separator)
         else:
             return value
 
@@ -424,6 +527,9 @@ class NavigableDict(dict):
             return _load_class(value)(*dev_args)
         if isinstance(value, str) and value.startswith(&#34;csv//&#34;):
             return _load_csv(value)
+        if isinstance(value, str) and value.startswith(&#34;int_enum//&#34;):
+            content = object.__getattribute__(self, &#34;content&#34;)
+            return _load_int_enum(value, content)
         else:
             return value
 
@@ -652,6 +758,7 @@ class Setup(NavigableDict):
         Returns:
             a Setup that was loaded from the given location.
         &#34;&#34;&#34;
+        from egse.settings import Settings
 
         if not filename:
             raise ValueError(&#34;Invalid argument to function: No filename or None given.&#34;)
@@ -992,9 +1099,11 @@ def load_setup(
 
         setup_file_path = get_path_of_setup_file(setup_id, site_id)
 
-        rich.print(f&#34;Reloading {&#39;&#39; if setup_id else &#39;the latest &#39;}Setup {str(setup_id) + &#39; &#39; if setup_id else &#39;&#39;}for {site_id}...&#34;)
+        rich.print(
+            f&#34;Loading {&#39;&#39; if setup_id else &#39;the latest &#39;}Setup {f&#39;{setup_id} &#39; if setup_id else &#39;&#39;}for {site_id}...&#34;
+        )
 
-        return GlobalState.load_setup_from(setup_file_path)
+        return Setup.from_yaml_file(setup_file_path)
 
     # When we arrive here the Setup shall be loaded from the Configuration manager
 
@@ -1026,30 +1135,70 @@ def submit_setup(setup: Setup, description: str):
     Submit the given Setup to the Configuration Manager.
 
     When you submit a Setup, the Configuration Manager will save this Setup with the
-    next (new) setup id and make this Setup the current Setup in the Configuration manager.
+    next (new) setup id and make this Setup the current Setup in the Configuration manager
+    unless you have explicitly set `replace=False` in which case the current Setup will
+    not be replaced with the new Setup.
 
     Args:
         setup (Setup): a (new) Setup to submit to the configuration manager
         description (str): one-liner to help identifying the Setup afterwards
     Returns:
-        The Setup as returned by the configuration manager.
+        The Setup ID of the newly created Setup or None.
     &#34;&#34;&#34;
+    # We have not yet decided if this option should be made available. Therefore, we
+    # leave it here as hardcoded True.
+
+    # replace (bool): True if the current Setup in the configuration manager shall
+    #                 be replaced by this new Setup. [default=True]
+    replace: bool = True
 
     from egse.confman import ConfigurationManagerProxy
 
     try:
         with ConfigurationManagerProxy() as proxy:
-            setup = proxy.submit_setup(setup, description)
+            setup = proxy.submit_setup(setup, description, replace)
+
         if setup is None:
-            print(&#34;Submit failed for given Setup.&#34;)
-        return setup
+            rich.print(&#34;[red]Submit failed for given Setup, no reason given.[/red]&#34;)
+        elif isinstance(setup, Failure):
+            rich.print(f&#34;[red]Submit failed for given Setup[/red]: {setup}&#34;)
+            setup = None
+        elif replace:
+            rich.print(textwrap.dedent(
+                f&#34;&#34;&#34;\
+                [green]
+                Your new setup has been submitted and pushed to GitHub. The new setup is also 
+                activated in the configuration manager. Load the new setup in your session with:
+
+                    setup = load_setup() 
+                [/]
+                &#34;&#34;&#34;
+            ))
+        else:
+            rich.print(textwrap.dedent(
+                f&#34;&#34;&#34;\
+                [dark_orange]
+                Your new setup has been submitted and pushed to GitHub, but has not been
+                activated in the configuration manager. To activate this setup, use the
+                following command: 
+
+                    setup = load_setup({str(setup.get_id())})
+                [/]
+                &#34;&#34;&#34;)
+            )
+
+        return setup.get_id() if setup is not None else None
+
     except ConnectionError:
-        print(&#34;Could not make a connection with the Configuration Manager, no Setup was submitted.&#34;)
-
-
-class SetupError(Exception):
-    &#34;&#34;&#34; A setup-specific error.&#34;&#34;&#34;
-    pass
+        rich.print(&#34;Could not make a connection with the Configuration Manager, no Setup was submitted.&#34;)
+    except NotImplementedError:
+        rich.print(textwrap.dedent(
+            &#34;&#34;&#34;\
+            Caught a NotImplementedError. That usually means the configuration manager is not running or 
+            can not be reached. Check on the egse-server if the `cm_cs` process is running. If not you will
+            need to be restart the core services.
+            &#34;&#34;&#34;
+        ))
 
 
 __all__ = [
@@ -1059,6 +1208,8 @@ __all__ = [
     &#34;get_setup&#34;,
     &#34;submit_setup&#34;,
     &#34;SetupError&#34;,
+    &#34;load_last_setup_id&#34;,
+    &#34;save_last_setup_id&#34;,
 ]
 
 if __name__ == &#34;__main__&#34;:
@@ -1069,6 +1220,7 @@ if __name__ == &#34;__main__&#34;:
     from rich import print
 
     from egse.config import find_files
+    from egse.settings import Settings
 
     SITE = Settings.load(&#34;SITE&#34;)
     location = os.environ.get(&#34;PLATO_CONF_DATA_LOCATION&#34;)
@@ -1213,6 +1365,35 @@ CSL at position 2, use:</p>
         print(&#34;Could not make a connection with the Configuration Manager, no Setup to show you.&#34;)</code></pre>
 </details>
 </dd>
+<dt id="egse.setup.load_last_setup_id"><code class="name flex">
+<span>def <span class="ident">load_last_setup_id</span></span>(<span>) ‑> int</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Returns the ID of the last Setup that was used by the configuration manager.
+The file shall only contain the Setup ID which must be an integer on the first line of the file.
+If no such ID can be found, the Setup ID = 0 will be returned.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def load_last_setup_id() -&gt; int:
+    &#34;&#34;&#34;
+    Returns the ID of the last Setup that was used by the configuration manager.
+    The file shall only contain the Setup ID which must be an integer on the first line of the file.
+    If no such ID can be found, the Setup ID = 0 will be returned.
+    &#34;&#34;&#34;
+
+    last_setup_id_file_path = get_last_setup_id_file_path()
+    try:
+        with last_setup_id_file_path.open(&#39;r&#39;) as fd:
+            setup_id = int(fd.read().strip())
+    except FileNotFoundError:
+        setup_id = 0
+        save_last_setup_id(setup_id)
+
+    return setup_id</code></pre>
+</details>
+</dd>
 <dt id="egse.setup.load_setup"><code class="name flex">
 <span>def <span class="ident">load_setup</span></span>(<span>setup_id: int = None, site_id: str = None, from_disk: bool = False)</span>
 </code></dt>
@@ -1272,9 +1453,11 @@ configuration manager.</p></div>
 
         setup_file_path = get_path_of_setup_file(setup_id, site_id)
 
-        rich.print(f&#34;Reloading {&#39;&#39; if setup_id else &#39;the latest &#39;}Setup {str(setup_id) + &#39; &#39; if setup_id else &#39;&#39;}for {site_id}...&#34;)
+        rich.print(
+            f&#34;Loading {&#39;&#39; if setup_id else &#39;the latest &#39;}Setup {f&#39;{setup_id} &#39; if setup_id else &#39;&#39;}for {site_id}...&#34;
+        )
 
-        return GlobalState.load_setup_from(setup_file_path)
+        return Setup.from_yaml_file(setup_file_path)
 
     # When we arrive here the Setup shall be loaded from the Configuration manager
 
@@ -1301,13 +1484,32 @@ configuration manager.</p></div>
     return GlobalState.load_setup()</code></pre>
 </details>
 </dd>
+<dt id="egse.setup.save_last_setup_id"><code class="name flex">
+<span>def <span class="ident">save_last_setup_id</span></span>(<span>setup_id: int | str)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Makes the given Setup ID persistent, so it can be restored upon the next startup.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def save_last_setup_id(setup_id: int | str):
+    &#34;&#34;&#34;Makes the given Setup ID persistent, so it can be restored upon the next startup.&#34;&#34;&#34;
+
+    last_setup_id_file_path = get_last_setup_id_file_path()
+    with last_setup_id_file_path.open(&#39;w&#39;) as fd:
+        fd.write(f&#34;{int(setup_id):d}&#34;)</code></pre>
+</details>
+</dd>
 <dt id="egse.setup.submit_setup"><code class="name flex">
 <span>def <span class="ident">submit_setup</span></span>(<span>setup: <a title="egse.setup.Setup" href="#egse.setup.Setup">Setup</a>, description: str)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Submit the given Setup to the Configuration Manager.</p>
 <p>When you submit a Setup, the Configuration Manager will save this Setup with the
-next (new) setup id and make this Setup the current Setup in the Configuration manager.</p>
+next (new) setup id and make this Setup the current Setup in the Configuration manager
+unless you have explicitly set <code>replace=False</code> in which case the current Setup will
+not be replaced with the new Setup.</p>
 <h2 id="args">Args</h2>
 <dl>
 <dt><strong><code>setup</code></strong> :&ensp;<code><a title="egse.setup.Setup" href="#egse.setup.Setup">Setup</a></code></dt>
@@ -1316,7 +1518,7 @@ next (new) setup id and make this Setup the current Setup in the Configuration m
 <dd>one-liner to help identifying the Setup afterwards</dd>
 </dl>
 <h2 id="returns">Returns</h2>
-<p>The Setup as returned by the configuration manager.</p></div>
+<p>The Setup ID of the newly created Setup or None.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
@@ -1326,25 +1528,70 @@ next (new) setup id and make this Setup the current Setup in the Configuration m
     Submit the given Setup to the Configuration Manager.
 
     When you submit a Setup, the Configuration Manager will save this Setup with the
-    next (new) setup id and make this Setup the current Setup in the Configuration manager.
+    next (new) setup id and make this Setup the current Setup in the Configuration manager
+    unless you have explicitly set `replace=False` in which case the current Setup will
+    not be replaced with the new Setup.
 
     Args:
         setup (Setup): a (new) Setup to submit to the configuration manager
         description (str): one-liner to help identifying the Setup afterwards
     Returns:
-        The Setup as returned by the configuration manager.
+        The Setup ID of the newly created Setup or None.
     &#34;&#34;&#34;
+    # We have not yet decided if this option should be made available. Therefore, we
+    # leave it here as hardcoded True.
+
+    # replace (bool): True if the current Setup in the configuration manager shall
+    #                 be replaced by this new Setup. [default=True]
+    replace: bool = True
 
     from egse.confman import ConfigurationManagerProxy
 
     try:
         with ConfigurationManagerProxy() as proxy:
-            setup = proxy.submit_setup(setup, description)
+            setup = proxy.submit_setup(setup, description, replace)
+
         if setup is None:
-            print(&#34;Submit failed for given Setup.&#34;)
-        return setup
+            rich.print(&#34;[red]Submit failed for given Setup, no reason given.[/red]&#34;)
+        elif isinstance(setup, Failure):
+            rich.print(f&#34;[red]Submit failed for given Setup[/red]: {setup}&#34;)
+            setup = None
+        elif replace:
+            rich.print(textwrap.dedent(
+                f&#34;&#34;&#34;\
+                [green]
+                Your new setup has been submitted and pushed to GitHub. The new setup is also 
+                activated in the configuration manager. Load the new setup in your session with:
+
+                    setup = load_setup() 
+                [/]
+                &#34;&#34;&#34;
+            ))
+        else:
+            rich.print(textwrap.dedent(
+                f&#34;&#34;&#34;\
+                [dark_orange]
+                Your new setup has been submitted and pushed to GitHub, but has not been
+                activated in the configuration manager. To activate this setup, use the
+                following command: 
+
+                    setup = load_setup({str(setup.get_id())})
+                [/]
+                &#34;&#34;&#34;)
+            )
+
+        return setup.get_id() if setup is not None else None
+
     except ConnectionError:
-        print(&#34;Could not make a connection with the Configuration Manager, no Setup was submitted.&#34;)</code></pre>
+        rich.print(&#34;Could not make a connection with the Configuration Manager, no Setup was submitted.&#34;)
+    except NotImplementedError:
+        rich.print(textwrap.dedent(
+            &#34;&#34;&#34;\
+            Caught a NotImplementedError. That usually means the configuration manager is not running or 
+            can not be reached. Check on the egse-server if the `cm_cs` process is running. If not you will
+            need to be restart the core services.
+            &#34;&#34;&#34;
+        ))</code></pre>
 </details>
 </dd>
 </dl>
@@ -1354,7 +1601,7 @@ next (new) setup id and make this Setup the current Setup in the Configuration m
 <dl>
 <dt id="egse.setup.Setup"><code class="flex name class">
 <span>class <span class="ident">Setup</span></span>
-<span>(</span><span>nav_dict: egse.setup.NavigableDict = None)</span>
+<span>(</span><span>nav_dict: NavigableDict = None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>The Setup class represents a version of the configuration of the test facility, the
@@ -1423,6 +1670,7 @@ test setup and the Camera Under Test (CUT).</p>
         Returns:
             a Setup that was loaded from the given location.
         &#34;&#34;&#34;
+        from egse.settings import Settings
 
         if not filename:
             raise ValueError(&#34;Invalid argument to function: No filename or None given.&#34;)
@@ -1588,7 +1836,7 @@ test setup and the Camera Under Test (CUT).</p>
 <h3>Static methods</h3>
 <dl>
 <dt id="egse.setup.Setup.compare"><code class="name flex">
-<span>def <span class="ident">compare</span></span>(<span>setup_1: egse.setup.NavigableDict, setup_2: egse.setup.NavigableDict)</span>
+<span>def <span class="ident">compare</span></span>(<span>setup_1: NavigableDict, setup_2: NavigableDict)</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -1605,7 +1853,7 @@ def compare(setup_1: NavigableDict, setup_2: NavigableDict):
 </details>
 </dd>
 <dt id="egse.setup.Setup.find_devices"><code class="name flex">
-<span>def <span class="ident">find_devices</span></span>(<span>node: egse.setup.NavigableDict, devices={})</span>
+<span>def <span class="ident">find_devices</span></span>(<span>node: NavigableDict, devices={})</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Returns a dictionary with the devices that are included in the setup.
@@ -1695,7 +1943,7 @@ def from_dict(my_dict):
 </details>
 </dd>
 <dt id="egse.setup.Setup.from_yaml_file"><code class="name flex">
-<span>def <span class="ident">from_yaml_file</span></span>(<span>filename: Union[str, pathlib.Path] = None)</span>
+<span>def <span class="ident">from_yaml_file</span></span>(<span>filename: Union[str, Path] = None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Loads a Setup from the given YAML file.</p>
@@ -1721,6 +1969,7 @@ def from_yaml_file(filename: Union[str, Path] = None):
     Returns:
         a Setup that was loaded from the given location.
     &#34;&#34;&#34;
+    from egse.settings import Settings
 
     if not filename:
         raise ValueError(&#34;Invalid argument to function: No filename or None given.&#34;)
@@ -1963,10 +2212,12 @@ lose proper formatting and/or comments.</p>
 </ul>
 </li>
 <li><h3><a href="#header-functions">Functions</a></h3>
-<ul class="">
+<ul class="two-column">
 <li><code><a title="egse.setup.get_setup" href="#egse.setup.get_setup">get_setup</a></code></li>
 <li><code><a title="egse.setup.list_setups" href="#egse.setup.list_setups">list_setups</a></code></li>
+<li><code><a title="egse.setup.load_last_setup_id" href="#egse.setup.load_last_setup_id">load_last_setup_id</a></code></li>
 <li><code><a title="egse.setup.load_setup" href="#egse.setup.load_setup">load_setup</a></code></li>
+<li><code><a title="egse.setup.save_last_setup_id" href="#egse.setup.save_last_setup_id">save_last_setup_id</a></code></li>
 <li><code><a title="egse.setup.submit_setup" href="#egse.setup.submit_setup">submit_setup</a></code></li>
 </ul>
 </li>

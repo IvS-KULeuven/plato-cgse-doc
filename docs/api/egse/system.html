@@ -44,6 +44,7 @@ The module has external dependencies to:
 * __psutil__: for system statistics
 
 &#34;&#34;&#34;
+import collections
 import math
 
 import builtins
@@ -65,6 +66,7 @@ import time
 from collections import namedtuple
 from pathlib import Path
 from typing import Any
+from typing import Callable
 from typing import Iterable
 from typing import List
 from typing import NamedTuple
@@ -74,6 +76,7 @@ from typing import Union
 
 import distro  # For determining the Linux distribution
 import psutil
+import rich
 from rich.text import Text
 from rich.tree import Tree
 
@@ -82,6 +85,71 @@ EPOCH_1958_1970 = 378691200
 TIME_FORMAT = &#39;%Y-%m-%dT%H:%M:%S.%f%z&#39;
 
 logger = logging.getLogger(__name__)
+
+from contextlib import contextmanager
+import logging
+
+
+# Code below is copied from https://gist.github.com/simon-weber/7853144
+
+@contextmanager
+def all_logging_disabled(highest_level=logging.CRITICAL, flag=True):
+    &#34;&#34;&#34;
+    A context manager that will prevent any logging messages triggered during the body from being processed.
+
+    Args:
+        highest_level: the maximum logging level in use.
+            This would only need to be changed if a custom level greater than CRITICAL is defined.
+        flag: True to disable all logging [default=True]
+    &#34;&#34;&#34;
+    # two kind-of hacks here:
+    #    * can&#39;t get the highest logging level in effect =&gt; delegate to the user
+    #    * can&#39;t get the current module-level override =&gt; use an undocumented
+    #       (but non-private!) interface
+
+    previous_level = logging.root.manager.disable
+
+    if flag:
+        logging.disable(highest_level)
+
+    try:
+        yield
+    finally:
+        logging.disable(previous_level)
+
+
+def get_active_loggers() -&gt; dict:
+    return {
+        name: logging.getLevelName(logging.getLogger(name).level)
+        for name in sorted(logging.Logger.manager.loggerDict)
+    }
+
+
+# The code below was taken from https://stackoverflow.com/a/69639238/4609203
+
+def ignore_m_warning(modules=None):
+    &#34;&#34;&#34;
+    Ignore RuntimeWarning by `runpy` that occurs when executing a module with `python -m package.module`,
+    while that module is also imported.
+
+    The original warning mssage is:
+
+        &#39;&lt;package.module&gt;&#39; found in sys.modules after import of package &#39;&lt;package&#39;&gt;,
+        but prior to execution of &#39;&lt;package.module&gt;&#39;
+    &#34;&#34;&#34;
+    if not isinstance(modules, (list, tuple)):
+        modules = [modules]
+
+    try:
+        import warnings
+        import re
+
+        msg = &#34;&#39;{module}&#39; found in sys.modules after import of package&#34;
+        for module in modules:
+            module_msg = re.escape(msg.format(module=module))
+            warnings.filterwarnings(&#34;ignore&#34;, message=module_msg, category=RuntimeWarning, module=&#39;runpy&#39;)  # ignore -m
+    except (ImportError, KeyError, AttributeError, Exception):
+        pass
 
 
 def format_datetime(dt: Union[str,datetime.datetime] = None, fmt: str = None, width: int = 6, precision: int = 3):
@@ -294,6 +362,10 @@ class Timer(object):
         &#34;&#34;&#34;Sends the elapsed time info to the default logger.&#34;&#34;&#34;
         logger.log(self.log_level,
                    f&#34;{self.name}: {self.end() - self.start:0.{self.precision}f} seconds elapsed&#34;)
+
+    def get_elapsed(self) -&gt; float:
+        &#34;&#34;&#34;Returns the elapsed time for this timer as a float in seconds.&#34;&#34;&#34;
+        return self.end() - self.start
 
     def _end(self):
         return self._total_elapsed
@@ -649,7 +721,7 @@ def get_os_version() -&gt; str:
     return &#34;unknown&#34;
 
 
-def wait_until(condition, *args, interval=0.1, timeout=1, **kwargs) -&gt; int:
+def wait_until(condition, *args, interval=0.1, timeout=1, verbose=False, **kwargs) -&gt; int:
     &#34;&#34;&#34;
     Sleep until the given condition is fulfilled. The arguments are passed into the condition
     callable which is called in a while loop until the condition is met or the timeout is reached.
@@ -675,7 +747,8 @@ def wait_until(condition, *args, interval=0.1, timeout=1, **kwargs) -&gt; int:
         interval: the sleep interval between condition checks [s, default=0.1]
         timeout: the period after which the function returns, even when the condition is
             not met [s, default=1]
-        *args: any agruments that will be passed into the condition function
+        verbose: log debugging messages if True
+        *args: any arguments that will be passed into the condition function
 
     Returns:
         True when function timed out, False otherwise
@@ -699,7 +772,8 @@ def wait_until(condition, *args, interval=0.1, timeout=1, **kwargs) -&gt; int:
             return True
         time.sleep(interval)
 
-    logger.debug(f&#34;wait_until finished successfully, {func_name}{args}{kwargs} is met.&#34;)
+    if verbose:
+        logger.debug(f&#34;wait_until finished successfully, {func_name}{args}{kwargs} is met.&#34;)
 
     return False
 
@@ -795,6 +869,35 @@ def chdir(dirname=None):
         yield
     finally:
         os.chdir(current_dir)
+
+
+@contextlib.contextmanager
+def env_var(**kwargs):
+    &#34;&#34;&#34;
+    Context manager to run some code that need alternate settings for environment variables.
+
+    Args:
+        **kwargs: dictionary with environment variables that are needed
+
+    Examples:
+
+        &gt;&gt;&gt; with env_var(PLATO_DATA_STORAGE_LOCATION=&#34;/Users/rik/data&#34;):
+        ...    # do stuff that needs these alternate setting
+        ...    pass
+
+    &#34;&#34;&#34;
+    saved_env = {}
+    try:
+        for k, v in kwargs.items():
+            saved_env[k] = os.environ.get(k)
+            os.environ[k] = v
+        yield
+    finally:
+        for k, v in saved_env.items():
+            if v is not None:
+                os.environ[k] = v
+            else:
+                del os.environ[k]
 
 
 def filter_by_attr(elements: Iterable, **attrs) -&gt; List:
@@ -912,7 +1015,7 @@ def read_last_line(filename: str, max_line_length=5000):
         size = file.tell()
         if size:
             file.seek(max(0, size - max_line_length))
-            return file.readlines()[-1].decode(&#34;ascii&#34;).rstrip(&#34;\n&#34;)
+            return file.readlines()[-1].decode(&#34;utf-8&#34;).rstrip(&#34;\n&#34;)
         else:
             return &#34;&#34;
 
@@ -1165,6 +1268,49 @@ def is_in_ipython():
     return hasattr(builtins, &#34;__IPYTHON__&#34;)
 
 
+_function_timing = {}
+
+
+def save_average_execution_time(func: Callable, *args, **kwargs):
+    &#34;&#34;&#34;
+    Executes the function &#39;func&#39; with the given arguments and saves the execution time. All positional
+    arguments (in args) and keyword arguments (in kwargs) are passed into the function. The execution
+    time is saved in a deque of maximum 100 elements. When more times are added, the oldest times are
+    discarded. This function is used in conjunction with the `get_average_execution_time()` function.
+    &#34;&#34;&#34;
+
+    with Timer(log_level=logging.NOTSET) as timer:
+        response = func(*args, **kwargs)
+
+    if func not in _function_timing:
+        _function_timing[func] = collections.deque(maxlen=100)
+
+    _function_timing[func].append(timer.get_elapsed())
+
+    return response
+
+
+def get_average_execution_time(func: Callable) -&gt; float:
+    &#34;&#34;&#34;
+    Returns the average execution time of the given function. The function &#39;func&#39; shall be previously executed using
+    the `save_average_execution_time()` function which remembers the last 100 execution times of the function.
+    The average time is a moving average over the last 100 times. If the function was never called before, 0.0 is
+    returned.
+
+    This function can be used when setting a frequency to execute a certain function. When the average execution time
+    of the function is longer than the execution interval, the frequency shall be decreased or the process will get
+    stalled.
+    &#34;&#34;&#34;
+
+    try:
+        d = _function_timing[func]
+        return sum(d) / len(d)
+    except KeyError:
+        return 0.0
+
+
+ignore_m_warning(&#39;egse.system&#39;)
+
 if __name__ == &#34;__main__&#34;:
 
     print(f&#34;Host IP: {get_host_ip()}&#34;)
@@ -1182,6 +1328,49 @@ if __name__ == &#34;__main__&#34;:
 <section>
 <h2 class="section-title" id="header-functions">Functions</h2>
 <dl>
+<dt id="egse.system.all_logging_disabled"><code class="name flex">
+<span>def <span class="ident">all_logging_disabled</span></span>(<span>highest_level=50, flag=True)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>A context manager that will prevent any logging messages triggered during the body from being processed.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>highest_level</code></strong></dt>
+<dd>the maximum logging level in use.
+This would only need to be changed if a custom level greater than CRITICAL is defined.</dd>
+<dt><strong><code>flag</code></strong></dt>
+<dd>True to disable all logging [default=True]</dd>
+</dl></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@contextmanager
+def all_logging_disabled(highest_level=logging.CRITICAL, flag=True):
+    &#34;&#34;&#34;
+    A context manager that will prevent any logging messages triggered during the body from being processed.
+
+    Args:
+        highest_level: the maximum logging level in use.
+            This would only need to be changed if a custom level greater than CRITICAL is defined.
+        flag: True to disable all logging [default=True]
+    &#34;&#34;&#34;
+    # two kind-of hacks here:
+    #    * can&#39;t get the highest logging level in effect =&gt; delegate to the user
+    #    * can&#39;t get the current module-level override =&gt; use an undocumented
+    #       (but non-private!) interface
+
+    previous_level = logging.root.manager.disable
+
+    if flag:
+        logging.disable(highest_level)
+
+    try:
+        yield
+    finally:
+        logging.disable(previous_level)</code></pre>
+</details>
+</dd>
 <dt id="egse.system.chdir"><code class="name flex">
 <span>def <span class="ident">chdir</span></span>(<span>dirname=None)</span>
 </code></dt>
@@ -1352,6 +1541,54 @@ timer_thread.start()
     while True:
         time.sleep(next(g))
         func(*args)</code></pre>
+</details>
+</dd>
+<dt id="egse.system.env_var"><code class="name flex">
+<span>def <span class="ident">env_var</span></span>(<span>**kwargs)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Context manager to run some code that need alternate settings for environment variables.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>**kwargs</code></strong></dt>
+<dd>dictionary with environment variables that are needed</dd>
+</dl>
+<h2 id="examples">Examples</h2>
+<pre><code class="language-python-repl">&gt;&gt;&gt; with env_var(PLATO_DATA_STORAGE_LOCATION=&quot;/Users/rik/data&quot;):
+...    # do stuff that needs these alternate setting
+...    pass
+</code></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@contextlib.contextmanager
+def env_var(**kwargs):
+    &#34;&#34;&#34;
+    Context manager to run some code that need alternate settings for environment variables.
+
+    Args:
+        **kwargs: dictionary with environment variables that are needed
+
+    Examples:
+
+        &gt;&gt;&gt; with env_var(PLATO_DATA_STORAGE_LOCATION=&#34;/Users/rik/data&#34;):
+        ...    # do stuff that needs these alternate setting
+        ...    pass
+
+    &#34;&#34;&#34;
+    saved_env = {}
+    try:
+        for k, v in kwargs.items():
+            saved_env[k] = os.environ.get(k)
+            os.environ[k] = v
+        yield
+    finally:
+        for k, v in saved_env.items():
+            if v is not None:
+                os.environ[k] = v
+            else:
+                del os.environ[k]</code></pre>
 </details>
 </dd>
 <dt id="egse.system.filter_by_attr"><code class="name flex">
@@ -1675,6 +1912,56 @@ This format string will be used with the <code>strftime()</code> method and shou
         )
 
     return timestamp</code></pre>
+</details>
+</dd>
+<dt id="egse.system.get_active_loggers"><code class="name flex">
+<span>def <span class="ident">get_active_loggers</span></span>(<span>) ‑> dict</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_active_loggers() -&gt; dict:
+    return {
+        name: logging.getLevelName(logging.getLogger(name).level)
+        for name in sorted(logging.Logger.manager.loggerDict)
+    }</code></pre>
+</details>
+</dd>
+<dt id="egse.system.get_average_execution_time"><code class="name flex">
+<span>def <span class="ident">get_average_execution_time</span></span>(<span>func: Callable) ‑> float</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Returns the average execution time of the given function. The function 'func' shall be previously executed using
+the <code><a title="egse.system.save_average_execution_time" href="#egse.system.save_average_execution_time">save_average_execution_time()</a></code> function which remembers the last 100 execution times of the function.
+The average time is a moving average over the last 100 times. If the function was never called before, 0.0 is
+returned.</p>
+<p>This function can be used when setting a frequency to execute a certain function. When the average execution time
+of the function is longer than the execution interval, the frequency shall be decreased or the process will get
+stalled.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_average_execution_time(func: Callable) -&gt; float:
+    &#34;&#34;&#34;
+    Returns the average execution time of the given function. The function &#39;func&#39; shall be previously executed using
+    the `save_average_execution_time()` function which remembers the last 100 execution times of the function.
+    The average time is a moving average over the last 100 times. If the function was never called before, 0.0 is
+    returned.
+
+    This function can be used when setting a frequency to execute a certain function. When the average execution time
+    of the function is longer than the execution interval, the frequency shall be decreased or the process will get
+    stalled.
+    &#34;&#34;&#34;
+
+    try:
+        d = _function_timing[func]
+        return sum(d) / len(d)
+    except KeyError:
+        return 0.0</code></pre>
 </details>
 </dd>
 <dt id="egse.system.get_caller_info"><code class="name flex">
@@ -2139,6 +2426,45 @@ Service: domain (DNS/TCP)</p>
     return result</code></pre>
 </details>
 </dd>
+<dt id="egse.system.ignore_m_warning"><code class="name flex">
+<span>def <span class="ident">ignore_m_warning</span></span>(<span>modules=None)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Ignore RuntimeWarning by <code>runpy</code> that occurs when executing a module with <code>python -m package.module</code>,
+while that module is also imported.</p>
+<p>The original warning mssage is:</p>
+<pre><code>'&lt;package.module&gt;' found in sys.modules after import of package '&lt;package'&gt;,
+but prior to execution of '&lt;package.module&gt;'
+</code></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def ignore_m_warning(modules=None):
+    &#34;&#34;&#34;
+    Ignore RuntimeWarning by `runpy` that occurs when executing a module with `python -m package.module`,
+    while that module is also imported.
+
+    The original warning mssage is:
+
+        &#39;&lt;package.module&gt;&#39; found in sys.modules after import of package &#39;&lt;package&#39;&gt;,
+        but prior to execution of &#39;&lt;package.module&gt;&#39;
+    &#34;&#34;&#34;
+    if not isinstance(modules, (list, tuple)):
+        modules = [modules]
+
+    try:
+        import warnings
+        import re
+
+        msg = &#34;&#39;{module}&#39; found in sys.modules after import of package&#34;
+        for module in modules:
+            module_msg = re.escape(msg.format(module=module))
+            warnings.filterwarnings(&#34;ignore&#34;, message=module_msg, category=RuntimeWarning, module=&#39;runpy&#39;)  # ignore -m
+    except (ImportError, KeyError, AttributeError, Exception):
+        pass</code></pre>
+</details>
+</dd>
 <dt id="egse.system.is_in"><code class="name flex">
 <span>def <span class="ident">is_in</span></span>(<span>a, b)</span>
 </code></dt>
@@ -2277,7 +2603,7 @@ when the file is empty, <code>None</code> is returned when the file doesn't exis
         size = file.tell()
         if size:
             file.seek(max(0, size - max_line_length))
-            return file.readlines()[-1].decode(&#34;ascii&#34;).rstrip(&#34;\n&#34;)
+            return file.readlines()[-1].decode(&#34;utf-8&#34;).rstrip(&#34;\n&#34;)
         else:
             return &#34;&#34;</code></pre>
 </details>
@@ -2498,6 +2824,37 @@ such that your checks are not removed during optimisations.</p></div>
         raise AssertionError(msg)</code></pre>
 </details>
 </dd>
+<dt id="egse.system.save_average_execution_time"><code class="name flex">
+<span>def <span class="ident">save_average_execution_time</span></span>(<span>func: Callable, *args, **kwargs)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Executes the function 'func' with the given arguments and saves the execution time. All positional
+arguments (in args) and keyword arguments (in kwargs) are passed into the function. The execution
+time is saved in a deque of maximum 100 elements. When more times are added, the oldest times are
+discarded. This function is used in conjunction with the <code><a title="egse.system.get_average_execution_time" href="#egse.system.get_average_execution_time">get_average_execution_time()</a></code> function.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def save_average_execution_time(func: Callable, *args, **kwargs):
+    &#34;&#34;&#34;
+    Executes the function &#39;func&#39; with the given arguments and saves the execution time. All positional
+    arguments (in args) and keyword arguments (in kwargs) are passed into the function. The execution
+    time is saved in a deque of maximum 100 elements. When more times are added, the oldest times are
+    discarded. This function is used in conjunction with the `get_average_execution_time()` function.
+    &#34;&#34;&#34;
+
+    with Timer(log_level=logging.NOTSET) as timer:
+        response = func(*args, **kwargs)
+
+    if func not in _function_timing:
+        _function_timing[func] = collections.deque(maxlen=100)
+
+    _function_timing[func].append(timer.get_elapsed())
+
+    return response</code></pre>
+</details>
+</dd>
 <dt id="egse.system.str_to_datetime"><code class="name flex">
 <span>def <span class="ident">str_to_datetime</span></span>(<span>datetime_string: str)</span>
 </code></dt>
@@ -2567,7 +2924,7 @@ Returns: Time since the 1958 epoch [s].</li>
 </details>
 </dd>
 <dt id="egse.system.wait_until"><code class="name flex">
-<span>def <span class="ident">wait_until</span></span>(<span>condition, *args, interval=0.1, timeout=1, **kwargs) ‑> int</span>
+<span>def <span class="ident">wait_until</span></span>(<span>condition, *args, interval=0.1, timeout=1, verbose=False, **kwargs) ‑> int</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Sleep until the given condition is fulfilled. The arguments are passed into the condition
@@ -2595,8 +2952,10 @@ An example of the latter is:</p>
 <dt><strong><code>timeout</code></strong></dt>
 <dd>the period after which the function returns, even when the condition is
 not met [s, default=1]</dd>
+<dt><strong><code>verbose</code></strong></dt>
+<dd>log debugging messages if True</dd>
 <dt><strong><code>*args</code></strong></dt>
-<dd>any agruments that will be passed into the condition function</dd>
+<dd>any arguments that will be passed into the condition function</dd>
 </dl>
 <h2 id="returns">Returns</h2>
 <p>True when function timed out, False otherwise</p></div>
@@ -2604,7 +2963,7 @@ not met [s, default=1]</dd>
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def wait_until(condition, *args, interval=0.1, timeout=1, **kwargs) -&gt; int:
+<pre><code class="python">def wait_until(condition, *args, interval=0.1, timeout=1, verbose=False, **kwargs) -&gt; int:
     &#34;&#34;&#34;
     Sleep until the given condition is fulfilled. The arguments are passed into the condition
     callable which is called in a while loop until the condition is met or the timeout is reached.
@@ -2630,7 +2989,8 @@ not met [s, default=1]</dd>
         interval: the sleep interval between condition checks [s, default=0.1]
         timeout: the period after which the function returns, even when the condition is
             not met [s, default=1]
-        *args: any agruments that will be passed into the condition function
+        verbose: log debugging messages if True
+        *args: any arguments that will be passed into the condition function
 
     Returns:
         True when function timed out, False otherwise
@@ -2654,7 +3014,8 @@ not met [s, default=1]</dd>
             return True
         time.sleep(interval)
 
-    logger.debug(f&#34;wait_until finished successfully, {func_name}{args}{kwargs} is met.&#34;)
+    if verbose:
+        logger.debug(f&#34;wait_until finished successfully, {func_name}{args}{kwargs} is met.&#34;)
 
     return False</code></pre>
 </details>
@@ -3028,11 +3389,29 @@ Elapsed seconds: ...
         logger.log(self.log_level,
                    f&#34;{self.name}: {self.end() - self.start:0.{self.precision}f} seconds elapsed&#34;)
 
+    def get_elapsed(self) -&gt; float:
+        &#34;&#34;&#34;Returns the elapsed time for this timer as a float in seconds.&#34;&#34;&#34;
+        return self.end() - self.start
+
     def _end(self):
         return self._total_elapsed</code></pre>
 </details>
 <h3>Methods</h3>
 <dl>
+<dt id="egse.system.Timer.get_elapsed"><code class="name flex">
+<span>def <span class="ident">get_elapsed</span></span>(<span>self) ‑> float</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Returns the elapsed time for this timer as a float in seconds.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_elapsed(self) -&gt; float:
+    &#34;&#34;&#34;Returns the elapsed time for this timer as a float in seconds.&#34;&#34;&#34;
+    return self.end() - self.start</code></pre>
+</details>
+</dd>
 <dt id="egse.system.Timer.log_elapsed"><code class="name flex">
 <span>def <span class="ident">log_elapsed</span></span>(<span>self)</span>
 </code></dt>
@@ -3066,15 +3445,19 @@ Elapsed seconds: ...
 </li>
 <li><h3><a href="#header-functions">Functions</a></h3>
 <ul class="">
+<li><code><a title="egse.system.all_logging_disabled" href="#egse.system.all_logging_disabled">all_logging_disabled</a></code></li>
 <li><code><a title="egse.system.chdir" href="#egse.system.chdir">chdir</a></code></li>
 <li><code><a title="egse.system.check_argument_type" href="#egse.system.check_argument_type">check_argument_type</a></code></li>
 <li><code><a title="egse.system.check_is_a_string" href="#egse.system.check_is_a_string">check_is_a_string</a></code></li>
 <li><code><a title="egse.system.check_str_for_slash" href="#egse.system.check_str_for_slash">check_str_for_slash</a></code></li>
 <li><code><a title="egse.system.do_every" href="#egse.system.do_every">do_every</a></code></li>
+<li><code><a title="egse.system.env_var" href="#egse.system.env_var">env_var</a></code></li>
 <li><code><a title="egse.system.filter_by_attr" href="#egse.system.filter_by_attr">filter_by_attr</a></code></li>
 <li><code><a title="egse.system.find_class" href="#egse.system.find_class">find_class</a></code></li>
 <li><code><a title="egse.system.flatten_dict" href="#egse.system.flatten_dict">flatten_dict</a></code></li>
 <li><code><a title="egse.system.format_datetime" href="#egse.system.format_datetime">format_datetime</a></code></li>
+<li><code><a title="egse.system.get_active_loggers" href="#egse.system.get_active_loggers">get_active_loggers</a></code></li>
+<li><code><a title="egse.system.get_average_execution_time" href="#egse.system.get_average_execution_time">get_average_execution_time</a></code></li>
 <li><code><a title="egse.system.get_caller_info" href="#egse.system.get_caller_info">get_caller_info</a></code></li>
 <li><code><a title="egse.system.get_full_classname" href="#egse.system.get_full_classname">get_full_classname</a></code></li>
 <li><code><a title="egse.system.get_host_ip" href="#egse.system.get_host_ip">get_host_ip</a></code></li>
@@ -3085,6 +3468,7 @@ Elapsed seconds: ...
 <li><code><a title="egse.system.get_system_stats" href="#egse.system.get_system_stats">get_system_stats</a></code></li>
 <li><code><a title="egse.system.has_internet" href="#egse.system.has_internet">has_internet</a></code></li>
 <li><code><a title="egse.system.humanize_seconds" href="#egse.system.humanize_seconds">humanize_seconds</a></code></li>
+<li><code><a title="egse.system.ignore_m_warning" href="#egse.system.ignore_m_warning">ignore_m_warning</a></code></li>
 <li><code><a title="egse.system.is_in" href="#egse.system.is_in">is_in</a></code></li>
 <li><code><a title="egse.system.is_in_ipython" href="#egse.system.is_in_ipython">is_in_ipython</a></code></li>
 <li><code><a title="egse.system.is_not_in" href="#egse.system.is_not_in">is_not_in</a></code></li>
@@ -3094,6 +3478,7 @@ Elapsed seconds: ...
 <li><code><a title="egse.system.recursive_dict_update" href="#egse.system.recursive_dict_update">recursive_dict_update</a></code></li>
 <li><code><a title="egse.system.replace_environment_variable" href="#egse.system.replace_environment_variable">replace_environment_variable</a></code></li>
 <li><code><a title="egse.system.sanity_check" href="#egse.system.sanity_check">sanity_check</a></code></li>
+<li><code><a title="egse.system.save_average_execution_time" href="#egse.system.save_average_execution_time">save_average_execution_time</a></code></li>
 <li><code><a title="egse.system.str_to_datetime" href="#egse.system.str_to_datetime">str_to_datetime</a></code></li>
 <li><code><a title="egse.system.time_since_epoch_1958" href="#egse.system.time_since_epoch_1958">time_since_epoch_1958</a></code></li>
 <li><code><a title="egse.system.type_name" href="#egse.system.type_name">type_name</a></code></li>
@@ -3121,6 +3506,7 @@ Elapsed seconds: ...
 <li>
 <h4><code><a title="egse.system.Timer" href="#egse.system.Timer">Timer</a></code></h4>
 <ul class="">
+<li><code><a title="egse.system.Timer.get_elapsed" href="#egse.system.Timer.get_elapsed">get_elapsed</a></code></li>
 <li><code><a title="egse.system.Timer.log_elapsed" href="#egse.system.Timer.log_elapsed">log_elapsed</a></code></li>
 </ul>
 </li>

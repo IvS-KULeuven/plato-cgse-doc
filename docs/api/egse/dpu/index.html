@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1" />
 <meta name="generator" content="pdoc 0.10.0" />
 <title>egse.dpu API documentation</title>
-<meta name="description" content="This module defines the commanding interfaces for the DPU-FEE interaction." />
+<meta name="description" content="This module defines the commanding interfaces for the DPU—N-FEE interaction …" />
 <link rel="preload stylesheet" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/11.0.1/sanitize.min.css" integrity="sha256-PK9q560IAAa6WVRRh76LtCaI8pjTJ2z11v0miyNNjrs=" crossorigin>
 <link rel="preload stylesheet" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/11.0.1/typography.min.css" integrity="sha256-7l/o7C8jubJiy74VsKTidCy1yBkRtiUGbVkYBylBqUg=" crossorigin>
 <link rel="stylesheet preload" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/10.1.1/styles/github.min.css" crossorigin>
@@ -22,19 +22,63 @@
 <h1 class="title">Module <code>egse.dpu</code></h1>
 </header>
 <section id="section-intro">
-<p>This module defines the commanding interfaces for the DPU-FEE interaction.</p>
+<p>This module defines the commanding interfaces for the DPU—N-FEE interaction.</p>
+<p>On the <em>client/user side</em>, the <code><a title="egse.dpu.DPUProxy" href="#egse.dpu.DPUProxy">DPUProxy</a></code> class shall be used for user interactions and commanding with both
+the DPU simulator and the N-FEE. This class connects to the DPU control server which must be running before
+any commands can be processed.</p>
+<p>On the <em>server side</em>, the <code>DPUControlServer</code> class is located in the module <code><a title="egse.dpu.dpu_cs" href="dpu_cs.html">egse.dpu.dpu_cs</a></code>.</p>
+<p>The top-level classes that are of interest to the developer when inspecting this module are:</p>
+<ul>
+<li><code><a title="egse.dpu.DPUController" href="#egse.dpu.DPUController">DPUController</a></code> which puts the requested commands on the command queue for the <code><a title="egse.dpu.DPUProcessor" href="#egse.dpu.DPUProcessor">DPUProcessor</a></code></li>
+<li><code><a title="egse.dpu.DPUProcessor" href="#egse.dpu.DPUProcessor">DPUProcessor</a></code> is the work horse of the DPU simulator and runs in a separate process. This process communicates
+directly with the N-FEE through the SpaceWire interface.</li>
+<li><code><a title="egse.dpu.DPUInternals" href="#egse.dpu.DPUInternals">DPUInternals</a></code> keeps critical information about the DPU and provides information on the status of the
+readout progress, i.e. where we are in the readout cycle.</li>
+<li><code><a title="egse.dpu.DPUMonitoring" href="#egse.dpu.DPUMonitoring">DPUMonitoring</a></code> provides methods to run a function at a certain time, e.g. right after a long pulse, or to wait
+for an event, e.g. when an HDF5 file is ready for processing.</li>
+</ul>
+<p>The actual commanding is done in <code><a title="egse.dpu.dpu" href="dpu.html">egse.dpu.dpu</a></code> module. That module also defines the <code>NFEEState</code> which acts as a
+mirror of the FPGA status.</p>
+<p>This module also defines a number of functions, but they all are for internal use and are not of any interest
+unless you are maintaining this module.</p>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">&#34;&#34;&#34;
-This module defines the commanding interfaces for the DPU-FEE interaction.
+This module defines the commanding interfaces for the DPU—N-FEE interaction.
+
+
+On the *client/user side*, the `DPUProxy` class shall be used for user interactions and commanding with both
+the DPU simulator and the N-FEE. This class connects to the DPU control server which must be running before
+any commands can be processed.
+
+On the *server side*, the `DPUControlServer` class is located in the module `dpu_cs`.
+
+The top-level classes that are of interest to the developer when inspecting this module are:
+
+* `DPUController` which puts the requested commands on the command queue for the `DPUProcessor`
+* `DPUProcessor` is the work horse of the DPU simulator and runs in a separate process. This process communicates
+  directly with the N-FEE through the SpaceWire interface.
+* `DPUInternals` keeps critical information about the DPU and provides information on the status of the
+  readout progress, i.e. where we are in the readout cycle.
+* `DPUMonitoring` provides methods to run a function at a certain time, e.g. right after a long pulse, or to wait
+  for an event, e.g. when an HDF5 file is ready for processing.
+
+The actual commanding is done in `dpu` module. That module also defines the `NFEEState` which acts as a
+mirror of the FPGA status.
+
+This module also defines a number of functions, but they all are for internal use and are not of any interest
+unless you are maintaining this module.
+
 &#34;&#34;&#34;
 
 import logging
 import multiprocessing
 import pickle
 import queue
+from enum import Enum
+
 import time
 import traceback
 from dataclasses import dataclass
@@ -53,9 +97,8 @@ from egse.command import ClientServerCommand
 from egse.confman import ConfigurationManagerProxy
 from egse.control import ControlServer
 from egse.decorators import dynamic_interface
-from egse.dpu.dpu import NFEEState
+from egse.dpu.dpu import NFEEState, command_set_nfee_fpga_defaults
 from egse.dpu.dpu import command_external_clock
-from egse.dpu.dpu import command_get_full_register
 from egse.dpu.dpu import command_get_mode
 from egse.dpu.dpu import command_internal_clock
 from egse.dpu.dpu import command_reset
@@ -73,7 +116,9 @@ from egse.dpu.dpu import command_set_register_value
 from egse.dpu.dpu import command_set_reverse_clocking
 from egse.dpu.dpu import command_set_standby_mode
 from egse.dpu.dpu import command_set_vgd
+from egse.dpu.dpu import command_sync_register_map
 from egse.dpu.dpu import prio_command_get_mode
+from egse.dpu.dpu import prio_command_get_register_map
 from egse.dpu.dpu import prio_command_get_slicing
 from egse.dpu.dpu import prio_command_get_sync_mode
 from egse.dpu.dpu import prio_command_is_dump_mode
@@ -82,8 +127,6 @@ from egse.dsi.esl import is_timecode
 from egse.exceptions import Abort
 from egse.fee import is_hk_data_packet
 from egse.fee import n_fee_mode
-from egse.fee import n_fee_side
-from egse.fee import sensor_sel
 from egse.obsid import ObservationIdentifier
 from egse.protocol import CommandProtocol
 from egse.proxy import Proxy
@@ -192,7 +235,14 @@ class DPUInterface:
         raise NotImplementedError
 
     @dynamic_interface
-    def n_fee_get_full_register(self):
+    def get_register_map(self) -&gt; RegisterMap:
+        &#34;&#34;&#34;
+        Returns the RegisterMap
+        &#34;&#34;&#34;
+        raise NotImplementedError
+
+    @dynamic_interface
+    def n_fee_sync_register_map(self):
         &#34;&#34;&#34;
         Read the complete register map from the N-FEE.
         &#34;&#34;&#34;
@@ -399,6 +449,10 @@ class DPUInterface:
     def n_fee_set_vgd(self, n_fee_parameters: dict):
         raise NotImplementedError
 
+    @dynamic_interface
+    def n_fee_set_fpga_defaults(self):
+        raise NotImplementedError
+
 
 class DPUSimulator(DPUInterface):
     # The DPUSimulator will stand by itself, which means it will not send commands to an FEE
@@ -445,6 +499,9 @@ class DPUSimulator(DPUInterface):
     def n_fee_set_clear_error_flags(self):
         pass
 
+    def n_fee_set_fpga_defaults(self):
+        pass
+
 
 class DPUController(DPUInterface):
     &#34;&#34;&#34;
@@ -464,6 +521,7 @@ class DPUController(DPUInterface):
 
         try:
             self.default_ccd_readout_order = GlobalState.setup.camera.fee.ccd_numbering.DEFAULT_CCD_READOUT_ORDER
+            self.sensor_sel_both_sides = GlobalState.setup.camera.fee.sensor_sel.enum.BOTH_SIDES.value
         except AttributeError:
             raise SetupError(&#34;No entry in the setup for camera.fee.ccd_numbering.DEFAULT_CCD_READOUT_ORDER&#34;)
 
@@ -489,13 +547,20 @@ class DPUController(DPUInterface):
     def is_simulator(self):
         return True
 
-    def n_fee_get_full_register(self):
-        self._command_q.put((command_get_full_register, [], {}))
+    def n_fee_sync_register_map(self) -&gt; RegisterMap:
+        self._command_q.put((command_sync_register_map, [], {}))
         LOGGER.debug(
-            &#34;Controller.n_fee_get_full_register: Put command_get_full_register on the Queue.&#34;
+            &#34;Controller.n_fee_sync_register_map: Put command_sync_register_map on the Queue.&#34;
         )
         (cmd, response) = self._response_q.get()
-        LOGGER.debug(f&#34;Controller.n_fee_get_full_register returned: ({cmd.__name__}, {response}).&#34;)
+        LOGGER.debug(f&#34;Controller.n_fee_sync_register_map returned: ({cmd.__name__}, {response}).&#34;)
+        return response
+
+    def get_register_map(self) -&gt; RegisterMap:
+        self._priority_q.put((prio_command_get_register_map, []))
+        LOGGER.debug(&#34;Controller.get_register_map: Put prio_command_get_register_map on the Queue.&#34;)
+        (cmd, response) = self._response_q.get()
+        LOGGER.debug(f&#34;Controller.get_register_map returned: ({cmd.__name__}, {response}).&#34;)
         return response
 
     def n_fee_get_mode(self):
@@ -550,7 +615,7 @@ class DPUController(DPUInterface):
     def n_fee_set_dump_mode(self, n_fee_parameters: dict):
         v_start = n_fee_parameters.get(&#34;v_start&#34;, 0)
         v_end = n_fee_parameters.get(&#34;v_end&#34;, 4509)
-        sensor_sel_ = n_fee_parameters.get(&#34;sensor_sel&#34;, sensor_sel.BOTH_SIDES)
+        sensor_sel_ = n_fee_parameters.get(&#34;sensor_sel&#34;, self.sensor_sel_both_sides)
         ccd_readout_order = n_fee_parameters.get(&#34;ccd_readout_order&#34;, self.default_ccd_readout_order)
         n_final_dump = n_fee_parameters.get(&#34;n_final_dump&#34;, 0)
         sync_sel = n_fee_parameters.get(&#34;sync_sel&#34;, 0)
@@ -568,7 +633,7 @@ class DPUController(DPUInterface):
     def n_fee_set_dump_mode_int_sync(self, n_fee_parameters: dict):
         v_start = n_fee_parameters.get(&#34;v_start&#34;, 0)
         v_end = n_fee_parameters.get(&#34;v_end&#34;, 4509)
-        sensor_sel_ = n_fee_parameters.get(&#34;sensor_sel&#34;, sensor_sel.BOTH_SIDES)
+        sensor_sel_ = n_fee_parameters.get(&#34;sensor_sel&#34;, self.sensor_sel_both_sides)
         n_final_dump = n_fee_parameters.get(&#34;n_final_dump&#34;, 0)
         ccd_readout_order = n_fee_parameters.get(&#34;ccd_readout_order&#34;, self.default_ccd_readout_order)
         sync_sel = n_fee_parameters.get(&#34;sync_sel&#34;, 1)
@@ -590,7 +655,7 @@ class DPUController(DPUInterface):
     def n_fee_set_full_image_mode(self, n_fee_parameters: dict):
         v_start = n_fee_parameters.get(&#34;v_start&#34;, 0)
         v_end = n_fee_parameters.get(&#34;v_end&#34;, 1)
-        sensor_sel_ = n_fee_parameters.get(&#34;sensor_sel&#34;, sensor_sel.BOTH_SIDES)
+        sensor_sel_ = n_fee_parameters.get(&#34;sensor_sel&#34;, self.sensor_sel_both_sides)
         ccd_readout_order = n_fee_parameters.get(&#34;ccd_readout_order&#34;, self.default_ccd_readout_order)
         n_final_dump = n_fee_parameters.get(&#34;n_final_dump&#34;, 0)
         num_cycles = n_fee_parameters.get(&#34;num_cycles&#34;, 0)
@@ -608,7 +673,7 @@ class DPUController(DPUInterface):
     def n_fee_set_full_image_mode_int_sync(self, n_fee_parameters: dict):
         v_start = n_fee_parameters.get(&#34;v_start&#34;, 0)
         v_end = n_fee_parameters.get(&#34;v_end&#34;, 1)
-        sensor_sel_ = n_fee_parameters.get(&#34;sensor_sel&#34;, sensor_sel.BOTH_SIDES)
+        sensor_sel_ = n_fee_parameters.get(&#34;sensor_sel&#34;, self.sensor_sel_both_sides)
         ccd_readout_order = n_fee_parameters.get(&#34;ccd_readout_order&#34;, self.default_ccd_readout_order)
         n_final_dump = n_fee_parameters.get(&#34;n_final_dump&#34;, 0)
         int_sync_period = n_fee_parameters.get(&#34;int_sync_period&#34;, 6250)
@@ -627,7 +692,7 @@ class DPUController(DPUInterface):
     def n_fee_set_full_image_pattern_mode(self, n_fee_parameters: dict):
         v_start = n_fee_parameters.get(&#34;v_start&#34;, 0)
         v_end = n_fee_parameters.get(&#34;v_end&#34;, 1)
-        sensor_sel_ = n_fee_parameters.get(&#34;sensor_sel&#34;, sensor_sel.BOTH_SIDES)
+        sensor_sel_ = n_fee_parameters.get(&#34;sensor_sel&#34;, self.sensor_sel_both_sides)
         num_cycles = n_fee_parameters.get(&#34;num_cycles&#34;, 0)
         self._command_q.put((command_set_full_image_pattern_mode,
                              [v_start, v_end, sensor_sel_],
@@ -713,7 +778,7 @@ class DPUController(DPUInterface):
     def n_fee_set_reverse_clocking(self, n_fee_parameters: dict):
         v_start = n_fee_parameters.get(&#34;v_start&#34;, 0)
         v_end = n_fee_parameters.get(&#34;v_end&#34;, 4509)
-        sensor_sel_ = n_fee_parameters.get(&#34;sensor_sel&#34;, sensor_sel.BOTH_SIDES)
+        sensor_sel_ = n_fee_parameters.get(&#34;sensor_sel&#34;, self.sensor_sel_both_sides)
         ccd_readout_order = n_fee_parameters.get(&#34;ccd_readout_order&#34;, self.default_ccd_readout_order)
         n_final_dump = n_fee_parameters.get(&#34;n_final_dump&#34;, 0)
         num_cycles = n_fee_parameters.get(&#34;num_cycles&#34;, 0)
@@ -736,7 +801,7 @@ class DPUController(DPUInterface):
         v_start = n_fee_parameters.get(&#34;v_start&#34;, 0)
         v_end = n_fee_parameters.get(&#34;v_end&#34;, 4509)
         n_final_dump = n_fee_parameters.get(&#34;n_final_dump&#34;, 0)
-        sensor_sel_ = n_fee_parameters.get(&#34;sensor_sel&#34;, sensor_sel.BOTH_SIDES)
+        sensor_sel_ = n_fee_parameters.get(&#34;sensor_sel&#34;, self.sensor_sel_both_sides)
         ccd_readout_order = n_fee_parameters.get(&#34;ccd_readout_order&#34;, self.default_ccd_readout_order)
         charge_injection_width = n_fee_parameters.get(&#34;charge_injection_width&#34;, 0)
         charge_injection_gap = n_fee_parameters.get(&#34;charge_injection_gap&#34;, 0)
@@ -771,6 +836,16 @@ class DPUController(DPUInterface):
         (cmd, response) = self._response_q.get()
 
         LOGGER.debug(f&#34;Controller.n_fee_set_vgd returned: ({cmd.__name__}, {response})&#34;)
+        return response
+
+    def n_fee_set_fpga_defaults(self):
+        self._command_q.put((command_set_nfee_fpga_defaults, [], {}))
+
+        LOGGER.debug(&#34;Controller.n_fee_set_fpga_defaults: Put n_fee_set_fpga_defaults on the Queue.&#34;)
+
+        (cmd, response) = self._response_q.get()
+
+        LOGGER.debug(f&#34;Controller.n_fee_set_fpga_defaults returned: ({cmd.__name__}, {response})&#34;)
         return response
 
 
@@ -977,7 +1052,7 @@ class DPUMonitoring:
                 if retries &lt;= 0:
                     raise TimeoutError(f&#34;DPUMonitoring timed out after {self._retries * self._timeout} seconds.&#34;)
 
-    def wait_for_hdf5_filename(self) -&gt; List[Path]:
+    def wait_for_hdf5_filename(self, retries: int = None, timeout: float = None) -&gt; List[Path]:
         &#34;&#34;&#34;
         Connects to the monitoring socket of the DPU Processor and returns a list of path names that
         were part of the current registration in the Storage, right before a new registration was
@@ -1000,10 +1075,11 @@ class DPUMonitoring:
         self.unsubscribe_all()
         self.subscribe(MessageIdentifier.HDF5_FILENAMES)
 
-        retries = self._retries
+        retries = retries if retries is not None else self._retries
+        timeout = timeout or self._timeout
 
         while True:
-            rlist, _, _ = zmq.select([self._socket], [], [], timeout=self._timeout)
+            rlist, _, _ = zmq.select([self._socket], [], [], timeout=timeout)
             if self._socket in rlist:
                 if self._multipart:
                     sync_id, pickle_string = self._socket.recv_multipart()
@@ -1018,7 +1094,7 @@ class DPUMonitoring:
                 return filenames
             else:
                 retries -= 1
-                LOGGER.warning(f&#34;Monitoring timeout, {retries} retries to go&#34;)
+                # LOGGER.warning(f&#34;Monitoring timeout, {retries} retries to go&#34;)
                 if retries &lt;= 0:
                     raise TimeoutError(f&#34;DPUMonitoring timed out after {self._retries * self._timeout} seconds.&#34;)
 
@@ -1306,12 +1382,19 @@ class DPUInternals:
     # is received.
     frame_number: int = -1
 
+    # Enumeration with the information about E and F, based on the setup (camera-dependent)
+    ccd_sides_enum: Enum = None
+
+    # Enumeration with the sensor_sel
+    sensor_sel_enum: Enum = None
+
     # The clear_error_flags shall be executed on every readout, i.e. every 200ms and 400ms pulse.
     clear_error_flags = False
 
     # The number of cycles that will be used for slicing the FITS files. This parameter is
     # saved in the HDF5 file upon reception.
     slicing_num_cycles = 0
+
 
     def is_start_of_cycle(self):
         &#34;&#34;&#34;
@@ -1339,7 +1422,7 @@ class DPUInternals:
     def update(self, n_fee_state: NFEEState.StateTuple):
         self.dump_mode = not bool(n_fee_state.digitise_en)
         self.internal_sync = bool(n_fee_state.sync_sel)
-        self.expected_last_packet_flags = create_expected_last_packet_flags(n_fee_state)
+        self.expected_last_packet_flags = create_expected_last_packet_flags(n_fee_state, self.sensor_sel_enum)
 
 
 class DPUProcessor(multiprocessing.Process):
@@ -1378,15 +1461,18 @@ class DPUProcessor(multiprocessing.Process):
 
         self._n_fee_state = NFEEState()
 
+
+    def run(self):
+
         self._dpu_internals = DPUInternals(
             num_cycles=-1,
             expected_last_packet_flags=[False, False, False, False],
             dump_mode=False,
             internal_sync=False,
             frame_number=-1,
+            ccd_sides_enum=GlobalState.setup.camera.fee.ccd_sides.enum,
+            sensor_sel_enum=GlobalState.setup.camera.fee.sensor_sel.enum,
         )
-
-    def run(self):
 
         # The DPU Processor runs in a different process and since ZeroMQ Sockets are not
         # thread/process safe, we have to recreate the ZeroMQHandler attached to the egse.logger
@@ -1514,7 +1600,7 @@ class DPUProcessor(multiprocessing.Process):
 
                         process_high_priority_commands(self._priority_q, self._response_q,
                                                        self._n_fee_state.get_state(),
-                                                       self._dpu_internals)
+                                                       self._dpu_internals, self.register_map)
 
                         # On any new readout cycle (400ms pulse), update the state and the internals
 
@@ -1610,7 +1696,7 @@ class DPUProcessor(multiprocessing.Process):
 
                     process_high_priority_commands(
                         self._priority_q, self._response_q,
-                        self._n_fee_state.get_state(), self._dpu_internals)
+                        self._n_fee_state.get_state(), self._dpu_internals, self.register_map)
 
                     # Then, we might want to send some RMAP commands -------------------------------
 
@@ -1706,8 +1792,7 @@ class DPUProcessor(multiprocessing.Process):
             &#39;In safe time window for sending RMAP command, getting full register..&#39;
         )
 
-
-        command_get_full_register(self._transport, self.register_map)
+        command_sync_register_map(self._transport, self.register_map)
 
         LOGGER.debug(self.register_map)
 
@@ -2124,10 +2209,11 @@ def read_and_process_data_packets(
     # only take effect on the 400ms pulse in the N-FEE.
 
     if data_packet.type.frame_number == 0:
-        internals.expected_last_packet_flags = get_expected_last_packet_flags(register_map)
+        internals.expected_last_packet_flags = get_expected_last_packet_flags(register_map, internals.sensor_sel_enum)
         LOGGER.debug(f&#34;{internals.expected_last_packet_flags=}&#34;)
 
-    idx = get_index_for_last_packet_flags(data_packet.type.packet_type, data_packet.type.ccd_side)
+    idx = get_index_for_last_packet_flags(data_packet.type.packet_type, data_packet.type.ccd_side,
+                                          internals.ccd_sides_enum)
     # LOGGER.debug(f&#34;{idx=}, {data_packet.type.packet_type=}, {data_packet.type.ccd_side=}&#34;)
     actual_last_packet_flags[idx] = data_packet.type.last_packet
 
@@ -2166,7 +2252,8 @@ def read_and_process_data_packets(
         #LOGGER.debug(f&#34;Got data packet of length {len(packet)}&#34;)
         #LOGGER.debug(f&#34;DataPacketHeader: {data_packet.header.type_as_object}&#34;)
 
-        idx = get_index_for_last_packet_flags(data_packet.type.packet_type, data_packet.type.ccd_side)
+        idx = get_index_for_last_packet_flags(data_packet.type.packet_type, data_packet.type.ccd_side,
+                                              internals.ccd_sides_enum)
         actual_last_packet_flags[idx] = data_packet.type.last_packet
 
         # Sending data packets shall not take more than 4 seconds, and if we
@@ -2264,7 +2351,7 @@ def send_commands_to_n_fee(
 def process_high_priority_commands(
         priority_q: multiprocessing.Queue,
         response_q: multiprocessing.Queue,
-        n_fee_state: tuple, dpu_internals: DPUInternals):
+        n_fee_state: tuple, dpu_internals: DPUInternals, reg_map: RegisterMap):
     &#34;&#34;&#34;
     Execute high priority commands from the DPU Control Server /  Controller. The `n_fee_state` and
     the `dpu_internals` tuples are passed to the high priority commands before any other arguments
@@ -2276,12 +2363,13 @@ def process_high_priority_commands(
         n_fee_state: a namedtuple containing the current state of the N-FEE
         dpu_internals: the internal settings of the DPU might be requested or set
             by a high priority command
+        reg_map: the current register map from the DPU Processor
     &#34;&#34;&#34;
 
     command = response = None
     try:
         (command, args) = priority_q.get_nowait()
-        response = command(n_fee_state, dpu_internals, *args)
+        response = command(n_fee_state, dpu_internals, reg_map, *args)
         LOGGER.debug(f&#34;Command executed: {command.__name__}, {args=}, {response=}&#34;)
     except queue.Empty:
         pass
@@ -2298,7 +2386,7 @@ def process_high_priority_commands(
             response_q.put((command, response))
 
 
-def get_index_for_last_packet_flags(packet_type: int, ccd_side: int):
+def get_index_for_last_packet_flags(packet_type: int, ccd_side: int, ccd_sides_enum):
     &#34;&#34;&#34;
     Returns the index into the last packet flags list.
 
@@ -2313,17 +2401,18 @@ def get_index_for_last_packet_flags(packet_type: int, ccd_side: int):
         packet_type: the packet type as read from the packet header [datapacket=0, overscan=1,
             housekeeping=2]
         ccd_side: the ccd side as read from the packet header
+        ccd_sides_enum: Enumeration with information on E and F
 
     Returns:
         The index for the last packet flags list.
     &#34;&#34;&#34;
-    if ccd_side == n_fee_side.E_SIDE:
+    if ccd_side == ccd_sides_enum.E_SIDE.value:
         return packet_type * 2
     else:
         return packet_type * 2 + 1
 
 
-def get_expected_last_packet_flags(register_map: Mapping) -&gt; List[bool]:
+def get_expected_last_packet_flags(register_map: Mapping, sensor_sel_enum: Enum) -&gt; List[bool]:
     &#34;&#34;&#34;
     Build and returns a list of flags that define if a last packet is expected.
 
@@ -2346,12 +2435,14 @@ def get_expected_last_packet_flags(register_map: Mapping) -&gt; List[bool]:
 
     Args:
         register_map: the current Register map for the N-FEE
+        sensor_sel_enum:
     Returns:
         a list of flags.
     &#34;&#34;&#34;
-    sensor_sel = register_map[&#34;sensor_sel&#34;]
-    e_side = bool(sensor_sel &amp; 0b01)
-    f_side = bool(sensor_sel &amp; 0b10)
+    sensor_sel_from_register = register_map[&#34;sensor_sel&#34;]
+
+    e_side = bool(sensor_sel_from_register &amp; sensor_sel_enum.E_SIDE)
+    f_side = bool(sensor_sel_from_register &amp; sensor_sel_enum.F_SIDE)
     v_start = register_map[&#34;v_start&#34;]
     v_end = register_map[&#34;v_end&#34;]
     data_packet = v_start &lt; 4510
@@ -2364,7 +2455,7 @@ def get_expected_last_packet_flags(register_map: Mapping) -&gt; List[bool]:
         overscan_packet and f_side
     ]
 
-def create_expected_last_packet_flags(n_fee_state: NFEEState.StateTuple):
+def create_expected_last_packet_flags(n_fee_state: NFEEState.StateTuple, sensor_sel_enum: Enum):
     &#34;&#34;&#34;
     Build and returns a list of flags that define if a last packet is expected.
 
@@ -2387,15 +2478,17 @@ def create_expected_last_packet_flags(n_fee_state: NFEEState.StateTuple):
 
     Args:
         n_fee_state: a namedtuple containing the current N-FEE State
+        sensor_sel_enum: Enumeration with the sensor_sel
     Returns:
         a list of flags.
     &#34;&#34;&#34;
-    sensor_sel = n_fee_state.sensor_sel
+    sensor_sel_from_nfee_state = n_fee_state.sensor_sel
+
     v_start = n_fee_state.v_start
     v_end = n_fee_state.v_end
 
-    e_side = bool(sensor_sel &amp; 0b01)
-    f_side = bool(sensor_sel &amp; 0b10)
+    e_side = bool(sensor_sel_from_nfee_state &amp; sensor_sel_enum.E_SIDE)
+    f_side = bool(sensor_sel_from_nfee_state &amp; sensor_sel_enum.F_SIDE)
     data_packet = v_start &lt; 4510
     overscan_packet = v_end &gt; 4509
 
@@ -2448,7 +2541,7 @@ if __name__ == &#34;__main__&#34;:
 <dl>
 <dt><code class="name"><a title="egse.dpu.ccd_ui" href="ccd_ui.html">egse.dpu.ccd_ui</a></code></dt>
 <dd>
-<div class="desc"></div>
+<div class="desc"><p>This module defines widgets that are common to the DPU GUI and the HDF5 GUI.</p></div>
 </dd>
 <dt><code class="name"><a title="egse.dpu.dpu" href="dpu.html">egse.dpu.dpu</a></code></dt>
 <dd>
@@ -2461,11 +2554,11 @@ the DPU Controller …</p></div>
 </dd>
 <dt><code class="name"><a title="egse.dpu.dpu_ui" href="dpu_ui.html">egse.dpu.dpu_ui</a></code></dt>
 <dd>
-<div class="desc"></div>
+<div class="desc"><p>This module implements the image display for the N-FEE data and housekeeping …</p></div>
 </dd>
 <dt><code class="name"><a title="egse.dpu.fitsgen" href="fitsgen.html">egse.dpu.fitsgen</a></code></dt>
 <dd>
-<div class="desc"></div>
+<div class="desc"><p>This module define the FITS generation process …</p></div>
 </dd>
 <dt><code class="name"><a title="egse.dpu.fitsgen_test" href="fitsgen_test.html">egse.dpu.fitsgen_test</a></code></dt>
 <dd>
@@ -2500,7 +2593,7 @@ used by the HDF5 Viewer.</p></div>
 <h2 class="section-title" id="header-functions">Functions</h2>
 <dl>
 <dt id="egse.dpu.create_expected_last_packet_flags"><code class="name flex">
-<span>def <span class="ident">create_expected_last_packet_flags</span></span>(<span>n_fee_state: egse.dpu.dpu.StateTuple)</span>
+<span>def <span class="ident">create_expected_last_packet_flags</span></span>(<span>n_fee_state: egse.dpu.dpu.StateTuple, sensor_sel_enum: enum.Enum)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Build and returns a list of flags that define if a last packet is expected.</p>
@@ -2522,6 +2615,8 @@ use the function <code><a title="egse.dpu.got_all_last_packets" href="#egse.dpu.
 <dl>
 <dt><strong><code>n_fee_state</code></strong></dt>
 <dd>a namedtuple containing the current N-FEE State</dd>
+<dt><strong><code>sensor_sel_enum</code></strong></dt>
+<dd>Enumeration with the sensor_sel</dd>
 </dl>
 <h2 id="returns">Returns</h2>
 <p>a list of flags.</p></div>
@@ -2529,7 +2624,7 @@ use the function <code><a title="egse.dpu.got_all_last_packets" href="#egse.dpu.
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def create_expected_last_packet_flags(n_fee_state: NFEEState.StateTuple):
+<pre><code class="python">def create_expected_last_packet_flags(n_fee_state: NFEEState.StateTuple, sensor_sel_enum: Enum):
     &#34;&#34;&#34;
     Build and returns a list of flags that define if a last packet is expected.
 
@@ -2552,15 +2647,17 @@ use the function <code><a title="egse.dpu.got_all_last_packets" href="#egse.dpu.
 
     Args:
         n_fee_state: a namedtuple containing the current N-FEE State
+        sensor_sel_enum: Enumeration with the sensor_sel
     Returns:
         a list of flags.
     &#34;&#34;&#34;
-    sensor_sel = n_fee_state.sensor_sel
+    sensor_sel_from_nfee_state = n_fee_state.sensor_sel
+
     v_start = n_fee_state.v_start
     v_end = n_fee_state.v_end
 
-    e_side = bool(sensor_sel &amp; 0b01)
-    f_side = bool(sensor_sel &amp; 0b10)
+    e_side = bool(sensor_sel_from_nfee_state &amp; sensor_sel_enum.E_SIDE)
+    f_side = bool(sensor_sel_from_nfee_state &amp; sensor_sel_enum.F_SIDE)
     data_packet = v_start &lt; 4510
     overscan_packet = v_end &gt; 4509
 
@@ -2573,7 +2670,7 @@ use the function <code><a title="egse.dpu.got_all_last_packets" href="#egse.dpu.
 </details>
 </dd>
 <dt id="egse.dpu.get_expected_last_packet_flags"><code class="name flex">
-<span>def <span class="ident">get_expected_last_packet_flags</span></span>(<span>register_map: Mapping[~KT, +VT_co]) ‑> List[bool]</span>
+<span>def <span class="ident">get_expected_last_packet_flags</span></span>(<span>register_map: Mapping[~KT, +VT_co], sensor_sel_enum: enum.Enum) ‑> List[bool]</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Build and returns a list of flags that define if a last packet is expected.</p>
@@ -2596,13 +2693,14 @@ use the function <code><a title="egse.dpu.got_all_last_packets" href="#egse.dpu.
 <dt><strong><code>register_map</code></strong></dt>
 <dd>the current Register map for the N-FEE</dd>
 </dl>
+<p>sensor_sel_enum:</p>
 <h2 id="returns">Returns</h2>
 <p>a list of flags.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def get_expected_last_packet_flags(register_map: Mapping) -&gt; List[bool]:
+<pre><code class="python">def get_expected_last_packet_flags(register_map: Mapping, sensor_sel_enum: Enum) -&gt; List[bool]:
     &#34;&#34;&#34;
     Build and returns a list of flags that define if a last packet is expected.
 
@@ -2625,12 +2723,14 @@ use the function <code><a title="egse.dpu.got_all_last_packets" href="#egse.dpu.
 
     Args:
         register_map: the current Register map for the N-FEE
+        sensor_sel_enum:
     Returns:
         a list of flags.
     &#34;&#34;&#34;
-    sensor_sel = register_map[&#34;sensor_sel&#34;]
-    e_side = bool(sensor_sel &amp; 0b01)
-    f_side = bool(sensor_sel &amp; 0b10)
+    sensor_sel_from_register = register_map[&#34;sensor_sel&#34;]
+
+    e_side = bool(sensor_sel_from_register &amp; sensor_sel_enum.E_SIDE)
+    f_side = bool(sensor_sel_from_register &amp; sensor_sel_enum.F_SIDE)
     v_start = register_map[&#34;v_start&#34;]
     v_end = register_map[&#34;v_end&#34;]
     data_packet = v_start &lt; 4510
@@ -2645,7 +2745,7 @@ use the function <code><a title="egse.dpu.got_all_last_packets" href="#egse.dpu.
 </details>
 </dd>
 <dt id="egse.dpu.get_index_for_last_packet_flags"><code class="name flex">
-<span>def <span class="ident">get_index_for_last_packet_flags</span></span>(<span>packet_type: int, ccd_side: int)</span>
+<span>def <span class="ident">get_index_for_last_packet_flags</span></span>(<span>packet_type: int, ccd_side: int, ccd_sides_enum)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Returns the index into the last packet flags list.</p>
@@ -2662,6 +2762,8 @@ use the function <code><a title="egse.dpu.got_all_last_packets" href="#egse.dpu.
 housekeeping=2]</dd>
 <dt><strong><code>ccd_side</code></strong></dt>
 <dd>the ccd side as read from the packet header</dd>
+<dt><strong><code>ccd_sides_enum</code></strong></dt>
+<dd>Enumeration with information on E and F</dd>
 </dl>
 <h2 id="returns">Returns</h2>
 <p>The index for the last packet flags list.</p></div>
@@ -2669,7 +2771,7 @@ housekeeping=2]</dd>
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def get_index_for_last_packet_flags(packet_type: int, ccd_side: int):
+<pre><code class="python">def get_index_for_last_packet_flags(packet_type: int, ccd_side: int, ccd_sides_enum):
     &#34;&#34;&#34;
     Returns the index into the last packet flags list.
 
@@ -2684,11 +2786,12 @@ housekeeping=2]</dd>
         packet_type: the packet type as read from the packet header [datapacket=0, overscan=1,
             housekeeping=2]
         ccd_side: the ccd side as read from the packet header
+        ccd_sides_enum: Enumeration with information on E and F
 
     Returns:
         The index for the last packet flags list.
     &#34;&#34;&#34;
-    if ccd_side == n_fee_side.E_SIDE:
+    if ccd_side == ccd_sides_enum.E_SIDE.value:
         return packet_type * 2
     else:
         return packet_type * 2 + 1</code></pre>
@@ -2795,7 +2898,7 @@ housekeeping=2]</dd>
 </details>
 </dd>
 <dt id="egse.dpu.process_high_priority_commands"><code class="name flex">
-<span>def <span class="ident">process_high_priority_commands</span></span>(<span>priority_q: <bound method BaseContext.Queue of <multiprocessing.context.DefaultContext object at 0x7f823814b880>>, response_q: <bound method BaseContext.Queue of <multiprocessing.context.DefaultContext object at 0x7f823814b880>>, n_fee_state: tuple, dpu_internals: <a title="egse.dpu.DPUInternals" href="#egse.dpu.DPUInternals">DPUInternals</a>)</span>
+<span>def <span class="ident">process_high_priority_commands</span></span>(<span>priority_q: <bound method BaseContext.Queue of <multiprocessing.context.DefaultContext object at 0x7fd530351850>>, response_q: <bound method BaseContext.Queue of <multiprocessing.context.DefaultContext object at 0x7fd530351850>>, n_fee_state: tuple, dpu_internals: <a title="egse.dpu.DPUInternals" href="#egse.dpu.DPUInternals">DPUInternals</a>, reg_map: <a title="egse.reg.RegisterMap" href="../reg.html#egse.reg.RegisterMap">RegisterMap</a>)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Execute high priority commands from the DPU Control Server /
@@ -2813,6 +2916,8 @@ that were passed on the command queue.</p>
 <dt><strong><code>dpu_internals</code></strong></dt>
 <dd>the internal settings of the DPU might be requested or set
 by a high priority command</dd>
+<dt><strong><code>reg_map</code></strong></dt>
+<dd>the current register map from the DPU Processor</dd>
 </dl></div>
 <details class="source">
 <summary>
@@ -2821,7 +2926,7 @@ by a high priority command</dd>
 <pre><code class="python">def process_high_priority_commands(
         priority_q: multiprocessing.Queue,
         response_q: multiprocessing.Queue,
-        n_fee_state: tuple, dpu_internals: DPUInternals):
+        n_fee_state: tuple, dpu_internals: DPUInternals, reg_map: RegisterMap):
     &#34;&#34;&#34;
     Execute high priority commands from the DPU Control Server /  Controller. The `n_fee_state` and
     the `dpu_internals` tuples are passed to the high priority commands before any other arguments
@@ -2833,12 +2938,13 @@ by a high priority command</dd>
         n_fee_state: a namedtuple containing the current state of the N-FEE
         dpu_internals: the internal settings of the DPU might be requested or set
             by a high priority command
+        reg_map: the current register map from the DPU Processor
     &#34;&#34;&#34;
 
     command = response = None
     try:
         (command, args) = priority_q.get_nowait()
-        response = command(n_fee_state, dpu_internals, *args)
+        response = command(n_fee_state, dpu_internals, reg_map, *args)
         LOGGER.debug(f&#34;Command executed: {command.__name__}, {args=}, {response=}&#34;)
     except queue.Empty:
         pass
@@ -3043,10 +3149,11 @@ by a high priority command</dd>
     # only take effect on the 400ms pulse in the N-FEE.
 
     if data_packet.type.frame_number == 0:
-        internals.expected_last_packet_flags = get_expected_last_packet_flags(register_map)
+        internals.expected_last_packet_flags = get_expected_last_packet_flags(register_map, internals.sensor_sel_enum)
         LOGGER.debug(f&#34;{internals.expected_last_packet_flags=}&#34;)
 
-    idx = get_index_for_last_packet_flags(data_packet.type.packet_type, data_packet.type.ccd_side)
+    idx = get_index_for_last_packet_flags(data_packet.type.packet_type, data_packet.type.ccd_side,
+                                          internals.ccd_sides_enum)
     # LOGGER.debug(f&#34;{idx=}, {data_packet.type.packet_type=}, {data_packet.type.ccd_side=}&#34;)
     actual_last_packet_flags[idx] = data_packet.type.last_packet
 
@@ -3085,7 +3192,8 @@ by a high priority command</dd>
         #LOGGER.debug(f&#34;Got data packet of length {len(packet)}&#34;)
         #LOGGER.debug(f&#34;DataPacketHeader: {data_packet.header.type_as_object}&#34;)
 
-        idx = get_index_for_last_packet_flags(data_packet.type.packet_type, data_packet.type.ccd_side)
+        idx = get_index_for_last_packet_flags(data_packet.type.packet_type, data_packet.type.ccd_side,
+                                              internals.ccd_sides_enum)
         actual_last_packet_flags[idx] = data_packet.type.last_packet
 
         # Sending data packets shall not take more than 4 seconds, and if we
@@ -3403,7 +3511,7 @@ the packet and a timestamp is sent to the Storage manager.</p>
 </details>
 </dd>
 <dt id="egse.dpu.send_commands_to_n_fee"><code class="name flex">
-<span>def <span class="ident">send_commands_to_n_fee</span></span>(<span>transport: <a title="egse.spw.SpaceWireInterface" href="../spw.html#egse.spw.SpaceWireInterface">SpaceWireInterface</a>, storage: <a title="egse.storage.StorageProxy" href="../storage/index.html#egse.storage.StorageProxy">StorageProxy</a>, origin: str, register_map: <a title="egse.reg.RegisterMap" href="../reg.html#egse.reg.RegisterMap">RegisterMap</a>, command_q: <bound method BaseContext.Queue of <multiprocessing.context.DefaultContext object at 0x7f823814b880>>, response_q: <bound method BaseContext.Queue of <multiprocessing.context.DefaultContext object at 0x7f823814b880>>, internals: <a title="egse.dpu.DPUInternals" href="#egse.dpu.DPUInternals">DPUInternals</a>)</span>
+<span>def <span class="ident">send_commands_to_n_fee</span></span>(<span>transport: <a title="egse.spw.SpaceWireInterface" href="../spw.html#egse.spw.SpaceWireInterface">SpaceWireInterface</a>, storage: <a title="egse.storage.StorageProxy" href="../storage/index.html#egse.storage.StorageProxy">StorageProxy</a>, origin: str, register_map: <a title="egse.reg.RegisterMap" href="../reg.html#egse.reg.RegisterMap">RegisterMap</a>, command_q: <bound method BaseContext.Queue of <multiprocessing.context.DefaultContext object at 0x7fd530351850>>, response_q: <bound method BaseContext.Queue of <multiprocessing.context.DefaultContext object at 0x7fd530351850>>, internals: <a title="egse.dpu.DPUInternals" href="#egse.dpu.DPUInternals">DPUInternals</a>)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Send RMAP commands to the N-FEE. The commands are read from the command queue that is shared
@@ -3611,7 +3719,7 @@ Arguments can be positional or keyword arguments, not both.</p></div>
 </dd>
 <dt id="egse.dpu.DPUController"><code class="flex name class">
 <span>class <span class="ident">DPUController</span></span>
-<span>(</span><span>priority_queue: <bound method BaseContext.Queue of <multiprocessing.context.DefaultContext object at 0x7f823814b880>>, command_queue: <bound method BaseContext.Queue of <multiprocessing.context.DefaultContext object at 0x7f823814b880>>, response_queue: <bound method BaseContext.Queue of <multiprocessing.context.DefaultContext object at 0x7f823814b880>>)</span>
+<span>(</span><span>priority_queue: <bound method BaseContext.Queue of <multiprocessing.context.DefaultContext object at 0x7fd530351850>>, command_queue: <bound method BaseContext.Queue of <multiprocessing.context.DefaultContext object at 0x7fd530351850>>, response_queue: <bound method BaseContext.Queue of <multiprocessing.context.DefaultContext object at 0x7fd530351850>>)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>The DPU Controller puts commands on the command queue for processing by the DPU Processor.
@@ -3640,6 +3748,7 @@ DPU Command Protocol.</p></div>
 
         try:
             self.default_ccd_readout_order = GlobalState.setup.camera.fee.ccd_numbering.DEFAULT_CCD_READOUT_ORDER
+            self.sensor_sel_both_sides = GlobalState.setup.camera.fee.sensor_sel.enum.BOTH_SIDES.value
         except AttributeError:
             raise SetupError(&#34;No entry in the setup for camera.fee.ccd_numbering.DEFAULT_CCD_READOUT_ORDER&#34;)
 
@@ -3665,13 +3774,20 @@ DPU Command Protocol.</p></div>
     def is_simulator(self):
         return True
 
-    def n_fee_get_full_register(self):
-        self._command_q.put((command_get_full_register, [], {}))
+    def n_fee_sync_register_map(self) -&gt; RegisterMap:
+        self._command_q.put((command_sync_register_map, [], {}))
         LOGGER.debug(
-            &#34;Controller.n_fee_get_full_register: Put command_get_full_register on the Queue.&#34;
+            &#34;Controller.n_fee_sync_register_map: Put command_sync_register_map on the Queue.&#34;
         )
         (cmd, response) = self._response_q.get()
-        LOGGER.debug(f&#34;Controller.n_fee_get_full_register returned: ({cmd.__name__}, {response}).&#34;)
+        LOGGER.debug(f&#34;Controller.n_fee_sync_register_map returned: ({cmd.__name__}, {response}).&#34;)
+        return response
+
+    def get_register_map(self) -&gt; RegisterMap:
+        self._priority_q.put((prio_command_get_register_map, []))
+        LOGGER.debug(&#34;Controller.get_register_map: Put prio_command_get_register_map on the Queue.&#34;)
+        (cmd, response) = self._response_q.get()
+        LOGGER.debug(f&#34;Controller.get_register_map returned: ({cmd.__name__}, {response}).&#34;)
         return response
 
     def n_fee_get_mode(self):
@@ -3726,7 +3842,7 @@ DPU Command Protocol.</p></div>
     def n_fee_set_dump_mode(self, n_fee_parameters: dict):
         v_start = n_fee_parameters.get(&#34;v_start&#34;, 0)
         v_end = n_fee_parameters.get(&#34;v_end&#34;, 4509)
-        sensor_sel_ = n_fee_parameters.get(&#34;sensor_sel&#34;, sensor_sel.BOTH_SIDES)
+        sensor_sel_ = n_fee_parameters.get(&#34;sensor_sel&#34;, self.sensor_sel_both_sides)
         ccd_readout_order = n_fee_parameters.get(&#34;ccd_readout_order&#34;, self.default_ccd_readout_order)
         n_final_dump = n_fee_parameters.get(&#34;n_final_dump&#34;, 0)
         sync_sel = n_fee_parameters.get(&#34;sync_sel&#34;, 0)
@@ -3744,7 +3860,7 @@ DPU Command Protocol.</p></div>
     def n_fee_set_dump_mode_int_sync(self, n_fee_parameters: dict):
         v_start = n_fee_parameters.get(&#34;v_start&#34;, 0)
         v_end = n_fee_parameters.get(&#34;v_end&#34;, 4509)
-        sensor_sel_ = n_fee_parameters.get(&#34;sensor_sel&#34;, sensor_sel.BOTH_SIDES)
+        sensor_sel_ = n_fee_parameters.get(&#34;sensor_sel&#34;, self.sensor_sel_both_sides)
         n_final_dump = n_fee_parameters.get(&#34;n_final_dump&#34;, 0)
         ccd_readout_order = n_fee_parameters.get(&#34;ccd_readout_order&#34;, self.default_ccd_readout_order)
         sync_sel = n_fee_parameters.get(&#34;sync_sel&#34;, 1)
@@ -3766,7 +3882,7 @@ DPU Command Protocol.</p></div>
     def n_fee_set_full_image_mode(self, n_fee_parameters: dict):
         v_start = n_fee_parameters.get(&#34;v_start&#34;, 0)
         v_end = n_fee_parameters.get(&#34;v_end&#34;, 1)
-        sensor_sel_ = n_fee_parameters.get(&#34;sensor_sel&#34;, sensor_sel.BOTH_SIDES)
+        sensor_sel_ = n_fee_parameters.get(&#34;sensor_sel&#34;, self.sensor_sel_both_sides)
         ccd_readout_order = n_fee_parameters.get(&#34;ccd_readout_order&#34;, self.default_ccd_readout_order)
         n_final_dump = n_fee_parameters.get(&#34;n_final_dump&#34;, 0)
         num_cycles = n_fee_parameters.get(&#34;num_cycles&#34;, 0)
@@ -3784,7 +3900,7 @@ DPU Command Protocol.</p></div>
     def n_fee_set_full_image_mode_int_sync(self, n_fee_parameters: dict):
         v_start = n_fee_parameters.get(&#34;v_start&#34;, 0)
         v_end = n_fee_parameters.get(&#34;v_end&#34;, 1)
-        sensor_sel_ = n_fee_parameters.get(&#34;sensor_sel&#34;, sensor_sel.BOTH_SIDES)
+        sensor_sel_ = n_fee_parameters.get(&#34;sensor_sel&#34;, self.sensor_sel_both_sides)
         ccd_readout_order = n_fee_parameters.get(&#34;ccd_readout_order&#34;, self.default_ccd_readout_order)
         n_final_dump = n_fee_parameters.get(&#34;n_final_dump&#34;, 0)
         int_sync_period = n_fee_parameters.get(&#34;int_sync_period&#34;, 6250)
@@ -3803,7 +3919,7 @@ DPU Command Protocol.</p></div>
     def n_fee_set_full_image_pattern_mode(self, n_fee_parameters: dict):
         v_start = n_fee_parameters.get(&#34;v_start&#34;, 0)
         v_end = n_fee_parameters.get(&#34;v_end&#34;, 1)
-        sensor_sel_ = n_fee_parameters.get(&#34;sensor_sel&#34;, sensor_sel.BOTH_SIDES)
+        sensor_sel_ = n_fee_parameters.get(&#34;sensor_sel&#34;, self.sensor_sel_both_sides)
         num_cycles = n_fee_parameters.get(&#34;num_cycles&#34;, 0)
         self._command_q.put((command_set_full_image_pattern_mode,
                              [v_start, v_end, sensor_sel_],
@@ -3889,7 +4005,7 @@ DPU Command Protocol.</p></div>
     def n_fee_set_reverse_clocking(self, n_fee_parameters: dict):
         v_start = n_fee_parameters.get(&#34;v_start&#34;, 0)
         v_end = n_fee_parameters.get(&#34;v_end&#34;, 4509)
-        sensor_sel_ = n_fee_parameters.get(&#34;sensor_sel&#34;, sensor_sel.BOTH_SIDES)
+        sensor_sel_ = n_fee_parameters.get(&#34;sensor_sel&#34;, self.sensor_sel_both_sides)
         ccd_readout_order = n_fee_parameters.get(&#34;ccd_readout_order&#34;, self.default_ccd_readout_order)
         n_final_dump = n_fee_parameters.get(&#34;n_final_dump&#34;, 0)
         num_cycles = n_fee_parameters.get(&#34;num_cycles&#34;, 0)
@@ -3912,7 +4028,7 @@ DPU Command Protocol.</p></div>
         v_start = n_fee_parameters.get(&#34;v_start&#34;, 0)
         v_end = n_fee_parameters.get(&#34;v_end&#34;, 4509)
         n_final_dump = n_fee_parameters.get(&#34;n_final_dump&#34;, 0)
-        sensor_sel_ = n_fee_parameters.get(&#34;sensor_sel&#34;, sensor_sel.BOTH_SIDES)
+        sensor_sel_ = n_fee_parameters.get(&#34;sensor_sel&#34;, self.sensor_sel_both_sides)
         ccd_readout_order = n_fee_parameters.get(&#34;ccd_readout_order&#34;, self.default_ccd_readout_order)
         charge_injection_width = n_fee_parameters.get(&#34;charge_injection_width&#34;, 0)
         charge_injection_gap = n_fee_parameters.get(&#34;charge_injection_gap&#34;, 0)
@@ -3947,6 +4063,16 @@ DPU Command Protocol.</p></div>
         (cmd, response) = self._response_q.get()
 
         LOGGER.debug(f&#34;Controller.n_fee_set_vgd returned: ({cmd.__name__}, {response})&#34;)
+        return response
+
+    def n_fee_set_fpga_defaults(self):
+        self._command_q.put((command_set_nfee_fpga_defaults, [], {}))
+
+        LOGGER.debug(&#34;Controller.n_fee_set_fpga_defaults: Put n_fee_set_fpga_defaults on the Queue.&#34;)
+
+        (cmd, response) = self._response_q.get()
+
+        LOGGER.debug(f&#34;Controller.n_fee_set_fpga_defaults returned: ({cmd.__name__}, {response})&#34;)
         return response</code></pre>
 </details>
 <h3>Ancestors</h3>
@@ -4012,7 +4138,7 @@ DPU Command Protocol.</p></div>
     v_start = n_fee_parameters.get(&#34;v_start&#34;, 0)
     v_end = n_fee_parameters.get(&#34;v_end&#34;, 4509)
     n_final_dump = n_fee_parameters.get(&#34;n_final_dump&#34;, 0)
-    sensor_sel_ = n_fee_parameters.get(&#34;sensor_sel&#34;, sensor_sel.BOTH_SIDES)
+    sensor_sel_ = n_fee_parameters.get(&#34;sensor_sel&#34;, self.sensor_sel_both_sides)
     ccd_readout_order = n_fee_parameters.get(&#34;ccd_readout_order&#34;, self.default_ccd_readout_order)
     charge_injection_width = n_fee_parameters.get(&#34;charge_injection_width&#34;, 0)
     charge_injection_gap = n_fee_parameters.get(&#34;charge_injection_gap&#34;, 0)
@@ -4034,6 +4160,26 @@ DPU Command Protocol.</p></div>
     return response</code></pre>
 </details>
 </dd>
+<dt id="egse.dpu.DPUController.n_fee_set_fpga_defaults"><code class="name flex">
+<span>def <span class="ident">n_fee_set_fpga_defaults</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def n_fee_set_fpga_defaults(self):
+    self._command_q.put((command_set_nfee_fpga_defaults, [], {}))
+
+    LOGGER.debug(&#34;Controller.n_fee_set_fpga_defaults: Put n_fee_set_fpga_defaults on the Queue.&#34;)
+
+    (cmd, response) = self._response_q.get()
+
+    LOGGER.debug(f&#34;Controller.n_fee_set_fpga_defaults returned: ({cmd.__name__}, {response})&#34;)
+    return response</code></pre>
+</details>
+</dd>
 <dt id="egse.dpu.DPUController.n_fee_set_reverse_clocking"><code class="name flex">
 <span>def <span class="ident">n_fee_set_reverse_clocking</span></span>(<span>self, n_fee_parameters: dict)</span>
 </code></dt>
@@ -4046,7 +4192,7 @@ DPU Command Protocol.</p></div>
 <pre><code class="python">def n_fee_set_reverse_clocking(self, n_fee_parameters: dict):
     v_start = n_fee_parameters.get(&#34;v_start&#34;, 0)
     v_end = n_fee_parameters.get(&#34;v_end&#34;, 4509)
-    sensor_sel_ = n_fee_parameters.get(&#34;sensor_sel&#34;, sensor_sel.BOTH_SIDES)
+    sensor_sel_ = n_fee_parameters.get(&#34;sensor_sel&#34;, self.sensor_sel_both_sides)
     ccd_readout_order = n_fee_parameters.get(&#34;ccd_readout_order&#34;, self.default_ccd_readout_order)
     n_final_dump = n_fee_parameters.get(&#34;n_final_dump&#34;, 0)
     num_cycles = n_fee_parameters.get(&#34;num_cycles&#34;, 0)
@@ -4115,7 +4261,7 @@ DPU Command Protocol.</p></div>
 <ul class="hlist">
 <li><code><b><a title="egse.dpu.DPUInterface" href="#egse.dpu.DPUInterface">DPUInterface</a></b></code>:
 <ul class="hlist">
-<li><code><a title="egse.dpu.DPUInterface.n_fee_get_full_register" href="#egse.dpu.DPUInterface.n_fee_get_full_register">n_fee_get_full_register</a></code></li>
+<li><code><a title="egse.dpu.DPUInterface.get_register_map" href="#egse.dpu.DPUInterface.get_register_map">get_register_map</a></code></li>
 <li><code><a title="egse.dpu.DPUInterface.n_fee_get_mode" href="#egse.dpu.DPUInterface.n_fee_get_mode">n_fee_get_mode</a></code></li>
 <li><code><a title="egse.dpu.DPUInterface.n_fee_get_sync_mode" href="#egse.dpu.DPUInterface.n_fee_get_sync_mode">n_fee_get_sync_mode</a></code></li>
 <li><code><a title="egse.dpu.DPUInterface.n_fee_high_precision_hk_mode" href="#egse.dpu.DPUInterface.n_fee_high_precision_hk_mode">n_fee_high_precision_hk_mode</a></code></li>
@@ -4133,6 +4279,7 @@ DPU Command Protocol.</p></div>
 <li><code><a title="egse.dpu.DPUInterface.n_fee_set_on_mode" href="#egse.dpu.DPUInterface.n_fee_set_on_mode">n_fee_set_on_mode</a></code></li>
 <li><code><a title="egse.dpu.DPUInterface.n_fee_set_register_value" href="#egse.dpu.DPUInterface.n_fee_set_register_value">n_fee_set_register_value</a></code></li>
 <li><code><a title="egse.dpu.DPUInterface.n_fee_set_standby_mode" href="#egse.dpu.DPUInterface.n_fee_set_standby_mode">n_fee_set_standby_mode</a></code></li>
+<li><code><a title="egse.dpu.DPUInterface.n_fee_sync_register_map" href="#egse.dpu.DPUInterface.n_fee_sync_register_map">n_fee_sync_register_map</a></code></li>
 </ul>
 </li>
 </ul>
@@ -4178,7 +4325,14 @@ a <code><a title="egse.dpu.DPUSimulator" href="#egse.dpu.DPUSimulator">DPUSimula
         raise NotImplementedError
 
     @dynamic_interface
-    def n_fee_get_full_register(self):
+    def get_register_map(self) -&gt; RegisterMap:
+        &#34;&#34;&#34;
+        Returns the RegisterMap
+        &#34;&#34;&#34;
+        raise NotImplementedError
+
+    @dynamic_interface
+    def n_fee_sync_register_map(self):
         &#34;&#34;&#34;
         Read the complete register map from the N-FEE.
         &#34;&#34;&#34;
@@ -4383,6 +4537,10 @@ a <code><a title="egse.dpu.DPUSimulator" href="#egse.dpu.DPUSimulator">DPUSimula
 
     @dynamic_interface
     def n_fee_set_vgd(self, n_fee_parameters: dict):
+        raise NotImplementedError
+
+    @dynamic_interface
+    def n_fee_set_fpga_defaults(self):
         raise NotImplementedError</code></pre>
 </details>
 <h3>Subclasses</h3>
@@ -4393,6 +4551,23 @@ a <code><a title="egse.dpu.DPUSimulator" href="#egse.dpu.DPUSimulator">DPUSimula
 </ul>
 <h3>Methods</h3>
 <dl>
+<dt id="egse.dpu.DPUInterface.get_register_map"><code class="name flex">
+<span>def <span class="ident">get_register_map</span></span>(<span>self) ‑> <a title="egse.reg.RegisterMap" href="../reg.html#egse.reg.RegisterMap">RegisterMap</a></span>
+</code></dt>
+<dd>
+<div class="desc"><p>Returns the RegisterMap</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@dynamic_interface
+def get_register_map(self) -&gt; RegisterMap:
+    &#34;&#34;&#34;
+    Returns the RegisterMap
+    &#34;&#34;&#34;
+    raise NotImplementedError</code></pre>
+</details>
+</dd>
 <dt id="egse.dpu.DPUInterface.get_slicing"><code class="name flex">
 <span>def <span class="ident">get_slicing</span></span>(<span>self) ‑> int</span>
 </code></dt>
@@ -4432,23 +4607,6 @@ def is_simulator(self):
 </summary>
 <pre><code class="python">@dynamic_interface
 def marker(self, mark: str):
-    raise NotImplementedError</code></pre>
-</details>
-</dd>
-<dt id="egse.dpu.DPUInterface.n_fee_get_full_register"><code class="name flex">
-<span>def <span class="ident">n_fee_get_full_register</span></span>(<span>self)</span>
-</code></dt>
-<dd>
-<div class="desc"><p>Read the complete register map from the N-FEE.</p></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">@dynamic_interface
-def n_fee_get_full_register(self):
-    &#34;&#34;&#34;
-    Read the complete register map from the N-FEE.
-    &#34;&#34;&#34;
     raise NotImplementedError</code></pre>
 </details>
 </dd>
@@ -4684,6 +4842,20 @@ def n_fee_set_external_sync(self, n_fee_parameters: dict):
     Command the N-FEE to go into external sync mode.
     No keys are expected in n_fee_parameters, pass an empty dict.
     &#34;&#34;&#34;
+    raise NotImplementedError</code></pre>
+</details>
+</dd>
+<dt id="egse.dpu.DPUInterface.n_fee_set_fpga_defaults"><code class="name flex">
+<span>def <span class="ident">n_fee_set_fpga_defaults</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@dynamic_interface
+def n_fee_set_fpga_defaults(self):
     raise NotImplementedError</code></pre>
 </details>
 </dd>
@@ -4938,6 +5110,23 @@ def n_fee_set_vgd(self, n_fee_parameters: dict):
     raise NotImplementedError</code></pre>
 </details>
 </dd>
+<dt id="egse.dpu.DPUInterface.n_fee_sync_register_map"><code class="name flex">
+<span>def <span class="ident">n_fee_sync_register_map</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Read the complete register map from the N-FEE.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@dynamic_interface
+def n_fee_sync_register_map(self):
+    &#34;&#34;&#34;
+    Read the complete register map from the N-FEE.
+    &#34;&#34;&#34;
+    raise NotImplementedError</code></pre>
+</details>
+</dd>
 <dt id="egse.dpu.DPUInterface.set_slicing"><code class="name flex">
 <span>def <span class="ident">set_slicing</span></span>(<span>self, num_cycles: int)</span>
 </code></dt>
@@ -4956,10 +5145,10 @@ def set_slicing(self, num_cycles: int):
 </dd>
 <dt id="egse.dpu.DPUInternals"><code class="flex name class">
 <span>class <span class="ident">DPUInternals</span></span>
-<span>(</span><span>num_cycles: int, expected_last_packet_flags: List[int], dump_mode: bool = False, internal_sync: bool = False, dump_mode_int: bool = False, frame_number: int = -1)</span>
+<span>(</span><span>num_cycles: int, expected_last_packet_flags: List[int], dump_mode: bool = False, internal_sync: bool = False, dump_mode_int: bool = False, frame_number: int = -1, ccd_sides_enum: enum.Enum = None, sensor_sel_enum: enum.Enum = None)</span>
 </code></dt>
 <dd>
-<div class="desc"><p>DPUInternals(num_cycles: int, expected_last_packet_flags: List[int], dump_mode: bool = False, internal_sync: bool = False, dump_mode_int: bool = False, frame_number: int = -1)</p></div>
+<div class="desc"><p>DPUInternals(num_cycles: int, expected_last_packet_flags: List[int], dump_mode: bool = False, internal_sync: bool = False, dump_mode_int: bool = False, frame_number: int = -1, ccd_sides_enum: enum.Enum = None, sensor_sel_enum: enum.Enum = None)</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
@@ -4991,12 +5180,19 @@ def set_slicing(self, num_cycles: int):
     # is received.
     frame_number: int = -1
 
+    # Enumeration with the information about E and F, based on the setup (camera-dependent)
+    ccd_sides_enum: Enum = None
+
+    # Enumeration with the sensor_sel
+    sensor_sel_enum: Enum = None
+
     # The clear_error_flags shall be executed on every readout, i.e. every 200ms and 400ms pulse.
     clear_error_flags = False
 
     # The number of cycles that will be used for slicing the FITS files. This parameter is
     # saved in the HDF5 file upon reception.
     slicing_num_cycles = 0
+
 
     def is_start_of_cycle(self):
         &#34;&#34;&#34;
@@ -5024,10 +5220,14 @@ def set_slicing(self, num_cycles: int):
     def update(self, n_fee_state: NFEEState.StateTuple):
         self.dump_mode = not bool(n_fee_state.digitise_en)
         self.internal_sync = bool(n_fee_state.sync_sel)
-        self.expected_last_packet_flags = create_expected_last_packet_flags(n_fee_state)</code></pre>
+        self.expected_last_packet_flags = create_expected_last_packet_flags(n_fee_state, self.sensor_sel_enum)</code></pre>
 </details>
 <h3>Class variables</h3>
 <dl>
+<dt id="egse.dpu.DPUInternals.ccd_sides_enum"><code class="name">var <span class="ident">ccd_sides_enum</span> : enum.Enum</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
 <dt id="egse.dpu.DPUInternals.clear_error_flags"><code class="name">var <span class="ident">clear_error_flags</span></code></dt>
 <dd>
 <div class="desc"></div>
@@ -5053,6 +5253,10 @@ def set_slicing(self, num_cycles: int):
 <div class="desc"></div>
 </dd>
 <dt id="egse.dpu.DPUInternals.num_cycles"><code class="name">var <span class="ident">num_cycles</span> : int</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="egse.dpu.DPUInternals.sensor_sel_enum"><code class="name">var <span class="ident">sensor_sel_enum</span> : enum.Enum</code></dt>
 <dd>
 <div class="desc"></div>
 </dd>
@@ -5139,7 +5343,7 @@ Note that, when in internal sync mode, this method always returns True.</p></div
 <pre><code class="python">def update(self, n_fee_state: NFEEState.StateTuple):
     self.dump_mode = not bool(n_fee_state.digitise_en)
     self.internal_sync = bool(n_fee_state.sync_sel)
-    self.expected_last_packet_flags = create_expected_last_packet_flags(n_fee_state)</code></pre>
+    self.expected_last_packet_flags = create_expected_last_packet_flags(n_fee_state, self.sensor_sel_enum)</code></pre>
 </details>
 </dd>
 </dl>
@@ -5254,7 +5458,7 @@ timecode or a housekeeping packet from the N-FEE.</p>
                 if retries &lt;= 0:
                     raise TimeoutError(f&#34;DPUMonitoring timed out after {self._retries * self._timeout} seconds.&#34;)
 
-    def wait_for_hdf5_filename(self) -&gt; List[Path]:
+    def wait_for_hdf5_filename(self, retries: int = None, timeout: float = None) -&gt; List[Path]:
         &#34;&#34;&#34;
         Connects to the monitoring socket of the DPU Processor and returns a list of path names that
         were part of the current registration in the Storage, right before a new registration was
@@ -5277,10 +5481,11 @@ timecode or a housekeeping packet from the N-FEE.</p>
         self.unsubscribe_all()
         self.subscribe(MessageIdentifier.HDF5_FILENAMES)
 
-        retries = self._retries
+        retries = retries if retries is not None else self._retries
+        timeout = timeout or self._timeout
 
         while True:
-            rlist, _, _ = zmq.select([self._socket], [], [], timeout=self._timeout)
+            rlist, _, _ = zmq.select([self._socket], [], [], timeout=timeout)
             if self._socket in rlist:
                 if self._multipart:
                     sync_id, pickle_string = self._socket.recv_multipart()
@@ -5295,7 +5500,7 @@ timecode or a housekeeping packet from the N-FEE.</p>
                 return filenames
             else:
                 retries -= 1
-                LOGGER.warning(f&#34;Monitoring timeout, {retries} retries to go&#34;)
+                # LOGGER.warning(f&#34;Monitoring timeout, {retries} retries to go&#34;)
                 if retries &lt;= 0:
                     raise TimeoutError(f&#34;DPUMonitoring timed out after {self._retries * self._timeout} seconds.&#34;)
 
@@ -5810,7 +6015,7 @@ when the frame_number == 0, i.e. right after a long pulse.</p>
 </details>
 </dd>
 <dt id="egse.dpu.DPUMonitoring.wait_for_hdf5_filename"><code class="name flex">
-<span>def <span class="ident">wait_for_hdf5_filename</span></span>(<span>self) ‑> List[pathlib.Path]</span>
+<span>def <span class="ident">wait_for_hdf5_filename</span></span>(<span>self, retries: int = None, timeout: float = None) ‑> List[pathlib.Path]</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Connects to the monitoring socket of the DPU Processor and returns a list of path names that
@@ -5831,7 +6036,7 @@ from the machine you are running this monitoring request.</p>
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def wait_for_hdf5_filename(self) -&gt; List[Path]:
+<pre><code class="python">def wait_for_hdf5_filename(self, retries: int = None, timeout: float = None) -&gt; List[Path]:
     &#34;&#34;&#34;
     Connects to the monitoring socket of the DPU Processor and returns a list of path names that
     were part of the current registration in the Storage, right before a new registration was
@@ -5854,10 +6059,11 @@ from the machine you are running this monitoring request.</p>
     self.unsubscribe_all()
     self.subscribe(MessageIdentifier.HDF5_FILENAMES)
 
-    retries = self._retries
+    retries = retries if retries is not None else self._retries
+    timeout = timeout or self._timeout
 
     while True:
-        rlist, _, _ = zmq.select([self._socket], [], [], timeout=self._timeout)
+        rlist, _, _ = zmq.select([self._socket], [], [], timeout=timeout)
         if self._socket in rlist:
             if self._multipart:
                 sync_id, pickle_string = self._socket.recv_multipart()
@@ -5872,7 +6078,7 @@ from the machine you are running this monitoring request.</p>
             return filenames
         else:
             retries -= 1
-            LOGGER.warning(f&#34;Monitoring timeout, {retries} retries to go&#34;)
+            # LOGGER.warning(f&#34;Monitoring timeout, {retries} retries to go&#34;)
             if retries &lt;= 0:
                 raise TimeoutError(f&#34;DPUMonitoring timed out after {self._retries * self._timeout} seconds.&#34;)</code></pre>
 </details>
@@ -6146,7 +6352,7 @@ DPU Processor on every 400ms pulse.</p>
 </dd>
 <dt id="egse.dpu.DPUProcessor"><code class="flex name class">
 <span>class <span class="ident">DPUProcessor</span></span>
-<span>(</span><span>transport: <a title="egse.spw.SpaceWireInterface" href="../spw.html#egse.spw.SpaceWireInterface">SpaceWireInterface</a>, priority_queue: <bound method BaseContext.Queue of <multiprocessing.context.DefaultContext object at 0x7f823814b880>>, command_queue: <bound method BaseContext.Queue of <multiprocessing.context.DefaultContext object at 0x7f823814b880>>, response_queue: <bound method BaseContext.Queue of <multiprocessing.context.DefaultContext object at 0x7f823814b880>>)</span>
+<span>(</span><span>transport: <a title="egse.spw.SpaceWireInterface" href="../spw.html#egse.spw.SpaceWireInterface">SpaceWireInterface</a>, priority_queue: <bound method BaseContext.Queue of <multiprocessing.context.DefaultContext object at 0x7fd530351850>>, command_queue: <bound method BaseContext.Queue of <multiprocessing.context.DefaultContext object at 0x7fd530351850>>, response_queue: <bound method BaseContext.Queue of <multiprocessing.context.DefaultContext object at 0x7fd530351850>>)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>The DPU Processor handles all interactions with the FEE. It reads the packets from the FEE
@@ -6198,15 +6404,18 @@ communication with the FEE Simulator.</p></div>
 
         self._n_fee_state = NFEEState()
 
+
+    def run(self):
+
         self._dpu_internals = DPUInternals(
             num_cycles=-1,
             expected_last_packet_flags=[False, False, False, False],
             dump_mode=False,
             internal_sync=False,
             frame_number=-1,
+            ccd_sides_enum=GlobalState.setup.camera.fee.ccd_sides.enum,
+            sensor_sel_enum=GlobalState.setup.camera.fee.sensor_sel.enum,
         )
-
-    def run(self):
 
         # The DPU Processor runs in a different process and since ZeroMQ Sockets are not
         # thread/process safe, we have to recreate the ZeroMQHandler attached to the egse.logger
@@ -6334,7 +6543,7 @@ communication with the FEE Simulator.</p></div>
 
                         process_high_priority_commands(self._priority_q, self._response_q,
                                                        self._n_fee_state.get_state(),
-                                                       self._dpu_internals)
+                                                       self._dpu_internals, self.register_map)
 
                         # On any new readout cycle (400ms pulse), update the state and the internals
 
@@ -6430,7 +6639,7 @@ communication with the FEE Simulator.</p></div>
 
                     process_high_priority_commands(
                         self._priority_q, self._response_q,
-                        self._n_fee_state.get_state(), self._dpu_internals)
+                        self._n_fee_state.get_state(), self._dpu_internals, self.register_map)
 
                     # Then, we might want to send some RMAP commands -------------------------------
 
@@ -6526,8 +6735,7 @@ communication with the FEE Simulator.</p></div>
             &#39;In safe time window for sending RMAP command, getting full register..&#39;
         )
 
-
-        command_get_full_register(self._transport, self.register_map)
+        command_sync_register_map(self._transport, self.register_map)
 
         LOGGER.debug(self.register_map)</code></pre>
 </details>
@@ -6589,8 +6797,7 @@ communication with the FEE Simulator.</p></div>
         &#39;In safe time window for sending RMAP command, getting full register..&#39;
     )
 
-
-    command_get_full_register(self._transport, self.register_map)
+    command_sync_register_map(self._transport, self.register_map)
 
     LOGGER.debug(self.register_map)</code></pre>
 </details>
@@ -6619,6 +6826,16 @@ communication with the FEE Simulator.</p></div>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def run(self):
+
+    self._dpu_internals = DPUInternals(
+        num_cycles=-1,
+        expected_last_packet_flags=[False, False, False, False],
+        dump_mode=False,
+        internal_sync=False,
+        frame_number=-1,
+        ccd_sides_enum=GlobalState.setup.camera.fee.ccd_sides.enum,
+        sensor_sel_enum=GlobalState.setup.camera.fee.sensor_sel.enum,
+    )
 
     # The DPU Processor runs in a different process and since ZeroMQ Sockets are not
     # thread/process safe, we have to recreate the ZeroMQHandler attached to the egse.logger
@@ -6746,7 +6963,7 @@ communication with the FEE Simulator.</p></div>
 
                     process_high_priority_commands(self._priority_q, self._response_q,
                                                    self._n_fee_state.get_state(),
-                                                   self._dpu_internals)
+                                                   self._dpu_internals, self.register_map)
 
                     # On any new readout cycle (400ms pulse), update the state and the internals
 
@@ -6842,7 +7059,7 @@ communication with the FEE Simulator.</p></div>
 
                 process_high_priority_commands(
                     self._priority_q, self._response_q,
-                    self._n_fee_state.get_state(), self._dpu_internals)
+                    self._n_fee_state.get_state(), self._dpu_internals, self.register_map)
 
                 # Then, we might want to send some RMAP commands -------------------------------
 
@@ -7090,7 +7307,7 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
 </li>
 <li><code><b><a title="egse.dpu.DPUInterface" href="#egse.dpu.DPUInterface">DPUInterface</a></b></code>:
 <ul class="hlist">
-<li><code><a title="egse.dpu.DPUInterface.n_fee_get_full_register" href="#egse.dpu.DPUInterface.n_fee_get_full_register">n_fee_get_full_register</a></code></li>
+<li><code><a title="egse.dpu.DPUInterface.get_register_map" href="#egse.dpu.DPUInterface.get_register_map">get_register_map</a></code></li>
 <li><code><a title="egse.dpu.DPUInterface.n_fee_get_mode" href="#egse.dpu.DPUInterface.n_fee_get_mode">n_fee_get_mode</a></code></li>
 <li><code><a title="egse.dpu.DPUInterface.n_fee_get_sync_mode" href="#egse.dpu.DPUInterface.n_fee_get_sync_mode">n_fee_get_sync_mode</a></code></li>
 <li><code><a title="egse.dpu.DPUInterface.n_fee_high_precision_hk_mode" href="#egse.dpu.DPUInterface.n_fee_high_precision_hk_mode">n_fee_high_precision_hk_mode</a></code></li>
@@ -7108,6 +7325,7 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
 <li><code><a title="egse.dpu.DPUInterface.n_fee_set_on_mode" href="#egse.dpu.DPUInterface.n_fee_set_on_mode">n_fee_set_on_mode</a></code></li>
 <li><code><a title="egse.dpu.DPUInterface.n_fee_set_register_value" href="#egse.dpu.DPUInterface.n_fee_set_register_value">n_fee_set_register_value</a></code></li>
 <li><code><a title="egse.dpu.DPUInterface.n_fee_set_standby_mode" href="#egse.dpu.DPUInterface.n_fee_set_standby_mode">n_fee_set_standby_mode</a></code></li>
+<li><code><a title="egse.dpu.DPUInterface.n_fee_sync_register_map" href="#egse.dpu.DPUInterface.n_fee_sync_register_map">n_fee_sync_register_map</a></code></li>
 </ul>
 </li>
 </ul>
@@ -7168,17 +7386,36 @@ a <code><a title="egse.dpu.DPUSimulator" href="#egse.dpu.DPUSimulator">DPUSimula
         pass
 
     def n_fee_set_clear_error_flags(self):
+        pass
+
+    def n_fee_set_fpga_defaults(self):
         pass</code></pre>
 </details>
 <h3>Ancestors</h3>
 <ul class="hlist">
 <li><a title="egse.dpu.DPUInterface" href="#egse.dpu.DPUInterface">DPUInterface</a></li>
 </ul>
+<h3>Methods</h3>
+<dl>
+<dt id="egse.dpu.DPUSimulator.n_fee_set_fpga_defaults"><code class="name flex">
+<span>def <span class="ident">n_fee_set_fpga_defaults</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def n_fee_set_fpga_defaults(self):
+    pass</code></pre>
+</details>
+</dd>
+</dl>
 <h3>Inherited members</h3>
 <ul class="hlist">
 <li><code><b><a title="egse.dpu.DPUInterface" href="#egse.dpu.DPUInterface">DPUInterface</a></b></code>:
 <ul class="hlist">
-<li><code><a title="egse.dpu.DPUInterface.n_fee_get_full_register" href="#egse.dpu.DPUInterface.n_fee_get_full_register">n_fee_get_full_register</a></code></li>
+<li><code><a title="egse.dpu.DPUInterface.get_register_map" href="#egse.dpu.DPUInterface.get_register_map">get_register_map</a></code></li>
 <li><code><a title="egse.dpu.DPUInterface.n_fee_get_mode" href="#egse.dpu.DPUInterface.n_fee_get_mode">n_fee_get_mode</a></code></li>
 <li><code><a title="egse.dpu.DPUInterface.n_fee_get_sync_mode" href="#egse.dpu.DPUInterface.n_fee_get_sync_mode">n_fee_get_sync_mode</a></code></li>
 <li><code><a title="egse.dpu.DPUInterface.n_fee_high_precision_hk_mode" href="#egse.dpu.DPUInterface.n_fee_high_precision_hk_mode">n_fee_high_precision_hk_mode</a></code></li>
@@ -7196,6 +7433,7 @@ a <code><a title="egse.dpu.DPUSimulator" href="#egse.dpu.DPUSimulator">DPUSimula
 <li><code><a title="egse.dpu.DPUInterface.n_fee_set_on_mode" href="#egse.dpu.DPUInterface.n_fee_set_on_mode">n_fee_set_on_mode</a></code></li>
 <li><code><a title="egse.dpu.DPUInterface.n_fee_set_register_value" href="#egse.dpu.DPUInterface.n_fee_set_register_value">n_fee_set_register_value</a></code></li>
 <li><code><a title="egse.dpu.DPUInterface.n_fee_set_standby_mode" href="#egse.dpu.DPUInterface.n_fee_set_standby_mode">n_fee_set_standby_mode</a></code></li>
+<li><code><a title="egse.dpu.DPUInterface.n_fee_sync_register_map" href="#egse.dpu.DPUInterface.n_fee_sync_register_map">n_fee_sync_register_map</a></code></li>
 </ul>
 </li>
 </ul>
@@ -7405,6 +7643,7 @@ a <code><a title="egse.dpu.DPUSimulator" href="#egse.dpu.DPUSimulator">DPUSimula
 <li><code><a title="egse.dpu.DPUController.is_simulator" href="#egse.dpu.DPUController.is_simulator">is_simulator</a></code></li>
 <li><code><a title="egse.dpu.DPUController.marker" href="#egse.dpu.DPUController.marker">marker</a></code></li>
 <li><code><a title="egse.dpu.DPUController.n_fee_set_charge_injection" href="#egse.dpu.DPUController.n_fee_set_charge_injection">n_fee_set_charge_injection</a></code></li>
+<li><code><a title="egse.dpu.DPUController.n_fee_set_fpga_defaults" href="#egse.dpu.DPUController.n_fee_set_fpga_defaults">n_fee_set_fpga_defaults</a></code></li>
 <li><code><a title="egse.dpu.DPUController.n_fee_set_reverse_clocking" href="#egse.dpu.DPUController.n_fee_set_reverse_clocking">n_fee_set_reverse_clocking</a></code></li>
 <li><code><a title="egse.dpu.DPUController.n_fee_set_vgd" href="#egse.dpu.DPUController.n_fee_set_vgd">n_fee_set_vgd</a></code></li>
 <li><code><a title="egse.dpu.DPUController.set_slicing" href="#egse.dpu.DPUController.set_slicing">set_slicing</a></code></li>
@@ -7413,10 +7652,10 @@ a <code><a title="egse.dpu.DPUSimulator" href="#egse.dpu.DPUSimulator">DPUSimula
 <li>
 <h4><code><a title="egse.dpu.DPUInterface" href="#egse.dpu.DPUInterface">DPUInterface</a></code></h4>
 <ul class="">
+<li><code><a title="egse.dpu.DPUInterface.get_register_map" href="#egse.dpu.DPUInterface.get_register_map">get_register_map</a></code></li>
 <li><code><a title="egse.dpu.DPUInterface.get_slicing" href="#egse.dpu.DPUInterface.get_slicing">get_slicing</a></code></li>
 <li><code><a title="egse.dpu.DPUInterface.is_simulator" href="#egse.dpu.DPUInterface.is_simulator">is_simulator</a></code></li>
 <li><code><a title="egse.dpu.DPUInterface.marker" href="#egse.dpu.DPUInterface.marker">marker</a></code></li>
-<li><code><a title="egse.dpu.DPUInterface.n_fee_get_full_register" href="#egse.dpu.DPUInterface.n_fee_get_full_register">n_fee_get_full_register</a></code></li>
 <li><code><a title="egse.dpu.DPUInterface.n_fee_get_mode" href="#egse.dpu.DPUInterface.n_fee_get_mode">n_fee_get_mode</a></code></li>
 <li><code><a title="egse.dpu.DPUInterface.n_fee_get_sync_mode" href="#egse.dpu.DPUInterface.n_fee_get_sync_mode">n_fee_get_sync_mode</a></code></li>
 <li><code><a title="egse.dpu.DPUInterface.n_fee_high_precision_hk_mode" href="#egse.dpu.DPUInterface.n_fee_high_precision_hk_mode">n_fee_high_precision_hk_mode</a></code></li>
@@ -7427,6 +7666,7 @@ a <code><a title="egse.dpu.DPUSimulator" href="#egse.dpu.DPUSimulator">DPUSimula
 <li><code><a title="egse.dpu.DPUInterface.n_fee_set_dump_mode" href="#egse.dpu.DPUInterface.n_fee_set_dump_mode">n_fee_set_dump_mode</a></code></li>
 <li><code><a title="egse.dpu.DPUInterface.n_fee_set_dump_mode_int_sync" href="#egse.dpu.DPUInterface.n_fee_set_dump_mode_int_sync">n_fee_set_dump_mode_int_sync</a></code></li>
 <li><code><a title="egse.dpu.DPUInterface.n_fee_set_external_sync" href="#egse.dpu.DPUInterface.n_fee_set_external_sync">n_fee_set_external_sync</a></code></li>
+<li><code><a title="egse.dpu.DPUInterface.n_fee_set_fpga_defaults" href="#egse.dpu.DPUInterface.n_fee_set_fpga_defaults">n_fee_set_fpga_defaults</a></code></li>
 <li><code><a title="egse.dpu.DPUInterface.n_fee_set_full_image_mode" href="#egse.dpu.DPUInterface.n_fee_set_full_image_mode">n_fee_set_full_image_mode</a></code></li>
 <li><code><a title="egse.dpu.DPUInterface.n_fee_set_full_image_mode_int_sync" href="#egse.dpu.DPUInterface.n_fee_set_full_image_mode_int_sync">n_fee_set_full_image_mode_int_sync</a></code></li>
 <li><code><a title="egse.dpu.DPUInterface.n_fee_set_full_image_pattern_mode" href="#egse.dpu.DPUInterface.n_fee_set_full_image_pattern_mode">n_fee_set_full_image_pattern_mode</a></code></li>
@@ -7437,12 +7677,14 @@ a <code><a title="egse.dpu.DPUSimulator" href="#egse.dpu.DPUSimulator">DPUSimula
 <li><code><a title="egse.dpu.DPUInterface.n_fee_set_reverse_clocking" href="#egse.dpu.DPUInterface.n_fee_set_reverse_clocking">n_fee_set_reverse_clocking</a></code></li>
 <li><code><a title="egse.dpu.DPUInterface.n_fee_set_standby_mode" href="#egse.dpu.DPUInterface.n_fee_set_standby_mode">n_fee_set_standby_mode</a></code></li>
 <li><code><a title="egse.dpu.DPUInterface.n_fee_set_vgd" href="#egse.dpu.DPUInterface.n_fee_set_vgd">n_fee_set_vgd</a></code></li>
+<li><code><a title="egse.dpu.DPUInterface.n_fee_sync_register_map" href="#egse.dpu.DPUInterface.n_fee_sync_register_map">n_fee_sync_register_map</a></code></li>
 <li><code><a title="egse.dpu.DPUInterface.set_slicing" href="#egse.dpu.DPUInterface.set_slicing">set_slicing</a></code></li>
 </ul>
 </li>
 <li>
 <h4><code><a title="egse.dpu.DPUInternals" href="#egse.dpu.DPUInternals">DPUInternals</a></code></h4>
 <ul class="">
+<li><code><a title="egse.dpu.DPUInternals.ccd_sides_enum" href="#egse.dpu.DPUInternals.ccd_sides_enum">ccd_sides_enum</a></code></li>
 <li><code><a title="egse.dpu.DPUInternals.clear_error_flags" href="#egse.dpu.DPUInternals.clear_error_flags">clear_error_flags</a></code></li>
 <li><code><a title="egse.dpu.DPUInternals.dump_mode" href="#egse.dpu.DPUInternals.dump_mode">dump_mode</a></code></li>
 <li><code><a title="egse.dpu.DPUInternals.dump_mode_int" href="#egse.dpu.DPUInternals.dump_mode_int">dump_mode_int</a></code></li>
@@ -7454,6 +7696,7 @@ a <code><a title="egse.dpu.DPUSimulator" href="#egse.dpu.DPUSimulator">DPUSimula
 <li><code><a title="egse.dpu.DPUInternals.is_end_of_cycle" href="#egse.dpu.DPUInternals.is_end_of_cycle">is_end_of_cycle</a></code></li>
 <li><code><a title="egse.dpu.DPUInternals.is_start_of_cycle" href="#egse.dpu.DPUInternals.is_start_of_cycle">is_start_of_cycle</a></code></li>
 <li><code><a title="egse.dpu.DPUInternals.num_cycles" href="#egse.dpu.DPUInternals.num_cycles">num_cycles</a></code></li>
+<li><code><a title="egse.dpu.DPUInternals.sensor_sel_enum" href="#egse.dpu.DPUInternals.sensor_sel_enum">sensor_sel_enum</a></code></li>
 <li><code><a title="egse.dpu.DPUInternals.slicing_num_cycles" href="#egse.dpu.DPUInternals.slicing_num_cycles">slicing_num_cycles</a></code></li>
 <li><code><a title="egse.dpu.DPUInternals.update" href="#egse.dpu.DPUInternals.update">update</a></code></li>
 </ul>
@@ -7493,6 +7736,9 @@ a <code><a title="egse.dpu.DPUSimulator" href="#egse.dpu.DPUSimulator">DPUSimula
 </li>
 <li>
 <h4><code><a title="egse.dpu.DPUSimulator" href="#egse.dpu.DPUSimulator">DPUSimulator</a></code></h4>
+<ul class="">
+<li><code><a title="egse.dpu.DPUSimulator.n_fee_set_fpga_defaults" href="#egse.dpu.DPUSimulator.n_fee_set_fpga_defaults">n_fee_set_fpga_defaults</a></code></li>
+</ul>
 </li>
 <li>
 <h4><code><a title="egse.dpu.NFEECommandError" href="#egse.dpu.NFEECommandError">NFEECommandError</a></code></h4>

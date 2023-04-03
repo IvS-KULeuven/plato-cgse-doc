@@ -95,9 +95,11 @@ Commands:
 import itertools
 import logging
 import multiprocessing
+from datetime import timezone
 
 import rich
 
+from egse.hk import read_conversion_dict
 from egse.state import GlobalState
 
 multiprocessing.current_process().name = &#34;das&#34;
@@ -121,7 +123,7 @@ from egse.setup import Setup
 from egse.storage import StorageProxy
 from egse.storage import is_storage_manager_active
 from egse.storage.persistence import CSV
-from egse.system import SignalCatcher
+from egse.system import SignalCatcher, format_datetime
 from egse.system import flatten_dict
 from egse.tcs.tcs import TCSProxy
 from egse.tcs.tcs import is_tcs_cs_active
@@ -134,6 +136,11 @@ from egse.tempcontrol.srs.ptc10_cs import is_ptc10_cs_active
 
 from egse.powermeter.ni.cdaq9184 import cdaq9184Proxy
 from egse.powermeter.ni.cdaq9184_cs import is_cdaq9184_cs_active
+
+from egse.metrics import define_metrics
+from egse.synoptics import SynopticsManagerProxy
+
+from egse.system import format_datetime
 
 LOGGER = logging.getLogger(__name__)
 
@@ -210,6 +217,9 @@ def daq6510(config, count, interval, delay, channel_list, background: bool, inpu
 
     &#34;&#34;&#34;
 
+    hk_conversion_table = read_conversion_dict(&#34;DAS-DAQ6510&#34;, use_site=True)
+    column_names = list(hk_conversion_table.values())
+
     if background:
         cmd = &#34;das daq6510&#34;
         cmd += f&#34; --count {count}&#34;
@@ -271,8 +281,10 @@ def daq6510(config, count, interval, delay, channel_list, background: bool, inpu
 
     DAQ_METRICS = {}
     for channel in channel_names:
-        DAQ_METRICS[channel] = Gauge(f&#34;daq_channel_{channel}&#34;,
-                                     f&#34;The current measure for the sensor connected to channel {channel} on the DAQ6510&#34;)
+        metrics_name = hk_conversion_table[channel]
+        DAQ_METRICS[metrics_name] = Gauge(f&#34;{metrics_name}&#34;,
+                                          f&#34;The current measure for the sensor connected to channel {channel} &#34;
+                                          f&#34;({metrics_name}) on the DAQ6510&#34;)
 
     start_http_server(DAS.METRICS_PORT_DAQ6510)
 
@@ -283,7 +295,7 @@ def daq6510(config, count, interval, delay, channel_list, background: bool, inpu
     prep = {
         &#34;mode&#34;: &#34;a&#34;,
         &#34;ending&#34;: &#34;\n&#34;,
-        &#34;column_names&#34;: [&#34;Timestamp&#34;, *channel_names],
+        &#34;column_names&#34;: [&#34;Timestamp&#34;, *column_names],
     }
 
     killer = SignalCatcher()
@@ -291,9 +303,13 @@ def daq6510(config, count, interval, delay, channel_list, background: bool, inpu
     with DAQ6510Proxy() as daq, StorageProxy() as storage:
         daq.reset()
 
+        dt = datetime.now(tz=timezone.utc)
+        daq.set_time(dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second)
+        LOGGER.info(f&#34;DAQ6510 date and time set: {daq.get_time()}&#34;)
+
         storage.register({&#34;origin&#34;: origin, &#34;persistence_class&#34;: persistence_class, &#34;prep&#34;: prep})
 
-        storage.save({&#34;origin&#34;: origin, &#34;data&#34;: f&#34;# columns: {channel_names}&#34;})
+        storage.save({&#34;origin&#34;: origin, &#34;data&#34;: f&#34;# columns: {column_names}&#34;})
 
         for sensor in setup.gse.DAQ6510.sensors:
             for function in setup.gse.DAQ6510.sensors[sensor]:
@@ -343,11 +359,9 @@ def daq6510(config, count, interval, delay, channel_list, background: bool, inpu
                 # LOGGER.debug(f&#34;{response=}&#34;)
 
                 dts = response[0][1].strip()
-                datetime_string = datetime.strptime(
-                    dts[:-3],
-                    &#34;%m/%d/%Y %H:%M:%S.%f&#34;).strftime(&#34;%Y-%m-%dT%H:%M:%S,%f&#34;)
+                datetime_string = format_datetime(datetime.strptime(dts[:-3], &#34;%m/%d/%Y %H:%M:%S.%f&#34;))
 
-                data = {measure[0]: float(measure[2]) for measure in response}
+                data = {hk_conversion_table[measure[0]]: float(measure[2]) for measure in response}
 
                 data.update({&#34;Timestamp&#34;: datetime_string})
 
@@ -362,7 +376,8 @@ def daq6510(config, count, interval, delay, channel_list, background: bool, inpu
                 # Now extract channels from the response to update the metrics
 
                 for channel in [measure[0] for measure in response]:
-                    DAQ_METRICS[channel].set(data[channel])
+                    metrics_name = hk_conversion_table[channel]
+                    DAQ_METRICS[metrics_name].set(data[metrics_name])
 
                 # wait for the next measurement to be done (delay)
 
@@ -380,6 +395,8 @@ def daq6510(config, count, interval, delay, channel_list, background: bool, inpu
 
         storage.unregister({&#34;origin&#34;: origin})
 
+# todo: start PTC10 automatically when when its CS starts. In click options below? background?
+# todo: add disable_heater_error
 @cli.command()
 @click.option(
     &#34;--background/--no-background&#34;, &#34;-bg/-no-bg&#34;, default=False,
@@ -388,6 +405,7 @@ def daq6510(config, count, interval, delay, channel_list, background: bool, inpu
 @click.option(
     &#34;--user_regulation&#34;, default=None, help=&#34;activate ptc10 regulation with the given parameter as temperature setpoint (float)&#34;
 )
+# todo: voir pour option auto_regulation is_fkag=True valeur par défaut
 @click.option(
     &#34;--auto_regulation&#34;, is_flag=True, default=None, help=&#34;if this option is given, activate ptc10 regulation with survival mode (i.e. with T_min_NOP as temperature setpoint)&#34;
 )
@@ -447,32 +465,23 @@ def ptc10(config, user_regulation: float, auto_regulation: int, background: bool
         LOGGER.error(&#34;ERROR: no PTC10 entry in the loaded Setup.&#34;)
         sys.exit(1)
 
-    channel_names = list(setup.gse.PTC10.channel_names.values())
+    channel_names = list(setup.gse.PTC10.channel_names.values()) # defined in config file
 
-    # Creation of list NAMES.
-    # NAMES will be [&#39;TRP2&#39;, &#39;TRP3&#39;, &#39;TRP4&#39;, &#39;H1_ampere&#39;, &#39;H2_ampere&#39;, &#39;H3_ampere&#39;, &#39;H1_watt&#39;, &#39;H2_watt&#39;, &#39;H3_watt&#39;, &#39;H1_volt&#39;, &#39;H2_volt&#39;, &#39;H3_volt&#39;]
-    NAMES = channel_names[:3]
-    Units = [&#34;ampere&#34;, &#34;watt&#34;, &#34;volt&#34;]
-    for unit in Units:
-        NAMES.extend([name + &#34;_&#34; + unit for name in list(setup.gse.PTC10.channel_names.values())[-3:]])
+    # Creation of list HK_names used to store HK.
+    site_id = setup.site_id # Name of the TH
 
-    #Creation of Prometheus METRICS in a dictionnary
+    HK_names = [&#34;G&#34; + site_id + &#34;_&#34; + sensor_name for sensor_name in channel_names[:4]]
+    units = [&#34;ampere&#34;, &#34;watt&#34;, &#34;volt&#34;]
+    for unit in units:
+        HK_names.extend([&#34;G&#34; + site_id + &#34;_&#34; + name + &#34;_&#34; + unit for name in channel_names[-3:]])
+    HK_names.insert(0, HK_names.pop(2))  # I move GIAS_TTS_BiP_01 at the beginning of the list HK_names.
+    # HK_names is [&#39;GIAS_TTS_BiP_01&#39;, &#39;GIAS_TRP2&#39;, &#39;GIAS_TRP3&#39;, &#39;GIAS_TRP4&#39;, &#39;GIAS_H1_ampere&#39;, &#39;GIAS_H2_ampere&#39;, &#39;GIAS_H3_ampere&#39;, &#39;GIAS_H1_watt&#39;, &#39;GIAS_H2_watt&#39;, &#39;GIAS_H3_watt&#39;, &#39;GIAS_H1_volt&#39;, &#39;GIAS_H2_volt&#39;, &#39;GIAS_H3_volt&#39;]
 
-    # METRICS for inputs first (TRP 2-3-4)
-    PTC_METRICS_inputs = {NAMES[channel] : Gauge(f&#34;ptc_channel_input_{channel + 1}&#34;,
-                                                           f&#39;The current measure for the sensor connected to channel &#34;{NAMES[channel]}&#34; on the PTC10&#39;) for channel in [0, 1, 2]}
+    # Creation of Prometheus METRICS in a dictionnary from TM dictionnary
+    PTC_METRICS = define_metrics(&#34;DAS-PTC10&#34;)
 
-    #Then METRICS for outputs (3 outputs * 3 units = 9 METRICS for outputs)
-    PTC_METRICS_outputs = {}
-    i = 0
-    for unit in Units:
-        for channel in [3, 4, 5]:
-            PTC_METRICS_outputs[NAMES[channel + i]] = Gauge(f&#34;ptc_channel_output_{channel - 2}_{unit}&#34;,
-                                                            f&#39;The current {unit} for the heater connected to channel &#34;{NAMES[channel][:2]}&#34; on the PTC10&#39;)
-        i += 3
-
-    #Then merger in 1 dictionnary of METRICS for inputs and outputs
-    PTC_METRICS = {**PTC_METRICS_inputs, **PTC_METRICS_outputs}  # merger of PTC_METRICS_inputs and PTC_METRICS_outputs dictionnaries
+    if not list(PTC_METRICS.keys()) == HK_names: # Check if names in setup file (used for HK names) and names defined in TM dictionary for metrics names are same
+        LOGGER.error(&#34;The names of HK defined in the current setup file &#34; + setup.get_id() + &#34; are not the same than those in TM dictionary for metrics&#34;)
 
     start_http_server(DAS.METRICS_PORT_PTC10)
 
@@ -483,7 +492,7 @@ def ptc10(config, user_regulation: float, auto_regulation: int, background: bool
     prep = {
         &#34;mode&#34;: &#34;a&#34;,
         &#34;ending&#34;: &#34;\n&#34;,
-        &#34;column_names&#34;: [&#34;Timestamp&#34;, *NAMES],
+        &#34;column_names&#34;: [&#34;Timestamp&#34;, *HK_names],
     }
 
     killer = SignalCatcher()
@@ -491,35 +500,39 @@ def ptc10(config, user_regulation: float, auto_regulation: int, background: bool
     with ptc10Proxy() as ptc, StorageProxy() as storage:
 
         storage.register({&#34;origin&#34;: origin, &#34;persistence_class&#34;: persistence_class, &#34;prep&#34;: prep})
-        storage.save({&#34;origin&#34;: origin, &#34;data&#34;: f&#34;# columns: {NAMES}&#34;})
+        storage.save({&#34;origin&#34;: origin, &#34;data&#34;: prep[&#34;column_names&#34;]})
 
-        Old_channel_names = ptc.get_names()  # Old_channel_names is a tuple of 2 lists with the names of inputs (3 sensors)
+        # Renaming the names of channels in PTC10 device with names defined in the setup file
+        old_channel_names = ptc.get_names()  # old_channel_names is a tuple of 2 lists with the names of inputs (4 sensors)
                                              # in the first list and the names of outputs (3 heaters) in the second list
-        Old_channel_names = Old_channel_names[0] + Old_channel_names[1]  # Now Old_channel_names is a long list of 6 elements (3 inputs/sensors
+        old_channel_names = old_channel_names[0] + old_channel_names[1]  # Now old_channel_names is a long list of 7 elements (4 inputs/sensors
                                                                          # and 3 outputs/heaters)
-
-
-        for old_name, new_name in zip(Old_channel_names, channel_names):
+        for old_name, new_name in zip(old_channel_names, channel_names):
             ptc.set_name(old_name,new_name)
 
+        # Setting the input for each heater
         for output_ch, input in zip([1, 2, 3], setup.gse.PTC10.heater_input):
             new_input = setup.gse.PTC10.heater_input[input]
             ptc.set_heater_input(output_ch, new_input)
 
-        ptc.output_unit(setup.gse.PTC10.heater_unit) #Configure units before limits (because configuring units modifies limits)
+        # Configure units before limits (because configuring units modifies limits)
+        ptc.output_unit(setup.gse.PTC10.heater_unit)
 
+        # Setting limits
         low_limit = setup.gse.PTC10.heater_limit.low
         high_limit = setup.gse.PTC10.heater_limit.high
         for output_ch in [1, 2, 3]:
             ptc.output_limit(output_ch, low_limit, high_limit)
 
+        # Setting PID coefficients
         i = 0
         for pid in setup.gse.PTC10.PID:
             PID_list = list(setup.gse.PTC10.PID[pid].values())
             i += 1
             ptc.set_PID(input_ch=i, output_ch=i, PID=PID_list)
 
-        R = setup.gse.PTC10.heater_Ohm #Resistance of the heater in Ohm
+        # Setting the resistance of the heater in Ohm (manually measured with ohmmeter and written in the setup file)
+        R = setup.gse.PTC10.heater_Ohm
 
         # Time update from egse server
         ptc.update_time()
@@ -537,29 +550,30 @@ def ptc10(config, user_regulation: float, auto_regulation: int, background: bool
                     is_on_time = True
 
                 if user_regulation and auto_regulation:
-                    print(&#34;Only 1 option is expected (user_regulation OR auto_regulation) but both were given.\nTerminating... &#34;)
+                    LOGGER.warning(&#34;Only 1 option is expected (user_regulation OR auto_regulation) but both were given.\nTerminating... &#34;)
                     break
 
                 if user_regulation: # If user_regulation is given, then run the function set_stable() with &#34;user_regulation&#34; as temperature setpoint
                     try:
                         ptc.set_stable(float(user_regulation))
                     except ValueError:
-                        print(&#34;ValueError: user_regulation must be a number.\nTerminating...&#34;)
+                        LOGGER.warning(&#34;ValueError: user_regulation must be a number.\nTerminating...&#34;)
                         break
                 if auto_regulation: # If auto_regulation is given, then run the function set_survival() (i.e. with T_min_NOP as temperature setpoint)
                     ptc.set_survival()
 
-                response = ptc.read_temperature() + ptc.read_heater()[0]
-
-                # Calculation of power : P = RI²
-                for i in [3, 4, 5]:
-                    response.append(R * response[i]**2)
-
-                # Calculation of voltage : U = RI
-                for i in [3, 4, 5]:
-                    response.append(R * response[i])
-
-                data = {NAMES[i]: response[i] for i in range(len(NAMES))}
+                # Acquirement of PTC10 time for HK and PTC10 values (temperatures and heaters)
+                try:
+                    response = [ptc.get_time()] + ptc.read_temperature() + ptc.read_heater()[0]
+                # Sometimes randomly PTC10 doesn&#39;t return the time and there is a Failure, so to avoid
+                # a bad type in the column Timestamp, if there is a Failure, HK are not saved for this
+                # time and the code go back at the top of the while loop thanks to exceptions.
+                except TypeError:
+                    LOGGER.warning(&#34;TYPE ERROR&#34;)
+                    continue
+                except ValueError:
+                    LOGGER.warning(&#34;VALUE ERROR&#34;)
+                    continue
 
                 if killer.term_signal_received:
                     break
@@ -579,21 +593,32 @@ def ptc10(config, user_regulation: float, auto_regulation: int, background: bool
 
                 # Process and save the response
 
+                response.insert(1, response.pop(3)) # I move the value of TTS_BiP_01 at the beginning of the list response.
+
+                # Calculation of power : P = RI²
+                for i in [5, 6, 7]:
+                    response.append(R * response[i]**2)
+
+                # Calculation of voltage : U = RI
+                for i in [5, 6, 7]:
+                    response.append(R * response[i])
+
+                # Creation of the dictionary data wich contains only values (not timestamp) for Prometheus metrics
+                data = {HK_names[i]: response[i+1] for i in range(len(HK_names))} # the first element of response is timestamp which doesn&#39;t go into the dictionary data
+
                 LOGGER.debug(f&#34;{response=}&#34;)
 
                 LOGGER.debug(data)
 
-                storage.save({&#34;origin&#34;: origin, &#34;data&#34;: data})
+                # Saving HK with PTC10 time as timestamp (the response list contains timestamp and values)
+                storage.save({&#34;origin&#34;: origin, &#34;data&#34;: response})
+                synoptics = SynopticsManagerProxy()
+                synoptics.store_th_synoptics(response)
 
-                # Now extract channels from the response to update the metrics
-
-                for name in NAMES:
+                # Now extract from data the values measured to update the metrics
+                for name in PTC_METRICS:
                     PTC_METRICS[name].set(data[name])
 
-
-                # wait for the next measurement to be done
-
-                # time.sleep(2)
 
             except KeyboardInterrupt:
                 LOGGER.debug(&#34;Interrupt received, terminating...&#34;)

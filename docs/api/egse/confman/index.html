@@ -210,9 +210,13 @@ a connection with the `cm_cs` and sends it a _Ping_ command. This is the recomme
 the availability of the configuration manager.
 
 &#34;&#34;&#34;
+from __future__ import annotations
+
 import logging
 import operator
+import os
 import subprocess
+import textwrap
 import threading
 from pathlib import Path
 from typing import NamedTuple
@@ -236,13 +240,14 @@ from egse.control import is_control_server_active
 from egse.decorators import dynamic_interface
 from egse.decorators import static_vars
 from egse.exceptions import InternalError
-from egse.metrics import define_metrics
 from egse.obsid import ObservationIdentifier
 from egse.protocol import CommandProtocol
 from egse.proxy import Proxy
 from egse.settings import Settings
 from egse.settings import SettingsError
 from egse.setup import Setup
+from egse.setup import load_last_setup_id
+from egse.setup import save_last_setup_id
 from egse.storage import StorageProxy
 from egse.storage import is_storage_manager_active
 from egse.storage.persistence import TXT
@@ -252,6 +257,7 @@ from egse.system import replace_environment_variable
 from egse.version import VERSION
 from egse.zmq_ser import bind_address
 from egse.zmq_ser import connect_address
+from prometheus_client import Gauge
 
 LOGGER = logging.getLogger(__name__)
 
@@ -260,8 +266,10 @@ SITE = Settings.load(&#34;SITE&#34;)
 COMMAND_SETTINGS = Settings.load(filename=&#34;confman.yaml&#34;)
 REPO = Settings.load(&#34;REPO&#34;)
 
+CM_SETUP_ID = Gauge(&#34;CM_SETUP_ID&#34;, &#39;Setup ID&#39;)
+CM_TEST_ID = Gauge(&#34;CM_TEST_ID&#34;, &#39;Test ID&#39;)
 
-def _push_setup_to_repo(filename: str, commit_msg: str) -&gt; None:
+def _push_setup_to_repo(filename: str, commit_msg: str) -&gt; Failure | Success:
     &#34;&#34;&#34;
     Push the Setup file to the `plato-cgse-conf` repository on GitHub.
 
@@ -275,35 +283,44 @@ def _push_setup_to_repo(filename: str, commit_msg: str) -&gt; None:
     repo_workdir = REPO.PLATO_CGSE_CONF
     repo_workdir = replace_environment_variable(repo_workdir)
     if repo_workdir is None:
-        LOGGER.error(
-            &#34;Couldn&#39;t determine the repository location for plato-cgse-conf. &#34;
-            &#34;Check if the environment variable &#39;PLATO_CONF_REPO_LOCATION&#39; is set &#34;
-            &#34;before starting the configuration manager.&#34;
+        msg = textwrap.dedent(
+            &#34;&#34;&#34;\
+            Couldn&#39;t determine the repository location for plato-cgse-conf. 
+            Check if the environment variable &#39;PLATO_CONF_REPO_LOCATION&#39; is set 
+            before starting the configuration manager.
+            &#34;&#34;&#34;
         )
-        return
+        LOGGER.error(msg)
+        return Failure(msg)
 
     repo = git.Repo(repo_workdir)
 
     if repo.is_dirty():
         LOGGER.warning(
-            f&#34;The plato-cgse-conf repository is dirty. Check the git status at {repo_workdir}.&#34;)
+            f&#34;The plato-cgse-conf repository is dirty. Check the git status at &#39;{repo_workdir}&#39;.&#34;)
 
     untracked = repo.untracked_files
 
     if len(untracked) != 1:
-        LOGGER.error(
-            f&#34;The number of untracked files in the plato-cgse-conf repository doesn&#39;t match &#34;
-            f&#34;the expected. Check the git status at {repo_workdir}. Only {filename} should be &#34;
-            f&#34;untracked.&#34;
+        msg = textwrap.dedent(
+            f&#34;&#34;&#34;\
+            The number of untracked files ({len(untracked)}) in the plato-cgse-conf repository doesn&#39;t match 
+            the expected. Check the git status at &#39;{repo_workdir}&#39; on the egse-server. 
+            Only &#39;{filename}&#39; should be untracked.
+            
+            Untracked files: {untracked}
+            &#34;&#34;&#34;
         )
-        return
+        LOGGER.error(msg)
+        return Failure(msg)
 
     # match the filename to extract the full path to the file
 
     untracked = [x for x in untracked if filename in x]
     if (n := len(untracked)) != 1:
-        LOGGER.error(f&#34;There should be one match for the filename, found {n}{&#39;&#39; if n == 0 else untracked}.&#34;)
-        return
+        msg = f&#34;There should be one match for the filename, found {n}{&#39;&#39; if n == 0 else untracked}.&#34;
+        LOGGER.error(msg)
+        return Failure(msg)
 
     untracked = untracked[0]
 
@@ -322,14 +339,28 @@ def _push_setup_to_repo(filename: str, commit_msg: str) -&gt; None:
 
     response = repo.index.commit(message=commit_msg)
 
+    # The response is a list of FetchInfo instances
+    # We need this `pull` command before we will push the changes because otherwise the push will
+    # be rejected, see https://github.com/IvS-KULeuven/plato-common-egse/issues/2027. The problem
+    # should not abort the submit command, but needs to be logged.
+
+    try:
+        response = repo.remote(&#39;upload&#39;).pull(&#34;main&#34;)
+    except Exception as exc:
+        LOGGER.error(exc, exc_info=True)
+
     # The response is a PushInfo object
 
     try:
-        response = repo.remote(&#39;upload&#39;).push()
+        response = repo.remote(&#39;upload&#39;).push(&#34;main&#34;)
     except ValueError as exc:
         LOGGER.error(exc, exc_info=True)
+        return Failure(f&#34;Push of setup [{filename}] failed&#34;, exc)
     except GitCommandError as exc:
         LOGGER.error(exc, exc_info=True)
+        return Failure(f&#34;Push of setup [{filename}] failed&#34;, exc)
+
+    return Success(f&#34;Successfully pushed the setup to the repo {repo}&#34;)
 
 # We have seen that especially when listing the setups, we have a performance problem.
 # Therefore, we implement a cache for the Setup info that we use in different functions.
@@ -577,7 +608,7 @@ class ConfigurationManagerInterface:
         raise NotImplementedError
 
     @dynamic_interface
-    def submit_setup(self, setup: Setup, description: str) -&gt; Setup:
+    def submit_setup(self, setup: Setup, description: str, replace: bool = True) -&gt; Setup | None:
         raise NotImplementedError
 
     @dynamic_interface
@@ -593,8 +624,9 @@ class ConfigurationManagerController(ConfigurationManagerInterface):
     &#34;&#34;&#34;
 
     def __init__(self):
-        self._obsid: Optional[ObservationIdentifier] = None
-        self._setup_id: Optional[int] = None
+        self._obsid: ObservationIdentifier | None = None
+        self._setup_id: int | None = None
+        self._camera_name: str | None = None
 
         if is_storage_manager_active():
             self._storage = StorageProxy()
@@ -626,25 +658,10 @@ class ConfigurationManagerController(ConfigurationManagerInterface):
         cache_thread.daemon = True
         cache_thread.start()
 
-        # Load the Setup &#39;Zero&#39; for the site
+        # Load the last used Setup
 
-        try:
-            if setup_info := _get_cached_setup_info(0):
-                setup_file = setup_info.path
-            else:
-                LOGGER.warning(f&#34;SetupInfo cache is not populated, &#34;
-                               f&#34;loading Setup 0 from {self._data_conf_location}&#34;)
-                setup_file = find_file(
-                    f&#34;SETUP_{SITE.ID}_00000_*.yaml&#34;, root=self._data_conf_location)
-            self._setup: Setup = Setup.from_yaml_file(setup_file)
-            self._setup_id = 0
-            LOGGER.info(f&#34;Setup loaded: {setup_file}&#34;)
-        except Exception as exc:
-            LOGGER.error(f&#34;Could not load Setup with id 0 for {SITE.ID} from &#34;
-                         f&#34;{self._data_conf_location} ({exc}).&#34;, exc_info=True
-            )
-            self._setup = None
-            self._setup_id = None
+        setup_id = load_last_setup_id()
+        self.load_setup(setup_id)
 
     def quit(self):
         if self._storage:
@@ -672,7 +689,7 @@ class ConfigurationManagerController(ConfigurationManagerInterface):
         self._obsid = create_obsid(last_obsid, SITE.ID, self._setup_id)
 
         if self._storage:
-            response = self._storage.start_observation(self._obsid)
+            response = self._storage.start_observation(self._obsid, self._camera_name)
         else:
             return Failure(
                 &#34;Couldn&#39;t send start observation to Storage Manager, no Storage Manager available.&#34;
@@ -781,7 +798,8 @@ class ConfigurationManagerController(ConfigurationManagerInterface):
 
         if len(setup_files) != 1:
             LOGGER.error(
-                msg := f&#34;Expected to find just one Setup YAML file, found {len(setup_files)}.&#34;
+                msg := f&#34;Expected to find just one Setup YAML file, found {len(setup_files)}. &#34;
+                       f&#34;[{SITE.ID = }, {setup_id = }, data_conf_location={self._data_conf_location}]&#34;
             )
             return Failure(&#34;Loading Setup&#34;, InternalError(msg))
 
@@ -790,10 +808,18 @@ class ConfigurationManagerController(ConfigurationManagerInterface):
         try:
             self._setup = Setup.from_yaml_file(setup_file)
             self._setup_id = setup_id
+            self._camera_name = self._setup.camera.ID.lower()
             LOGGER.info(f&#34;New Setup loaded from {setup_file}&#34;)
+            save_last_setup_id(self._setup_id)
             return self._setup
         except SettingsError as exc:
             return Failure(f&#34;The Setup file can not be loaded from {setup_file}.&#34;, exc)
+        except AttributeError as exc:
+            msg = f&#34;The Setup [id={setup_id}] has no camera.ID entry.&#34;
+            LOGGER.error(msg, exc_info=True)
+            # FIXME: if we come here, shouldn&#39;t we load the zero Setup so that the problem of the
+            #        missing camera ID gets solved?
+            return Failure(msg)
 
     def get_setup(self, setup_id: int = None) -&gt; Union[Setup, Failure]:
         &#34;&#34;&#34;
@@ -947,17 +973,21 @@ class ConfigurationManagerController(ConfigurationManagerInterface):
         setup.to_yaml_file(self._data_conf_location / filename)
 
         try:
-            _push_setup_to_repo(filename, description)
+            rc = _push_setup_to_repo(filename, description)
+            if isinstance(rc, Failure):
+                return rc
             _add_setup_info_to_cache(setup)
         except (Exception, ) as exc:
-            LOGGER.error(
-                &#34;Submit_setup could not complete it&#39;s task to send the new Setup to the repo.&#34;, exc_info=True)
+            msg = &#34;Submit_setup could not complete it&#39;s task to send the new Setup to the repo.&#34;
+            LOGGER.error(msg, exc_info=True)
+            return Failure(&#34;Submit_setup could not complete it&#39;s task to send the new Setup to the repo.&#34;, exc)
         else:
             LOGGER.info(f&#34;Successfully pushed Setup {setup_id} to the repository.&#34;)
 
         if replace:
             self._setup = setup
             self._setup_id = setup_id
+            save_last_setup_id(setup_id)
 
         return setup
 
@@ -1002,26 +1032,6 @@ class ConfigurationManagerProxy(Proxy, ConfigurationManagerInterface):
         super().__init__(connect_address(protocol, hostname, port))
 
 
-class ConfigurationManagerMetrics:
-    &#34;&#34;&#34;
-    Defines the metrics for the Configuration Manager that are maintained by the
-    ConfigurationManagerProtocol class.
-    &#34;&#34;&#34;
-    def __init__(self, origin: str, dashboard: str):
-        self.metrics = define_metrics(origin=origin, dashboard=dashboard)
-
-    def __contains__(self, item):
-        return self.metrics.__contains__(item)
-
-    def names(self):
-        return self.metrics.keys()
-
-    def update_metrics(self, name: str, value: Union[str, int]):
-        &#34;&#34;&#34;Update the CM metric parameter with the given value.&#34;&#34;&#34;
-        if name in self.metrics:
-            self.metrics[name].set(float(value))
-
-
 class ConfigurationManagerProtocol(CommandProtocol):
     def __init__(self, control_server: ControlServer):
         super().__init__()
@@ -1033,11 +1043,6 @@ class ConfigurationManagerProtocol(CommandProtocol):
             COMMAND_SETTINGS.Commands,
             ConfigurationManagerCommand,
             ConfigurationManagerController,
-        )
-
-        self._metrics = ConfigurationManagerMetrics(
-            origin=control_server.get_storage_mnemonic(),
-            dashboard=&#34;CM_MON&#34;
         )
 
         self.build_device_method_lookup_table(self.controller)
@@ -1073,12 +1078,7 @@ class ConfigurationManagerProtocol(CommandProtocol):
         setup_id = self.controller.get_setup_id()
         site_id = self.controller.get_site_id()
 
-        # Update the metrics
-
-        self._metrics.update_metrics(&#39;CM_SETUP_ID&#39;, setup_id)
-        self._metrics.update_metrics(&#39;CM_TEST_ID&#39;, test_id)
-
-        return {
+        hk = {
             &#34;timestamp&#34;: format_datetime(),
             &#34;CM_SITE_ID&#34;: site_id,
             &#34;CM_SETUP_ID&#34;: setup_id,
@@ -1087,6 +1087,13 @@ class ConfigurationManagerProtocol(CommandProtocol):
             &#34;CM_CGSE_VERSION&#34;: self.cgse_version,
             &#34;CM_GIT_VERSION&#34;: self.git_version,
         }
+
+        # Update the metrics
+
+        CM_SETUP_ID.set(float(setup_id))
+        CM_TEST_ID.set(float(test_id))
+
+        return hk
 
     def quit(self):
         self.controller.quit()
@@ -1278,8 +1285,9 @@ Arguments can be positional or keyword arguments, not both.</p></div>
     &#34;&#34;&#34;
 
     def __init__(self):
-        self._obsid: Optional[ObservationIdentifier] = None
-        self._setup_id: Optional[int] = None
+        self._obsid: ObservationIdentifier | None = None
+        self._setup_id: int | None = None
+        self._camera_name: str | None = None
 
         if is_storage_manager_active():
             self._storage = StorageProxy()
@@ -1311,25 +1319,10 @@ Arguments can be positional or keyword arguments, not both.</p></div>
         cache_thread.daemon = True
         cache_thread.start()
 
-        # Load the Setup &#39;Zero&#39; for the site
+        # Load the last used Setup
 
-        try:
-            if setup_info := _get_cached_setup_info(0):
-                setup_file = setup_info.path
-            else:
-                LOGGER.warning(f&#34;SetupInfo cache is not populated, &#34;
-                               f&#34;loading Setup 0 from {self._data_conf_location}&#34;)
-                setup_file = find_file(
-                    f&#34;SETUP_{SITE.ID}_00000_*.yaml&#34;, root=self._data_conf_location)
-            self._setup: Setup = Setup.from_yaml_file(setup_file)
-            self._setup_id = 0
-            LOGGER.info(f&#34;Setup loaded: {setup_file}&#34;)
-        except Exception as exc:
-            LOGGER.error(f&#34;Could not load Setup with id 0 for {SITE.ID} from &#34;
-                         f&#34;{self._data_conf_location} ({exc}).&#34;, exc_info=True
-            )
-            self._setup = None
-            self._setup_id = None
+        setup_id = load_last_setup_id()
+        self.load_setup(setup_id)
 
     def quit(self):
         if self._storage:
@@ -1357,7 +1350,7 @@ Arguments can be positional or keyword arguments, not both.</p></div>
         self._obsid = create_obsid(last_obsid, SITE.ID, self._setup_id)
 
         if self._storage:
-            response = self._storage.start_observation(self._obsid)
+            response = self._storage.start_observation(self._obsid, self._camera_name)
         else:
             return Failure(
                 &#34;Couldn&#39;t send start observation to Storage Manager, no Storage Manager available.&#34;
@@ -1466,7 +1459,8 @@ Arguments can be positional or keyword arguments, not both.</p></div>
 
         if len(setup_files) != 1:
             LOGGER.error(
-                msg := f&#34;Expected to find just one Setup YAML file, found {len(setup_files)}.&#34;
+                msg := f&#34;Expected to find just one Setup YAML file, found {len(setup_files)}. &#34;
+                       f&#34;[{SITE.ID = }, {setup_id = }, data_conf_location={self._data_conf_location}]&#34;
             )
             return Failure(&#34;Loading Setup&#34;, InternalError(msg))
 
@@ -1475,10 +1469,18 @@ Arguments can be positional or keyword arguments, not both.</p></div>
         try:
             self._setup = Setup.from_yaml_file(setup_file)
             self._setup_id = setup_id
+            self._camera_name = self._setup.camera.ID.lower()
             LOGGER.info(f&#34;New Setup loaded from {setup_file}&#34;)
+            save_last_setup_id(self._setup_id)
             return self._setup
         except SettingsError as exc:
             return Failure(f&#34;The Setup file can not be loaded from {setup_file}.&#34;, exc)
+        except AttributeError as exc:
+            msg = f&#34;The Setup [id={setup_id}] has no camera.ID entry.&#34;
+            LOGGER.error(msg, exc_info=True)
+            # FIXME: if we come here, shouldn&#39;t we load the zero Setup so that the problem of the
+            #        missing camera ID gets solved?
+            return Failure(msg)
 
     def get_setup(self, setup_id: int = None) -&gt; Union[Setup, Failure]:
         &#34;&#34;&#34;
@@ -1632,17 +1634,21 @@ Arguments can be positional or keyword arguments, not both.</p></div>
         setup.to_yaml_file(self._data_conf_location / filename)
 
         try:
-            _push_setup_to_repo(filename, description)
+            rc = _push_setup_to_repo(filename, description)
+            if isinstance(rc, Failure):
+                return rc
             _add_setup_info_to_cache(setup)
         except (Exception, ) as exc:
-            LOGGER.error(
-                &#34;Submit_setup could not complete it&#39;s task to send the new Setup to the repo.&#34;, exc_info=True)
+            msg = &#34;Submit_setup could not complete it&#39;s task to send the new Setup to the repo.&#34;
+            LOGGER.error(msg, exc_info=True)
+            return Failure(&#34;Submit_setup could not complete it&#39;s task to send the new Setup to the repo.&#34;, exc)
         else:
             LOGGER.info(f&#34;Successfully pushed Setup {setup_id} to the repository.&#34;)
 
         if replace:
             self._setup = setup
             self._setup_id = setup_id
+            save_last_setup_id(setup_id)
 
         return setup
 
@@ -1949,7 +1955,8 @@ tuples with the following content: setup_id, site_id, description, cam_id.</p>
 
     if len(setup_files) != 1:
         LOGGER.error(
-            msg := f&#34;Expected to find just one Setup YAML file, found {len(setup_files)}.&#34;
+            msg := f&#34;Expected to find just one Setup YAML file, found {len(setup_files)}. &#34;
+                   f&#34;[{SITE.ID = }, {setup_id = }, data_conf_location={self._data_conf_location}]&#34;
         )
         return Failure(&#34;Loading Setup&#34;, InternalError(msg))
 
@@ -1958,10 +1965,18 @@ tuples with the following content: setup_id, site_id, description, cam_id.</p>
     try:
         self._setup = Setup.from_yaml_file(setup_file)
         self._setup_id = setup_id
+        self._camera_name = self._setup.camera.ID.lower()
         LOGGER.info(f&#34;New Setup loaded from {setup_file}&#34;)
+        save_last_setup_id(self._setup_id)
         return self._setup
     except SettingsError as exc:
-        return Failure(f&#34;The Setup file can not be loaded from {setup_file}.&#34;, exc)</code></pre>
+        return Failure(f&#34;The Setup file can not be loaded from {setup_file}.&#34;, exc)
+    except AttributeError as exc:
+        msg = f&#34;The Setup [id={setup_id}] has no camera.ID entry.&#34;
+        LOGGER.error(msg, exc_info=True)
+        # FIXME: if we come here, shouldn&#39;t we load the zero Setup so that the problem of the
+        #        missing camera ID gets solved?
+        return Failure(msg)</code></pre>
 </details>
 </dd>
 <dt id="egse.confman.ConfigurationManagerController.quit"><code class="name flex">
@@ -1998,7 +2013,7 @@ tuples with the following content: setup_id, site_id, description, cam_id.</p>
 </details>
 </dd>
 <dt id="egse.confman.ConfigurationManagerController.submit_setup"><code class="name flex">
-<span>def <span class="ident">submit_setup</span></span>(<span>self, setup: <a title="egse.setup.Setup" href="../setup.html#egse.setup.Setup">Setup</a>, description: str, replace: bool = True)</span>
+<span>def <span class="ident">submit_setup</span></span>(<span>self, setup: Setup, description: str, replace: bool = True)</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -2036,17 +2051,21 @@ tuples with the following content: setup_id, site_id, description, cam_id.</p>
     setup.to_yaml_file(self._data_conf_location / filename)
 
     try:
-        _push_setup_to_repo(filename, description)
+        rc = _push_setup_to_repo(filename, description)
+        if isinstance(rc, Failure):
+            return rc
         _add_setup_info_to_cache(setup)
     except (Exception, ) as exc:
-        LOGGER.error(
-            &#34;Submit_setup could not complete it&#39;s task to send the new Setup to the repo.&#34;, exc_info=True)
+        msg = &#34;Submit_setup could not complete it&#39;s task to send the new Setup to the repo.&#34;
+        LOGGER.error(msg, exc_info=True)
+        return Failure(&#34;Submit_setup could not complete it&#39;s task to send the new Setup to the repo.&#34;, exc)
     else:
         LOGGER.info(f&#34;Successfully pushed Setup {setup_id} to the repository.&#34;)
 
     if replace:
         self._setup = setup
         self._setup_id = setup_id
+        save_last_setup_id(setup_id)
 
     return setup</code></pre>
 </details>
@@ -2139,7 +2158,7 @@ need that e.g. for testing purposes).</p></div>
         raise NotImplementedError
 
     @dynamic_interface
-    def submit_setup(self, setup: Setup, description: str) -&gt; Setup:
+    def submit_setup(self, setup: Setup, description: str, replace: bool = True) -&gt; Setup | None:
         raise NotImplementedError
 
     @dynamic_interface
@@ -2309,7 +2328,7 @@ def start_observation(self, function_info: dict) -&gt; Response:
 </details>
 </dd>
 <dt id="egse.confman.ConfigurationManagerInterface.submit_setup"><code class="name flex">
-<span>def <span class="ident">submit_setup</span></span>(<span>self, setup: <a title="egse.setup.Setup" href="../setup.html#egse.setup.Setup">Setup</a>, description: str) ‑> <a title="egse.setup.Setup" href="../setup.html#egse.setup.Setup">Setup</a></span>
+<span>def <span class="ident">submit_setup</span></span>(<span>self, setup: Setup, description: str, replace: bool = True) ‑> Setup | None</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -2318,77 +2337,15 @@ def start_observation(self, function_info: dict) -&gt; Response:
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">@dynamic_interface
-def submit_setup(self, setup: Setup, description: str) -&gt; Setup:
+def submit_setup(self, setup: Setup, description: str, replace: bool = True) -&gt; Setup | None:
     raise NotImplementedError</code></pre>
-</details>
-</dd>
-</dl>
-</dd>
-<dt id="egse.confman.ConfigurationManagerMetrics"><code class="flex name class">
-<span>class <span class="ident">ConfigurationManagerMetrics</span></span>
-<span>(</span><span>origin: str, dashboard: str)</span>
-</code></dt>
-<dd>
-<div class="desc"><p>Defines the metrics for the Configuration Manager that are maintained by the
-ConfigurationManagerProtocol class.</p></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">class ConfigurationManagerMetrics:
-    &#34;&#34;&#34;
-    Defines the metrics for the Configuration Manager that are maintained by the
-    ConfigurationManagerProtocol class.
-    &#34;&#34;&#34;
-    def __init__(self, origin: str, dashboard: str):
-        self.metrics = define_metrics(origin=origin, dashboard=dashboard)
-
-    def __contains__(self, item):
-        return self.metrics.__contains__(item)
-
-    def names(self):
-        return self.metrics.keys()
-
-    def update_metrics(self, name: str, value: Union[str, int]):
-        &#34;&#34;&#34;Update the CM metric parameter with the given value.&#34;&#34;&#34;
-        if name in self.metrics:
-            self.metrics[name].set(float(value))</code></pre>
-</details>
-<h3>Methods</h3>
-<dl>
-<dt id="egse.confman.ConfigurationManagerMetrics.names"><code class="name flex">
-<span>def <span class="ident">names</span></span>(<span>self)</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def names(self):
-    return self.metrics.keys()</code></pre>
-</details>
-</dd>
-<dt id="egse.confman.ConfigurationManagerMetrics.update_metrics"><code class="name flex">
-<span>def <span class="ident">update_metrics</span></span>(<span>self, name: str, value: Union[int, str])</span>
-</code></dt>
-<dd>
-<div class="desc"><p>Update the CM metric parameter with the given value.</p></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def update_metrics(self, name: str, value: Union[str, int]):
-    &#34;&#34;&#34;Update the CM metric parameter with the given value.&#34;&#34;&#34;
-    if name in self.metrics:
-        self.metrics[name].set(float(value))</code></pre>
 </details>
 </dd>
 </dl>
 </dd>
 <dt id="egse.confman.ConfigurationManagerProtocol"><code class="flex name class">
 <span>class <span class="ident">ConfigurationManagerProtocol</span></span>
-<span>(</span><span>control_server: <a title="egse.control.ControlServer" href="../control.html#egse.control.ControlServer">ControlServer</a>)</span>
+<span>(</span><span>control_server: ControlServer)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>This class is the glue between the control servers and the hardware
@@ -2414,11 +2371,6 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
             COMMAND_SETTINGS.Commands,
             ConfigurationManagerCommand,
             ConfigurationManagerController,
-        )
-
-        self._metrics = ConfigurationManagerMetrics(
-            origin=control_server.get_storage_mnemonic(),
-            dashboard=&#34;CM_MON&#34;
         )
 
         self.build_device_method_lookup_table(self.controller)
@@ -2454,12 +2406,7 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
         setup_id = self.controller.get_setup_id()
         site_id = self.controller.get_site_id()
 
-        # Update the metrics
-
-        self._metrics.update_metrics(&#39;CM_SETUP_ID&#39;, setup_id)
-        self._metrics.update_metrics(&#39;CM_TEST_ID&#39;, test_id)
-
-        return {
+        hk = {
             &#34;timestamp&#34;: format_datetime(),
             &#34;CM_SITE_ID&#34;: site_id,
             &#34;CM_SETUP_ID&#34;: setup_id,
@@ -2468,6 +2415,13 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
             &#34;CM_CGSE_VERSION&#34;: self.cgse_version,
             &#34;CM_GIT_VERSION&#34;: self.git_version,
         }
+
+        # Update the metrics
+
+        CM_SETUP_ID.set(float(setup_id))
+        CM_TEST_ID.set(float(test_id))
+
+        return hk
 
     def quit(self):
         self.controller.quit()</code></pre>
@@ -2582,7 +2536,7 @@ from settings file]</dd>
 </dd>
 <dt id="egse.confman.SetupInfo"><code class="flex name class">
 <span>class <span class="ident">SetupInfo</span></span>
-<span>(</span><span>path: pathlib.Path, site_id: str, cam_id: str, description: str)</span>
+<span>(</span><span>path: Path, site_id: str, cam_id: str, description: str)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>SetupInfo(path, site_id, cam_id, description)</p></div>
@@ -2701,13 +2655,6 @@ from settings file]</dd>
 <li><code><a title="egse.confman.ConfigurationManagerInterface.reload_setups" href="#egse.confman.ConfigurationManagerInterface.reload_setups">reload_setups</a></code></li>
 <li><code><a title="egse.confman.ConfigurationManagerInterface.start_observation" href="#egse.confman.ConfigurationManagerInterface.start_observation">start_observation</a></code></li>
 <li><code><a title="egse.confman.ConfigurationManagerInterface.submit_setup" href="#egse.confman.ConfigurationManagerInterface.submit_setup">submit_setup</a></code></li>
-</ul>
-</li>
-<li>
-<h4><code><a title="egse.confman.ConfigurationManagerMetrics" href="#egse.confman.ConfigurationManagerMetrics">ConfigurationManagerMetrics</a></code></h4>
-<ul class="">
-<li><code><a title="egse.confman.ConfigurationManagerMetrics.names" href="#egse.confman.ConfigurationManagerMetrics.names">names</a></code></li>
-<li><code><a title="egse.confman.ConfigurationManagerMetrics.update_metrics" href="#egse.confman.ConfigurationManagerMetrics.update_metrics">update_metrics</a></code></li>
 </ul>
 </li>
 <li>

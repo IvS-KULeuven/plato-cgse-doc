@@ -73,6 +73,9 @@ class EnsembleController(SocketDevice, EnsembleInterface):
         # Initialize the parent class with the port and baudrate
         super().__init__(hostname=self._hostname, port=self._port, timeout=10000)
         self.connect()
+        
+        self.set_absolute()
+        self.set_wait_mode(&#39;NOWAIT&#39;)
 
 
     def get_idn(self):
@@ -90,16 +93,17 @@ class EnsembleController(SocketDevice, EnsembleInterface):
     def clear_errors(self):
         return self.query(self._commands[&#39;clear_errors&#39;].get_cmd_string())
 
+    def get_plane_status(self):
+        status = self.query(self._commands[&#39;get_plane_status&#39;].get_cmd_string())
+        return int(status) &amp; 0xFFFFFFF # turn into unsigned
 
     def get_status(self, axis):
         status = self.query(self._commands[&#39;get_status&#39;].get_cmd_string(axis=axis))
         return int(status) &amp; 0xFFFFFFFF # turn into unsigned
 
-
     def get_fault(self, axis):
         fault = self.query(self._commands[&#39;get_fault&#39;].get_cmd_string(axis=axis))
         return int(fault) &amp; 0xFFFFFFFF # turn into unsigned
-
 
     def set_blocking(self, axis, enable):
         enable_string = &#39;ON&#39; if enable else &#39;OFF&#39;
@@ -130,11 +134,22 @@ class EnsembleController(SocketDevice, EnsembleInterface):
     def enable_axis(self, axis):
         logger.info(f&#34;Enabeling the {axis} axis&#34;)
         return self.query(f&#34;ENABLE {axis}\n&#34;)
-
+    
+    def enable_axes(self):
+        logger.info(&#34;Enabling X Y Axes&#34;)
+        return self.query(&#34;ENABLE X Y\n&#34;)
+    
     def disable_axis(self, axis):
         logger.info(f&#34;Disabeling the {axis} axis&#34;)
         return self.query(f&#34;DISABLE {axis}\n&#34;)
+    
+    def disable_axes(self):
+        logger.info(&#34;Disabling the X Y axes&#34;)
+        return self.query(f&#34;DISABLE X Y\n&#34;)
 
+    def set_wait_mode(self, mode):
+        return self.query(f&#34;WAIT MODE {mode}\n&#34;)
+    
     def set_absolute(self):
         return self.query(self._commands[&#39;set_absolute&#39;].get_cmd_string())
 
@@ -153,7 +168,7 @@ class EnsembleController(SocketDevice, EnsembleInterface):
 
         logger.info(f&#34;Moving {axis} axis to {position}&#34;)
 
-        self.query(f&#34;MOVEABS {axis} {position} {axis}F {self.speed}\n&#34;)
+        self.query(f&#34;LINEAR {axis} {position} {axis}F {self.speed}\n&#34;)
 
     def move_axes_degrees(self, position_x, position_y):
         if not self.is_homed(&#39;X&#39;) or not self.is_homed(&#39;Y&#39;):
@@ -184,7 +199,7 @@ class EnsembleController(SocketDevice, EnsembleInterface):
 
         logger.info(f&#34;Moving Y to {position_y} and X to {position_x}&#34;)
 
-        self.query(f&#34;MOVEABS X {position_x} Y {position_y} XF {self.speed} YF {self.speed}\n&#34;)
+        self.query(f&#34;LINEAR X {position_x} Y {position_y} F {self.speed}\n&#34;)
 
 
     def home_axis(self, axis):
@@ -206,9 +221,7 @@ class EnsembleController(SocketDevice, EnsembleInterface):
 
         logger.info(f&#34;Homing both axis&#34;)
 
-        self.query(f&#34;HOME Y\n&#34;)
-
-        self.query(f&#34;HOME X\n&#34;)
+        self.query(f&#34;HOME X Y\n&#34;)
 
         logger.info(f&#34;Homing complete&#34;)
 
@@ -333,6 +346,9 @@ if __name__ == &#34;__main__&#34;:
         # Initialize the parent class with the port and baudrate
         super().__init__(hostname=self._hostname, port=self._port, timeout=10000)
         self.connect()
+        
+        self.set_absolute()
+        self.set_wait_mode(&#39;NOWAIT&#39;)
 
 
     def get_idn(self):
@@ -350,16 +366,17 @@ if __name__ == &#34;__main__&#34;:
     def clear_errors(self):
         return self.query(self._commands[&#39;clear_errors&#39;].get_cmd_string())
 
+    def get_plane_status(self):
+        status = self.query(self._commands[&#39;get_plane_status&#39;].get_cmd_string())
+        return int(status) &amp; 0xFFFFFFF # turn into unsigned
 
     def get_status(self, axis):
         status = self.query(self._commands[&#39;get_status&#39;].get_cmd_string(axis=axis))
         return int(status) &amp; 0xFFFFFFFF # turn into unsigned
 
-
     def get_fault(self, axis):
         fault = self.query(self._commands[&#39;get_fault&#39;].get_cmd_string(axis=axis))
         return int(fault) &amp; 0xFFFFFFFF # turn into unsigned
-
 
     def set_blocking(self, axis, enable):
         enable_string = &#39;ON&#39; if enable else &#39;OFF&#39;
@@ -390,11 +407,22 @@ if __name__ == &#34;__main__&#34;:
     def enable_axis(self, axis):
         logger.info(f&#34;Enabeling the {axis} axis&#34;)
         return self.query(f&#34;ENABLE {axis}\n&#34;)
-
+    
+    def enable_axes(self):
+        logger.info(&#34;Enabling X Y Axes&#34;)
+        return self.query(&#34;ENABLE X Y\n&#34;)
+    
     def disable_axis(self, axis):
         logger.info(f&#34;Disabeling the {axis} axis&#34;)
         return self.query(f&#34;DISABLE {axis}\n&#34;)
+    
+    def disable_axes(self):
+        logger.info(&#34;Disabling the X Y axes&#34;)
+        return self.query(f&#34;DISABLE X Y\n&#34;)
 
+    def set_wait_mode(self, mode):
+        return self.query(f&#34;WAIT MODE {mode}\n&#34;)
+    
     def set_absolute(self):
         return self.query(self._commands[&#39;set_absolute&#39;].get_cmd_string())
 
@@ -413,7 +441,7 @@ if __name__ == &#34;__main__&#34;:
 
         logger.info(f&#34;Moving {axis} axis to {position}&#34;)
 
-        self.query(f&#34;MOVEABS {axis} {position} {axis}F {self.speed}\n&#34;)
+        self.query(f&#34;LINEAR {axis} {position} {axis}F {self.speed}\n&#34;)
 
     def move_axes_degrees(self, position_x, position_y):
         if not self.is_homed(&#39;X&#39;) or not self.is_homed(&#39;Y&#39;):
@@ -444,7 +472,7 @@ if __name__ == &#34;__main__&#34;:
 
         logger.info(f&#34;Moving Y to {position_y} and X to {position_x}&#34;)
 
-        self.query(f&#34;MOVEABS X {position_x} Y {position_y} XF {self.speed} YF {self.speed}\n&#34;)
+        self.query(f&#34;LINEAR X {position_x} Y {position_y} F {self.speed}\n&#34;)
 
 
     def home_axis(self, axis):
@@ -466,9 +494,7 @@ if __name__ == &#34;__main__&#34;:
 
         logger.info(f&#34;Homing both axis&#34;)
 
-        self.query(f&#34;HOME Y\n&#34;)
-
-        self.query(f&#34;HOME X\n&#34;)
+        self.query(f&#34;HOME X Y\n&#34;)
 
         logger.info(f&#34;Homing complete&#34;)
 
@@ -579,6 +605,20 @@ if __name__ == &#34;__main__&#34;:
     return self.query(self._commands[&#39;clear_errors&#39;].get_cmd_string())</code></pre>
 </details>
 </dd>
+<dt id="egse.stages.aerotech.ensemble_controller.EnsembleController.disable_axes"><code class="name flex">
+<span>def <span class="ident">disable_axes</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def disable_axes(self):
+    logger.info(&#34;Disabling the X Y axes&#34;)
+    return self.query(f&#34;DISABLE X Y\n&#34;)</code></pre>
+</details>
+</dd>
 <dt id="egse.stages.aerotech.ensemble_controller.EnsembleController.disable_axis"><code class="name flex">
 <span>def <span class="ident">disable_axis</span></span>(<span>self, axis)</span>
 </code></dt>
@@ -591,6 +631,20 @@ if __name__ == &#34;__main__&#34;:
 <pre><code class="python">def disable_axis(self, axis):
     logger.info(f&#34;Disabeling the {axis} axis&#34;)
     return self.query(f&#34;DISABLE {axis}\n&#34;)</code></pre>
+</details>
+</dd>
+<dt id="egse.stages.aerotech.ensemble_controller.EnsembleController.enable_axes"><code class="name flex">
+<span>def <span class="ident">enable_axes</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def enable_axes(self):
+    logger.info(&#34;Enabling X Y Axes&#34;)
+    return self.query(&#34;ENABLE X Y\n&#34;)</code></pre>
 </details>
 </dd>
 <dt id="egse.stages.aerotech.ensemble_controller.EnsembleController.enable_axis"><code class="name flex">
@@ -725,6 +779,20 @@ if __name__ == &#34;__main__&#34;:
     return int(self.query(self._commands[&#39;get_parameter&#39;].get_cmd_string(index=paramId)))</code></pre>
 </details>
 </dd>
+<dt id="egse.stages.aerotech.ensemble_controller.EnsembleController.get_plane_status"><code class="name flex">
+<span>def <span class="ident">get_plane_status</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_plane_status(self):
+    status = self.query(self._commands[&#39;get_plane_status&#39;].get_cmd_string())
+    return int(status) &amp; 0xFFFFFFF # turn into unsigned</code></pre>
+</details>
+</dd>
 <dt id="egse.stages.aerotech.ensemble_controller.EnsembleController.get_status"><code class="name flex">
 <span>def <span class="ident">get_status</span></span>(<span>self, axis)</span>
 </code></dt>
@@ -755,9 +823,7 @@ if __name__ == &#34;__main__&#34;:
 
     logger.info(f&#34;Homing both axis&#34;)
 
-    self.query(f&#34;HOME Y\n&#34;)
-
-    self.query(f&#34;HOME X\n&#34;)
+    self.query(f&#34;HOME X Y\n&#34;)
 
     logger.info(f&#34;Homing complete&#34;)</code></pre>
 </details>
@@ -847,7 +913,7 @@ if __name__ == &#34;__main__&#34;:
 
     logger.info(f&#34;Moving Y to {position_y} and X to {position_x}&#34;)
 
-    self.query(f&#34;MOVEABS X {position_x} Y {position_y} XF {self.speed} YF {self.speed}\n&#34;)</code></pre>
+    self.query(f&#34;LINEAR X {position_x} Y {position_y} F {self.speed}\n&#34;)</code></pre>
 </details>
 </dd>
 <dt id="egse.stages.aerotech.ensemble_controller.EnsembleController.move_axis_degrees"><code class="name flex">
@@ -871,7 +937,7 @@ if __name__ == &#34;__main__&#34;:
 
     logger.info(f&#34;Moving {axis} axis to {position}&#34;)
 
-    self.query(f&#34;MOVEABS {axis} {position} {axis}F {self.speed}\n&#34;)</code></pre>
+    self.query(f&#34;LINEAR {axis} {position} {axis}F {self.speed}\n&#34;)</code></pre>
 </details>
 </dd>
 <dt id="egse.stages.aerotech.ensemble_controller.EnsembleController.print_status"><code class="name flex">
@@ -1020,6 +1086,19 @@ if __name__ == &#34;__main__&#34;:
     return self.query(self._commands[&#39;set_parameter&#39;].get_cmd_string(index=paramId, value=value))</code></pre>
 </details>
 </dd>
+<dt id="egse.stages.aerotech.ensemble_controller.EnsembleController.set_wait_mode"><code class="name flex">
+<span>def <span class="ident">set_wait_mode</span></span>(<span>self, mode)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def set_wait_mode(self, mode):
+    return self.query(f&#34;WAIT MODE {mode}\n&#34;)</code></pre>
+</details>
+</dd>
 </dl>
 <h3>Inherited members</h3>
 <ul class="hlist">
@@ -1082,7 +1161,9 @@ if __name__ == &#34;__main__&#34;:
 <ul class="">
 <li><code><a title="egse.stages.aerotech.ensemble_controller.EnsembleController.abort" href="#egse.stages.aerotech.ensemble_controller.EnsembleController.abort">abort</a></code></li>
 <li><code><a title="egse.stages.aerotech.ensemble_controller.EnsembleController.clear_errors" href="#egse.stages.aerotech.ensemble_controller.EnsembleController.clear_errors">clear_errors</a></code></li>
+<li><code><a title="egse.stages.aerotech.ensemble_controller.EnsembleController.disable_axes" href="#egse.stages.aerotech.ensemble_controller.EnsembleController.disable_axes">disable_axes</a></code></li>
 <li><code><a title="egse.stages.aerotech.ensemble_controller.EnsembleController.disable_axis" href="#egse.stages.aerotech.ensemble_controller.EnsembleController.disable_axis">disable_axis</a></code></li>
+<li><code><a title="egse.stages.aerotech.ensemble_controller.EnsembleController.enable_axes" href="#egse.stages.aerotech.ensemble_controller.EnsembleController.enable_axes">enable_axes</a></code></li>
 <li><code><a title="egse.stages.aerotech.ensemble_controller.EnsembleController.enable_axis" href="#egse.stages.aerotech.ensemble_controller.EnsembleController.enable_axis">enable_axis</a></code></li>
 <li><code><a title="egse.stages.aerotech.ensemble_controller.EnsembleController.get_actual_current" href="#egse.stages.aerotech.ensemble_controller.EnsembleController.get_actual_current">get_actual_current</a></code></li>
 <li><code><a title="egse.stages.aerotech.ensemble_controller.EnsembleController.get_actual_position" href="#egse.stages.aerotech.ensemble_controller.EnsembleController.get_actual_position">get_actual_position</a></code></li>
@@ -1093,6 +1174,7 @@ if __name__ == &#34;__main__&#34;:
 <li><code><a title="egse.stages.aerotech.ensemble_controller.EnsembleController.get_error_position" href="#egse.stages.aerotech.ensemble_controller.EnsembleController.get_error_position">get_error_position</a></code></li>
 <li><code><a title="egse.stages.aerotech.ensemble_controller.EnsembleController.get_fault" href="#egse.stages.aerotech.ensemble_controller.EnsembleController.get_fault">get_fault</a></code></li>
 <li><code><a title="egse.stages.aerotech.ensemble_controller.EnsembleController.get_parameter" href="#egse.stages.aerotech.ensemble_controller.EnsembleController.get_parameter">get_parameter</a></code></li>
+<li><code><a title="egse.stages.aerotech.ensemble_controller.EnsembleController.get_plane_status" href="#egse.stages.aerotech.ensemble_controller.EnsembleController.get_plane_status">get_plane_status</a></code></li>
 <li><code><a title="egse.stages.aerotech.ensemble_controller.EnsembleController.get_status" href="#egse.stages.aerotech.ensemble_controller.EnsembleController.get_status">get_status</a></code></li>
 <li><code><a title="egse.stages.aerotech.ensemble_controller.EnsembleController.home_axes" href="#egse.stages.aerotech.ensemble_controller.EnsembleController.home_axes">home_axes</a></code></li>
 <li><code><a title="egse.stages.aerotech.ensemble_controller.EnsembleController.home_axis" href="#egse.stages.aerotech.ensemble_controller.EnsembleController.home_axis">home_axis</a></code></li>
@@ -1107,6 +1189,7 @@ if __name__ == &#34;__main__&#34;:
 <li><code><a title="egse.stages.aerotech.ensemble_controller.EnsembleController.set_blocking" href="#egse.stages.aerotech.ensemble_controller.EnsembleController.set_blocking">set_blocking</a></code></li>
 <li><code><a title="egse.stages.aerotech.ensemble_controller.EnsembleController.set_incremental" href="#egse.stages.aerotech.ensemble_controller.EnsembleController.set_incremental">set_incremental</a></code></li>
 <li><code><a title="egse.stages.aerotech.ensemble_controller.EnsembleController.set_parameter" href="#egse.stages.aerotech.ensemble_controller.EnsembleController.set_parameter">set_parameter</a></code></li>
+<li><code><a title="egse.stages.aerotech.ensemble_controller.EnsembleController.set_wait_mode" href="#egse.stages.aerotech.ensemble_controller.EnsembleController.set_wait_mode">set_wait_mode</a></code></li>
 </ul>
 </li>
 <li>

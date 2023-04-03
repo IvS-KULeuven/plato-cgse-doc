@@ -31,6 +31,7 @@
 This module defines classes and functions to work with SpaceWire packets.
 &#34;&#34;&#34;
 import logging
+import os
 import struct
 from enum import IntEnum
 from typing import Tuple
@@ -46,6 +47,12 @@ from egse.setup import SetupError
 from egse.state import GlobalState
 
 MODULE_LOGGER = logging.getLogger(__name__)
+
+try:
+    _ = os.environ[&#34;PLATO_CAMERA_IS_EM&#34;]
+    TWOS_COMPLEMENT_OFFSET = 32768 if _.capitalize() in (&#34;1&#34;, &#34;True&#34;, &#34;Yes&#34;) else 0
+except KeyError:
+    TWOS_COMPLEMENT_OFFSET = 0
 
 # RMAP Error Codes and Constants -------------------------------------------------------------------
 
@@ -82,7 +89,6 @@ HK_AREA_START = 0x0000_0700
 HK_AREA_END = 0x0000_07FC
 WINDOWING_AREA_START = 0x0080_0000
 WINDOWING_AREA_END = 0x00FF_FFFC
-
 
 class RMAPError(Error):
     &#34;&#34;&#34;An RMAP specific Error.&#34;&#34;&#34;
@@ -481,6 +487,7 @@ class DataPacketType:
 
     def __init__(self, data_type: int = 0):
         self._data_type: int = data_type
+        # self.n_fee_side = GlobalState.setup.camera.fee.ccd_sides.enum
 
     @property
     def value(self) -&gt; int:
@@ -552,7 +559,7 @@ class DataPacketType:
 
     def __str__(self) -&gt; str:
         from egse.fee import n_fee_mode
-        from egse.fee import n_fee_side
+        n_fee_side = GlobalState.setup.camera.fee.ccd_sides.enum
 
         return (
             f&#34;mode:{n_fee_mode(self.mode).name}, last_packet:{self.last_packet}, &#34;
@@ -576,7 +583,7 @@ def to_string(data: Union[DataPacketType]) -&gt; str:
         data: a DataPacketType
     &#34;&#34;&#34;
     from egse.fee import n_fee_mode
-    from egse.fee import n_fee_side
+    n_fee_side = GlobalState.setup.camera.fee.ccd_sides.enum
 
     if isinstance(data, DataPacketType):
         try:
@@ -614,6 +621,8 @@ class DataPacketHeader:
         if len(self.header_data) != 10:
             raise ValueError(f&#34;The length of the header for a data packet shall be 10 bytes, &#34;
                              f&#34;got {len(self.header_data)}.&#34;)
+
+        self.n_fee_side = GlobalState.setup.camera.fee.ccd_sides.enum
 
     def data_as_bytes(self) -&gt; bytes:
         &#34;&#34;&#34;Returns the full header as a bytes object.&#34;&#34;&#34;
@@ -698,7 +707,6 @@ class DataPacketHeader:
 
     def as_dict(self):
         from egse.fee import n_fee_mode
-        from egse.fee import n_fee_side
 
         data_packet_type = DataPacketType(self.type)
         return dict(
@@ -711,7 +719,7 @@ class DataPacketHeader:
             packet_type=data_packet_type.packet_type,
             frame_number=data_packet_type.frame_number,
             ccd_number=data_packet_type.ccd_number,
-            ccd_side=n_fee_side(data_packet_type.ccd_side).name,
+            ccd_side=self.n_fee_side(data_packet_type.ccd_side).name,
             last_packet=data_packet_type.last_packet,
             mode=n_fee_mode(data_packet_type.mode).name,
         )
@@ -886,7 +894,7 @@ class DataPacket(SpaceWirePacket):
 
             # Needs further confirmation, but the following line should have the same effect as
             # the previous three lines.
-            data_2 = np.frombuffer(self._bytes, offset=10, dtype=&#39;&gt;i2&#39;) + 32768
+            data_2 = np.frombuffer(self._bytes, offset=10, dtype=&#39;&gt;i2&#39;) + TWOS_COMPLEMENT_OFFSET
 
             # Test if the results are identical, left the code in until we are fully confident
             # if diff := np.sum(np.cumsum(data_1 - data_2)):
@@ -2459,7 +2467,7 @@ processing or conversion.</p>
         data: a DataPacketType
     &#34;&#34;&#34;
     from egse.fee import n_fee_mode
-    from egse.fee import n_fee_side
+    n_fee_side = GlobalState.setup.camera.fee.ccd_sides.enum
 
     if isinstance(data, DataPacketType):
         try:
@@ -2732,7 +2740,7 @@ factory method or the constructors of one of the sub-classes of this DataPacket 
 
             # Needs further confirmation, but the following line should have the same effect as
             # the previous three lines.
-            data_2 = np.frombuffer(self._bytes, offset=10, dtype=&#39;&gt;i2&#39;) + 32768
+            data_2 = np.frombuffer(self._bytes, offset=10, dtype=&#39;&gt;i2&#39;) + TWOS_COMPLEMENT_OFFSET
 
             # Test if the results are identical, left the code in until we are fully confident
             # if diff := np.sum(np.cumsum(data_1 - data_2)):
@@ -2897,7 +2905,7 @@ def data_as_ndarray(self):
 
         # Needs further confirmation, but the following line should have the same effect as
         # the previous three lines.
-        data_2 = np.frombuffer(self._bytes, offset=10, dtype=&#39;&gt;i2&#39;) + 32768
+        data_2 = np.frombuffer(self._bytes, offset=10, dtype=&#39;&gt;i2&#39;) + TWOS_COMPLEMENT_OFFSET
 
         # Test if the results are identical, left the code in until we are fully confident
         # if diff := np.sum(np.cumsum(data_1 - data_2)):
@@ -3057,6 +3065,8 @@ def type(self) -&gt; DataPacketType:
             raise ValueError(f&#34;The length of the header for a data packet shall be 10 bytes, &#34;
                              f&#34;got {len(self.header_data)}.&#34;)
 
+        self.n_fee_side = GlobalState.setup.camera.fee.ccd_sides.enum
+
     def data_as_bytes(self) -&gt; bytes:
         &#34;&#34;&#34;Returns the full header as a bytes object.&#34;&#34;&#34;
         return bytes(self.header_data)
@@ -3140,7 +3150,6 @@ def type(self) -&gt; DataPacketType:
 
     def as_dict(self):
         from egse.fee import n_fee_mode
-        from egse.fee import n_fee_side
 
         data_packet_type = DataPacketType(self.type)
         return dict(
@@ -3153,7 +3162,7 @@ def type(self) -&gt; DataPacketType:
             packet_type=data_packet_type.packet_type,
             frame_number=data_packet_type.frame_number,
             ccd_number=data_packet_type.ccd_number,
-            ccd_side=n_fee_side(data_packet_type.ccd_side).name,
+            ccd_side=self.n_fee_side(data_packet_type.ccd_side).name,
             last_packet=data_packet_type.last_packet,
             mode=n_fee_mode(data_packet_type.mode).name,
         )</code></pre>
@@ -3282,7 +3291,6 @@ def type_as_object(self):
 </summary>
 <pre><code class="python">def as_dict(self):
     from egse.fee import n_fee_mode
-    from egse.fee import n_fee_side
 
     data_packet_type = DataPacketType(self.type)
     return dict(
@@ -3295,7 +3303,7 @@ def type_as_object(self):
         packet_type=data_packet_type.packet_type,
         frame_number=data_packet_type.frame_number,
         ccd_number=data_packet_type.ccd_number,
-        ccd_side=n_fee_side(data_packet_type.ccd_side).name,
+        ccd_side=self.n_fee_side(data_packet_type.ccd_side).name,
         last_packet=data_packet_type.last_packet,
         mode=n_fee_mode(data_packet_type.mode).name,
     )</code></pre>
@@ -3353,6 +3361,7 @@ def type_as_object(self):
 
     def __init__(self, data_type: int = 0):
         self._data_type: int = data_type
+        # self.n_fee_side = GlobalState.setup.camera.fee.ccd_sides.enum
 
     @property
     def value(self) -&gt; int:
@@ -3424,7 +3433,7 @@ def type_as_object(self):
 
     def __str__(self) -&gt; str:
         from egse.fee import n_fee_mode
-        from egse.fee import n_fee_side
+        n_fee_side = GlobalState.setup.camera.fee.ccd_sides.enum
 
         return (
             f&#34;mode:{n_fee_mode(self.mode).name}, last_packet:{self.last_packet}, &#34;

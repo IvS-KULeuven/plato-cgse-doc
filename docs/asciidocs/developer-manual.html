@@ -515,8 +515,8 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <h1>Common–EGSE : Developer Manual</h1>
 <div class="details">
 <span id="author" class="author">Rik Huygen, Sara Regibo</span><br>
-<span id="revnumber">version 1.4,</span>
-<span id="revdate">12/03/2023</span>
+<span id="revnumber">version 1.5,</span>
+<span id="revdate">03/04/2023</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -591,8 +591,9 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <li><a href="#_the_control_server">6.1. The Control Server</a></li>
 <li><a href="#_the_proxy_class">6.2. The Proxy Class</a></li>
 <li><a href="#_the_protocol_class">6.3. The Protocol Class</a></li>
-<li><a href="#_response_failure_success">6.4. Response, Failure, Success</a></li>
-<li><a href="#_dynamic_commanding">6.5. Dynamic Commanding</a></li>
+<li><a href="#services">6.4. Services</a></li>
+<li><a href="#_response_failure_success">6.5. Response, Failure, Success</a></li>
+<li><a href="#_dynamic_commanding">6.6. Dynamic Commanding</a></li>
 </ul>
 </li>
 <li><a href="#_the_setup">7. The Setup</a>
@@ -720,12 +721,22 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <div class="sectionbody">
 <div class="dlist">
 <dl>
+<dt class="hdlist1">03/04/2023 — v1.5</dt>
+<dd>
+<div class="ulist">
+<ul>
+<li>
+<p>Added a section 'Services' in the Commanding Concepts section, see <a href="#services">Section 6.4</a></p>
+</li>
+</ul>
+</div>
+</dd>
 <dt class="hdlist1">12/03/2023 — v1.4</dt>
 <dd>
 <div class="ulist">
 <ul>
 <li>
-<p>Added description of the arguments that can be used with the <code>@dynamic_command</code> decorator, see <a href="#_dynamic_command_decorator">Section 6.5.3</a></p>
+<p>Added description of the arguments that can be used with the <code>@dynamic_command</code> decorator, see <a href="#_dynamic_command_decorator">Section 6.6.3</a></p>
 </li>
 <li>
 <p>Added a section on creating multiple control servers for identical devices, see <a href="#multiple-idential-devices">Section 6.1.1</a>.</p>
@@ -2579,7 +2590,59 @@ class ControllerFactory(DeviceFactoryInterface):
 </div>
 </div>
 <div class="sect2">
-<h3 id="_response_failure_success">6.4. Response, Failure, Success</h3>
+<h3 id="services">6.4. Services</h3>
+<div class="paragraph">
+<p>The control servers are the single point access to your equipment and devices. Commanding the device is handled by the Protocol and Controller classes on the server side and by the Proxy class on the client side. In addition to commanding your devices, you would also like to have some control on the behaviour of your device control servers. That is where the Service slass comes into play. The Services provide common commands that act on the control server instead of on the device. These commands are send through a Service Proxy that you can request for each of the control servers. Below is a code snippet asking for the service proxy of the hexapod PUNA and requesting the status of the control server process.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>&gt;&gt;&gt; from egse.hexapod.symetrie.puna import PunaProxy
+
+&gt;&gt;&gt; with PunaProxy() as puna, puna.get_service_proxy() as srv:
+...     print(srv.get_process_status())
+{
+    'timestamp': '2023-03-29T08:00:31.708+0000',
+    'delay': 1000,
+    'PID': 39242,
+    'Up': 486.7373969554901,
+    'UUID': UUID('a74c0f52-ce06-11ed-a5d1-acde48001122'),
+    'RSS': 115720192,
+    'USS': 98033664,
+    'CPU User': 10.516171776,
+    'CPU System': 3.300619776,
+    'CPU count': 6,
+    'CPU%': 2.9
+}</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Status information for the control servers is also sent out on the monitoring port, so if you need to monitor the process status, its better to subscribe to the monitoring protocol.</p>
+</div>
+<div class="paragraph">
+<p>There are two commands that you can use to change the frequency by which the control server is sending out information, one is for changing the housekeeping frequency, one is for changing the monitoring frequency.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>set_hk_frequency(freq: float) -&gt; float</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>This function sets the housekeeping frequency (in Hz) to the given freq value. This is only approximate since the frequency is converted into a delay time and the actual execution of the <code>get_housekeeping()</code> function is subject to the load on the server and the overhead of the timing. What will happen is that the delay time that will be applied is never shorter than the average execution time of the <code>get_housekeeping()</code> method increased with a 200ms overhead to allow the control server to respond to other commands.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>set_monitoring_frequency(freq: float) -&gt; float</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>This function works similar to the <code>set_hk_frequency()</code> but sets the delay time on the <code>get_status()</code> function of the device protocol.</p>
+</div>
+<div class="paragraph">
+<p>When you want to optimize these frequencies, make sure you have an idea of the execution time of either function. If for instance the <code>get_status()</code> function takes 500ms to complete, it will be impossible to request a monitoring update frequency of 2Hz.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_response_failure_success">6.5. Response, Failure, Success</h3>
 <div class="paragraph">
 <p>The <code>control.py</code> module defines a number of classes that can be used to send a response on a device command to the client. Responses are handle by the <code>Protocol</code> class in the <code>handle_device_method()</code> method.</p>
 </div>
@@ -2591,9 +2654,9 @@ class ControllerFactory(DeviceFactoryInterface):
 </div>
 </div>
 <div class="sect2">
-<h3 id="_dynamic_commanding">6.5. Dynamic Commanding</h3>
+<h3 id="_dynamic_commanding">6.6. Dynamic Commanding</h3>
 <div class="sect3">
-<h4 id="_what_should_this_section_contain">6.5.1. What should this section contain?</h4>
+<h4 id="_what_should_this_section_contain">6.6.1. What should this section contain?</h4>
 <div class="ulist checklist">
 <ul class="checklist">
 <li>
@@ -2610,7 +2673,7 @@ class ControllerFactory(DeviceFactoryInterface):
 </div>
 </div>
 <div class="sect3">
-<h4 id="_dynamic_interface_decorator">6.5.2. The Dynamic Interface Decorator</h4>
+<h4 id="_dynamic_interface_decorator">6.6.2. The Dynamic Interface Decorator</h4>
 <div class="paragraph">
 <p>A <code>@dynamic_interface</code> decorator adds a private static variable to a function or method. The variable name that is attributed is <code>__dynamic_interface</code> and it is used as a marker on the function.</p>
 </div>
@@ -2664,7 +2727,7 @@ class ControllerFactory(DeviceFactoryInterface):
 </div>
 </div>
 <div class="sect3">
-<h4 id="_dynamic_command_decorator">6.5.3. The Dynamic Command Decorator</h4>
+<h4 id="_dynamic_command_decorator">6.6.3. The Dynamic Command Decorator</h4>
 <div class="paragraph">
 <p>One of the problems of the dynamic interface decorator is that during construction of the Proxy class, the control server must be contacted to request the list of commands, when this fails and the control server is not available, the Proxy is not functional.</p>
 </div>
@@ -2676,7 +2739,7 @@ class ControllerFactory(DeviceFactoryInterface):
 </div>
 </div>
 <div class="sect3">
-<h4 id="_update_your_code_to_use_the_dynamic_command_decorator">6.5.4. Update your code to use the @dynamic_command decorator</h4>
+<h4 id="_update_your_code_to_use_the_dynamic_command_decorator">6.6.4. Update your code to use the @dynamic_command decorator</h4>
 <div class="ulist">
 <ul>
 <li>
@@ -5465,8 +5528,8 @@ Below this point we have miscellaneous topics that still need their place in the
 </div>
 <div id="footer">
 <div id="footer-text">
-Version 1.4<br>
-Last updated 2023-03-12 16:47:41 +0100
+Version 1.5<br>
+Last updated 2023-04-03 13:57:31 +0200
 </div>
 </div>
 <script type="text/x-mathjax-config">

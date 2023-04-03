@@ -75,6 +75,7 @@ from egse.settings import Settings
 from egse.spw import DataPacketHeader
 from egse.spw import PacketType
 from egse.spw import SpaceWirePacket
+from egse.state import GlobalState
 from egse.system import Timer
 
 fee_settings = Settings.load(&#34;FEE&#34;)
@@ -168,7 +169,7 @@ def generate_data_packets(data: np.ndarray, header: DataPacketHeader,
     # * concatenate header and data -&gt; bytes
     # * yield the packet
 
-    from egse.fee import n_fee_side
+    N_FEE_SIDE = GlobalState.setup.camera.fee.ccd_sides.enum
 
     MAX_PACKET_SIZE = 32140  # this is a register value reg_4_config
     HEADER_LENGTH = 10
@@ -187,7 +188,7 @@ def generate_data_packets(data: np.ndarray, header: DataPacketHeader,
     # F-side is read out starting from the right, so we flip the data left to right
     # before sending, which simulates the reverse readout.
 
-    data = np.fliplr(data) if ccd_side == n_fee_side.F_SIDE else data
+    data = np.fliplr(data) if ccd_side == N_FEE_SIDE.RIGHT_SIDE else data
 
     header.length = nr_rows_in_packet * ((h_end + 1) * 2)
     LOGGER.debug(f&#34;{header.length = }, {nr_rows_in_packet = }, {h_end = }&#34;)
@@ -805,7 +806,7 @@ as is done in the N-FEE. The two sides can easily be concatenated to form the fu
     # * concatenate header and data -&gt; bytes
     # * yield the packet
 
-    from egse.fee import n_fee_side
+    N_FEE_SIDE = GlobalState.setup.camera.fee.ccd_sides.enum
 
     MAX_PACKET_SIZE = 32140  # this is a register value reg_4_config
     HEADER_LENGTH = 10
@@ -824,7 +825,7 @@ as is done in the N-FEE. The two sides can easily be concatenated to form the fu
     # F-side is read out starting from the right, so we flip the data left to right
     # before sending, which simulates the reverse readout.
 
-    data = np.fliplr(data) if ccd_side == n_fee_side.F_SIDE else data
+    data = np.fliplr(data) if ccd_side == N_FEE_SIDE.RIGHT_SIDE else data
 
     header.length = nr_rows_in_packet * ((h_end + 1) * 2)
     LOGGER.debug(f&#34;{header.length = }, {nr_rows_in_packet = }, {h_end = }&#34;)

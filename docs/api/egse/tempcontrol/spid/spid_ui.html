@@ -35,6 +35,7 @@ import multiprocessing
 import zmq
 import pickle
 
+import numpy as np
 from zmq import ZMQError
 from datetime import datetime
 
@@ -372,8 +373,30 @@ class pidGroupbox(QGroupBox):
         self.label.setSizePolicy(sizePolicy)
         self.label.setObjectName(&#34;label&#34;)
         self.horizontalLayout.addWidget(self.label)
+        
+        self.widget_2 = ToggleButton(
+            name=&#34;Turn On\Off PID Channel&#34;,
+            status_tip=pid_name,
+            selected=get_resource(&#34;:/icons/switch-on.svg&#34;),
+            not_selected=get_resource(&#34;:/icons/switch-off.svg&#34;),
+        )
+        
+        self.doubleSpinBox = QDoubleSpinBox(self)
+        self.doubleSpinBox.setMinimumSize(QSize(90, 0))
+        self.doubleSpinBox.setMinimum(-250)
+        
+        self.doubleSpinBox.setObjectName(&#34;doubleSpinBox&#34;)
+        
+        self.pushButton = QPushButton(&#39;set&#39;)
+        self.pushButton.setMaximumSize(QSize(50, 16777215))
+        
+        self.horizontalLayout.addWidget(self.widget_2)
         spacerItem =QSpacerItem(40, 20, QSizePolicy.Expanding, QSizePolicy.Minimum)
         self.horizontalLayout.addItem(spacerItem)
+        self.horizontalLayout.addWidget(self.doubleSpinBox)
+        self.horizontalLayout.addWidget(self.pushButton)
+        
+        
         self.widget = LED()
         self.widget.setMinimumSize(QSize(25, 25))
         self.widget.setObjectName(&#34;widget&#34;)
@@ -430,9 +453,12 @@ class pidMainWindow(QMainWindow, Observable):
                 pid_state += 1 if int(ch_enabled) else 0
             if pid_state == state_lin:
                 self.pid_channels[idx].widget.set_color(1)
+                self.pid_channels[idx].widget_2.set_selected(True)
             elif  0 &lt; pid_state &lt; state_lin:
+                self.pid_channels[idx].widget_2.set_selected(False)
                 self.pid_channels[idx].widget.set_color(2)
             else:
+                self.pid_channels[idx].widget_2.set_selected(False)
                 self.pid_channels[idx].widget.set_color(0)
     
     def on_pid_constant_status_signal(self, monitoring_info):
@@ -446,11 +472,14 @@ class pidMainWindow(QMainWindow, Observable):
     
     def on_pid_setpoint_status_signal(self, monitoring_info):
         for idx, (_, configuration) in enumerate(self.pid_configuration.items()):
+            setpoint = []
             for ch_idx, ch in enumerate(configuration):
                 if (ch[1] == 0 and ch[2] == 0):
                     continue                
                 self.pid_channels[idx].channels[ch_idx].doubleSpinBox.setValue(float(monitoring_info[ch[0]]))
-    
+                setpoint.append(float(monitoring_info[ch[0]]))
+            self.pid_channels[idx].doubleSpinBox.setValue(float(np.amax(setpoint)))
+                
     def on_pid_timestamp_status_signal(self, monitoring_info):
         for idx, (_, configuration) in enumerate(self.pid_configuration.items()):
             for ch_idx, ch in enumerate(configuration):
@@ -480,6 +509,10 @@ class pidMainWindow(QMainWindow, Observable):
         for idx, (pid, configuration) in enumerate(self.pid_configuration.items()):
             configuration.sort( key = lambda configuration: (configuration[3], configuration[4]))
             self.pid_channels[idx] = pidGroupbox(pid, configuration)
+            
+            self.pid_channels[idx].pushButton.clicked.connect(self.set_all_pid_setpoint)
+            self.pid_channels[idx].widget_2.clicked.connect(self.set_all_pid_control)
+            
             grid_layout.addWidget(self.pid_channels[idx], int(idx / 3), idx % 3)
             for ch_idx, ch in enumerate(configuration):
                 if (ch[1] == 0 and ch[2] == 0):
@@ -490,6 +523,17 @@ class pidMainWindow(QMainWindow, Observable):
         scroll_frame.setWidget(app_frame)
         self.setCentralWidget(scroll_frame)
 
+    def set_all_pid_control(self):
+        sender = self.sender()
+        name = sender.parent().objectName()
+        new_state = sender.is_selected()
+        sender.set_selected(on=new_state)
+        for channel in self.pid_configuration[name]:
+            try:
+                self.actionObservers({&#34;set_pid_control&#34; : [channel[0], bool(new_state)]})
+            except Exception as e:
+                warning_popup(&#34;set_pid_control : Channel {} {}&#34;.format(pid, &#34;Enabled&#34; 
+                                                                        if new_state else &#34;Disabled&#34;), e)
     def set_pid_control(self):
         sender = self.sender()
         state = sender.is_selected()
@@ -504,6 +548,18 @@ class pidMainWindow(QMainWindow, Observable):
         except Exception as e:
             warning_popup(&#34;set_pid_control : Channel {} {}&#34;.format(pid, &#34;Enabled&#34; 
                                                                    if new_state else &#34;Disabled&#34;), e)
+    
+    def set_all_pid_setpoint(self):
+        sender = self.sender()
+        setpoint = float(sender.parent().doubleSpinBox.value())
+        name = sender.parent().objectName()
+        
+        for channel in self.pid_configuration[name]:
+            try:
+                self.actionObservers({&#34;set_pid_setpoint&#34; : [channel[0], float(setpoint)]})
+            except Exception as e:
+                 warning_popup(&#34;set_pid_control : Channel {} {}&#34;.format(pid, &#34;Enabled&#34; 
+                                                                    if new_state else &#34;Disabled&#34;), e)
     
     def set_pid_setpoint(self):
         sender = self.sender()
@@ -674,13 +730,11 @@ def main():
     if lock_file.tryLock(100):
 
         args = parse_arguments()
-
         if args.type == &#39;proxy&#39;:
             try:
                 proxy = PidProxy()
             except Exception:
                 raise Exception
-
         view = pidMainWindow()
         model = PIDUIModel(args.type)
         controller = PIDUIController(model, view)
@@ -727,13 +781,11 @@ if __name__ == &#34;__main__&#34;:
     if lock_file.tryLock(100):
 
         args = parse_arguments()
-
         if args.type == &#39;proxy&#39;:
             try:
                 proxy = PidProxy()
             except Exception:
                 raise Exception
-
         view = pidMainWindow()
         model = PIDUIModel(args.type)
         controller = PIDUIController(model, view)
@@ -1739,8 +1791,30 @@ QGroupBox(str, parent: QWidget = None)</p></div>
         self.label.setSizePolicy(sizePolicy)
         self.label.setObjectName(&#34;label&#34;)
         self.horizontalLayout.addWidget(self.label)
+        
+        self.widget_2 = ToggleButton(
+            name=&#34;Turn On\Off PID Channel&#34;,
+            status_tip=pid_name,
+            selected=get_resource(&#34;:/icons/switch-on.svg&#34;),
+            not_selected=get_resource(&#34;:/icons/switch-off.svg&#34;),
+        )
+        
+        self.doubleSpinBox = QDoubleSpinBox(self)
+        self.doubleSpinBox.setMinimumSize(QSize(90, 0))
+        self.doubleSpinBox.setMinimum(-250)
+        
+        self.doubleSpinBox.setObjectName(&#34;doubleSpinBox&#34;)
+        
+        self.pushButton = QPushButton(&#39;set&#39;)
+        self.pushButton.setMaximumSize(QSize(50, 16777215))
+        
+        self.horizontalLayout.addWidget(self.widget_2)
         spacerItem =QSpacerItem(40, 20, QSizePolicy.Expanding, QSizePolicy.Minimum)
         self.horizontalLayout.addItem(spacerItem)
+        self.horizontalLayout.addWidget(self.doubleSpinBox)
+        self.horizontalLayout.addWidget(self.pushButton)
+        
+        
         self.widget = LED()
         self.widget.setMinimumSize(QSize(25, 25))
         self.widget.setObjectName(&#34;widget&#34;)
@@ -1817,9 +1891,12 @@ QGroupBox(str, parent: QWidget = None)</p></div>
                 pid_state += 1 if int(ch_enabled) else 0
             if pid_state == state_lin:
                 self.pid_channels[idx].widget.set_color(1)
+                self.pid_channels[idx].widget_2.set_selected(True)
             elif  0 &lt; pid_state &lt; state_lin:
+                self.pid_channels[idx].widget_2.set_selected(False)
                 self.pid_channels[idx].widget.set_color(2)
             else:
+                self.pid_channels[idx].widget_2.set_selected(False)
                 self.pid_channels[idx].widget.set_color(0)
     
     def on_pid_constant_status_signal(self, monitoring_info):
@@ -1833,11 +1910,14 @@ QGroupBox(str, parent: QWidget = None)</p></div>
     
     def on_pid_setpoint_status_signal(self, monitoring_info):
         for idx, (_, configuration) in enumerate(self.pid_configuration.items()):
+            setpoint = []
             for ch_idx, ch in enumerate(configuration):
                 if (ch[1] == 0 and ch[2] == 0):
                     continue                
                 self.pid_channels[idx].channels[ch_idx].doubleSpinBox.setValue(float(monitoring_info[ch[0]]))
-    
+                setpoint.append(float(monitoring_info[ch[0]]))
+            self.pid_channels[idx].doubleSpinBox.setValue(float(np.amax(setpoint)))
+                
     def on_pid_timestamp_status_signal(self, monitoring_info):
         for idx, (_, configuration) in enumerate(self.pid_configuration.items()):
             for ch_idx, ch in enumerate(configuration):
@@ -1867,6 +1947,10 @@ QGroupBox(str, parent: QWidget = None)</p></div>
         for idx, (pid, configuration) in enumerate(self.pid_configuration.items()):
             configuration.sort( key = lambda configuration: (configuration[3], configuration[4]))
             self.pid_channels[idx] = pidGroupbox(pid, configuration)
+            
+            self.pid_channels[idx].pushButton.clicked.connect(self.set_all_pid_setpoint)
+            self.pid_channels[idx].widget_2.clicked.connect(self.set_all_pid_control)
+            
             grid_layout.addWidget(self.pid_channels[idx], int(idx / 3), idx % 3)
             for ch_idx, ch in enumerate(configuration):
                 if (ch[1] == 0 and ch[2] == 0):
@@ -1877,6 +1961,17 @@ QGroupBox(str, parent: QWidget = None)</p></div>
         scroll_frame.setWidget(app_frame)
         self.setCentralWidget(scroll_frame)
 
+    def set_all_pid_control(self):
+        sender = self.sender()
+        name = sender.parent().objectName()
+        new_state = sender.is_selected()
+        sender.set_selected(on=new_state)
+        for channel in self.pid_configuration[name]:
+            try:
+                self.actionObservers({&#34;set_pid_control&#34; : [channel[0], bool(new_state)]})
+            except Exception as e:
+                warning_popup(&#34;set_pid_control : Channel {} {}&#34;.format(pid, &#34;Enabled&#34; 
+                                                                        if new_state else &#34;Disabled&#34;), e)
     def set_pid_control(self):
         sender = self.sender()
         state = sender.is_selected()
@@ -1891,6 +1986,18 @@ QGroupBox(str, parent: QWidget = None)</p></div>
         except Exception as e:
             warning_popup(&#34;set_pid_control : Channel {} {}&#34;.format(pid, &#34;Enabled&#34; 
                                                                    if new_state else &#34;Disabled&#34;), e)
+    
+    def set_all_pid_setpoint(self):
+        sender = self.sender()
+        setpoint = float(sender.parent().doubleSpinBox.value())
+        name = sender.parent().objectName()
+        
+        for channel in self.pid_configuration[name]:
+            try:
+                self.actionObservers({&#34;set_pid_setpoint&#34; : [channel[0], float(setpoint)]})
+            except Exception as e:
+                 warning_popup(&#34;set_pid_control : Channel {} {}&#34;.format(pid, &#34;Enabled&#34; 
+                                                                    if new_state else &#34;Disabled&#34;), e)
     
     def set_pid_setpoint(self):
         sender = self.sender()
@@ -1953,6 +2060,10 @@ QGroupBox(str, parent: QWidget = None)</p></div>
     for idx, (pid, configuration) in enumerate(self.pid_configuration.items()):
         configuration.sort( key = lambda configuration: (configuration[3], configuration[4]))
         self.pid_channels[idx] = pidGroupbox(pid, configuration)
+        
+        self.pid_channels[idx].pushButton.clicked.connect(self.set_all_pid_setpoint)
+        self.pid_channels[idx].widget_2.clicked.connect(self.set_all_pid_control)
+        
         grid_layout.addWidget(self.pid_channels[idx], int(idx / 3), idx % 3)
         for ch_idx, ch in enumerate(configuration):
             if (ch[1] == 0 and ch[2] == 0):
@@ -2007,9 +2118,12 @@ QGroupBox(str, parent: QWidget = None)</p></div>
             pid_state += 1 if int(ch_enabled) else 0
         if pid_state == state_lin:
             self.pid_channels[idx].widget.set_color(1)
+            self.pid_channels[idx].widget_2.set_selected(True)
         elif  0 &lt; pid_state &lt; state_lin:
+            self.pid_channels[idx].widget_2.set_selected(False)
             self.pid_channels[idx].widget.set_color(2)
         else:
+            self.pid_channels[idx].widget_2.set_selected(False)
             self.pid_channels[idx].widget.set_color(0)</code></pre>
 </details>
 </dd>
@@ -2024,10 +2138,13 @@ QGroupBox(str, parent: QWidget = None)</p></div>
 </summary>
 <pre><code class="python">def on_pid_setpoint_status_signal(self, monitoring_info):
     for idx, (_, configuration) in enumerate(self.pid_configuration.items()):
+        setpoint = []
         for ch_idx, ch in enumerate(configuration):
             if (ch[1] == 0 and ch[2] == 0):
                 continue                
-            self.pid_channels[idx].channels[ch_idx].doubleSpinBox.setValue(float(monitoring_info[ch[0]]))</code></pre>
+            self.pid_channels[idx].channels[ch_idx].doubleSpinBox.setValue(float(monitoring_info[ch[0]]))
+            setpoint.append(float(monitoring_info[ch[0]]))
+        self.pid_channels[idx].doubleSpinBox.setValue(float(np.amax(setpoint)))</code></pre>
 </details>
 </dd>
 <dt id="egse.tempcontrol.spid.spid_ui.pidMainWindow.on_pid_timestamp_status_signal"><code class="name flex">
@@ -2067,6 +2184,50 @@ QGroupBox(str, parent: QWidget = None)</p></div>
             self.pid_channels[idx].channels[ch_idx].lineEdit_2.setText(f&#34;{monitoring_info[2][channels]:.2e}&#34;)
             self.pid_channels[idx].channels[ch_idx].lineEdit_4.setText(f&#34;{monitoring_info[3][channels]:.2e}&#34;)
             channels += 1</code></pre>
+</details>
+</dd>
+<dt id="egse.tempcontrol.spid.spid_ui.pidMainWindow.set_all_pid_control"><code class="name flex">
+<span>def <span class="ident">set_all_pid_control</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def set_all_pid_control(self):
+    sender = self.sender()
+    name = sender.parent().objectName()
+    new_state = sender.is_selected()
+    sender.set_selected(on=new_state)
+    for channel in self.pid_configuration[name]:
+        try:
+            self.actionObservers({&#34;set_pid_control&#34; : [channel[0], bool(new_state)]})
+        except Exception as e:
+            warning_popup(&#34;set_pid_control : Channel {} {}&#34;.format(pid, &#34;Enabled&#34; 
+                                                                    if new_state else &#34;Disabled&#34;), e)</code></pre>
+</details>
+</dd>
+<dt id="egse.tempcontrol.spid.spid_ui.pidMainWindow.set_all_pid_setpoint"><code class="name flex">
+<span>def <span class="ident">set_all_pid_setpoint</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def set_all_pid_setpoint(self):
+    sender = self.sender()
+    setpoint = float(sender.parent().doubleSpinBox.value())
+    name = sender.parent().objectName()
+    
+    for channel in self.pid_configuration[name]:
+        try:
+            self.actionObservers({&#34;set_pid_setpoint&#34; : [channel[0], float(setpoint)]})
+        except Exception as e:
+             warning_popup(&#34;set_pid_control : Channel {} {}&#34;.format(pid, &#34;Enabled&#34; 
+                                                                if new_state else &#34;Disabled&#34;), e)</code></pre>
 </details>
 </dd>
 <dt id="egse.tempcontrol.spid.spid_ui.pidMainWindow.set_pid_control"><code class="name flex">
@@ -2196,6 +2357,8 @@ QGroupBox(str, parent: QWidget = None)</p></div>
 <li><code><a title="egse.tempcontrol.spid.spid_ui.pidMainWindow.on_pid_setpoint_status_signal" href="#egse.tempcontrol.spid.spid_ui.pidMainWindow.on_pid_setpoint_status_signal">on_pid_setpoint_status_signal</a></code></li>
 <li><code><a title="egse.tempcontrol.spid.spid_ui.pidMainWindow.on_pid_timestamp_status_signal" href="#egse.tempcontrol.spid.spid_ui.pidMainWindow.on_pid_timestamp_status_signal">on_pid_timestamp_status_signal</a></code></li>
 <li><code><a title="egse.tempcontrol.spid.spid_ui.pidMainWindow.on_pid_update_status_signal" href="#egse.tempcontrol.spid.spid_ui.pidMainWindow.on_pid_update_status_signal">on_pid_update_status_signal</a></code></li>
+<li><code><a title="egse.tempcontrol.spid.spid_ui.pidMainWindow.set_all_pid_control" href="#egse.tempcontrol.spid.spid_ui.pidMainWindow.set_all_pid_control">set_all_pid_control</a></code></li>
+<li><code><a title="egse.tempcontrol.spid.spid_ui.pidMainWindow.set_all_pid_setpoint" href="#egse.tempcontrol.spid.spid_ui.pidMainWindow.set_all_pid_setpoint">set_all_pid_setpoint</a></code></li>
 <li><code><a title="egse.tempcontrol.spid.spid_ui.pidMainWindow.set_pid_control" href="#egse.tempcontrol.spid.spid_ui.pidMainWindow.set_pid_control">set_pid_control</a></code></li>
 <li><code><a title="egse.tempcontrol.spid.spid_ui.pidMainWindow.set_pid_setpoint" href="#egse.tempcontrol.spid.spid_ui.pidMainWindow.set_pid_setpoint">set_pid_setpoint</a></code></li>
 </ul>

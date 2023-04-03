@@ -50,6 +50,7 @@ import zmq
 from prometheus_client import Counter
 from prometheus_client import start_http_server
 
+from egse.env import get_log_file_location
 from egse.settings import Settings
 from egse.system import format_datetime
 from egse.system import replace_environment_variable
@@ -127,14 +128,9 @@ def start():
     max_bytes = CTRL_SETTINGS.MAX_SIZE_LOG_FILES * 1024 * 1024
     max_nr_log_files = CTRL_SETTINGS.MAX_NR_LOG_FILES
 
-    log_file_location = CTRL_SETTINGS.FILE_STORAGE_LOCATION
-    log_file_location = replace_environment_variable(log_file_location)
-    if log_file_location is None:
-        rich.print(f&#34;[red]No location found for storing the log files, &#34;
-                   f&#34;using the current working directory &#39;{Path.cwd()}&#39;.&#34;)
-        log_file_location = Path.cwd()
-    else:
-        log_file_location = Path(log_file_location)
+    log_file_location = Path(get_log_file_location())
+    if not log_file_location.exists():
+        raise FileNotFoundError(f&#34;The location for the log files doesn&#39;t exist: {log_file_location!s}.&#34;)
 
     file_handler = TimedRotatingFileHandler(
         filename=log_file_location / &#34;general.log&#34;, when=&#39;midnight&#39;

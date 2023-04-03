@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1" />
 <meta name="generator" content="pdoc 0.10.0" />
 <title>egse.dpu.fitsgen API documentation</title>
-<meta name="description" content="" />
+<meta name="description" content="This module define the FITS generation process …" />
 <link rel="preload stylesheet" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/11.0.1/sanitize.min.css" integrity="sha256-PK9q560IAAa6WVRRh76LtCaI8pjTJ2z11v0miyNNjrs=" crossorigin>
 <link rel="preload stylesheet" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/11.0.1/typography.min.css" integrity="sha256-7l/o7C8jubJiy74VsKTidCy1yBkRtiUGbVkYBylBqUg=" crossorigin>
 <link rel="stylesheet preload" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/10.1.1/styles/github.min.css" crossorigin>
@@ -22,11 +22,23 @@
 <h1 class="title">Module <code>egse.dpu.fitsgen</code></h1>
 </header>
 <section id="section-intro">
+<p>This module define the FITS generation process.</p>
+<p>The FITS generation process connects to the monitoring channel of the DPU control server and starts processing
+HDF5 files as soon as they are available. The FITS generation can also be started off-line to process a list
+of HDF5 files or to process a given Observation (OBSID).</p>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">import glob
+<pre><code class="python">&#34;&#34;&#34;
+This module define the FITS generation process.
+
+The FITS generation process connects to the monitoring channel of the DPU control server and starts processing
+HDF5 files as soon as they are available. The FITS generation can also be started off-line to process a list
+of HDF5 files or to process a given Observation (OBSID).
+
+&#34;&#34;&#34;
+import glob
 import logging
 import multiprocessing
 import os
@@ -41,27 +53,30 @@ import click
 import invoke
 import natsort
 import numpy as np
+import persistqueue
 import rich
 import sys
+import time
 import zmq
 from astropy.io import fits
 from h5py import File
 from h5py._hl.attrs import AttributeManager
 from itertools import chain
-from persistqueue import Queue
 from scipy.interpolate import interp1d
 
+import egse
 from egse import h5
 from egse.config import find_file, find_files
 from egse.control import time_in_ms
 from egse.dpu import DPUMonitoring, get_expected_last_packet_flags
 from egse.dpu.dpu_cs import is_dpu_cs_active
+from egse.env import get_data_storage_location
 from egse.exceptions import Abort
 from egse.fee import convert_ccd_order_value
-from egse.fee import n_fee_mode, fee_side
+from egse.fee import n_fee_mode
 from egse.fee.nfee import HousekeepingData
 from egse.hk import get_housekeeping, HKError
-from egse.obsid import ObservationIdentifier, LAB_SETUP_TEST, TEST_LAB, TEST_LAB_SETUP, obsid_from_storage
+from egse.obsid import ObservationIdentifier, LAB_SETUP_TEST, TEST_LAB, obsid_from_storage
 from egse.reg import RegisterMap
 from egse.settings import Settings
 from egse.setup import load_setup, Setup
@@ -69,6 +84,7 @@ from egse.spw import SpaceWirePacket
 from egse.state import GlobalState
 from egse.storage import is_storage_manager_active
 from egse.storage.persistence import FITS, HDF5
+from egse.synoptics import ORIGIN as SYN_ORIGIN
 from egse.synoptics import get_synoptics_table
 from egse.system import time_since_epoch_1958, format_datetime, read_last_line
 from egse.zmq_ser import bind_address, connect_address
@@ -148,7 +164,7 @@ class FITSGenerator:
 
         # Queue with the full path of the HDF5 files that still need to be processed.
 
-        self.hdf5_filename_queue = Queue(f&#34;{os.environ[&#39;PLATO_DATA_STORAGE_LOCATION&#39;]}/{DPU_SETTINGS[&#39;HDF5_QUEUE&#39;]}&#34;)
+        self.hdf5_filename_queue = persistqueue.Queue(f&#34;{get_data_storage_location()}/{DPU_SETTINGS[&#39;HDF5_QUEUE&#39;]}&#34;)
 
         # Name of the FITS file currently being written
         # (None if the N-FEE is not in full-image mode or in full-image pattern mode)
@@ -175,13 +191,11 @@ class FITSGenerator:
         # self.sensor_sel = None
         self.rows_final_dump = None
         self.setup = GlobalState.setup
+        self.sensor_sel_enum = self.setup.camera.fee.sensor_sel.enum
+        self.camera_name = self.setup.camera.ID
 
         self.config_slicing_num_cycles = 0   # Configured slicing parameter
         self.processed_num_cycles = 0           # HDF5 files with image data processed for current FITS file
-
-        self.zcontext = zmq.Context.instance()
-        self.monitoring_socket = self.zcontext.socket(zmq.PUB)
-        self.monitoring_socket.bind(bind_address(CTRL_SETTINGS.PROTOCOL, CTRL_SETTINGS.MONITORING_PORT,))
 
         # self._quit_event = multiprocessing.Event()
 
@@ -200,30 +214,34 @@ class FITSGenerator:
         self.process_queue_thread.start()
 
     def fill_queue(self):
-        &#34;&#34;&#34; The DPU monitoring fills the queue.
+        &#34;&#34;&#34;
+        The DPU monitoring fills the queue.
 
         Each time an HDF5 file with SpW packets is closed, the DPU monitoring puts the full path of this file on the
         queue.
         &#34;&#34;&#34;
 
-        while self.keep_processing_queue:
+        dpu_monitoring_timeout = 30  # seconds
 
-            with DPUMonitoring() as dpu_monitoring:
+        with DPUMonitoring() as dpu_monitoring:
 
-                while self.keep_processing_queue:
+            start_time = time.time()
 
-                    try:
-                        hdf5_filename = dpu_monitoring.wait_for_hdf5_filename()
-                        self.hdf5_filename_queue.put(hdf5_filename)
+            while self.keep_processing_queue:
 
-                    # If the DPU monitoring times out, try to re-establish a connection
-                    # (in the future, we want to replace this with something like dpu_monitoring_reconnect())
+                try:
+                    hdf5_filename = dpu_monitoring.wait_for_hdf5_filename(retries=0, timeout=1.0)
+                    self.hdf5_filename_queue.put(hdf5_filename)
+                    start_time = time.time()
+                except TimeoutError:
+                    if time.time() - start_time &gt; dpu_monitoring_timeout:
+                        LOGGER.warning(f&#34;DPU monitoring timeout, &#34;
+                                       f&#34;no HDF5 filename received after {dpu_monitoring_timeout} seconds.&#34;)
+                        start_time = time.time()
 
-                    except TimeoutError:
-                        LOGGER.warning(&#34;DPU monitoring timeout&#34;)
-                        break
+            LOGGER.info(f&#34;Broke out of monitoring loop {self.keep_processing_queue=}.&#34;)
 
-    def run(self, commander, poller):
+    def run(self):
         &#34;&#34;&#34; Process the content of the queue.
 
         When there is a filename in the queue, take it from the queue:
@@ -233,6 +251,17 @@ class FITSGenerator:
               mode, or the N-FEE goes to full-image mode or full-image pattern mode, a new FITS file will be created.
             - The content of the HDF5 files will be extracted and passed to the FITS persistence layer as SpW packets.
         &#34;&#34;&#34;
+        zcontext = zmq.Context.instance()
+
+        monitoring_socket = zcontext.socket(zmq.PUB)
+        monitoring_socket.bind(bind_address(CTRL_SETTINGS.PROTOCOL, CTRL_SETTINGS.MONITORING_PORT,))
+
+        endpoint = bind_address(CTRL_SETTINGS.PROTOCOL, CTRL_SETTINGS.COMMANDING_PORT)
+        commander = zcontext.socket(zmq.REP)
+        commander.bind(endpoint)
+
+        poller = zmq.Poller()
+        poller.register(commander, zmq.POLLIN)
 
         last_time = time_in_ms()
 
@@ -251,25 +280,47 @@ class FITSGenerator:
                                        &#34;fits&#34;: self.fits_cube_filename or self.fits_images_filename,
                                        &#34;last obsid (being) processed&#34;: self.last_processed_obsid}
                     pickle_string = pickle.dumps(monitoring_info)
-                    self.monitoring_socket.send(pickle_string)
+                    monitoring_socket.send(pickle_string)
 
         except KeyboardInterrupt:
             click.echo(&#34;KeyboardInterrupt caught!&#34;)
-            self.keep_processing_queue = False
 
-        # Keyboard interrupt or stop command
+        self.keep_processing_queue = False
+
+        # Clean up all open sockets and running threads
+
+        poller.unregister(commander)
 
         LOGGER.info(&#34;Shutting down FITS generation&#34;)
-        commander.close(linger=0)
-        # self.dpu_monitoring_thread.join()
-        # self.process_queue_thread.join()
 
-        self.monitoring_socket.close()
-        # self.zcontext.term()
+        commander.close(linger=0)
+        LOGGER.info(&#34;Commander closed.&#34;)
+
+        monitoring_socket.close(linger=0)
+        LOGGER.info(&#34;Monitoring socket closed.&#34;)
+
+        # Check if the Monitoring and Processing Threads are finished
+        # Since the default timeout on the DPU Monitoring is set to 30s for some reason, this may take some time
+
+        LOGGER.info(&#34;Joining worker threads, this may take some time...&#34;)
+        self.dpu_monitoring_thread.join()
+        self.process_queue_thread.join()
+        LOGGER.info(&#34;Worker threads terminated.&#34;)
+
+        del self.hdf5_filename_queue
+        LOGGER.info(&#34;HDF5 filename Queue deleted.&#34;)
+
+        del zcontext
+
+    def __del__(self):
+        egse.logger.close_all_zmq_handlers()
+
+        zmq.Context.instance().term()
+        logging.getLogger().info(&#34;ZMQ Context terminated.&#34;)
 
     def process_queue(self):
 
-        location = os.environ.get(&#39;PLATO_DATA_STORAGE_LOCATION&#39;)
+        location = get_data_storage_location()
 
         previous_obsid = None
 
@@ -283,8 +334,10 @@ class FITSGenerator:
 
                     # Get the first item in the queue (FIFO) and open it
 
-                    hdf5_filename = self.hdf5_filename_queue.get()[0]
-                    self.hdf5_filename = hdf5_filename
+                    item = self.hdf5_filename_queue.get()
+                    # LOGGER.info(f&#34;HFD5 filename Queue {item = }&#34;)
+                    self.hdf5_filename = hdf5_filename = item[0]
+                    self.hdf5_filename_queue.task_done()
 
                     LOGGER.info(f&#34;Processing file {hdf5_filename}&#34;)
 
@@ -314,16 +367,26 @@ class FITSGenerator:
 
                             try:
                                 obsid = hdf5_file[&#34;obsid&#34;][()].decode()
+                                # LOGGER.info(f&#34;OBSID from HDF5 file: {obsid = }&#34;)
                                 obsid = ObservationIdentifier.create_from_string(obsid, order=LAB_SETUP_TEST)
+                                # LOGGER.info(f&#34;OBSID from string: {obsid = !s}&#34;)
 
-                                self.last_processed_obsid = obsid_from_storage(obsid, data_dir=location)
-                            except (KeyError, ValueError):
-                                # Either the obsid is not included in the HDF5 file or it is None
+                                self.last_processed_obsid = obsid_from_storage(
+                                    obsid, data_dir=location, camera_name=self.camera_name)
+                            except (KeyError, ValueError) as exc:
+                                # KeyError: when no obsid is included in the HDF5 file
+                                # ValueError: when the format of the obsid does not match LAB_SETUP_TEST
+                                # Uncomment the following line when you need more debug info
+                                # LOGGER.warning(f&#34;Exception caught: {exc.__class__.__name__} - {exc}&#34;, exc_info=False)
                                 obsid = None
-                            except AttributeError:
-                                LOGGER.error(f&#34;No data present for obsid {str(obsid)} in the obs folder&#34;)
+                            except AttributeError as exc:
+                                # AttributeError: when is this raised ??
+                                LOGGER.warning(f&#34;Exception caught: {exc.__class__.__name__} - {exc}&#34;, exc_info=False)
+                                LOGGER.error(f&#34;No data present for obsid {str(obsid)} in the obs folder, terminating ...&#34;)
                                 self.keep_processing_queue = False
                                 break
+
+                            register_map = RegisterMap(&#34;N-FEE&#34;, memory_map=h5.get_data(hdf5_file[&#34;register&#34;]))
 
                             # Loop over all groups in the current HDF5 file and check whether the &#34;data&#34; group is
                             # present
@@ -350,7 +413,9 @@ class FITSGenerator:
 
                                             # Start writing to a new FITS file
 
-                                            self.fits_images_filename = construct_images_filename(hdf5_filename, obsid)
+                                            self.fits_images_filename = construct_images_filename(
+                                                hdf5_filename, obsid, location=location, camera_name=self.camera_name
+                                            )
 
                                             ccd_readout_order = convert_ccd_order_value(self.ccd_readout_order)
 
@@ -361,11 +426,13 @@ class FITSGenerator:
                                                 &#34;rows_final_dump&#34;: self.rows_final_dump,
                                                 &#34;ccd_mode_config&#34;: self.ccd_mode_config,
                                                 &#34;ccd_readout_order&#34;: ccd_readout_order,  # CCD numbering [1-4]
-                                                &#34;expected_last_packet_flags&#34;: get_expected_last_packet_flags(n_fee_state),
+                                                &#34;expected_last_packet_flags&#34;: get_expected_last_packet_flags(
+                                                    n_fee_state, self.sensor_sel_enum),
                                                 &#34;obsid&#34;: str(obsid),
                                                 &#34;cycle_time&#34;: get_cycle_time(n_fee_state, obsid=obsid),
                                                 &#34;cgse_version&#34;: get_cgse_version(obsid=obsid),
-                                                &#34;setup&#34;: self.setup
+                                                &#34;setup&#34;: self.setup,
+                                                &#34;register_map&#34;: register_map,
                                             }
 
                                             persistence = FITS(self.fits_images_filename, prep)
@@ -382,7 +449,7 @@ class FITSGenerator:
                                         sorted_datasets = natsort.natsorted(data.items(), key=lambda x: x[0])
 
                                         persistence.expected_last_packet_flags = get_expected_last_packet_flags(
-                                            n_fee_state)
+                                            n_fee_state, self.sensor_sel_enum)
 
                                         for identifier, dataset in sorted_datasets:
 
@@ -406,9 +473,8 @@ class FITSGenerator:
                             # is only at this point that the synoptics can be included in the FITS headers.
 
                             if previous_obsid is not None and obsid is None:
-                                add_synoptics(previous_obsid)
-                                previous_obsid = obsid
-
+                                add_synoptics(previous_obsid, fits_dir=location, syn_dir=location)
+                            previous_obsid = obsid
                         except KeyError:
                             LOGGER.debug(&#34;KeyError occurred when accessing data in all groups of the HDF5 file.&#34;)
 
@@ -525,6 +591,7 @@ def convert_to_cubes(filename):
 
     cube_filename = construct_cube_filename(filename)
     LOGGER.info(f&#34;Converting to {cube_filename}&#34;)
+    fee_side = GlobalState.setup.camera.fee.ccd_sides.enum
 
     with fits.open(filename) as level1:
 
@@ -549,12 +616,12 @@ def convert_to_cubes(filename):
 
                 try:
 
-                    time = level1[f&#34;IMAGE_{ccd_number}_{ccd_side.name[0]}&#34;, 0].header[&#34;DATE-OBS&#34;]
+                    finetime = level1[f&#34;IMAGE_{ccd_number}_{ccd_side.name[0]}&#34;, 0].header[&#34;FINETIME&#34;]
 
-                    if time_since_epoch_1958(time) &lt; start_time:
+                    if finetime &lt; start_time:
 
-                        start_time = time_since_epoch_1958(time)
-                        date_obs = time
+                        start_time = finetime
+                        date_obs = level1[f&#34;IMAGE_{ccd_number}_{ccd_side.name[0]}&#34;, 0].header[&#34;DATE-OBS&#34;]
 
                     side_is_present[ccd_number][ccd_side] = True
 
@@ -563,7 +630,8 @@ def convert_to_cubes(filename):
                     side_is_present[ccd_number][ccd_side] = False
 
         primary_hdu = fits.PrimaryHDU()
-        primary_header[&#34;DATE-OBS&#34;] = date_obs
+        primary_header[&#34;DATE-OBS&#34;] = (date_obs, &#34;Timestamp for 1st frame&#34;,)
+        primary_header[&#34;FINETIME&#34;] = (start_time, &#34;Finetime representation of DATE-OBS&#34;,)
         primary_header[&#34;LEVEL&#34;] = 2  # Cube structure
         primary_hdu.header = primary_header
         primary_hdu.writeto(cube_filename)
@@ -838,7 +906,8 @@ def construct_cube_filename(fits_filename: str) -&gt; str:
         return f&#34;{prefix}_cube_{suffix}&#34;
 
 
-def construct_images_filename(hdf5_filename: PosixPath, obsid: ObservationIdentifier = None, location=None):
+def construct_images_filename(hdf5_filename: PosixPath, obsid: ObservationIdentifier = None,
+                              location=None, camera_name: str = None):
     &#34;&#34;&#34; Construct the filename for the level-1 FITS file.
 
 
@@ -852,12 +921,12 @@ def construct_images_filename(hdf5_filename: PosixPath, obsid: ObservationIdenti
         - use_counter: Indicates whether or not a counter should be included in the filename.
         - location: Folder (with /daily and /obs sub-folders) in which the FITS files should be written (in a
                     dedicated directory in the /obs folder). If not specified, the `PLATO_DATA_STORAGE_LOCATION`
-                    environment variable will be read out.
+                    environment variable will be used to construct the location..
 
     Returns: Full path to the file as a `PurePath`.
     &#34;&#34;&#34;
 
-    location = location or os.environ.get(&#39;PLATO_DATA_STORAGE_LOCATION&#39;)
+    location = location or get_data_storage_location()
 
     if obsid is None:
 
@@ -874,7 +943,7 @@ def construct_images_filename(hdf5_filename: PosixPath, obsid: ObservationIdenti
         #   - oldest data: TEST_LAB_SETUP
         #   - more recent data: TEST_LAB
 
-        obsid = obsid_from_storage(obsid, data_dir=location)
+        obsid = obsid_from_storage(obsid, data_dir=location, camera_name=camera_name)
 
         timestamp = str.split(str(hdf5_filename).split(&#34;/&#34;)[-1], &#34;_&#34;)[0]
         location += &#34;/obs/&#34;
@@ -959,11 +1028,11 @@ def create_fits_from_hdf5(files: List, location: str = None, setup: Setup = None
         - files: List of filenames of the HDF5 files to use to create the FITS file.
         - location: Folder (with /daily and /obs sub-folders) in which the FITS files should be written (in a
                     dedicated directory in the /obs folder). If not specified, the `PLATO_DATA_STORAGE_LOCATION`
-                    environment variable will be read out.
+                    environment variable will be used to construct the location.
         - setup: Setup to retrieve information from.
     &#34;&#34;&#34;
 
-    location = location or os.environ.get(&#39;PLATO_DATA_STORAGE_LOCATION&#39;)
+    location = location or get_data_storage_location()
 
     # Loop over the filenames.  When you encounter an HDF5 file, check its format version.
 
@@ -1036,11 +1105,15 @@ def create_fits_from_hdf5_register_map(files: List, location: str = None, setup:
         - files: List of filenames of the HDF5 files to use to create the FITS file.
         - location: Folder (with /daily and /obs sub-folders) in which the FITS files should be written (in a
                     dedicated directory in the /obs folder). If not specified, the `PLATO_DATA_STORAGE_LOCATION`
-                    environment variable will be read out.
+                    environment variable will be used to construct the location.
         - setup: Setup to retrieve information from.
     &#34;&#34;&#34;
+    setup = setup or GlobalState.setup
 
-    location = location or os.environ.get(&#39;PLATO_DATA_STORAGE_LOCATION&#39;)
+    location = location or get_data_storage_location()
+    hdf5_file_root = Path(files[0]).parent.parent.parent
+    sensor_sel_enum = setup.camera.fee.sensor_sel.enum
+    camera_name = setup.camera.ID
 
     prep = {}
     fits_filename = None
@@ -1101,7 +1174,9 @@ def create_fits_from_hdf5_register_map(files: List, location: str = None, setup:
                                     else:
                                         obsid = None
 
-                                    fits_filename = construct_images_filename(filename, obsid, location=location)
+                                    fits_filename = construct_images_filename(
+                                        filename, obsid, location=location, camera_name=camera_name
+                                    )
                                     LOGGER.info(f&#34;{fits_filename = !s}&#34;)
 
                                     ccd_readout_order = register_map[&#39;ccd_readout_order&#39;]
@@ -1114,11 +1189,13 @@ def create_fits_from_hdf5_register_map(files: List, location: str = None, setup:
                                         &#34;rows_final_dump&#34;: register_map[&#39;n_final_dump&#39;],
                                         &#34;ccd_mode_config&#34;: register_map[&#39;ccd_mode_config&#39;],
                                         &#34;ccd_readout_order&#34;: ccd_readout_order,  # CCD numbering [1-4]
-                                        &#34;expected_last_packet_flags&#34;: get_expected_last_packet_flags(register_map),
+                                        &#34;expected_last_packet_flags&#34;: get_expected_last_packet_flags(register_map,
+                                                                                                     sensor_sel_enum),
                                         &#34;obsid&#34;: str(obsid) if obsid is not None else None,
-                                        &#34;cycle_time&#34;: get_cycle_time(register_map, obsid=obsid, data_dir=location),
-                                        &#34;cgse_version&#34;: get_cgse_version(obsid=obsid, data_dir=location),
-                                        &#34;setup&#34;: setup
+                                        &#34;cycle_time&#34;: get_cycle_time(register_map, obsid=obsid, data_dir=hdf5_file_root),
+                                        &#34;cgse_version&#34;: get_cgse_version(obsid=obsid, data_dir=hdf5_file_root),
+                                        &#34;setup&#34;: setup,
+                                        &#34;register_map&#34;: register_map
                                     }
 
                                     persistence = FITS(str(fits_filename), prep)
@@ -1134,7 +1211,8 @@ def create_fits_from_hdf5_register_map(files: List, location: str = None, setup:
                                 data = group[&#34;data&#34;]
                                 sorted_datasets = natsort.natsorted(data.items(), key=lambda x: x[0])
 
-                                persistence.expected_last_packet_flags = get_expected_last_packet_flags(register_map)
+                                persistence.expected_last_packet_flags = get_expected_last_packet_flags(register_map,
+                                                                                                        sensor_sel_enum)
 
                                 for identifier, dataset in sorted_datasets:
 
@@ -1186,11 +1264,15 @@ def create_fits_from_hdf5_nfee_state(files: List, location: str = None, setup: S
         - files: List of filenames of the HDF5 files to use to create the FITS file.
         - location: Folder (with /daily and /obs sub-folders) in which the FITS files should be written (in a
                     dedicated directory in the /obs folder). If not specified, the `PLATO_DATA_STORAGE_LOCATION`
-                    environment variable will be read out.
+                    environment variable will be used to construct the location.
         - setup: Setup to retrieve information from.
     &#34;&#34;&#34;
+    setup = setup or GlobalState.setup
 
-    location = location or os.environ.get(&#39;PLATO_DATA_STORAGE_LOCATION&#39;)
+    location = location or get_data_storage_location()
+    hdf5_file_root = Path(files[0]).parent.parent.parent
+    sensor_sel_enum = setup.camera.fee.sensor_sel.enum
+    camera_name = setup.camera.ID
 
     config_slicing_num_cycles = 0    # Configured slicing parameter
     processed_num_cycles = 0            # HDF5 files with image data processed for current FITS file
@@ -1222,6 +1304,8 @@ def create_fits_from_hdf5_nfee_state(files: List, location: str = None, setup: S
                             config_slicing_num_cycles = slicing_num_cycles
                     except KeyError:
                         config_slicing_num_cycles = 0
+
+                    register_map = RegisterMap(&#34;N-FEE&#34;, memory_map=h5.get_data(hdf5_file[&#34;register&#34;]))
 
                     # if is_corrupt(hdf5_file):
                     #     LOGGER.warning(f&#34;Skipping {filename} (corrupt)&#34;)
@@ -1264,7 +1348,9 @@ def create_fits_from_hdf5_nfee_state(files: List, location: str = None, setup: S
                                     else:
                                         obsid = None
 
-                                    fits_filename = construct_images_filename(filename, obsid, location=location)
+                                    fits_filename = construct_images_filename(
+                                        filename, obsid, location=location, camera_name=camera_name
+                                    )
                                     LOGGER.info(f&#34;{fits_filename = !s}&#34;)
 
                                     ccd_readout_order = n_fee_state[&#39;ccd_readout_order&#39;]
@@ -1277,11 +1363,13 @@ def create_fits_from_hdf5_nfee_state(files: List, location: str = None, setup: S
                                         &#34;rows_final_dump&#34;: n_fee_state[&#39;n_final_dump&#39;],
                                         &#34;ccd_mode_config&#34;: n_fee_state[&#39;ccd_mode_config&#39;],
                                         &#34;ccd_readout_order&#34;: ccd_readout_order,  # CCD numbering [1-4]
-                                        &#34;expected_last_packet_flags&#34;: get_expected_last_packet_flags(n_fee_state),
+                                        &#34;expected_last_packet_flags&#34;: get_expected_last_packet_flags(n_fee_state,
+                                                                                                     sensor_sel_enum),
                                         &#34;obsid&#34;: str(obsid) if obsid is not None else None,
-                                        &#34;cycle_time&#34;: get_cycle_time(n_fee_state, obsid=obsid, data_dir=location),
-                                        &#34;cgse_version&#34;: get_cgse_version(obsid=obsid, data_dir=location),
-                                        &#34;setup&#34;: setup
+                                        &#34;cycle_time&#34;: get_cycle_time(n_fee_state, obsid=obsid, data_dir=hdf5_file_root),
+                                        &#34;cgse_version&#34;: get_cgse_version(obsid=obsid, data_dir=hdf5_file_root),
+                                        &#34;setup&#34;: setup,
+                                        &#34;register_map&#34;: register_map
                                     }
 
                                     persistence = FITS(str(fits_filename), prep)
@@ -1297,7 +1385,8 @@ def create_fits_from_hdf5_nfee_state(files: List, location: str = None, setup: S
                                 data = group[&#34;data&#34;]
                                 sorted_datasets = natsort.natsorted(data.items(), key=lambda x: x[0])
 
-                                persistence.expected_last_packet_flags = get_expected_last_packet_flags(n_fee_state)
+                                persistence.expected_last_packet_flags = get_expected_last_packet_flags(n_fee_state,
+                                                                                                        sensor_sel_enum)
 
                                 for identifier, dataset in sorted_datasets:
 
@@ -1485,12 +1574,14 @@ def get_fits_synoptics(obsid: str, data_dir=None) -&gt; dict:
             # We need to filter out the NaNs or the interpolation will not work
 
             values = synoptics_table[syn_name].values
-            selection = ~np.isnan(values)
 
-            if np.any(selection):
-                interpolation = interp1d(timestamps[np.where(selection)], values[np.where(selection)], kind=&#39;linear&#39;,
-                                         fill_value=&#39;extrapolate&#39;)
-                synoptics[syn_enum] = interpolation(timestamps)
+            if len(values) &gt; 0:
+                selection = ~np.isnan(values)
+
+                if np.any(selection):
+                    interpolation = interp1d(timestamps[np.where(selection)], values[np.where(selection)], kind=&#39;linear&#39;,
+                                             fill_value=&#39;extrapolate&#39;)
+                    synoptics[syn_enum] = interpolation(timestamps)
 
     # Forward fill
 
@@ -1513,7 +1604,7 @@ def get_fits_synoptics(obsid: str, data_dir=None) -&gt; dict:
     return synoptics
 
 
-def add_synoptics(obsid: str, data_dir=None):
+def add_synoptics(obsid: str, fits_dir: str, syn_dir: str):
     &#34;&#34;&#34; Add synoptics to the FITS headers for the given observation.
 
     When all FITS files have been produced for the given obsid, synoptics is added to the headers.  This is done in the
@@ -1529,15 +1620,22 @@ def add_synoptics(obsid: str, data_dir=None):
                 - For the shutter: calculate the mean and add this to the header of the cube.
 
     Args:
-        - obsid: Observation identifier [TEST_LAB or TEST_LAB_SETUP].
+        obsid: Observation identifier [TEST_LAB or TEST_LAB_SETUP]
+        fits_dir: Directory (with /daily and /obs sub-folders) with the FITS files
+        syn_dir: Directory (with /daily and /obs sub-folders) with the original synoptics files
     &#34;&#34;&#34;
 
-    data_dir = data_dir or os.environ.get(&#39;PLATO_DATA_STORAGE_LOCATION&#39;)
+    fits_dir = fits_dir or get_data_storage_location()
+    syn_dir = syn_dir or get_data_storage_location()
+    fee_side = GlobalState.setup.camera.fee.ccd_sides.enum
 
-    obsid = obsid_from_storage(obsid, data_dir=data_dir)
-    obs_dir = f&#34;{data_dir}/obs/{obsid}&#34;  # Where the HK and FITS files are stored
+    obsid = obsid_from_storage(obsid, data_dir=fits_dir)
+    obs_dir = f&#34;{fits_dir}/obs/{obsid}&#34;  # Where the HK and FITS files are stored
 
-    synoptics = get_fits_synoptics(obsid, data_dir=data_dir)
+    try:
+        synoptics = get_fits_synoptics(obsid, data_dir=fits_dir)
+    except FileNotFoundError:
+        synoptics = get_fits_synoptics(obsid, data_dir=syn_dir)
     timestamps = synoptics[&#34;timestamps&#34;]    # Timestamps of the synoptics -&gt; compare with absolute time in FITS file
 
     # Compose the list of FITS files for the given obsid
@@ -1555,7 +1653,7 @@ def add_synoptics(obsid: str, data_dir=None):
 
         with fits.open(fits_filename) as fits_file:
 
-            start_time = time_since_epoch_1958(fits_file[&#34;PRIMARY&#34;].header[&#34;DATE-OBS&#34;])
+            start_time = fits_file[&#34;PRIMARY&#34;].header[&#34;FINETIME&#34;]
 
             # Loop over both sides of all CCDs (not all of them might be in -&gt; hence the KeyError)
 
@@ -1615,7 +1713,7 @@ def add_synoptics(obsid: str, data_dir=None):
                                     average_value = np.nanmean(selected_values)
 
                                     fits_synoptics[syn_enum] = np.append(fits_synoptics[syn_enum], average_value)
-                                except KeyError:
+                                except (KeyError, AttributeError):
                                     fits_synoptics[syn_enum] = np.append(fits_synoptics[syn_enum], np.nan)
 
                             for syn_enum in SynopticsLeaveGaps:
@@ -1629,7 +1727,7 @@ def add_synoptics(obsid: str, data_dir=None):
                                         unique_values = np.unique(selected_values[selection])
                                         value = str(bool(unique_values[0]))[0] if len(unique_values) == 1 else &#34;M&#34;
                                     fits_synoptics[syn_enum] = np.append(fits_synoptics[syn_enum], value)
-                                except KeyError:    # &#34;U&#34; (unknown)
+                                except (KeyError, AttributeError):    # &#34;U&#34; (unknown)
                                     fits_synoptics[syn_enum] = np.append(fits_synoptics[syn_enum], &#34;U&#34;)
 
                             # At this point, we have for each synoptical parameter an array of the values that need to
@@ -1673,7 +1771,6 @@ def start():
     # The Storage Manager must be active (otherwise the HK cannot be stored)
 
     if not is_storage_manager_active():
-
         LOGGER.error(&#34;The Storage Manager is not running, start the core services before running the data acquisition.&#34;)
         return
 
@@ -1681,23 +1778,7 @@ def start():
         LOGGER.critical(&#34;DPU Control Server must be running to be able to start the FITS generator.&#34;)
         return
 
-    # register_to_storage_manager(ORIGIN, CSV, prep=dict(mode=&#39;a&#39;, column_names=[&#34;timestamp&#34;, &#34;FOV_ACT_THETA&#34;,
-    #                                                                            &#34;FOV_ACT_PHI&#34;, &#34;FOV_CMD_THETA&#34;,
-    #                                                                            &#34;FOV_CMD_PHI&#34;]))
-
-    # Make sure you notice when a command has been issued to stop the FOV HK generation
-
-    context = zmq.Context()
-
-    endpoint = bind_address(CTRL_SETTINGS.PROTOCOL, CTRL_SETTINGS.COMMANDING_PORT)
-    commander = context.socket(zmq.REP)
-    commander.bind(endpoint)
-
-    poller = zmq.Poller()
-    poller.register(commander, zmq.POLLIN)
-
-    fg = FITSGenerator()
-    fg.run(commander, poller)
+    FITSGenerator().run()
 
 
 @cli.command()
@@ -1774,7 +1855,6 @@ def status():
     else:
         rich.print(&#34;  Status: [red]not active&#34;)
 
-
 def send_request(command_request: str):
     &#34;&#34;&#34;Sends a request to the FOV HK Control Server and waits for a response.
 
@@ -1804,7 +1884,8 @@ def send_request(command_request: str):
 
 @cli.command()
 @click.argument(&#39;files&#39;, type=str, nargs=-1)
-@click.option(&#34;--location&#34;, type=str, is_flag=False, default=None, help=&#34;Set the root folder for the output (i.e. folder with /daily and /obs)&#34;)
+@click.option(&#34;--location&#34;, type=str, is_flag=False, default=None, help=&#34;Set the root folder for the output &#34;
+                                                                        &#34;(i.e. folder with /daily and /obs)&#34;)
 @click.option(&#34;--setup_id&#34;, type=int, is_flag=False, default=None, help=&#34;Setup ID&#34;)
 @click.option(&#34;--site_id&#34;, type=str, is_flag=False, default=None, help=&#34;Site ID&#34;)
 def from_hdf5(files, location=None, setup_id=None, site_id=None):
@@ -1817,20 +1898,21 @@ def from_hdf5(files, location=None, setup_id=None, site_id=None):
         - site_id: Identifier for the test site.
     &#34;&#34;&#34;
 
-    site_id = site_id or SITE.ID
-
-    if setup_id is None:
-        setup = GlobalState.setup
-    else:
-        setup = load_setup(setup_id=setup_id, site_id=site_id, from_disk=True)
+    setup = get_offline_setup(site_id=site_id, setup_id=setup_id)
+    location = location or get_data_storage_location()
 
     create_fits_from_hdf5(files, location=location, setup=setup)
 
 
 @cli.command()
 @click.argument(&#39;obsid&#39;, type=str)
-@click.option(&#34;--location&#34;, type=str, is_flag=False, default=None, help=&#34;Set the root folder for the output (i.e. folder with /daily and /obs)&#34;)
-def for_obsid(obsid, location=None):
+@click.option(&#34;--input_dir&#34;, type=str, is_flag=False, default=None, help=&#34;Set the root folder for the input &#34;
+                                                                         &#34;(i.e. folder with /daily and /obs)&#34;)
+@click.option(&#34;--output_dir&#34;, type=str, is_flag=False, default=None, help=&#34;Set the root folder for the output &#34;
+                                                                          &#34;(i.e. folder with /daily and /obs)&#34;)
+@click.option(&#34;--setup_id&#34;, type=int, is_flag=False, default=None, help=&#34;Setup ID&#34;)
+@click.option(&#34;--site_id&#34;, type=str, is_flag=False, default=None, help=&#34;Site ID&#34;)
+def for_obsid(obsid, input_dir=None, output_dir=None, setup_id=None, site_id=None):
     &#34;&#34;&#34; Generate the FITS files for the given obsid.
 
     The setup that was loaded in the Configuration Manager during the given observation, will be used to retrieve
@@ -1840,14 +1922,54 @@ def for_obsid(obsid, location=None):
         - obsid: Observation identifier [TEST_LAB or TEST_LAB_SETUP].
         - location: Folder (with /daily and /obs sub-folders) in which the FITS files should be written (in a
                     dedicated directory in the /obs folder). If not specified, the `PLATO_DATA_STORAGE_LOCATION`
-                    environment variable will be read out.
+                    environment variable will be used to construct the location.
     &#34;&#34;&#34;
 
-    hdf5_filenames = get_hdf5_filenames_for_obsid(obsid, data_dir=location)
-    setup = get_setup_for_obsid(obsid, data_dir=location)
+    input_dir = input_dir or get_data_storage_location()    # Location of HDF5 files (under /daily)
+    output_dir = output_dir or input_dir    # Location of the FITS files that will be generated (under /obs)
 
-    create_fits_from_hdf5(hdf5_filenames, location=location, setup=setup)
-    add_synoptics(obsid, data_dir=location)
+    obsid = obsid_from_storage(obsid, data_dir=input_dir)
+    # Folder in the output /obs directory in which the FITS files will be stored (full path)
+    output_obs_folder = Path(f&#34;{output_dir}/obs/{obsid}&#34;)
+    if not output_obs_folder.exists():      # If this directory doesn&#39;t exist yet, create it
+        os.makedirs(output_obs_folder)
+
+    setup = get_offline_setup(site_id=site_id, setup_id=setup_id)   # Setup (complete for the camera in question)
+
+    hdf5_filenames = get_hdf5_filenames_for_obsid(obsid, data_dir=input_dir)    # HDF5 files to process
+
+    # Create FITS files (flat structure -&gt; cubes)
+    create_fits_from_hdf5(hdf5_filenames, location=output_dir, setup=setup)
+
+    # Add synoptics
+
+    if find_file(f&#34;{obsid_from_storage(obsid, data_dir=input_dir)}_{SYN_ORIGIN}d_*.csv&#34;, root=output_obs_folder):
+        # Synoptics have already been re-processed (located in the directory to which the FITS files will be stored)
+        add_synoptics(obsid, fits_dir=output_dir, syn_dir=output_dir)
+    else:
+        # Use the original synoptics files
+        add_synoptics(obsid, fits_dir=output_dir, syn_dir=input_dir)
+
+
+def get_offline_setup(site_id: str = None, setup_id: int = None):
+    &#34;&#34;&#34; Return setup to use for the off-line FITS generation.
+
+    If the setup ID and site ID have been specified, the corresponding setup is used.  Otherwise, the setup that is
+    currently loaded in the Configuration Manager is used.
+
+    Args:
+        site_id: Identifier of the testhouse
+        setup_id: Identifier of the setup
+
+    Returns:
+        - Setup to use for the off-line FITS generation.
+    &#34;&#34;&#34;
+
+    if setup_id is None:
+        return GlobalState.setup
+    else:
+        site_id = site_id or SITE.ID
+        return load_setup(setup_id=setup_id, site_id=site_id, from_disk=True)
 
 
 def get_hdf5_filenames_for_obsid(obsid: str, data_dir: str = None) -&gt; List:
@@ -1858,7 +1980,7 @@ def get_hdf5_filenames_for_obsid(obsid: str, data_dir: str = None) -&gt; List:
     which the combination (TEST, SITE) matches with the (TEST, SITE) combination from the given obsid.  To do this, the
     list of relevant ODs is composed, based on the first and last timestamp in the DPU HK file (this file will always
     be present if data has been acquired).  Then all HDF5 files for these ODs are looped over and the obsid stored in
-    these is compared with the given obsid.  In case of a match, the HDF5 filename is added to the list.
+    there is compared with the given obsid.  In case of a match, the HDF5 filename is added to the list.
 
     Args:
         - obsid: Observation identifier [TEST_LAB or TEST_LAB_SETUP].
@@ -1866,7 +1988,7 @@ def get_hdf5_filenames_for_obsid(obsid: str, data_dir: str = None) -&gt; List:
                     in which the HDF5 files are stored.
     &#34;&#34;&#34;
 
-    data_dir = data_dir or os.environ.get(&#39;PLATO_DATA_STORAGE_LOCATION&#39;)
+    data_dir = data_dir or get_data_storage_location()
 
     # Determine in which location (i.e. in the folder of which OD in the /daily sub-folder of the data directory)
     # the required HDF5 files are stored.  This sub-folder carries the OD [yyyymmdd] as name.
@@ -1894,7 +2016,6 @@ def get_hdf5_filenames_for_obsid(obsid: str, data_dir: str = None) -&gt; List:
                         if hdf5_obsid != &#34;None&#34;:
                             hdf5_obsid = ObservationIdentifier.create_from_string(
                                 hdf5_obsid, LAB_SETUP_TEST).create_id(order=TEST_LAB)      # TEST_LAB
-
                             if hdf5_obsid in str(obsid):
                                 obs_hdf5_files.append(hdf5_filename)
 
@@ -1904,38 +2025,6 @@ def get_hdf5_filenames_for_obsid(obsid: str, data_dir: str = None) -&gt; List:
                 LOGGER.debug(f&#34;Unable to open HDF5 file: {exc}&#34;)
 
     return obs_hdf5_files
-
-
-def get_setup_for_obsid(obsid: str, data_dir: str = None) -&gt; Setup:
-    &#34;&#34;&#34; Return the setup for the given obsid.
-
-    The given obsid can be specified in either of these two formats: TEST_LAB or TEST_LAB_SETUP. In this method, we
-    determine from the CM HK file (this file will always be present) for the given observation which is the setup that
-    was used during the given obsid.  This file resides in the folder of the given obsid in the /obs directory, with the
-    name (i.e. obsid) in the format TEST_SITE_SETUP or TEST_SITE (depending on how old the observation is).  The obsid
-    that is used in the filename follows the same pattern, so the given obsid must be converted to that format.
-
-    Args:
-        - obsid: Observation identifier [TEST_LAB or TEST_LAB_SETUP].
-        - data_dir: Full path to the directory in which the data resides.  This is the folder with a sub-folder /daily,
-                    in which the HDF5 files are stored.
-
-    Returns: Setup for the given obsid.
-    &#34;&#34;&#34;
-
-    data_dir = data_dir or os.environ[&#34;PLATO_DATA_STORAGE_LOCATION&#34;]
-    obsid = obsid_from_storage(obsid, data_dir=data_dir)     # Convert the obsid to the correct format
-    obs_dir = f&#34;{data_dir}/obs/{obsid}&#34;
-
-    try:
-        cm_hk = str(find_file(f&#34;{obsid}_CM_*.csv&#34;, root=obs_dir))
-        last_line = read_last_line(cm_hk).split(&#34;,&#34;)
-        site_id = last_line[1]
-        setup_id = int(last_line[2])
-
-        return load_setup(setup_id=setup_id, site_id=site_id, from_disk=True)
-    except IndexError:
-        raise Abort(f&#34;DPU was not running during obsid {obsid}: no data could be acquired&#34;)
 
 
 def get_od(obsid: str, data_dir: str = None):
@@ -1956,7 +2045,7 @@ def get_od(obsid: str, data_dir: str = None):
     Returns: List of observation day [yyyymmdd].
     &#34;&#34;&#34;
 
-    data_dir = data_dir or os.environ[&#34;PLATO_DATA_STORAGE_LOCATION&#34;]
+    data_dir = data_dir or get_data_storage_location()
     obsid = obsid_from_storage(obsid, data_dir=data_dir)     # Convert the obsid to the correct format
     obs_dir = f&#34;{data_dir}/obs/{obsid}&#34;
 
@@ -2017,7 +2106,7 @@ if __name__ == &#34;__main__&#34;:
 <h2 class="section-title" id="header-functions">Functions</h2>
 <dl>
 <dt id="egse.dpu.fitsgen.add_synoptics"><code class="name flex">
-<span>def <span class="ident">add_synoptics</span></span>(<span>obsid: str, data_dir=None)</span>
+<span>def <span class="ident">add_synoptics</span></span>(<span>obsid: str, fits_dir: str, syn_dir: str)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Add synoptics to the FITS headers for the given observation.</p>
@@ -2034,14 +2123,19 @@ following steps:
 the average and add this to the header of the cube;
 - For the shutter: calculate the mean and add this to the header of the cube.</p>
 <h2 id="args">Args</h2>
-<ul>
-<li>obsid: Observation identifier [TEST_LAB or TEST_LAB_SETUP].</li>
-</ul></div>
+<dl>
+<dt><strong><code>obsid</code></strong></dt>
+<dd>Observation identifier [TEST_LAB or TEST_LAB_SETUP]</dd>
+<dt><strong><code>fits_dir</code></strong></dt>
+<dd>Directory (with /daily and /obs sub-folders) with the FITS files</dd>
+<dt><strong><code>syn_dir</code></strong></dt>
+<dd>Directory (with /daily and /obs sub-folders) with the original synoptics files</dd>
+</dl></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def add_synoptics(obsid: str, data_dir=None):
+<pre><code class="python">def add_synoptics(obsid: str, fits_dir: str, syn_dir: str):
     &#34;&#34;&#34; Add synoptics to the FITS headers for the given observation.
 
     When all FITS files have been produced for the given obsid, synoptics is added to the headers.  This is done in the
@@ -2057,15 +2151,22 @@ the average and add this to the header of the cube;
                 - For the shutter: calculate the mean and add this to the header of the cube.
 
     Args:
-        - obsid: Observation identifier [TEST_LAB or TEST_LAB_SETUP].
+        obsid: Observation identifier [TEST_LAB or TEST_LAB_SETUP]
+        fits_dir: Directory (with /daily and /obs sub-folders) with the FITS files
+        syn_dir: Directory (with /daily and /obs sub-folders) with the original synoptics files
     &#34;&#34;&#34;
 
-    data_dir = data_dir or os.environ.get(&#39;PLATO_DATA_STORAGE_LOCATION&#39;)
+    fits_dir = fits_dir or get_data_storage_location()
+    syn_dir = syn_dir or get_data_storage_location()
+    fee_side = GlobalState.setup.camera.fee.ccd_sides.enum
 
-    obsid = obsid_from_storage(obsid, data_dir=data_dir)
-    obs_dir = f&#34;{data_dir}/obs/{obsid}&#34;  # Where the HK and FITS files are stored
+    obsid = obsid_from_storage(obsid, data_dir=fits_dir)
+    obs_dir = f&#34;{fits_dir}/obs/{obsid}&#34;  # Where the HK and FITS files are stored
 
-    synoptics = get_fits_synoptics(obsid, data_dir=data_dir)
+    try:
+        synoptics = get_fits_synoptics(obsid, data_dir=fits_dir)
+    except FileNotFoundError:
+        synoptics = get_fits_synoptics(obsid, data_dir=syn_dir)
     timestamps = synoptics[&#34;timestamps&#34;]    # Timestamps of the synoptics -&gt; compare with absolute time in FITS file
 
     # Compose the list of FITS files for the given obsid
@@ -2083,7 +2184,7 @@ the average and add this to the header of the cube;
 
         with fits.open(fits_filename) as fits_file:
 
-            start_time = time_since_epoch_1958(fits_file[&#34;PRIMARY&#34;].header[&#34;DATE-OBS&#34;])
+            start_time = fits_file[&#34;PRIMARY&#34;].header[&#34;FINETIME&#34;]
 
             # Loop over both sides of all CCDs (not all of them might be in -&gt; hence the KeyError)
 
@@ -2143,7 +2244,7 @@ the average and add this to the header of the cube;
                                     average_value = np.nanmean(selected_values)
 
                                     fits_synoptics[syn_enum] = np.append(fits_synoptics[syn_enum], average_value)
-                                except KeyError:
+                                except (KeyError, AttributeError):
                                     fits_synoptics[syn_enum] = np.append(fits_synoptics[syn_enum], np.nan)
 
                             for syn_enum in SynopticsLeaveGaps:
@@ -2157,7 +2258,7 @@ the average and add this to the header of the cube;
                                         unique_values = np.unique(selected_values[selection])
                                         value = str(bool(unique_values[0]))[0] if len(unique_values) == 1 else &#34;M&#34;
                                     fits_synoptics[syn_enum] = np.append(fits_synoptics[syn_enum], value)
-                                except KeyError:    # &#34;U&#34; (unknown)
+                                except (KeyError, AttributeError):    # &#34;U&#34; (unknown)
                                     fits_synoptics[syn_enum] = np.append(fits_synoptics[syn_enum], &#34;U&#34;)
 
                             # At this point, we have for each synoptical parameter an array of the values that need to
@@ -2311,7 +2412,7 @@ Returns: Filename for the level-2 FITS file.</li>
 </details>
 </dd>
 <dt id="egse.dpu.fitsgen.construct_images_filename"><code class="name flex">
-<span>def <span class="ident">construct_images_filename</span></span>(<span>hdf5_filename: pathlib.PosixPath, obsid: <a title="egse.obsid.ObservationIdentifier" href="../obsid.html#egse.obsid.ObservationIdentifier">ObservationIdentifier</a> = None, location=None)</span>
+<span>def <span class="ident">construct_images_filename</span></span>(<span>hdf5_filename: pathlib.PosixPath, obsid: <a title="egse.obsid.ObservationIdentifier" href="../obsid.html#egse.obsid.ObservationIdentifier">ObservationIdentifier</a> = None, location=None, camera_name: str = None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Construct the filename for the level-1 FITS file.</p>
@@ -2325,14 +2426,15 @@ of the item dictionary.</li>
 <li>use_counter: Indicates whether or not a counter should be included in the filename.</li>
 <li>location: Folder (with /daily and /obs sub-folders) in which the FITS files should be written (in a
 dedicated directory in the /obs folder). If not specified, the <code>PLATO_DATA_STORAGE_LOCATION</code>
-environment variable will be read out.
+environment variable will be used to construct the location..
 Returns: Full path to the file as a <code>PurePath</code>.</li>
 </ul></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def construct_images_filename(hdf5_filename: PosixPath, obsid: ObservationIdentifier = None, location=None):
+<pre><code class="python">def construct_images_filename(hdf5_filename: PosixPath, obsid: ObservationIdentifier = None,
+                              location=None, camera_name: str = None):
     &#34;&#34;&#34; Construct the filename for the level-1 FITS file.
 
 
@@ -2346,12 +2448,12 @@ Returns: Full path to the file as a <code>PurePath</code>.</li>
         - use_counter: Indicates whether or not a counter should be included in the filename.
         - location: Folder (with /daily and /obs sub-folders) in which the FITS files should be written (in a
                     dedicated directory in the /obs folder). If not specified, the `PLATO_DATA_STORAGE_LOCATION`
-                    environment variable will be read out.
+                    environment variable will be used to construct the location..
 
     Returns: Full path to the file as a `PurePath`.
     &#34;&#34;&#34;
 
-    location = location or os.environ.get(&#39;PLATO_DATA_STORAGE_LOCATION&#39;)
+    location = location or get_data_storage_location()
 
     if obsid is None:
 
@@ -2368,7 +2470,7 @@ Returns: Full path to the file as a <code>PurePath</code>.</li>
         #   - oldest data: TEST_LAB_SETUP
         #   - more recent data: TEST_LAB
 
-        obsid = obsid_from_storage(obsid, data_dir=location)
+        obsid = obsid_from_storage(obsid, data_dir=location, camera_name=camera_name)
 
         timestamp = str.split(str(hdf5_filename).split(&#34;/&#34;)[-1], &#34;_&#34;)[0]
         location += &#34;/obs/&#34;
@@ -2412,6 +2514,7 @@ Returns: Full path to the file as a <code>PurePath</code>.</li>
 
     cube_filename = construct_cube_filename(filename)
     LOGGER.info(f&#34;Converting to {cube_filename}&#34;)
+    fee_side = GlobalState.setup.camera.fee.ccd_sides.enum
 
     with fits.open(filename) as level1:
 
@@ -2436,12 +2539,12 @@ Returns: Full path to the file as a <code>PurePath</code>.</li>
 
                 try:
 
-                    time = level1[f&#34;IMAGE_{ccd_number}_{ccd_side.name[0]}&#34;, 0].header[&#34;DATE-OBS&#34;]
+                    finetime = level1[f&#34;IMAGE_{ccd_number}_{ccd_side.name[0]}&#34;, 0].header[&#34;FINETIME&#34;]
 
-                    if time_since_epoch_1958(time) &lt; start_time:
+                    if finetime &lt; start_time:
 
-                        start_time = time_since_epoch_1958(time)
-                        date_obs = time
+                        start_time = finetime
+                        date_obs = level1[f&#34;IMAGE_{ccd_number}_{ccd_side.name[0]}&#34;, 0].header[&#34;DATE-OBS&#34;]
 
                     side_is_present[ccd_number][ccd_side] = True
 
@@ -2450,7 +2553,8 @@ Returns: Full path to the file as a <code>PurePath</code>.</li>
                     side_is_present[ccd_number][ccd_side] = False
 
         primary_hdu = fits.PrimaryHDU()
-        primary_header[&#34;DATE-OBS&#34;] = date_obs
+        primary_header[&#34;DATE-OBS&#34;] = (date_obs, &#34;Timestamp for 1st frame&#34;,)
+        primary_header[&#34;FINETIME&#34;] = (start_time, &#34;Finetime representation of DATE-OBS&#34;,)
         primary_header[&#34;LEVEL&#34;] = 2  # Cube structure
         primary_hdu.header = primary_header
         primary_hdu.writeto(cube_filename)
@@ -2638,7 +2742,7 @@ That file</p>
 <li>files: List of filenames of the HDF5 files to use to create the FITS file.</li>
 <li>location: Folder (with /daily and /obs sub-folders) in which the FITS files should be written (in a
 dedicated directory in the /obs folder). If not specified, the <code>PLATO_DATA_STORAGE_LOCATION</code>
-environment variable will be read out.</li>
+environment variable will be used to construct the location.</li>
 <li>setup: Setup to retrieve information from.</li>
 </ul></div>
 <details class="source">
@@ -2668,11 +2772,11 @@ environment variable will be read out.</li>
         - files: List of filenames of the HDF5 files to use to create the FITS file.
         - location: Folder (with /daily and /obs sub-folders) in which the FITS files should be written (in a
                     dedicated directory in the /obs folder). If not specified, the `PLATO_DATA_STORAGE_LOCATION`
-                    environment variable will be read out.
+                    environment variable will be used to construct the location.
         - setup: Setup to retrieve information from.
     &#34;&#34;&#34;
 
-    location = location or os.environ.get(&#39;PLATO_DATA_STORAGE_LOCATION&#39;)
+    location = location or get_data_storage_location()
 
     # Loop over the filenames.  When you encounter an HDF5 file, check its format version.
 
@@ -2742,7 +2846,7 @@ solving the problem of the mismatch between the register map and the N-FEE state
 <li>files: List of filenames of the HDF5 files to use to create the FITS file.</li>
 <li>location: Folder (with /daily and /obs sub-folders) in which the FITS files should be written (in a
 dedicated directory in the /obs folder). If not specified, the <code>PLATO_DATA_STORAGE_LOCATION</code>
-environment variable will be read out.</li>
+environment variable will be used to construct the location.</li>
 <li>setup: Setup to retrieve information from.</li>
 </ul></div>
 <details class="source">
@@ -2768,11 +2872,15 @@ environment variable will be read out.</li>
         - files: List of filenames of the HDF5 files to use to create the FITS file.
         - location: Folder (with /daily and /obs sub-folders) in which the FITS files should be written (in a
                     dedicated directory in the /obs folder). If not specified, the `PLATO_DATA_STORAGE_LOCATION`
-                    environment variable will be read out.
+                    environment variable will be used to construct the location.
         - setup: Setup to retrieve information from.
     &#34;&#34;&#34;
+    setup = setup or GlobalState.setup
 
-    location = location or os.environ.get(&#39;PLATO_DATA_STORAGE_LOCATION&#39;)
+    location = location or get_data_storage_location()
+    hdf5_file_root = Path(files[0]).parent.parent.parent
+    sensor_sel_enum = setup.camera.fee.sensor_sel.enum
+    camera_name = setup.camera.ID
 
     config_slicing_num_cycles = 0    # Configured slicing parameter
     processed_num_cycles = 0            # HDF5 files with image data processed for current FITS file
@@ -2804,6 +2912,8 @@ environment variable will be read out.</li>
                             config_slicing_num_cycles = slicing_num_cycles
                     except KeyError:
                         config_slicing_num_cycles = 0
+
+                    register_map = RegisterMap(&#34;N-FEE&#34;, memory_map=h5.get_data(hdf5_file[&#34;register&#34;]))
 
                     # if is_corrupt(hdf5_file):
                     #     LOGGER.warning(f&#34;Skipping {filename} (corrupt)&#34;)
@@ -2846,7 +2956,9 @@ environment variable will be read out.</li>
                                     else:
                                         obsid = None
 
-                                    fits_filename = construct_images_filename(filename, obsid, location=location)
+                                    fits_filename = construct_images_filename(
+                                        filename, obsid, location=location, camera_name=camera_name
+                                    )
                                     LOGGER.info(f&#34;{fits_filename = !s}&#34;)
 
                                     ccd_readout_order = n_fee_state[&#39;ccd_readout_order&#39;]
@@ -2859,11 +2971,13 @@ environment variable will be read out.</li>
                                         &#34;rows_final_dump&#34;: n_fee_state[&#39;n_final_dump&#39;],
                                         &#34;ccd_mode_config&#34;: n_fee_state[&#39;ccd_mode_config&#39;],
                                         &#34;ccd_readout_order&#34;: ccd_readout_order,  # CCD numbering [1-4]
-                                        &#34;expected_last_packet_flags&#34;: get_expected_last_packet_flags(n_fee_state),
+                                        &#34;expected_last_packet_flags&#34;: get_expected_last_packet_flags(n_fee_state,
+                                                                                                     sensor_sel_enum),
                                         &#34;obsid&#34;: str(obsid) if obsid is not None else None,
-                                        &#34;cycle_time&#34;: get_cycle_time(n_fee_state, obsid=obsid, data_dir=location),
-                                        &#34;cgse_version&#34;: get_cgse_version(obsid=obsid, data_dir=location),
-                                        &#34;setup&#34;: setup
+                                        &#34;cycle_time&#34;: get_cycle_time(n_fee_state, obsid=obsid, data_dir=hdf5_file_root),
+                                        &#34;cgse_version&#34;: get_cgse_version(obsid=obsid, data_dir=hdf5_file_root),
+                                        &#34;setup&#34;: setup,
+                                        &#34;register_map&#34;: register_map
                                     }
 
                                     persistence = FITS(str(fits_filename), prep)
@@ -2879,7 +2993,8 @@ environment variable will be read out.</li>
                                 data = group[&#34;data&#34;]
                                 sorted_datasets = natsort.natsorted(data.items(), key=lambda x: x[0])
 
-                                persistence.expected_last_packet_flags = get_expected_last_packet_flags(n_fee_state)
+                                persistence.expected_last_packet_flags = get_expected_last_packet_flags(n_fee_state,
+                                                                                                        sensor_sel_enum)
 
                                 for identifier, dataset in sorted_datasets:
 
@@ -2943,7 +3058,7 @@ v_end parameters are already / not yet changed in the register map but not in th
 <li>files: List of filenames of the HDF5 files to use to create the FITS file.</li>
 <li>location: Folder (with /daily and /obs sub-folders) in which the FITS files should be written (in a
 dedicated directory in the /obs folder). If not specified, the <code>PLATO_DATA_STORAGE_LOCATION</code>
-environment variable will be read out.</li>
+environment variable will be used to construct the location.</li>
 <li>setup: Setup to retrieve information from.</li>
 </ul></div>
 <details class="source">
@@ -2973,11 +3088,15 @@ environment variable will be read out.</li>
         - files: List of filenames of the HDF5 files to use to create the FITS file.
         - location: Folder (with /daily and /obs sub-folders) in which the FITS files should be written (in a
                     dedicated directory in the /obs folder). If not specified, the `PLATO_DATA_STORAGE_LOCATION`
-                    environment variable will be read out.
+                    environment variable will be used to construct the location.
         - setup: Setup to retrieve information from.
     &#34;&#34;&#34;
+    setup = setup or GlobalState.setup
 
-    location = location or os.environ.get(&#39;PLATO_DATA_STORAGE_LOCATION&#39;)
+    location = location or get_data_storage_location()
+    hdf5_file_root = Path(files[0]).parent.parent.parent
+    sensor_sel_enum = setup.camera.fee.sensor_sel.enum
+    camera_name = setup.camera.ID
 
     prep = {}
     fits_filename = None
@@ -3038,7 +3157,9 @@ environment variable will be read out.</li>
                                     else:
                                         obsid = None
 
-                                    fits_filename = construct_images_filename(filename, obsid, location=location)
+                                    fits_filename = construct_images_filename(
+                                        filename, obsid, location=location, camera_name=camera_name
+                                    )
                                     LOGGER.info(f&#34;{fits_filename = !s}&#34;)
 
                                     ccd_readout_order = register_map[&#39;ccd_readout_order&#39;]
@@ -3051,11 +3172,13 @@ environment variable will be read out.</li>
                                         &#34;rows_final_dump&#34;: register_map[&#39;n_final_dump&#39;],
                                         &#34;ccd_mode_config&#34;: register_map[&#39;ccd_mode_config&#39;],
                                         &#34;ccd_readout_order&#34;: ccd_readout_order,  # CCD numbering [1-4]
-                                        &#34;expected_last_packet_flags&#34;: get_expected_last_packet_flags(register_map),
+                                        &#34;expected_last_packet_flags&#34;: get_expected_last_packet_flags(register_map,
+                                                                                                     sensor_sel_enum),
                                         &#34;obsid&#34;: str(obsid) if obsid is not None else None,
-                                        &#34;cycle_time&#34;: get_cycle_time(register_map, obsid=obsid, data_dir=location),
-                                        &#34;cgse_version&#34;: get_cgse_version(obsid=obsid, data_dir=location),
-                                        &#34;setup&#34;: setup
+                                        &#34;cycle_time&#34;: get_cycle_time(register_map, obsid=obsid, data_dir=hdf5_file_root),
+                                        &#34;cgse_version&#34;: get_cgse_version(obsid=obsid, data_dir=hdf5_file_root),
+                                        &#34;setup&#34;: setup,
+                                        &#34;register_map&#34;: register_map
                                     }
 
                                     persistence = FITS(str(fits_filename), prep)
@@ -3071,7 +3194,8 @@ environment variable will be read out.</li>
                                 data = group[&#34;data&#34;]
                                 sorted_datasets = natsort.natsorted(data.items(), key=lambda x: x[0])
 
-                                persistence.expected_last_packet_flags = get_expected_last_packet_flags(register_map)
+                                persistence.expected_last_packet_flags = get_expected_last_packet_flags(register_map,
+                                                                                                        sensor_sel_enum)
 
                                 for identifier, dataset in sorted_datasets:
 
@@ -3304,12 +3428,14 @@ Returns: Dictionary with the synoptics that should go into the FITS files for th
             # We need to filter out the NaNs or the interpolation will not work
 
             values = synoptics_table[syn_name].values
-            selection = ~np.isnan(values)
 
-            if np.any(selection):
-                interpolation = interp1d(timestamps[np.where(selection)], values[np.where(selection)], kind=&#39;linear&#39;,
-                                         fill_value=&#39;extrapolate&#39;)
-                synoptics[syn_enum] = interpolation(timestamps)
+            if len(values) &gt; 0:
+                selection = ~np.isnan(values)
+
+                if np.any(selection):
+                    interpolation = interp1d(timestamps[np.where(selection)], values[np.where(selection)], kind=&#39;linear&#39;,
+                                             fill_value=&#39;extrapolate&#39;)
+                    synoptics[syn_enum] = interpolation(timestamps)
 
     # Forward fill
 
@@ -3346,7 +3472,7 @@ To do this, the
 list of relevant ODs is composed, based on the first and last timestamp in the DPU HK file (this file will always
 be present if data has been acquired).
 Then all HDF5 files for these ODs are looped over and the obsid stored in
-these is compared with the given obsid.
+there is compared with the given obsid.
 In case of a match, the HDF5 filename is added to the list.</p>
 <h2 id="args">Args</h2>
 <ul>
@@ -3367,7 +3493,7 @@ in which the HDF5 files are stored.</li>
     which the combination (TEST, SITE) matches with the (TEST, SITE) combination from the given obsid.  To do this, the
     list of relevant ODs is composed, based on the first and last timestamp in the DPU HK file (this file will always
     be present if data has been acquired).  Then all HDF5 files for these ODs are looped over and the obsid stored in
-    these is compared with the given obsid.  In case of a match, the HDF5 filename is added to the list.
+    there is compared with the given obsid.  In case of a match, the HDF5 filename is added to the list.
 
     Args:
         - obsid: Observation identifier [TEST_LAB or TEST_LAB_SETUP].
@@ -3375,7 +3501,7 @@ in which the HDF5 files are stored.</li>
                     in which the HDF5 files are stored.
     &#34;&#34;&#34;
 
-    data_dir = data_dir or os.environ.get(&#39;PLATO_DATA_STORAGE_LOCATION&#39;)
+    data_dir = data_dir or get_data_storage_location()
 
     # Determine in which location (i.e. in the folder of which OD in the /daily sub-folder of the data directory)
     # the required HDF5 files are stored.  This sub-folder carries the OD [yyyymmdd] as name.
@@ -3403,7 +3529,6 @@ in which the HDF5 files are stored.</li>
                         if hdf5_obsid != &#34;None&#34;:
                             hdf5_obsid = ObservationIdentifier.create_from_string(
                                 hdf5_obsid, LAB_SETUP_TEST).create_id(order=TEST_LAB)      # TEST_LAB
-
                             if hdf5_obsid in str(obsid):
                                 obs_hdf5_files.append(hdf5_filename)
 
@@ -3498,7 +3623,7 @@ Returns: List of observation day [yyyymmdd].</li>
     Returns: List of observation day [yyyymmdd].
     &#34;&#34;&#34;
 
-    data_dir = data_dir or os.environ[&#34;PLATO_DATA_STORAGE_LOCATION&#34;]
+    data_dir = data_dir or get_data_storage_location()
     obsid = obsid_from_storage(obsid, data_dir=data_dir)     # Convert the obsid to the correct format
     obs_dir = f&#34;{data_dir}/obs/{obsid}&#34;
 
@@ -3523,60 +3648,48 @@ Returns: List of observation day [yyyymmdd].</li>
         raise Abort(f&#34;DPU was not running during obsid {obsid}: no data could be acquired&#34;)</code></pre>
 </details>
 </dd>
-<dt id="egse.dpu.fitsgen.get_setup_for_obsid"><code class="name flex">
-<span>def <span class="ident">get_setup_for_obsid</span></span>(<span>obsid: str, data_dir: str = None) ‑> <a title="egse.setup.Setup" href="../setup.html#egse.setup.Setup">Setup</a></span>
+<dt id="egse.dpu.fitsgen.get_offline_setup"><code class="name flex">
+<span>def <span class="ident">get_offline_setup</span></span>(<span>site_id: str = None, setup_id: int = None)</span>
 </code></dt>
 <dd>
-<div class="desc"><p>Return the setup for the given obsid.</p>
-<p>The given obsid can be specified in either of these two formats: TEST_LAB or TEST_LAB_SETUP. In this method, we
-determine from the CM HK file (this file will always be present) for the given observation which is the setup that
-was used during the given obsid.
-This file resides in the folder of the given obsid in the /obs directory, with the
-name (i.e. obsid) in the format TEST_SITE_SETUP or TEST_SITE (depending on how old the observation is).
-The obsid
-that is used in the filename follows the same pattern, so the given obsid must be converted to that format.</p>
+<div class="desc"><p>Return setup to use for the off-line FITS generation.</p>
+<p>If the setup ID and site ID have been specified, the corresponding setup is used.
+Otherwise, the setup that is
+currently loaded in the Configuration Manager is used.</p>
 <h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>site_id</code></strong></dt>
+<dd>Identifier of the testhouse</dd>
+<dt><strong><code>setup_id</code></strong></dt>
+<dd>Identifier of the setup</dd>
+</dl>
+<h2 id="returns">Returns</h2>
 <ul>
-<li>obsid: Observation identifier [TEST_LAB or TEST_LAB_SETUP].</li>
-<li>data_dir: Full path to the directory in which the data resides.
-This is the folder with a sub-folder /daily,
-in which the HDF5 files are stored.
-Returns: Setup for the given obsid.</li>
+<li>Setup to use for the off-line FITS generation.</li>
 </ul></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def get_setup_for_obsid(obsid: str, data_dir: str = None) -&gt; Setup:
-    &#34;&#34;&#34; Return the setup for the given obsid.
+<pre><code class="python">def get_offline_setup(site_id: str = None, setup_id: int = None):
+    &#34;&#34;&#34; Return setup to use for the off-line FITS generation.
 
-    The given obsid can be specified in either of these two formats: TEST_LAB or TEST_LAB_SETUP. In this method, we
-    determine from the CM HK file (this file will always be present) for the given observation which is the setup that
-    was used during the given obsid.  This file resides in the folder of the given obsid in the /obs directory, with the
-    name (i.e. obsid) in the format TEST_SITE_SETUP or TEST_SITE (depending on how old the observation is).  The obsid
-    that is used in the filename follows the same pattern, so the given obsid must be converted to that format.
+    If the setup ID and site ID have been specified, the corresponding setup is used.  Otherwise, the setup that is
+    currently loaded in the Configuration Manager is used.
 
     Args:
-        - obsid: Observation identifier [TEST_LAB or TEST_LAB_SETUP].
-        - data_dir: Full path to the directory in which the data resides.  This is the folder with a sub-folder /daily,
-                    in which the HDF5 files are stored.
+        site_id: Identifier of the testhouse
+        setup_id: Identifier of the setup
 
-    Returns: Setup for the given obsid.
+    Returns:
+        - Setup to use for the off-line FITS generation.
     &#34;&#34;&#34;
 
-    data_dir = data_dir or os.environ[&#34;PLATO_DATA_STORAGE_LOCATION&#34;]
-    obsid = obsid_from_storage(obsid, data_dir=data_dir)     # Convert the obsid to the correct format
-    obs_dir = f&#34;{data_dir}/obs/{obsid}&#34;
-
-    try:
-        cm_hk = str(find_file(f&#34;{obsid}_CM_*.csv&#34;, root=obs_dir))
-        last_line = read_last_line(cm_hk).split(&#34;,&#34;)
-        site_id = last_line[1]
-        setup_id = int(last_line[2])
-
-        return load_setup(setup_id=setup_id, site_id=site_id, from_disk=True)
-    except IndexError:
-        raise Abort(f&#34;DPU was not running during obsid {obsid}: no data could be acquired&#34;)</code></pre>
+    if setup_id is None:
+        return GlobalState.setup
+    else:
+        site_id = site_id or SITE.ID
+        return load_setup(setup_id=setup_id, site_id=site_id, from_disk=True)</code></pre>
 </details>
 </dd>
 <dt id="egse.dpu.fitsgen.in_data_acquisition_mode"><code class="name flex">
@@ -3755,7 +3868,7 @@ be created as soon as data packet start coming in (when the N-FEE is in full-ima
 
         # Queue with the full path of the HDF5 files that still need to be processed.
 
-        self.hdf5_filename_queue = Queue(f&#34;{os.environ[&#39;PLATO_DATA_STORAGE_LOCATION&#39;]}/{DPU_SETTINGS[&#39;HDF5_QUEUE&#39;]}&#34;)
+        self.hdf5_filename_queue = persistqueue.Queue(f&#34;{get_data_storage_location()}/{DPU_SETTINGS[&#39;HDF5_QUEUE&#39;]}&#34;)
 
         # Name of the FITS file currently being written
         # (None if the N-FEE is not in full-image mode or in full-image pattern mode)
@@ -3782,13 +3895,11 @@ be created as soon as data packet start coming in (when the N-FEE is in full-ima
         # self.sensor_sel = None
         self.rows_final_dump = None
         self.setup = GlobalState.setup
+        self.sensor_sel_enum = self.setup.camera.fee.sensor_sel.enum
+        self.camera_name = self.setup.camera.ID
 
         self.config_slicing_num_cycles = 0   # Configured slicing parameter
         self.processed_num_cycles = 0           # HDF5 files with image data processed for current FITS file
-
-        self.zcontext = zmq.Context.instance()
-        self.monitoring_socket = self.zcontext.socket(zmq.PUB)
-        self.monitoring_socket.bind(bind_address(CTRL_SETTINGS.PROTOCOL, CTRL_SETTINGS.MONITORING_PORT,))
 
         # self._quit_event = multiprocessing.Event()
 
@@ -3807,30 +3918,34 @@ be created as soon as data packet start coming in (when the N-FEE is in full-ima
         self.process_queue_thread.start()
 
     def fill_queue(self):
-        &#34;&#34;&#34; The DPU monitoring fills the queue.
+        &#34;&#34;&#34;
+        The DPU monitoring fills the queue.
 
         Each time an HDF5 file with SpW packets is closed, the DPU monitoring puts the full path of this file on the
         queue.
         &#34;&#34;&#34;
 
-        while self.keep_processing_queue:
+        dpu_monitoring_timeout = 30  # seconds
 
-            with DPUMonitoring() as dpu_monitoring:
+        with DPUMonitoring() as dpu_monitoring:
 
-                while self.keep_processing_queue:
+            start_time = time.time()
 
-                    try:
-                        hdf5_filename = dpu_monitoring.wait_for_hdf5_filename()
-                        self.hdf5_filename_queue.put(hdf5_filename)
+            while self.keep_processing_queue:
 
-                    # If the DPU monitoring times out, try to re-establish a connection
-                    # (in the future, we want to replace this with something like dpu_monitoring_reconnect())
+                try:
+                    hdf5_filename = dpu_monitoring.wait_for_hdf5_filename(retries=0, timeout=1.0)
+                    self.hdf5_filename_queue.put(hdf5_filename)
+                    start_time = time.time()
+                except TimeoutError:
+                    if time.time() - start_time &gt; dpu_monitoring_timeout:
+                        LOGGER.warning(f&#34;DPU monitoring timeout, &#34;
+                                       f&#34;no HDF5 filename received after {dpu_monitoring_timeout} seconds.&#34;)
+                        start_time = time.time()
 
-                    except TimeoutError:
-                        LOGGER.warning(&#34;DPU monitoring timeout&#34;)
-                        break
+            LOGGER.info(f&#34;Broke out of monitoring loop {self.keep_processing_queue=}.&#34;)
 
-    def run(self, commander, poller):
+    def run(self):
         &#34;&#34;&#34; Process the content of the queue.
 
         When there is a filename in the queue, take it from the queue:
@@ -3840,6 +3955,17 @@ be created as soon as data packet start coming in (when the N-FEE is in full-ima
               mode, or the N-FEE goes to full-image mode or full-image pattern mode, a new FITS file will be created.
             - The content of the HDF5 files will be extracted and passed to the FITS persistence layer as SpW packets.
         &#34;&#34;&#34;
+        zcontext = zmq.Context.instance()
+
+        monitoring_socket = zcontext.socket(zmq.PUB)
+        monitoring_socket.bind(bind_address(CTRL_SETTINGS.PROTOCOL, CTRL_SETTINGS.MONITORING_PORT,))
+
+        endpoint = bind_address(CTRL_SETTINGS.PROTOCOL, CTRL_SETTINGS.COMMANDING_PORT)
+        commander = zcontext.socket(zmq.REP)
+        commander.bind(endpoint)
+
+        poller = zmq.Poller()
+        poller.register(commander, zmq.POLLIN)
 
         last_time = time_in_ms()
 
@@ -3858,25 +3984,47 @@ be created as soon as data packet start coming in (when the N-FEE is in full-ima
                                        &#34;fits&#34;: self.fits_cube_filename or self.fits_images_filename,
                                        &#34;last obsid (being) processed&#34;: self.last_processed_obsid}
                     pickle_string = pickle.dumps(monitoring_info)
-                    self.monitoring_socket.send(pickle_string)
+                    monitoring_socket.send(pickle_string)
 
         except KeyboardInterrupt:
             click.echo(&#34;KeyboardInterrupt caught!&#34;)
-            self.keep_processing_queue = False
 
-        # Keyboard interrupt or stop command
+        self.keep_processing_queue = False
+
+        # Clean up all open sockets and running threads
+
+        poller.unregister(commander)
 
         LOGGER.info(&#34;Shutting down FITS generation&#34;)
-        commander.close(linger=0)
-        # self.dpu_monitoring_thread.join()
-        # self.process_queue_thread.join()
 
-        self.monitoring_socket.close()
-        # self.zcontext.term()
+        commander.close(linger=0)
+        LOGGER.info(&#34;Commander closed.&#34;)
+
+        monitoring_socket.close(linger=0)
+        LOGGER.info(&#34;Monitoring socket closed.&#34;)
+
+        # Check if the Monitoring and Processing Threads are finished
+        # Since the default timeout on the DPU Monitoring is set to 30s for some reason, this may take some time
+
+        LOGGER.info(&#34;Joining worker threads, this may take some time...&#34;)
+        self.dpu_monitoring_thread.join()
+        self.process_queue_thread.join()
+        LOGGER.info(&#34;Worker threads terminated.&#34;)
+
+        del self.hdf5_filename_queue
+        LOGGER.info(&#34;HDF5 filename Queue deleted.&#34;)
+
+        del zcontext
+
+    def __del__(self):
+        egse.logger.close_all_zmq_handlers()
+
+        zmq.Context.instance().term()
+        logging.getLogger().info(&#34;ZMQ Context terminated.&#34;)
 
     def process_queue(self):
 
-        location = os.environ.get(&#39;PLATO_DATA_STORAGE_LOCATION&#39;)
+        location = get_data_storage_location()
 
         previous_obsid = None
 
@@ -3890,8 +4038,10 @@ be created as soon as data packet start coming in (when the N-FEE is in full-ima
 
                     # Get the first item in the queue (FIFO) and open it
 
-                    hdf5_filename = self.hdf5_filename_queue.get()[0]
-                    self.hdf5_filename = hdf5_filename
+                    item = self.hdf5_filename_queue.get()
+                    # LOGGER.info(f&#34;HFD5 filename Queue {item = }&#34;)
+                    self.hdf5_filename = hdf5_filename = item[0]
+                    self.hdf5_filename_queue.task_done()
 
                     LOGGER.info(f&#34;Processing file {hdf5_filename}&#34;)
 
@@ -3921,16 +4071,26 @@ be created as soon as data packet start coming in (when the N-FEE is in full-ima
 
                             try:
                                 obsid = hdf5_file[&#34;obsid&#34;][()].decode()
+                                # LOGGER.info(f&#34;OBSID from HDF5 file: {obsid = }&#34;)
                                 obsid = ObservationIdentifier.create_from_string(obsid, order=LAB_SETUP_TEST)
+                                # LOGGER.info(f&#34;OBSID from string: {obsid = !s}&#34;)
 
-                                self.last_processed_obsid = obsid_from_storage(obsid, data_dir=location)
-                            except (KeyError, ValueError):
-                                # Either the obsid is not included in the HDF5 file or it is None
+                                self.last_processed_obsid = obsid_from_storage(
+                                    obsid, data_dir=location, camera_name=self.camera_name)
+                            except (KeyError, ValueError) as exc:
+                                # KeyError: when no obsid is included in the HDF5 file
+                                # ValueError: when the format of the obsid does not match LAB_SETUP_TEST
+                                # Uncomment the following line when you need more debug info
+                                # LOGGER.warning(f&#34;Exception caught: {exc.__class__.__name__} - {exc}&#34;, exc_info=False)
                                 obsid = None
-                            except AttributeError:
-                                LOGGER.error(f&#34;No data present for obsid {str(obsid)} in the obs folder&#34;)
+                            except AttributeError as exc:
+                                # AttributeError: when is this raised ??
+                                LOGGER.warning(f&#34;Exception caught: {exc.__class__.__name__} - {exc}&#34;, exc_info=False)
+                                LOGGER.error(f&#34;No data present for obsid {str(obsid)} in the obs folder, terminating ...&#34;)
                                 self.keep_processing_queue = False
                                 break
+
+                            register_map = RegisterMap(&#34;N-FEE&#34;, memory_map=h5.get_data(hdf5_file[&#34;register&#34;]))
 
                             # Loop over all groups in the current HDF5 file and check whether the &#34;data&#34; group is
                             # present
@@ -3957,7 +4117,9 @@ be created as soon as data packet start coming in (when the N-FEE is in full-ima
 
                                             # Start writing to a new FITS file
 
-                                            self.fits_images_filename = construct_images_filename(hdf5_filename, obsid)
+                                            self.fits_images_filename = construct_images_filename(
+                                                hdf5_filename, obsid, location=location, camera_name=self.camera_name
+                                            )
 
                                             ccd_readout_order = convert_ccd_order_value(self.ccd_readout_order)
 
@@ -3968,11 +4130,13 @@ be created as soon as data packet start coming in (when the N-FEE is in full-ima
                                                 &#34;rows_final_dump&#34;: self.rows_final_dump,
                                                 &#34;ccd_mode_config&#34;: self.ccd_mode_config,
                                                 &#34;ccd_readout_order&#34;: ccd_readout_order,  # CCD numbering [1-4]
-                                                &#34;expected_last_packet_flags&#34;: get_expected_last_packet_flags(n_fee_state),
+                                                &#34;expected_last_packet_flags&#34;: get_expected_last_packet_flags(
+                                                    n_fee_state, self.sensor_sel_enum),
                                                 &#34;obsid&#34;: str(obsid),
                                                 &#34;cycle_time&#34;: get_cycle_time(n_fee_state, obsid=obsid),
                                                 &#34;cgse_version&#34;: get_cgse_version(obsid=obsid),
-                                                &#34;setup&#34;: self.setup
+                                                &#34;setup&#34;: self.setup,
+                                                &#34;register_map&#34;: register_map,
                                             }
 
                                             persistence = FITS(self.fits_images_filename, prep)
@@ -3989,7 +4153,7 @@ be created as soon as data packet start coming in (when the N-FEE is in full-ima
                                         sorted_datasets = natsort.natsorted(data.items(), key=lambda x: x[0])
 
                                         persistence.expected_last_packet_flags = get_expected_last_packet_flags(
-                                            n_fee_state)
+                                            n_fee_state, self.sensor_sel_enum)
 
                                         for identifier, dataset in sorted_datasets:
 
@@ -4013,9 +4177,8 @@ be created as soon as data packet start coming in (when the N-FEE is in full-ima
                             # is only at this point that the synoptics can be included in the FITS headers.
 
                             if previous_obsid is not None and obsid is None:
-                                add_synoptics(previous_obsid)
-                                previous_obsid = obsid
-
+                                add_synoptics(previous_obsid, fits_dir=location, syn_dir=location)
+                            previous_obsid = obsid
                         except KeyError:
                             LOGGER.debug(&#34;KeyError occurred when accessing data in all groups of the HDF5 file.&#34;)
 
@@ -4272,28 +4435,32 @@ queue.</p></div>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def fill_queue(self):
-    &#34;&#34;&#34; The DPU monitoring fills the queue.
+    &#34;&#34;&#34;
+    The DPU monitoring fills the queue.
 
     Each time an HDF5 file with SpW packets is closed, the DPU monitoring puts the full path of this file on the
     queue.
     &#34;&#34;&#34;
 
-    while self.keep_processing_queue:
+    dpu_monitoring_timeout = 30  # seconds
 
-        with DPUMonitoring() as dpu_monitoring:
+    with DPUMonitoring() as dpu_monitoring:
 
-            while self.keep_processing_queue:
+        start_time = time.time()
 
-                try:
-                    hdf5_filename = dpu_monitoring.wait_for_hdf5_filename()
-                    self.hdf5_filename_queue.put(hdf5_filename)
+        while self.keep_processing_queue:
 
-                # If the DPU monitoring times out, try to re-establish a connection
-                # (in the future, we want to replace this with something like dpu_monitoring_reconnect())
+            try:
+                hdf5_filename = dpu_monitoring.wait_for_hdf5_filename(retries=0, timeout=1.0)
+                self.hdf5_filename_queue.put(hdf5_filename)
+                start_time = time.time()
+            except TimeoutError:
+                if time.time() - start_time &gt; dpu_monitoring_timeout:
+                    LOGGER.warning(f&#34;DPU monitoring timeout, &#34;
+                                   f&#34;no HDF5 filename received after {dpu_monitoring_timeout} seconds.&#34;)
+                    start_time = time.time()
 
-                except TimeoutError:
-                    LOGGER.warning(&#34;DPU monitoring timeout&#34;)
-                    break</code></pre>
+        LOGGER.info(f&#34;Broke out of monitoring loop {self.keep_processing_queue=}.&#34;)</code></pre>
 </details>
 </dd>
 <dt id="egse.dpu.fitsgen.FITSGenerator.process_queue"><code class="name flex">
@@ -4307,7 +4474,7 @@ queue.</p></div>
 </summary>
 <pre><code class="python">def process_queue(self):
 
-    location = os.environ.get(&#39;PLATO_DATA_STORAGE_LOCATION&#39;)
+    location = get_data_storage_location()
 
     previous_obsid = None
 
@@ -4321,8 +4488,10 @@ queue.</p></div>
 
                 # Get the first item in the queue (FIFO) and open it
 
-                hdf5_filename = self.hdf5_filename_queue.get()[0]
-                self.hdf5_filename = hdf5_filename
+                item = self.hdf5_filename_queue.get()
+                # LOGGER.info(f&#34;HFD5 filename Queue {item = }&#34;)
+                self.hdf5_filename = hdf5_filename = item[0]
+                self.hdf5_filename_queue.task_done()
 
                 LOGGER.info(f&#34;Processing file {hdf5_filename}&#34;)
 
@@ -4352,16 +4521,26 @@ queue.</p></div>
 
                         try:
                             obsid = hdf5_file[&#34;obsid&#34;][()].decode()
+                            # LOGGER.info(f&#34;OBSID from HDF5 file: {obsid = }&#34;)
                             obsid = ObservationIdentifier.create_from_string(obsid, order=LAB_SETUP_TEST)
+                            # LOGGER.info(f&#34;OBSID from string: {obsid = !s}&#34;)
 
-                            self.last_processed_obsid = obsid_from_storage(obsid, data_dir=location)
-                        except (KeyError, ValueError):
-                            # Either the obsid is not included in the HDF5 file or it is None
+                            self.last_processed_obsid = obsid_from_storage(
+                                obsid, data_dir=location, camera_name=self.camera_name)
+                        except (KeyError, ValueError) as exc:
+                            # KeyError: when no obsid is included in the HDF5 file
+                            # ValueError: when the format of the obsid does not match LAB_SETUP_TEST
+                            # Uncomment the following line when you need more debug info
+                            # LOGGER.warning(f&#34;Exception caught: {exc.__class__.__name__} - {exc}&#34;, exc_info=False)
                             obsid = None
-                        except AttributeError:
-                            LOGGER.error(f&#34;No data present for obsid {str(obsid)} in the obs folder&#34;)
+                        except AttributeError as exc:
+                            # AttributeError: when is this raised ??
+                            LOGGER.warning(f&#34;Exception caught: {exc.__class__.__name__} - {exc}&#34;, exc_info=False)
+                            LOGGER.error(f&#34;No data present for obsid {str(obsid)} in the obs folder, terminating ...&#34;)
                             self.keep_processing_queue = False
                             break
+
+                        register_map = RegisterMap(&#34;N-FEE&#34;, memory_map=h5.get_data(hdf5_file[&#34;register&#34;]))
 
                         # Loop over all groups in the current HDF5 file and check whether the &#34;data&#34; group is
                         # present
@@ -4388,7 +4567,9 @@ queue.</p></div>
 
                                         # Start writing to a new FITS file
 
-                                        self.fits_images_filename = construct_images_filename(hdf5_filename, obsid)
+                                        self.fits_images_filename = construct_images_filename(
+                                            hdf5_filename, obsid, location=location, camera_name=self.camera_name
+                                        )
 
                                         ccd_readout_order = convert_ccd_order_value(self.ccd_readout_order)
 
@@ -4399,11 +4580,13 @@ queue.</p></div>
                                             &#34;rows_final_dump&#34;: self.rows_final_dump,
                                             &#34;ccd_mode_config&#34;: self.ccd_mode_config,
                                             &#34;ccd_readout_order&#34;: ccd_readout_order,  # CCD numbering [1-4]
-                                            &#34;expected_last_packet_flags&#34;: get_expected_last_packet_flags(n_fee_state),
+                                            &#34;expected_last_packet_flags&#34;: get_expected_last_packet_flags(
+                                                n_fee_state, self.sensor_sel_enum),
                                             &#34;obsid&#34;: str(obsid),
                                             &#34;cycle_time&#34;: get_cycle_time(n_fee_state, obsid=obsid),
                                             &#34;cgse_version&#34;: get_cgse_version(obsid=obsid),
-                                            &#34;setup&#34;: self.setup
+                                            &#34;setup&#34;: self.setup,
+                                            &#34;register_map&#34;: register_map,
                                         }
 
                                         persistence = FITS(self.fits_images_filename, prep)
@@ -4420,7 +4603,7 @@ queue.</p></div>
                                     sorted_datasets = natsort.natsorted(data.items(), key=lambda x: x[0])
 
                                     persistence.expected_last_packet_flags = get_expected_last_packet_flags(
-                                        n_fee_state)
+                                        n_fee_state, self.sensor_sel_enum)
 
                                     for identifier, dataset in sorted_datasets:
 
@@ -4444,9 +4627,8 @@ queue.</p></div>
                         # is only at this point that the synoptics can be included in the FITS headers.
 
                         if previous_obsid is not None and obsid is None:
-                            add_synoptics(previous_obsid)
-                            previous_obsid = obsid
-
+                            add_synoptics(previous_obsid, fits_dir=location, syn_dir=location)
+                        previous_obsid = obsid
                     except KeyError:
                         LOGGER.debug(&#34;KeyError occurred when accessing data in all groups of the HDF5 file.&#34;)
 
@@ -4457,7 +4639,7 @@ queue.</p></div>
 </details>
 </dd>
 <dt id="egse.dpu.fitsgen.FITSGenerator.run"><code class="name flex">
-<span>def <span class="ident">run</span></span>(<span>self, commander, poller)</span>
+<span>def <span class="ident">run</span></span>(<span>self)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Process the content of the queue.</p>
@@ -4471,7 +4653,7 @@ queue.</p></div>
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def run(self, commander, poller):
+<pre><code class="python">def run(self):
     &#34;&#34;&#34; Process the content of the queue.
 
     When there is a filename in the queue, take it from the queue:
@@ -4481,6 +4663,17 @@ queue.</p></div>
           mode, or the N-FEE goes to full-image mode or full-image pattern mode, a new FITS file will be created.
         - The content of the HDF5 files will be extracted and passed to the FITS persistence layer as SpW packets.
     &#34;&#34;&#34;
+    zcontext = zmq.Context.instance()
+
+    monitoring_socket = zcontext.socket(zmq.PUB)
+    monitoring_socket.bind(bind_address(CTRL_SETTINGS.PROTOCOL, CTRL_SETTINGS.MONITORING_PORT,))
+
+    endpoint = bind_address(CTRL_SETTINGS.PROTOCOL, CTRL_SETTINGS.COMMANDING_PORT)
+    commander = zcontext.socket(zmq.REP)
+    commander.bind(endpoint)
+
+    poller = zmq.Poller()
+    poller.register(commander, zmq.POLLIN)
 
     last_time = time_in_ms()
 
@@ -4499,21 +4692,37 @@ queue.</p></div>
                                    &#34;fits&#34;: self.fits_cube_filename or self.fits_images_filename,
                                    &#34;last obsid (being) processed&#34;: self.last_processed_obsid}
                 pickle_string = pickle.dumps(monitoring_info)
-                self.monitoring_socket.send(pickle_string)
+                monitoring_socket.send(pickle_string)
 
     except KeyboardInterrupt:
         click.echo(&#34;KeyboardInterrupt caught!&#34;)
-        self.keep_processing_queue = False
 
-    # Keyboard interrupt or stop command
+    self.keep_processing_queue = False
+
+    # Clean up all open sockets and running threads
+
+    poller.unregister(commander)
 
     LOGGER.info(&#34;Shutting down FITS generation&#34;)
-    commander.close(linger=0)
-    # self.dpu_monitoring_thread.join()
-    # self.process_queue_thread.join()
 
-    self.monitoring_socket.close()
-    # self.zcontext.term()</code></pre>
+    commander.close(linger=0)
+    LOGGER.info(&#34;Commander closed.&#34;)
+
+    monitoring_socket.close(linger=0)
+    LOGGER.info(&#34;Monitoring socket closed.&#34;)
+
+    # Check if the Monitoring and Processing Threads are finished
+    # Since the default timeout on the DPU Monitoring is set to 30s for some reason, this may take some time
+
+    LOGGER.info(&#34;Joining worker threads, this may take some time...&#34;)
+    self.dpu_monitoring_thread.join()
+    self.process_queue_thread.join()
+    LOGGER.info(&#34;Worker threads terminated.&#34;)
+
+    del self.hdf5_filename_queue
+    LOGGER.info(&#34;HDF5 filename Queue deleted.&#34;)
+
+    del zcontext</code></pre>
 </details>
 </dd>
 </dl>
@@ -4840,7 +5049,7 @@ indicate that the shutter is always open there.</p></div>
 <li><code><a title="egse.dpu.fitsgen.get_hdf5_filenames_for_obsid" href="#egse.dpu.fitsgen.get_hdf5_filenames_for_obsid">get_hdf5_filenames_for_obsid</a></code></li>
 <li><code><a title="egse.dpu.fitsgen.get_obsid" href="#egse.dpu.fitsgen.get_obsid">get_obsid</a></code></li>
 <li><code><a title="egse.dpu.fitsgen.get_od" href="#egse.dpu.fitsgen.get_od">get_od</a></code></li>
-<li><code><a title="egse.dpu.fitsgen.get_setup_for_obsid" href="#egse.dpu.fitsgen.get_setup_for_obsid">get_setup_for_obsid</a></code></li>
+<li><code><a title="egse.dpu.fitsgen.get_offline_setup" href="#egse.dpu.fitsgen.get_offline_setup">get_offline_setup</a></code></li>
 <li><code><a title="egse.dpu.fitsgen.in_data_acquisition_mode" href="#egse.dpu.fitsgen.in_data_acquisition_mode">in_data_acquisition_mode</a></code></li>
 <li><code><a title="egse.dpu.fitsgen.is_corrupt" href="#egse.dpu.fitsgen.is_corrupt">is_corrupt</a></code></li>
 <li><code><a title="egse.dpu.fitsgen.is_incomplete" href="#egse.dpu.fitsgen.is_incomplete">is_incomplete</a></code></li>

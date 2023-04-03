@@ -54,6 +54,9 @@ all device behavior correctly, e.g. timing, error conditions, etc.
 &#34;&#34;&#34;
 import logging
 
+from egse.hexapod.symetrie import ProxyFactory
+from egse.hexapod.symetrie import get_hexapod_controller_pars
+
 if __name__ != &#34;__main__&#34;:
     import multiprocessing
     multiprocessing.current_process().name = &#34;puna_cs&#34;
@@ -184,8 +187,12 @@ def start_bg(simulator):
 def stop():
     &#34;&#34;&#34;Send a &#39;quit_server&#39; command to the Hexapod Puna Control Server.&#34;&#34;&#34;
 
+    *_, device_id, device_name, controller_type = get_hexapod_controller_pars()
+
+    factory = ProxyFactory()
+
     try:
-        with PunaProxy() as proxy:
+        with factory.create(device_name, device_id=device_id) as proxy:
             sp = proxy.get_service_proxy()
             sp.quit_server()
     except ConnectionError:
@@ -197,21 +204,27 @@ def status():
     &#34;&#34;&#34;Request status information from the Control Server.&#34;&#34;&#34;
 
     protocol = CTRL_SETTINGS.PROTOCOL
-    hostname = CTRL_SETTINGS.HOSTNAME
-    port = CTRL_SETTINGS.COMMANDING_PORT
+    hostname_cs = CTRL_SETTINGS.HOSTNAME
+    port_cs = CTRL_SETTINGS.COMMANDING_PORT
 
-    endpoint = connect_address(protocol, hostname, port)
+    endpoint = connect_address(protocol, hostname_cs, port_cs)
+
+    *_, device_id, device_name, controller_type = get_hexapod_controller_pars()
+
+    factory = ProxyFactory()
 
     if is_control_server_active(endpoint):
-        rich.print(f&#34;PUNA Hexapod: [green]active&#34;)
-        with PunaProxy() as puna:
+        rich.print(&#34;PUNA Hexapod: [green]active&#34;)
+        with factory.create(device_name, device_id=device_id) as puna:
             sim = puna.is_simulator()
             connected = puna.is_connected()
             ip = puna.get_ip_address()
-            rich.print(f&#34;mode: {&#39;simulator&#39; if sim else &#39;device&#39;}{&#39; not&#39; if not connected else &#39;&#39;} connected&#34;)
+            rich.print(f&#34;type: {controller_type}&#34;)
+            rich.print(f&#34;mode: {&#39;simulator&#39; if sim else &#39;device&#39;}{&#39;&#39; if connected else &#39; not&#39;} connected&#34;)
             rich.print(f&#34;hostname: {ip}&#34;)
+            rich.print(f&#34;commanding port: {port_cs}&#34;)
     else:
-        rich.print(f&#34;PUNA Hexapod: [red]not active&#34;)
+        rich.print(&#34;PUNA Hexapod: [red]not active&#34;)
 
 
 if __name__ == &#34;__main__&#34;:
@@ -397,6 +410,8 @@ information to all the connected clients every five seconds.</p>
 <li><code><b><a title="egse.control.ControlServer" href="../../control.html#egse.control.ControlServer">ControlServer</a></b></code>:
 <ul class="hlist">
 <li><code><a title="egse.control.ControlServer.register_to_storage_manager" href="../../control.html#egse.control.ControlServer.register_to_storage_manager">register_to_storage_manager</a></code></li>
+<li><code><a title="egse.control.ControlServer.set_delay" href="../../control.html#egse.control.ControlServer.set_delay">set_delay</a></code></li>
+<li><code><a title="egse.control.ControlServer.set_hk_delay" href="../../control.html#egse.control.ControlServer.set_hk_delay">set_hk_delay</a></code></li>
 <li><code><a title="egse.control.ControlServer.store_housekeeping_information" href="../../control.html#egse.control.ControlServer.store_housekeeping_information">store_housekeeping_information</a></code></li>
 <li><code><a title="egse.control.ControlServer.unregister_from_storage_manager" href="../../control.html#egse.control.ControlServer.unregister_from_storage_manager">unregister_from_storage_manager</a></code></li>
 </ul>

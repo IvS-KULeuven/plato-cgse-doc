@@ -213,6 +213,8 @@ We have two sets of files:
 The timestamp that is used is the time of file creation.
 
 &#34;&#34;&#34;
+from __future__ import annotations
+
 import abc
 import datetime
 import logging
@@ -233,6 +235,7 @@ from egse.control import Response
 from egse.control import Success
 from egse.control import is_control_server_active
 from egse.decorators import dynamic_interface
+from egse.env import get_data_storage_location
 from egse.exceptions import Error
 from egse.obsid import ObservationIdentifier
 from egse.obsid import TEST_LAB
@@ -242,7 +245,6 @@ from egse.settings import Settings
 from egse.storage.persistence import HDF5
 from egse.storage.persistence import PersistenceLayer
 from egse.system import format_datetime
-from egse.system import replace_environment_variable
 from egse.zmq_ser import bind_address
 from egse.zmq_ser import connect_address
 
@@ -478,7 +480,7 @@ class StorageInterface:
         raise NotImplementedError
 
     @dynamic_interface
-    def start_observation(self, obsid: ObservationIdentifier) -&gt; Response:
+    def start_observation(self, obsid: ObservationIdentifier, camera_name: str = None) -&gt; Response:
         &#34;&#34;&#34; &#34;Start an observation for the given obsid.
 
         When a new obsevation is started the following actions will be taken:
@@ -490,6 +492,7 @@ class StorageInterface:
             * CCD data will be assembled into image data and saved in FITS format
 
         Args:
+            camera_name: the name of the camera or None
             obsid: a unique observation identifier
 
         Returns:
@@ -591,7 +594,8 @@ def _disentangle_filename(filename: Union[str, Path]) -&gt; Tuple:
 
 
 def _construct_filename(
-        identifier: str, ext: str, obsid: ObservationIdentifier = None, use_counter=False
+        identifier: str, ext: str, obsid: ObservationIdentifier = None, use_counter=False,
+        location: str = None, site_id: str = None, camera_name: str = None
 ) -&gt; PurePath:
     &#34;&#34;&#34;Construct a filename for the data source.
 
@@ -615,14 +619,15 @@ def _construct_filename(
         The full path to the file as a `PurePath`.
     &#34;&#34;&#34;
 
-    location = replace_environment_variable(CTRL_SETTINGS.FILE_STORAGE_LOCATION)
+    site_id = site_id or SITE.ID
+    location = location or get_data_storage_location(site_id=site_id)
 
     if obsid:
 
         timestamp = datetime.datetime.now(tz=datetime.timezone.utc).strftime(&#34;%Y%m%d_%H%M%S&#34;)
 
-        prefix = obsid.create_id(order=TEST_LAB)
-        location = location / Path(&#34;obs&#34;) / prefix
+        prefix = obsid.create_id(order=TEST_LAB, camera_name=camera_name)
+        location = location / Path(&#34;obs&#34;) / f&#34;{prefix}&#34;
         if not os.path.exists(location):
             os.makedirs(location)
 
@@ -647,16 +652,16 @@ def _construct_filename(
             os.makedirs(location)
 
         if use_counter:
-            counter_file_path = location / f&#34;{timestamp}_{SITE.ID}_{identifier}.count&#34;
+            counter_file_path = location / f&#34;{timestamp}_{site_id}_{identifier}.count&#34;
             if not counter_file_path.exists():
-                pattern = f&#34;{timestamp}_{SITE.ID}_{identifier}_*.{ext}&#34;
+                pattern = f&#34;{timestamp}_{site_id}_{identifier}_*.{ext}&#34;
                 counter = determine_counter_from_dir_list(location, pattern)
                 _write_counter(counter, counter_file_path)
             else:
                 counter = get_counter(counter_file_path)
-            name = f&#34;{timestamp}_{SITE.ID}_{identifier}_{counter:05d}.{ext}&#34;
+            name = f&#34;{timestamp}_{site_id}_{identifier}_{counter:05d}.{ext}&#34;
         else:
-            name = f&#34;{timestamp}_{SITE.ID}_{identifier}.{ext}&#34;
+            name = f&#34;{timestamp}_{site_id}_{identifier}.{ext}&#34;
 
     return Path(location) / name
 
@@ -759,16 +764,18 @@ class StorageController(StorageInterface):
     &#34;&#34;&#34;
 
     def __init__(self):
-        self._obsid: ObservationIdentifier = None
+        self._obsid: ObservationIdentifier | None = None
+        self._camera_name: str | None = None
         self._registry = Registry()
 
-    def start_observation(self, obsid: ObservationIdentifier) -&gt; Response:
+    def start_observation(self, obsid: ObservationIdentifier, camera_name: str = None) -&gt; Response:
         if self._obsid is not None:
             return Failure(
                 &#34;Can not start a new observation before the previous observation is ended.&#34;
             )
 
         self._obsid = obsid
+        self._camera_name = camera_name
 
         # open a dedicated file for each registered item
 
@@ -792,7 +799,10 @@ class StorageController(StorageInterface):
                 registered_item[&#34;persistence_class&#34;].extension,
                 obsid,
                 use_counter=issubclass(registered_item[&#34;persistence_class&#34;], HDF5),
+                camera_name=camera_name
             )
+
+            # logger.debug(f&#34;{filename = }, {camera_name = }&#34;)
 
             # we have more than one file open for this item DAILY and OBS.... take care of that
 
@@ -839,6 +849,7 @@ class StorageController(StorageInterface):
                 logger.warning(f&#34;Trying to close a persistent object for {registered_name}, {exc=}&#34;)
 
         self._obsid = None
+        self._camera_name = None
 
         return Success(&#34;Storage successfully ended observation.&#34;)
 
@@ -916,7 +927,7 @@ class StorageController(StorageInterface):
             self._registry.register(item[&#34;origin&#34;], item)
 
             if &#34;filename&#34; in item:
-                location = Path(replace_environment_variable(CTRL_SETTINGS.FILE_STORAGE_LOCATION))
+                location = Path(get_data_storage_location(site_id=SITE.ID))
                 filename = location / item[&#34;filename&#34;]
             else:
                 filename = _construct_filename(item[&#34;origin&#34;], item[&#34;persistence_class&#34;].extension,
@@ -940,7 +951,8 @@ class StorageController(StorageInterface):
                 and not issubclass(item[&#34;persistence_class&#34;], HDF5)
             ):
                 filename = _construct_filename(
-                    item[&#34;origin&#34;], item[&#34;persistence_class&#34;].extension, self._obsid, use_counter=use_counter
+                    item[&#34;origin&#34;], item[&#34;persistence_class&#34;].extension, self._obsid,
+                    use_counter=use_counter, camera_name=self._camera_name
                 )
 
                 persistence_obj = item[&#34;persistence_class&#34;](filename, prep=prep)
@@ -1033,7 +1045,7 @@ class StorageController(StorageInterface):
                 )
 
     def get_storage_location(self):
-        return replace_environment_variable(CTRL_SETTINGS.FILE_STORAGE_LOCATION)
+        return get_data_storage_location(site_id=SITE.ID)
 
     def get_filenames(self, item: dict) -&gt; List[Path]:
         registered_item = self._registry.get(item[&#34;origin&#34;])
@@ -1056,7 +1068,7 @@ class StorageController(StorageInterface):
 
     def get_disk_usage(self):
 
-        location = Path(replace_environment_variable(CTRL_SETTINGS.FILE_STORAGE_LOCATION))
+        location = Path(get_data_storage_location(site_id=SITE.ID))
         total, used, free = shutil.disk_usage(location)
         return total, used, free
 
@@ -1208,7 +1220,7 @@ The next counter is determined from the sorted list of files that match the give
 </details>
 </dd>
 <dt id="egse.storage.get_counter"><code class="name flex">
-<span>def <span class="ident">get_counter</span></span>(<span>file_path: pathlib.Path) ‑> int</span>
+<span>def <span class="ident">get_counter</span></span>(<span>file_path: Path) ‑> int</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Read the counter from a dedicated file, add one and save the counter back to the file..</p>
@@ -1266,7 +1278,7 @@ The next counter is determined from the sorted list of files that match the give
 </details>
 </dd>
 <dt id="egse.storage.register_to_storage_manager"><code class="name flex">
-<span>def <span class="ident">register_to_storage_manager</span></span>(<span>origin: str, persistence_class: <a title="egse.storage.persistence.PersistenceLayer" href="persistence.html#egse.storage.persistence.PersistenceLayer">PersistenceLayer</a>, prep: Dict[~KT, ~VT])</span>
+<span>def <span class="ident">register_to_storage_manager</span></span>(<span>origin: str, persistence_class: PersistenceLayer, prep: Dict)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Register the component to the Storage manager.</p>
@@ -1566,16 +1578,18 @@ observation/test and the dispatching of the persistence functions in save.</p></
     &#34;&#34;&#34;
 
     def __init__(self):
-        self._obsid: ObservationIdentifier = None
+        self._obsid: ObservationIdentifier | None = None
+        self._camera_name: str | None = None
         self._registry = Registry()
 
-    def start_observation(self, obsid: ObservationIdentifier) -&gt; Response:
+    def start_observation(self, obsid: ObservationIdentifier, camera_name: str = None) -&gt; Response:
         if self._obsid is not None:
             return Failure(
                 &#34;Can not start a new observation before the previous observation is ended.&#34;
             )
 
         self._obsid = obsid
+        self._camera_name = camera_name
 
         # open a dedicated file for each registered item
 
@@ -1599,7 +1613,10 @@ observation/test and the dispatching of the persistence functions in save.</p></
                 registered_item[&#34;persistence_class&#34;].extension,
                 obsid,
                 use_counter=issubclass(registered_item[&#34;persistence_class&#34;], HDF5),
+                camera_name=camera_name
             )
+
+            # logger.debug(f&#34;{filename = }, {camera_name = }&#34;)
 
             # we have more than one file open for this item DAILY and OBS.... take care of that
 
@@ -1646,6 +1663,7 @@ observation/test and the dispatching of the persistence functions in save.</p></
                 logger.warning(f&#34;Trying to close a persistent object for {registered_name}, {exc=}&#34;)
 
         self._obsid = None
+        self._camera_name = None
 
         return Success(&#34;Storage successfully ended observation.&#34;)
 
@@ -1723,7 +1741,7 @@ observation/test and the dispatching of the persistence functions in save.</p></
             self._registry.register(item[&#34;origin&#34;], item)
 
             if &#34;filename&#34; in item:
-                location = Path(replace_environment_variable(CTRL_SETTINGS.FILE_STORAGE_LOCATION))
+                location = Path(get_data_storage_location(site_id=SITE.ID))
                 filename = location / item[&#34;filename&#34;]
             else:
                 filename = _construct_filename(item[&#34;origin&#34;], item[&#34;persistence_class&#34;].extension,
@@ -1747,7 +1765,8 @@ observation/test and the dispatching of the persistence functions in save.</p></
                 and not issubclass(item[&#34;persistence_class&#34;], HDF5)
             ):
                 filename = _construct_filename(
-                    item[&#34;origin&#34;], item[&#34;persistence_class&#34;].extension, self._obsid, use_counter=use_counter
+                    item[&#34;origin&#34;], item[&#34;persistence_class&#34;].extension, self._obsid,
+                    use_counter=use_counter, camera_name=self._camera_name
                 )
 
                 persistence_obj = item[&#34;persistence_class&#34;](filename, prep=prep)
@@ -1840,7 +1859,7 @@ observation/test and the dispatching of the persistence functions in save.</p></
                 )
 
     def get_storage_location(self):
-        return replace_environment_variable(CTRL_SETTINGS.FILE_STORAGE_LOCATION)
+        return get_data_storage_location(site_id=SITE.ID)
 
     def get_filenames(self, item: dict) -&gt; List[Path]:
         registered_item = self._registry.get(item[&#34;origin&#34;])
@@ -1863,7 +1882,7 @@ observation/test and the dispatching of the persistence functions in save.</p></
 
     def get_disk_usage(self):
 
-        location = Path(replace_environment_variable(CTRL_SETTINGS.FILE_STORAGE_LOCATION))
+        location = Path(get_data_storage_location(site_id=SITE.ID))
         total, used, free = shutil.disk_usage(location)
         return total, used, free</code></pre>
 </details>
@@ -1938,7 +1957,7 @@ observation/test and the dispatching of the persistence functions in save.</p></
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def get_storage_location(self):
-    return replace_environment_variable(CTRL_SETTINGS.FILE_STORAGE_LOCATION)</code></pre>
+    return get_data_storage_location(site_id=SITE.ID)</code></pre>
 </details>
 </dd>
 <dt id="egse.storage.StorageController.save"><code class="name flex">
@@ -2088,7 +2107,7 @@ possibly a StorageSimulator should we need that).</p></div>
         raise NotImplementedError
 
     @dynamic_interface
-    def start_observation(self, obsid: ObservationIdentifier) -&gt; Response:
+    def start_observation(self, obsid: ObservationIdentifier, camera_name: str = None) -&gt; Response:
         &#34;&#34;&#34; &#34;Start an observation for the given obsid.
 
         When a new obsevation is started the following actions will be taken:
@@ -2100,6 +2119,7 @@ possibly a StorageSimulator should we need that).</p></div>
             * CCD data will be assembled into image data and saved in FITS format
 
         Args:
+            camera_name: the name of the camera or None
             obsid: a unique observation identifier
 
         Returns:
@@ -2194,7 +2214,7 @@ def cycle_daily_files(self):
 </details>
 </dd>
 <dt id="egse.storage.StorageInterface.end_observation"><code class="name flex">
-<span>def <span class="ident">end_observation</span></span>(<span>self, obsid: <a title="egse.obsid.ObservationIdentifier" href="../obsid.html#egse.obsid.ObservationIdentifier">ObservationIdentifier</a>) ‑> <a title="egse.control.Response" href="../control.html#egse.control.Response">Response</a></span>
+<span>def <span class="ident">end_observation</span></span>(<span>self, obsid: ObservationIdentifier) ‑> <a title="egse.control.Response" href="../control.html#egse.control.Response">Response</a></span>
 </code></dt>
 <dd>
 <div class="desc"><p>Ends the currently running observation.</p>
@@ -2455,7 +2475,7 @@ def save(self, item: dict) -&gt; Response:
 </details>
 </dd>
 <dt id="egse.storage.StorageInterface.start_observation"><code class="name flex">
-<span>def <span class="ident">start_observation</span></span>(<span>self, obsid: <a title="egse.obsid.ObservationIdentifier" href="../obsid.html#egse.obsid.ObservationIdentifier">ObservationIdentifier</a>) ‑> <a title="egse.control.Response" href="../control.html#egse.control.Response">Response</a></span>
+<span>def <span class="ident">start_observation</span></span>(<span>self, obsid: ObservationIdentifier, camera_name: str = None) ‑> <a title="egse.control.Response" href="../control.html#egse.control.Response">Response</a></span>
 </code></dt>
 <dd>
 <div class="desc"><p>"Start an observation for the given obsid.</p>
@@ -2471,6 +2491,8 @@ will be forked into a newly created file for that component.</li>
 </ul>
 <h2 id="args">Args</h2>
 <dl>
+<dt><strong><code>camera_name</code></strong></dt>
+<dd>the name of the camera or None</dd>
 <dt><strong><code>obsid</code></strong></dt>
 <dd>a unique observation identifier</dd>
 </dl>
@@ -2487,7 +2509,7 @@ send), or when a failure happened during the preparations for a new observation.
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">@dynamic_interface
-def start_observation(self, obsid: ObservationIdentifier) -&gt; Response:
+def start_observation(self, obsid: ObservationIdentifier, camera_name: str = None) -&gt; Response:
     &#34;&#34;&#34; &#34;Start an observation for the given obsid.
 
     When a new obsevation is started the following actions will be taken:
@@ -2499,6 +2521,7 @@ def start_observation(self, obsid: ObservationIdentifier) -&gt; Response:
         * CCD data will be assembled into image data and saved in FITS format
 
     Args:
+        camera_name: the name of the camera or None
         obsid: a unique observation identifier
 
     Returns:
@@ -2635,7 +2658,7 @@ def timestamp(self):
 </dd>
 <dt id="egse.storage.StorageProtocol"><code class="flex name class">
 <span>class <span class="ident">StorageProtocol</span></span>
-<span>(</span><span>control_server: <a title="egse.control.ControlServer" href="../control.html#egse.control.ControlServer">ControlServer</a>)</span>
+<span>(</span><span>control_server: ControlServer)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>This class is the glue between the control servers and the hardware

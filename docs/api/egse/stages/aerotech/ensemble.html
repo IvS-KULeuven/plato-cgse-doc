@@ -44,64 +44,73 @@ from egse.stages.aerotech.ensemble_controller import EnsembleController
 from egse.stages.aerotech.ensemble_simulator import EnsembleSimulator
 from egse.zmq_ser import connect_address
 
+PLANESTATUS = {
+    0: &#34;MotionActive&#34;,
+    1: &#34;ProfilingActive&#34;,
+    2: &#34;AccelPhase&#34;,
+    3: &#34;DecelPhase&#34;,
+    4: &#34;MotionAbort&#34;,
+    5: &#34;HoldMode&#34;
+}
+
 AXISFAULT = {
-    0: &#34;AF:PositionError&#34;,
-    1: &#34;AF:OverCurrent&#34;,
-    2: &#34;AF:CwEOTLimit&#34;,
-    3: &#34;AF:CcwEOTLimit&#34;,
-    4: &#34;AF:CwSoftLimit&#34;,
-    5: &#34;AF:CcwSoftLimit&#34;,
-    6: &#34;AF:AmplifierFault&#34;,
-    7: &#34;AF:PositionFbk&#34;,
-    8: &#34;AF:VelocityFbk&#34;,
-    9: &#34;AF:HallFault&#34;,
-    10: &#34;AF:MaxVelocity&#34;,
-    11: &#34;AF:EstopFault&#34;,
-    12: &#34;AF:VelocityError&#34;,
-    15: &#34;AF:ExternalFault&#34;,
-    17: &#34;AF:MotorTemp&#34;,
-    18: &#34;AF:AmplifierTemp&#34;,
-    19: &#34;AF:EncoderFault&#34;,
-    20: &#34;AF:CommLost&#34;,
-    23: &#34;AF:FbkScalingFault&#34;,
-    24: &#34;AF:MrkSearchFault&#34;,
-    27: &#34;AF:VoltageClamp&#34;,
-    28: &#34;AF:PowerSupply&#34;,
-    30: &#34;AF:Internal&#34;
+    0:  &#34;PositionError&#34;,
+    1:  &#34;OverCurrent&#34;,
+    2:  &#34;CwEOTLimit&#34;,
+    3:  &#34;CcwEOTLimit&#34;,
+    4:  &#34;CwSoftLimit&#34;,
+    5:  &#34;CcwSoftLimit&#34;,
+    6:  &#34;AmplifierFault&#34;,
+    7:  &#34;PositionFbk&#34;,
+    8:  &#34;VelocityFbk&#34;,
+    9:  &#34;HallFault&#34;,
+    10: &#34;MaxVelocity&#34;,
+    11: &#34;EstopFault&#34;,
+    12: &#34;VelocityError&#34;,
+    15: &#34;ExternalFault&#34;,
+    17: &#34;MotorTemp&#34;,
+    18: &#34;AmplifierTemp&#34;,
+    19: &#34;EncoderFault&#34;,
+    20: &#34;CommLost&#34;,
+    23: &#34;FbkScalingFault&#34;,
+    24: &#34;MrkSearchFault&#34;,
+    27: &#34;VoltageClamp&#34;,
+    28: &#34;PowerSupply&#34;,
+    30: &#34;Internal&#34;
 }
 AXISSTATUS = {
-    0: &#34;AS:Enabled&#34;,
-    1: &#34;AS:Homed&#34;,
-    2: &#34;AS:InPosition&#34;,
-    3: &#34;AS:MoveActive&#34;,
-    4: &#34;AS:AccelPhase&#34;,
-    5: &#34;AS:DecelPhase&#34;,
-    6: &#34;AS:PositionCapture&#34;,
-    7: &#34;AS:CurrentClamp&#34;,
-    8: &#34;AS:BreakOutput&#34;,
-    9: &#34;AS:MotionIsCw&#34;,
-    10: &#34;AS:MsSlControl&#34;,
-    11: &#34;AS:CalActivate&#34;,
-    12: &#34;AS:CalEnabled&#34;,
-    13: &#34;AS:JoystickControl&#34;,
-    14: &#34;AS:Homing&#34;,
-    15: &#34;AS:MasterSuppress&#34;,
-    16: &#34;AS:GantryActive&#34;,
-    17: &#34;AS:GantryMaster&#34;,
-    18: &#34;AS:AutofocusActive&#34;,
-    19: &#34;AS:CommandFilterDone&#34;,
-    20: &#34;AS:InPosition2&#34;,
-    21: &#34;AS:ServoControl&#34;,
-    22: &#34;AS:CwEOTLimit&#34;,
-    23: &#34;AS:CcwEOTLimit&#34;,
-    24: &#34;AS:HomeLimit&#34;,
-    25: &#34;AS:MarketInput&#34;,
-    26: &#34;AS:HallAInput&#34;,
-    27: &#34;AS:HallBInput&#34;,
-    28: &#34;AS:HallCInput&#34;,
-    29: &#34;AS:SinEncErr&#34;,
-    30: &#34;AS:CSinEncErr&#34;,
-    21: &#34;AS:ESTOPInput&#34;
+    0:  &#34;Enabled&#34;,
+    1:  &#34;Homed&#34;,
+    2:  &#34;InPosition&#34;,
+    3:  &#34;MoveActive&#34;,
+    4:  &#34;AccelPhase&#34;,
+    5:  &#34;DecelPhase&#34;,
+    6:  &#34;PositionCapture&#34;,
+    7:  &#34;CurrentClamp&#34;,
+    8:  &#34;BreakOutput&#34;,
+    9:  &#34;MotionIsCw&#34;,
+    10: &#34;MsSlControl&#34;,
+    11: &#34;CalActivate&#34;,
+    12: &#34;CalEnabled&#34;,
+    13: &#34;JoystickControl&#34;,
+    14: &#34;Homing&#34;,
+    15: &#34;MasterSuppress&#34;,
+    16: &#34;GantryActive&#34;,
+    17: &#34;GantryMaster&#34;,
+    18: &#34;AutofocusActive&#34;,
+    19: &#34;CommandFilterDone&#34;,
+    20: &#34;InPosition2&#34;,
+    21: &#34;ServoControl&#34;,
+    22: &#34;CwEOTLimit&#34;,
+    23: &#34;CcwEOTLimit&#34;,
+    24: &#34;HomeLimit&#34;,
+    25: &#34;MarketInput&#34;,
+    26: &#34;HallAInput&#34;,
+    27: &#34;HallBInput&#34;,
+    28: &#34;HallCInput&#34;,
+    29: &#34;SinEncErr&#34;,
+    30: &#34;CSinEncErr&#34;,
+    21: &#34;ESTOPInput&#34;
 }
 
 LOGGER = logging.getLogger(__name__)
@@ -145,14 +154,16 @@ class EnsembleProtocol(CommandProtocol):
         self.gauge_power_x               = Gauge(&#39;GSRON_ENSEMBLE_POWER_X&#39;, &#39;&#39;)
         self.gauge_power_y               = Gauge(&#39;GSRON_ENSEMBLE_POWER_Y&#39;, &#39;&#39;)
         self.gauge_status_x              = [
-            Gauge(f&#39;X{AXISSTATUS[x]}&#39;, &#39;&#39;) for _, x in enumerate(AXISSTATUS)]
+            Gauge(f&#39;GSRON_ENSEMBLE_STATUS_X_{status}&#39;, &#39;&#39;) for status in AXISSTATUS.values()]
         self.gauge_status_y              = [
-            Gauge(f&#39;Y{AXISSTATUS[x]}&#39;, &#39;&#39;) for _, x in enumerate(AXISSTATUS)]
+            Gauge(f&#39;GSRON_ENSEMBLE_STATUS_Y_{status}&#39;, &#39;&#39;) for status in AXISSTATUS.values()]
         self.gauge_fault_x               = [
-            Gauge(f&#39;X{AXISFAULT[x]}&#39;, &#39;&#39;) for _, x in enumerate(AXISFAULT)]
+            Gauge(f&#39;GSRON_ENSEMBLE_FAULT_X_{fault}&#39;, &#39;&#39;) for fault in AXISFAULT.values()]
         self.gauge_fault_y               = [
-            Gauge(f&#39;Y{AXISFAULT[x]}&#39;, &#39;&#39;) for _, x in enumerate(AXISFAULT)]
-
+            Gauge(f&#39;GSRON_ENSEMBLE_FAULT_Y_{fault}&#39;, &#39;&#39;) for fault in AXISFAULT.values()]
+        self.gauge_status_plane          = [
+            Gauge(f&#39;GSRON_ENSEMBLE_STATUS_PLANE_{status}&#39;, &#39;&#39;) for status in PLANESTATUS.values()]
+        
         self.load_commands(DEVICE_SETTINGS.Commands, EnsembleCommand, EnsembleInterface)
         self.build_device_method_lookup_table(self.dev)
 
@@ -182,28 +193,29 @@ class EnsembleProtocol(CommandProtocol):
 
         result[&#34;timestamp&#34;] = format_datetime()
         try:
-            result[&#34;GSRON_ENSEMBLE_STATUS_X&#34;] = self.dev.get_status(axis=&#39;X&#39;)
-            result[&#34;GSRON_ENSEMBLE_STATUS_Y&#34;] = self.dev.get_status(axis=&#39;Y&#39;)
-            result[&#34;GSRON_ENSEMBLE_FAULT_X&#34;] = self.dev.get_fault(axis=&#39;X&#39;)
-            result[&#34;GSRON_ENSEMBLE_FAULT_Y&#34;] = self.dev.get_fault(axis=&#39;Y&#39;)
-            result[&#34;GSRON_ENSEMBLE_ACT_POS_X&#34;] = self.dev.get_actual_position(axis=&#39;X&#39;)
-            result[&#34;GSRON_ENSEMBLE_ACT_POS_Y&#34;] = self.dev.get_actual_position(axis=&#39;Y&#39;)
-            result[&#34;GSRON_ENSEMBLE_CMD_POS_X&#34;] = self.dev.get_command_position(axis=&#39;X&#39;)
-            result[&#34;GSRON_ENSEMBLE_CMD_POS_Y&#34;] = self.dev.get_command_position(axis=&#39;Y&#39;)
-            result[&#34;GSRON_ENSEMBLE_ERR_POS_X&#34;] = self.dev.get_error_position(axis=&#39;X&#39;)
-            result[&#34;GSRON_ENSEMBLE_ERR_POS_Y&#34;] = self.dev.get_error_position(axis=&#39;Y&#39;)
-            result[&#34;GSRON_ENSEMBLE_ACT_CUR_X&#34;] = self.dev.get_actual_current(axis=&#39;X&#39;)
-            result[&#34;GSRON_ENSEMBLE_ACT_CUR_Y&#34;] = self.dev.get_actual_current(axis=&#39;Y&#39;)
-            result[&#34;GSRON_ENSEMBLE_CMD_CUR_X&#34;] = self.dev.get_command_current(axis=&#39;X&#39;)
-            result[&#34;GSRON_ENSEMBLE_CMD_CUR_Y&#34;] = self.dev.get_command_current(axis=&#39;Y&#39;)
-            result[&#34;GSRON_ENSEMBLE_CMD_VEL_X&#34;] = self.dev.get_command_velocity(axis=&#39;X&#39;)
-            result[&#34;GSRON_ENSEMBLE_CMD_VEL_Y&#34;] = self.dev.get_command_velocity(axis=&#39;Y&#39;)
-            result[&#34;GSRON_ENSEMBLE_ACT_VEL_X&#34;] = self.dev.get_actual_velocity(axis=&#39;X&#39;)
-            result[&#34;GSRON_ENSEMBLE_ACT_VEL_Y&#34;] = self.dev.get_actual_velocity(axis=&#39;Y&#39;)
+            result[&#34;GSRON_ENSEMBLE_STATUS_PLANE&#34;]   = self.dev.get_plane_status()
+            result[&#34;GSRON_ENSEMBLE_STATUS_X&#34;]       = self.dev.get_status(axis=&#39;X&#39;)
+            result[&#34;GSRON_ENSEMBLE_STATUS_Y&#34;]       = self.dev.get_status(axis=&#39;Y&#39;)
+            result[&#34;GSRON_ENSEMBLE_FAULT_X&#34;]        = self.dev.get_fault(axis=&#39;X&#39;)
+            result[&#34;GSRON_ENSEMBLE_FAULT_Y&#34;]        = self.dev.get_fault(axis=&#39;Y&#39;)
+            result[&#34;GSRON_ENSEMBLE_ACT_POS_X&#34;]      = self.dev.get_actual_position(axis=&#39;X&#39;)
+            result[&#34;GSRON_ENSEMBLE_ACT_POS_Y&#34;]      = self.dev.get_actual_position(axis=&#39;Y&#39;)
+            result[&#34;GSRON_ENSEMBLE_CMD_POS_X&#34;]      = self.dev.get_command_position(axis=&#39;X&#39;)
+            result[&#34;GSRON_ENSEMBLE_CMD_POS_Y&#34;]      = self.dev.get_command_position(axis=&#39;Y&#39;)
+            result[&#34;GSRON_ENSEMBLE_ERR_POS_X&#34;]      = self.dev.get_error_position(axis=&#39;X&#39;)
+            result[&#34;GSRON_ENSEMBLE_ERR_POS_Y&#34;]      = self.dev.get_error_position(axis=&#39;Y&#39;)
+            result[&#34;GSRON_ENSEMBLE_ACT_CUR_X&#34;]      = self.dev.get_actual_current(axis=&#39;X&#39;)
+            result[&#34;GSRON_ENSEMBLE_ACT_CUR_Y&#34;]      = self.dev.get_actual_current(axis=&#39;Y&#39;)
+            result[&#34;GSRON_ENSEMBLE_CMD_CUR_X&#34;]      = self.dev.get_command_current(axis=&#39;X&#39;)
+            result[&#34;GSRON_ENSEMBLE_CMD_CUR_Y&#34;]      = self.dev.get_command_current(axis=&#39;Y&#39;)
+            result[&#34;GSRON_ENSEMBLE_CMD_VEL_X&#34;]      = self.dev.get_command_velocity(axis=&#39;X&#39;)
+            result[&#34;GSRON_ENSEMBLE_CMD_VEL_Y&#34;]      = self.dev.get_command_velocity(axis=&#39;Y&#39;)
+            result[&#34;GSRON_ENSEMBLE_ACT_VEL_X&#34;]      = self.dev.get_actual_velocity(axis=&#39;X&#39;)
+            result[&#34;GSRON_ENSEMBLE_ACT_VEL_Y&#34;]      = self.dev.get_actual_velocity(axis=&#39;Y&#39;)
 
             # calculate the power dissipated
-            result[&#34;GSRON_ENSEMBLE_POWER_X&#34;] = float(result[&#34;GSRON_ENSEMBLE_ACT_CUR_X&#34;]) * 60.0 * (3/2)
-            result[&#34;GSRON_ENSEMBLE_POWER_Y&#34;] = float(result[&#34;GSRON_ENSEMBLE_ACT_CUR_Y&#34;]) * 60.0 * (3/2)
+            result[&#34;GSRON_ENSEMBLE_POWER_X&#34;]        = float(result[&#34;GSRON_ENSEMBLE_ACT_CUR_X&#34;]) * 60.0 * (3/2)
+            result[&#34;GSRON_ENSEMBLE_POWER_Y&#34;]        = float(result[&#34;GSRON_ENSEMBLE_ACT_CUR_Y&#34;]) * 60.0 * (3/2)
 
             # LOGGER.debug(f&#34;PACT: {result[&#39;GSRON_ENSEMBLE_ACT_POS_Y&#39;]}, \
             #                PCMD: {result[&#39;GSRON_ENSEMBLE_CMD_POS_Y&#39;]}, \
@@ -229,14 +241,17 @@ class EnsembleProtocol(CommandProtocol):
         self.gauge_power_x.set(result[&#34;GSRON_ENSEMBLE_POWER_X&#34;])
         self.gauge_power_y.set(result[&#34;GSRON_ENSEMBLE_POWER_Y&#34;])
 
-        for y, x in enumerate(AXISSTATUS):
-            self.gauge_status_x[y].set((result[&#34;GSRON_ENSEMBLE_STATUS_X&#34;] &gt;&gt; x) &amp; 0b1)
-            self.gauge_status_y[y].set((result[&#34;GSRON_ENSEMBLE_STATUS_Y&#34;] &gt;&gt; x) &amp; 0b1)
+        for idx, _ in enumerate(AXISSTATUS):
+            self.gauge_status_x[idx].set((result[&#34;GSRON_ENSEMBLE_STATUS_X&#34;] &gt;&gt; idx) &amp; 0b1)
+            self.gauge_status_y[idx].set((result[&#34;GSRON_ENSEMBLE_STATUS_Y&#34;] &gt;&gt; idx) &amp; 0b1)
 
-        for y, x in enumerate(AXISFAULT):
-            self.gauge_fault_x[y].set((result[&#34;GSRON_ENSEMBLE_FAULT_X&#34;] &gt;&gt; x) &amp; 0b1)
-            self.gauge_fault_y[y].set((result[&#34;GSRON_ENSEMBLE_FAULT_Y&#34;] &gt;&gt; x) &amp; 0b1)
-            
+        for idx, _ in enumerate(AXISFAULT):
+            self.gauge_fault_x[idx].set((result[&#34;GSRON_ENSEMBLE_FAULT_X&#34;] &gt;&gt; idx) &amp; 0b1)
+            self.gauge_fault_y[idx].set((result[&#34;GSRON_ENSEMBLE_FAULT_Y&#34;] &gt;&gt; idx) &amp; 0b1)
+        
+        for idx, _ in enumerate(PLANESTATUS):
+            self.gauge_status_plane[idx].set((result[&#39;GSRON_ENSEMBLE_STATUS_PLANE&#39;] &gt;&gt; idx) &amp; 0b1)
+        
         # Check X axis EoT limits
         if result[&#39;GSRON_ENSEMBLE_FAULT_X&#39;] &amp; 0x04:
             LOGGER.warning(&#34;X axis clockwise End-of-Travel limit has been reached&#34;)
@@ -350,14 +365,16 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
         self.gauge_power_x               = Gauge(&#39;GSRON_ENSEMBLE_POWER_X&#39;, &#39;&#39;)
         self.gauge_power_y               = Gauge(&#39;GSRON_ENSEMBLE_POWER_Y&#39;, &#39;&#39;)
         self.gauge_status_x              = [
-            Gauge(f&#39;X{AXISSTATUS[x]}&#39;, &#39;&#39;) for _, x in enumerate(AXISSTATUS)]
+            Gauge(f&#39;GSRON_ENSEMBLE_STATUS_X_{status}&#39;, &#39;&#39;) for status in AXISSTATUS.values()]
         self.gauge_status_y              = [
-            Gauge(f&#39;Y{AXISSTATUS[x]}&#39;, &#39;&#39;) for _, x in enumerate(AXISSTATUS)]
+            Gauge(f&#39;GSRON_ENSEMBLE_STATUS_Y_{status}&#39;, &#39;&#39;) for status in AXISSTATUS.values()]
         self.gauge_fault_x               = [
-            Gauge(f&#39;X{AXISFAULT[x]}&#39;, &#39;&#39;) for _, x in enumerate(AXISFAULT)]
+            Gauge(f&#39;GSRON_ENSEMBLE_FAULT_X_{fault}&#39;, &#39;&#39;) for fault in AXISFAULT.values()]
         self.gauge_fault_y               = [
-            Gauge(f&#39;Y{AXISFAULT[x]}&#39;, &#39;&#39;) for _, x in enumerate(AXISFAULT)]
-
+            Gauge(f&#39;GSRON_ENSEMBLE_FAULT_Y_{fault}&#39;, &#39;&#39;) for fault in AXISFAULT.values()]
+        self.gauge_status_plane          = [
+            Gauge(f&#39;GSRON_ENSEMBLE_STATUS_PLANE_{status}&#39;, &#39;&#39;) for status in PLANESTATUS.values()]
+        
         self.load_commands(DEVICE_SETTINGS.Commands, EnsembleCommand, EnsembleInterface)
         self.build_device_method_lookup_table(self.dev)
 
@@ -387,28 +404,29 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
 
         result[&#34;timestamp&#34;] = format_datetime()
         try:
-            result[&#34;GSRON_ENSEMBLE_STATUS_X&#34;] = self.dev.get_status(axis=&#39;X&#39;)
-            result[&#34;GSRON_ENSEMBLE_STATUS_Y&#34;] = self.dev.get_status(axis=&#39;Y&#39;)
-            result[&#34;GSRON_ENSEMBLE_FAULT_X&#34;] = self.dev.get_fault(axis=&#39;X&#39;)
-            result[&#34;GSRON_ENSEMBLE_FAULT_Y&#34;] = self.dev.get_fault(axis=&#39;Y&#39;)
-            result[&#34;GSRON_ENSEMBLE_ACT_POS_X&#34;] = self.dev.get_actual_position(axis=&#39;X&#39;)
-            result[&#34;GSRON_ENSEMBLE_ACT_POS_Y&#34;] = self.dev.get_actual_position(axis=&#39;Y&#39;)
-            result[&#34;GSRON_ENSEMBLE_CMD_POS_X&#34;] = self.dev.get_command_position(axis=&#39;X&#39;)
-            result[&#34;GSRON_ENSEMBLE_CMD_POS_Y&#34;] = self.dev.get_command_position(axis=&#39;Y&#39;)
-            result[&#34;GSRON_ENSEMBLE_ERR_POS_X&#34;] = self.dev.get_error_position(axis=&#39;X&#39;)
-            result[&#34;GSRON_ENSEMBLE_ERR_POS_Y&#34;] = self.dev.get_error_position(axis=&#39;Y&#39;)
-            result[&#34;GSRON_ENSEMBLE_ACT_CUR_X&#34;] = self.dev.get_actual_current(axis=&#39;X&#39;)
-            result[&#34;GSRON_ENSEMBLE_ACT_CUR_Y&#34;] = self.dev.get_actual_current(axis=&#39;Y&#39;)
-            result[&#34;GSRON_ENSEMBLE_CMD_CUR_X&#34;] = self.dev.get_command_current(axis=&#39;X&#39;)
-            result[&#34;GSRON_ENSEMBLE_CMD_CUR_Y&#34;] = self.dev.get_command_current(axis=&#39;Y&#39;)
-            result[&#34;GSRON_ENSEMBLE_CMD_VEL_X&#34;] = self.dev.get_command_velocity(axis=&#39;X&#39;)
-            result[&#34;GSRON_ENSEMBLE_CMD_VEL_Y&#34;] = self.dev.get_command_velocity(axis=&#39;Y&#39;)
-            result[&#34;GSRON_ENSEMBLE_ACT_VEL_X&#34;] = self.dev.get_actual_velocity(axis=&#39;X&#39;)
-            result[&#34;GSRON_ENSEMBLE_ACT_VEL_Y&#34;] = self.dev.get_actual_velocity(axis=&#39;Y&#39;)
+            result[&#34;GSRON_ENSEMBLE_STATUS_PLANE&#34;]   = self.dev.get_plane_status()
+            result[&#34;GSRON_ENSEMBLE_STATUS_X&#34;]       = self.dev.get_status(axis=&#39;X&#39;)
+            result[&#34;GSRON_ENSEMBLE_STATUS_Y&#34;]       = self.dev.get_status(axis=&#39;Y&#39;)
+            result[&#34;GSRON_ENSEMBLE_FAULT_X&#34;]        = self.dev.get_fault(axis=&#39;X&#39;)
+            result[&#34;GSRON_ENSEMBLE_FAULT_Y&#34;]        = self.dev.get_fault(axis=&#39;Y&#39;)
+            result[&#34;GSRON_ENSEMBLE_ACT_POS_X&#34;]      = self.dev.get_actual_position(axis=&#39;X&#39;)
+            result[&#34;GSRON_ENSEMBLE_ACT_POS_Y&#34;]      = self.dev.get_actual_position(axis=&#39;Y&#39;)
+            result[&#34;GSRON_ENSEMBLE_CMD_POS_X&#34;]      = self.dev.get_command_position(axis=&#39;X&#39;)
+            result[&#34;GSRON_ENSEMBLE_CMD_POS_Y&#34;]      = self.dev.get_command_position(axis=&#39;Y&#39;)
+            result[&#34;GSRON_ENSEMBLE_ERR_POS_X&#34;]      = self.dev.get_error_position(axis=&#39;X&#39;)
+            result[&#34;GSRON_ENSEMBLE_ERR_POS_Y&#34;]      = self.dev.get_error_position(axis=&#39;Y&#39;)
+            result[&#34;GSRON_ENSEMBLE_ACT_CUR_X&#34;]      = self.dev.get_actual_current(axis=&#39;X&#39;)
+            result[&#34;GSRON_ENSEMBLE_ACT_CUR_Y&#34;]      = self.dev.get_actual_current(axis=&#39;Y&#39;)
+            result[&#34;GSRON_ENSEMBLE_CMD_CUR_X&#34;]      = self.dev.get_command_current(axis=&#39;X&#39;)
+            result[&#34;GSRON_ENSEMBLE_CMD_CUR_Y&#34;]      = self.dev.get_command_current(axis=&#39;Y&#39;)
+            result[&#34;GSRON_ENSEMBLE_CMD_VEL_X&#34;]      = self.dev.get_command_velocity(axis=&#39;X&#39;)
+            result[&#34;GSRON_ENSEMBLE_CMD_VEL_Y&#34;]      = self.dev.get_command_velocity(axis=&#39;Y&#39;)
+            result[&#34;GSRON_ENSEMBLE_ACT_VEL_X&#34;]      = self.dev.get_actual_velocity(axis=&#39;X&#39;)
+            result[&#34;GSRON_ENSEMBLE_ACT_VEL_Y&#34;]      = self.dev.get_actual_velocity(axis=&#39;Y&#39;)
 
             # calculate the power dissipated
-            result[&#34;GSRON_ENSEMBLE_POWER_X&#34;] = float(result[&#34;GSRON_ENSEMBLE_ACT_CUR_X&#34;]) * 60.0 * (3/2)
-            result[&#34;GSRON_ENSEMBLE_POWER_Y&#34;] = float(result[&#34;GSRON_ENSEMBLE_ACT_CUR_Y&#34;]) * 60.0 * (3/2)
+            result[&#34;GSRON_ENSEMBLE_POWER_X&#34;]        = float(result[&#34;GSRON_ENSEMBLE_ACT_CUR_X&#34;]) * 60.0 * (3/2)
+            result[&#34;GSRON_ENSEMBLE_POWER_Y&#34;]        = float(result[&#34;GSRON_ENSEMBLE_ACT_CUR_Y&#34;]) * 60.0 * (3/2)
 
             # LOGGER.debug(f&#34;PACT: {result[&#39;GSRON_ENSEMBLE_ACT_POS_Y&#39;]}, \
             #                PCMD: {result[&#39;GSRON_ENSEMBLE_CMD_POS_Y&#39;]}, \
@@ -434,14 +452,17 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
         self.gauge_power_x.set(result[&#34;GSRON_ENSEMBLE_POWER_X&#34;])
         self.gauge_power_y.set(result[&#34;GSRON_ENSEMBLE_POWER_Y&#34;])
 
-        for y, x in enumerate(AXISSTATUS):
-            self.gauge_status_x[y].set((result[&#34;GSRON_ENSEMBLE_STATUS_X&#34;] &gt;&gt; x) &amp; 0b1)
-            self.gauge_status_y[y].set((result[&#34;GSRON_ENSEMBLE_STATUS_Y&#34;] &gt;&gt; x) &amp; 0b1)
+        for idx, _ in enumerate(AXISSTATUS):
+            self.gauge_status_x[idx].set((result[&#34;GSRON_ENSEMBLE_STATUS_X&#34;] &gt;&gt; idx) &amp; 0b1)
+            self.gauge_status_y[idx].set((result[&#34;GSRON_ENSEMBLE_STATUS_Y&#34;] &gt;&gt; idx) &amp; 0b1)
 
-        for y, x in enumerate(AXISFAULT):
-            self.gauge_fault_x[y].set((result[&#34;GSRON_ENSEMBLE_FAULT_X&#34;] &gt;&gt; x) &amp; 0b1)
-            self.gauge_fault_y[y].set((result[&#34;GSRON_ENSEMBLE_FAULT_Y&#34;] &gt;&gt; x) &amp; 0b1)
-            
+        for idx, _ in enumerate(AXISFAULT):
+            self.gauge_fault_x[idx].set((result[&#34;GSRON_ENSEMBLE_FAULT_X&#34;] &gt;&gt; idx) &amp; 0b1)
+            self.gauge_fault_y[idx].set((result[&#34;GSRON_ENSEMBLE_FAULT_Y&#34;] &gt;&gt; idx) &amp; 0b1)
+        
+        for idx, _ in enumerate(PLANESTATUS):
+            self.gauge_status_plane[idx].set((result[&#39;GSRON_ENSEMBLE_STATUS_PLANE&#39;] &gt;&gt; idx) &amp; 0b1)
+        
         # Check X axis EoT limits
         if result[&#39;GSRON_ENSEMBLE_FAULT_X&#39;] &amp; 0x04:
             LOGGER.warning(&#34;X axis clockwise End-of-Travel limit has been reached&#34;)

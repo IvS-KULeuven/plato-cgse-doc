@@ -36,13 +36,14 @@ from typing import Union
 
 import dateutil.parser as date_parser
 import numpy as np
-import pandas
 
 from egse.config import find_files
+from egse.env import get_data_storage_location
 from egse.obsid import ObservationIdentifier, obsid_from_storage
-from egse.resource import get_resource
 from egse.settings import Settings
-from egse.system import read_last_line, read_last_lines, humanize_seconds, SECONDS_IN_A_DAY, str_to_datetime, \
+from egse.setup import SetupError
+from egse.state import GlobalState
+from egse.system import read_last_line, read_last_lines, SECONDS_IN_A_DAY, str_to_datetime, \
     time_since_epoch_1958
 
 logger = logging.getLogger(__name__)
@@ -90,7 +91,8 @@ class HKError(Exception):
 
 def get_housekeeping(hk_name: str, obsid: Union[ObservationIdentifier, str, int] = None, od: str = None,
                      time_window: int = None, data_dir=None):
-    &#34;&#34;&#34; Return the timestamp(s) and housekeeping value(s) for the housekeeping parameter with the given name.
+    &#34;&#34;&#34;
+    Returns the timestamp(s) and housekeeping value(s) for the housekeeping parameter with the given name.
 
     It is possible to indicate for which obsid or which OD the housekeeping is to be returned.  If neither of them is
     specified, the latest daily files are used.
@@ -100,19 +102,32 @@ def get_housekeeping(hk_name: str, obsid: Union[ObservationIdentifier, str, int]
     is older than you would want.  It is therefore important to inspect the corresponding timestamp.
 
     When the time window has been specified, the relevant housekeeping will be read:
-        - determine the sampling rate (compare the timestamps for the last 2 lines in the housekeeping file);
-        - determine how many samples we need to read (starting at the back);
-        - read the required number of line, starting at the back;
-        - for each of the read lines, append the timestamp and HK value to the arrays that will be returned
+
+    * determine the sampling rate (compare the timestamps for the last 2 lines in the housekeeping file);
+    * determine how many samples we need to read (starting at the back);
+    * read the required number of line, starting at the back;
+    * for each of the read lines, append the timestamp and HK value to the arrays that will be returned
 
     Args:
-        - hk_name: Name of the housekeeping parameter.
-        - obsid: Observation identifier.  This can be an ObservationIdentifier object, a string in format TEST_LAB or
-                  TEST_LAB_SETUP, or an integer representing the test ID; optional.
-        - od: Identifier for the OD (yyyymmdd); optional.
-        - time_window: Length of the time window over which to retrieve the housekeeping [s].  The time window ends at
-                       the moment this method is called.  If not given, the latest housekeeping value is returned.
-        - data_dir: Folder (with sub-folders /daily and /obs) in which the HK files are stored.
+        hk_name: Name of the housekeeping parameter.
+        obsid: Observation identifier.  This can be an ObservationIdentifier object, a string in format TEST_LAB or
+            TEST_LAB_SETUP, or an integer representing the test ID; optional.
+        od: Identifier for the OD (yyyymmdd); optional.
+        time_window: Length of the time window over which to retrieve the housekeeping [s].  The time window ends at
+            the moment this method is called.  If not given, the latest housekeeping value is returned.
+        data_dir: Folder (with sub-folders /daily and /obs) in which the HK files are stored. If this argument is not
+            provided, the data_dir will be determined from the environment variable PLATO_DATA_STORAGE_LOCATION.
+
+    Raises:
+        A HKError when one of the following problems occur
+            * no obsid nor an od argument was provided
+            * no HK measures were found for the given parameter and obsid/od
+
+    Returns:
+        - If the time window has not been specified: the most recent timestamp and housekeeping value.
+        - If the time window has been specified: an array of timestamps and an array of housekeeping values, belonging
+          to the specified time window.
+
     &#34;&#34;&#34;
 
     # Either specify the obsid or the OD (or neither of them) but not both
@@ -123,7 +138,7 @@ def get_housekeeping(hk_name: str, obsid: Union[ObservationIdentifier, str, int]
 
     # Specified obsid (as integer or as string)
 
-    data_dir = data_dir or os.environ.get(&#39;PLATO_DATA_STORAGE_LOCATION&#39;)
+    data_dir = data_dir or get_data_storage_location()
 
     if obsid:
 
@@ -665,8 +680,10 @@ def read_conversion_dict(storage_mnemonic: str, use_site: bool = False):
     Returns: Dictionary with the original HK names as keys and the converted HK names as values.
     &#34;&#34;&#34;
 
-    filename = get_resource(&#34;:/data/tm-dictionary.csv&#34;)
-    hk_info_table = pandas.read_csv(filename, sep=&#34;;&#34;)
+    try:
+        hk_info_table = GlobalState.setup.telemetry.dictionary
+    except AttributeError:
+        raise SetupError(&#34;Version of the telemetry dictionary not specified in the current setup&#34;)
 
     storage_mnemonic_col = hk_info_table[TmDictionaryColumns.STORAGE_MNEMONIC].values
     correct_name_col = hk_info_table[TmDictionaryColumns.CORRECT_HK_NAMES].values
@@ -674,25 +691,24 @@ def read_conversion_dict(storage_mnemonic: str, use_site: bool = False):
 
     selection = np.where(storage_mnemonic_col == storage_mnemonic)
 
-    conversion_dict = dict(zip(original_name_col[selection], correct_name_col[selection]))
+    correct_name_col = correct_name_col[selection]
+    original_name_col = original_name_col[selection]
 
     if use_site:
 
-        th_prefix = f&#34;G{SITE_ID}&#34;
+        th_prefix = f&#34;G{SITE_ID}_&#34;
 
         th_conversion_dict = {}
 
-        for original_name, correct_name in conversion_dict.items():
-
+        for (original_name, correct_name) in zip(original_name_col, correct_name_col):
             if str.startswith(str(correct_name), th_prefix):
-
                 th_conversion_dict[original_name] = correct_name
 
         return th_conversion_dict
 
     else:
 
-        return conversion_dict
+        return dict(zip(original_name_col, correct_name_col))
 
 
 def get_hk_info(hk_name: str):
@@ -713,8 +729,7 @@ def get_hk_info(hk_name: str):
         - name of the column in the HK file with the corresponding timestamp
     &#34;&#34;&#34;
 
-    filename = get_resource(f&#34;:/data/tm-dictionary.csv&#34;)
-    hk_info_table = pandas.read_csv(filename, sep=&#34;;&#34;)
+    hk_info_table = GlobalState.setup.telemetry.dictionary
 
     storage_mnemonic = hk_info_table[TmDictionaryColumns.STORAGE_MNEMONIC].values
     hk_names = hk_info_table[TmDictionaryColumns.CORRECT_HK_NAMES].values
@@ -734,9 +749,7 @@ def get_storage_mnemonics():
     Returns: List of the storage mnemonics from the TM dictionary.
     &#34;&#34;&#34;
 
-    filename = get_resource(f&#34;:/data/tm-dictionary.csv&#34;)
-
-    hk_info_table = pandas.read_csv(filename, sep=&#34;;&#34;)
+    hk_info_table = GlobalState.setup.telemetry.dictionary
     storage_mnemonics = hk_info_table[TmDictionaryColumns.STORAGE_MNEMONIC].values
     return np.unique(storage_mnemonics)
 
@@ -763,9 +776,7 @@ def get_housekeeping_names(name_filter=None, device_filter=None):
              given filter.
     &#34;&#34;&#34;
 
-    filename = get_resource(f&#34;:/data/tm-dictionary.csv&#34;)
-
-    hk_info_table = pandas.read_csv(filename, sep=&#34;;&#34;)
+    hk_info_table = GlobalState.setup.telemetry.dictionary
     hk_info_table.dropna(subset=[TmDictionaryColumns.CORRECT_HK_NAMES], inplace=True)
 
     if device_filter:
@@ -870,8 +881,7 @@ Returns: Dictionary of HK parameters with the corrected HK names.</li>
         - name of the column in the HK file with the corresponding timestamp
     &#34;&#34;&#34;
 
-    filename = get_resource(f&#34;:/data/tm-dictionary.csv&#34;)
-    hk_info_table = pandas.read_csv(filename, sep=&#34;;&#34;)
+    hk_info_table = GlobalState.setup.telemetry.dictionary
 
     storage_mnemonic = hk_info_table[TmDictionaryColumns.STORAGE_MNEMONIC].values
     hk_names = hk_info_table[TmDictionaryColumns.CORRECT_HK_NAMES].values
@@ -889,7 +899,7 @@ Returns: Dictionary of HK parameters with the corrected HK names.</li>
 <span>def <span class="ident">get_housekeeping</span></span>(<span>hk_name: str, obsid: Union[<a title="egse.obsid.ObservationIdentifier" href="obsid.html#egse.obsid.ObservationIdentifier">ObservationIdentifier</a>, str, int] = None, od: str = None, time_window: int = None, data_dir=None)</span>
 </code></dt>
 <dd>
-<div class="desc"><p>Return the timestamp(s) and housekeeping value(s) for the housekeeping parameter with the given name.</p>
+<div class="desc"><p>Returns the timestamp(s) and housekeeping value(s) for the housekeeping parameter with the given name.</p>
 <p>It is possible to indicate for which obsid or which OD the housekeeping is to be returned.
 If neither of them is
 specified, the latest daily files are used.</p>
@@ -897,23 +907,41 @@ specified, the latest daily files are used.</p>
 given OD. It is possible that a component stopped writing HK for some reason, and that the last housekeeping value
 is older than you would want.
 It is therefore important to inspect the corresponding timestamp.</p>
-<p>When the time window has been specified, the relevant housekeeping will be read:
-- determine the sampling rate (compare the timestamps for the last 2 lines in the housekeeping file);
-- determine how many samples we need to read (starting at the back);
-- read the required number of line, starting at the back;
-- for each of the read lines, append the timestamp and HK value to the arrays that will be returned</p>
-<h2 id="args">Args</h2>
+<p>When the time window has been specified, the relevant housekeeping will be read:</p>
 <ul>
-<li>hk_name: Name of the housekeeping parameter.</li>
-<li>obsid: Observation identifier.
+<li>determine the sampling rate (compare the timestamps for the last 2 lines in the housekeeping file);</li>
+<li>determine how many samples we need to read (starting at the back);</li>
+<li>read the required number of line, starting at the back;</li>
+<li>for each of the read lines, append the timestamp and HK value to the arrays that will be returned</li>
+</ul>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>hk_name</code></strong></dt>
+<dd>Name of the housekeeping parameter.</dd>
+<dt><strong><code>obsid</code></strong></dt>
+<dd>Observation identifier.
 This can be an ObservationIdentifier object, a string in format TEST_LAB or
-TEST_LAB_SETUP, or an integer representing the test ID; optional.</li>
-<li>od: Identifier for the OD (yyyymmdd); optional.</li>
-<li>time_window: Length of the time window over which to retrieve the housekeeping [s].
+TEST_LAB_SETUP, or an integer representing the test ID; optional.</dd>
+<dt><strong><code>od</code></strong></dt>
+<dd>Identifier for the OD (yyyymmdd); optional.</dd>
+<dt><strong><code>time_window</code></strong></dt>
+<dd>Length of the time window over which to retrieve the housekeeping [s].
 The time window ends at
 the moment this method is called.
-If not given, the latest housekeeping value is returned.</li>
-<li>data_dir: Folder (with sub-folders /daily and /obs) in which the HK files are stored.</li>
+If not given, the latest housekeeping value is returned.</dd>
+<dt><strong><code>data_dir</code></strong></dt>
+<dd>Folder (with sub-folders /daily and /obs) in which the HK files are stored. If this argument is not
+provided, the data_dir will be determined from the environment variable PLATO_DATA_STORAGE_LOCATION.</dd>
+</dl>
+<h2 id="raises">Raises</h2>
+<p>A HKError when one of the following problems occur
+* no obsid nor an od argument was provided
+* no HK measures were found for the given parameter and obsid/od</p>
+<h2 id="returns">Returns</h2>
+<ul>
+<li>If the time window has not been specified: the most recent timestamp and housekeeping value.</li>
+<li>If the time window has been specified: an array of timestamps and an array of housekeeping values, belonging
+to the specified time window.</li>
 </ul></div>
 <details class="source">
 <summary>
@@ -921,7 +949,8 @@ If not given, the latest housekeeping value is returned.</li>
 </summary>
 <pre><code class="python">def get_housekeeping(hk_name: str, obsid: Union[ObservationIdentifier, str, int] = None, od: str = None,
                      time_window: int = None, data_dir=None):
-    &#34;&#34;&#34; Return the timestamp(s) and housekeeping value(s) for the housekeeping parameter with the given name.
+    &#34;&#34;&#34;
+    Returns the timestamp(s) and housekeeping value(s) for the housekeeping parameter with the given name.
 
     It is possible to indicate for which obsid or which OD the housekeeping is to be returned.  If neither of them is
     specified, the latest daily files are used.
@@ -931,19 +960,32 @@ If not given, the latest housekeeping value is returned.</li>
     is older than you would want.  It is therefore important to inspect the corresponding timestamp.
 
     When the time window has been specified, the relevant housekeeping will be read:
-        - determine the sampling rate (compare the timestamps for the last 2 lines in the housekeeping file);
-        - determine how many samples we need to read (starting at the back);
-        - read the required number of line, starting at the back;
-        - for each of the read lines, append the timestamp and HK value to the arrays that will be returned
+
+    * determine the sampling rate (compare the timestamps for the last 2 lines in the housekeeping file);
+    * determine how many samples we need to read (starting at the back);
+    * read the required number of line, starting at the back;
+    * for each of the read lines, append the timestamp and HK value to the arrays that will be returned
 
     Args:
-        - hk_name: Name of the housekeeping parameter.
-        - obsid: Observation identifier.  This can be an ObservationIdentifier object, a string in format TEST_LAB or
-                  TEST_LAB_SETUP, or an integer representing the test ID; optional.
-        - od: Identifier for the OD (yyyymmdd); optional.
-        - time_window: Length of the time window over which to retrieve the housekeeping [s].  The time window ends at
-                       the moment this method is called.  If not given, the latest housekeeping value is returned.
-        - data_dir: Folder (with sub-folders /daily and /obs) in which the HK files are stored.
+        hk_name: Name of the housekeeping parameter.
+        obsid: Observation identifier.  This can be an ObservationIdentifier object, a string in format TEST_LAB or
+            TEST_LAB_SETUP, or an integer representing the test ID; optional.
+        od: Identifier for the OD (yyyymmdd); optional.
+        time_window: Length of the time window over which to retrieve the housekeeping [s].  The time window ends at
+            the moment this method is called.  If not given, the latest housekeeping value is returned.
+        data_dir: Folder (with sub-folders /daily and /obs) in which the HK files are stored. If this argument is not
+            provided, the data_dir will be determined from the environment variable PLATO_DATA_STORAGE_LOCATION.
+
+    Raises:
+        A HKError when one of the following problems occur
+            * no obsid nor an od argument was provided
+            * no HK measures were found for the given parameter and obsid/od
+
+    Returns:
+        - If the time window has not been specified: the most recent timestamp and housekeeping value.
+        - If the time window has been specified: an array of timestamps and an array of housekeeping values, belonging
+          to the specified time window.
+
     &#34;&#34;&#34;
 
     # Either specify the obsid or the OD (or neither of them) but not both
@@ -954,7 +996,7 @@ If not given, the latest housekeeping value is returned.</li>
 
     # Specified obsid (as integer or as string)
 
-    data_dir = data_dir or os.environ.get(&#39;PLATO_DATA_STORAGE_LOCATION&#39;)
+    data_dir = data_dir or get_data_storage_location()
 
     if obsid:
 
@@ -1028,9 +1070,7 @@ given filter.</li>
              given filter.
     &#34;&#34;&#34;
 
-    filename = get_resource(f&#34;:/data/tm-dictionary.csv&#34;)
-
-    hk_info_table = pandas.read_csv(filename, sep=&#34;;&#34;)
+    hk_info_table = GlobalState.setup.telemetry.dictionary
     hk_info_table.dropna(subset=[TmDictionaryColumns.CORRECT_HK_NAMES], inplace=True)
 
     if device_filter:
@@ -1241,9 +1281,7 @@ Returns: Sampling rate for the HK file with the given name [s].</li>
     Returns: List of the storage mnemonics from the TM dictionary.
     &#34;&#34;&#34;
 
-    filename = get_resource(f&#34;:/data/tm-dictionary.csv&#34;)
-
-    hk_info_table = pandas.read_csv(filename, sep=&#34;;&#34;)
+    hk_info_table = GlobalState.setup.telemetry.dictionary
     storage_mnemonics = hk_info_table[TmDictionaryColumns.STORAGE_MNEMONIC].values
     return np.unique(storage_mnemonics)</code></pre>
 </details>
@@ -1286,8 +1324,10 @@ Returns: Dictionary with the original HK names as keys and the converted HK name
     Returns: Dictionary with the original HK names as keys and the converted HK names as values.
     &#34;&#34;&#34;
 
-    filename = get_resource(&#34;:/data/tm-dictionary.csv&#34;)
-    hk_info_table = pandas.read_csv(filename, sep=&#34;;&#34;)
+    try:
+        hk_info_table = GlobalState.setup.telemetry.dictionary
+    except AttributeError:
+        raise SetupError(&#34;Version of the telemetry dictionary not specified in the current setup&#34;)
 
     storage_mnemonic_col = hk_info_table[TmDictionaryColumns.STORAGE_MNEMONIC].values
     correct_name_col = hk_info_table[TmDictionaryColumns.CORRECT_HK_NAMES].values
@@ -1295,25 +1335,24 @@ Returns: Dictionary with the original HK names as keys and the converted HK name
 
     selection = np.where(storage_mnemonic_col == storage_mnemonic)
 
-    conversion_dict = dict(zip(original_name_col[selection], correct_name_col[selection]))
+    correct_name_col = correct_name_col[selection]
+    original_name_col = original_name_col[selection]
 
     if use_site:
 
-        th_prefix = f&#34;G{SITE_ID}&#34;
+        th_prefix = f&#34;G{SITE_ID}_&#34;
 
         th_conversion_dict = {}
 
-        for original_name, correct_name in conversion_dict.items():
-
+        for (original_name, correct_name) in zip(original_name_col, correct_name_col):
             if str.startswith(str(correct_name), th_prefix):
-
                 th_conversion_dict[original_name] = correct_name
 
         return th_conversion_dict
 
     else:
 
-        return conversion_dict</code></pre>
+        return dict(zip(original_name_col, correct_name_col))</code></pre>
 </details>
 </dd>
 </dl>

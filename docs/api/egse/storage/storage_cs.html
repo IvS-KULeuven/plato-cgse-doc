@@ -50,6 +50,7 @@ from pytz import utc
 
 from egse.bits import humanize_bytes
 from egse.control import ControlServer
+from egse.env import get_data_storage_location
 from egse.settings import Settings
 from egse.storage import StorageProtocol
 from egse.storage import StorageProxy
@@ -62,6 +63,7 @@ from egse.system import replace_environment_variable
 logger = logging.getLogger(&#34;egse.storage.storage_cs&#34;)
 
 CTRL_SETTINGS = Settings.load(&#34;Storage Control Server&#34;)
+SITE = Settings.load(&#34;SITE&#34;)
 
 
 class StorageControlServer(ControlServer):
@@ -202,8 +204,7 @@ def check_prerequisites():
     # We need a proper location for storing the data, this directory shall contain
     # two subfolders: &#39;daily&#39; and &#39;obs&#39;.
 
-    location = CTRL_SETTINGS.FILE_STORAGE_LOCATION
-    location = replace_environment_variable(location)
+    location = get_data_storage_location(site_id=SITE.ID)
 
     if not location:
         raise RuntimeError(
@@ -275,8 +276,7 @@ if __name__ == &#34;__main__&#34;:
     # We need a proper location for storing the data, this directory shall contain
     # two subfolders: &#39;daily&#39; and &#39;obs&#39;.
 
-    location = CTRL_SETTINGS.FILE_STORAGE_LOCATION
-    location = replace_environment_variable(location)
+    location = get_data_storage_location(site_id=SITE.ID)
 
     if not location:
         raise RuntimeError(
@@ -463,6 +463,8 @@ if __name__ == &#34;__main__&#34;:
 <li><code><b><a title="egse.control.ControlServer" href="../control.html#egse.control.ControlServer">ControlServer</a></b></code>:
 <ul class="hlist">
 <li><code><a title="egse.control.ControlServer.register_to_storage_manager" href="../control.html#egse.control.ControlServer.register_to_storage_manager">register_to_storage_manager</a></code></li>
+<li><code><a title="egse.control.ControlServer.set_delay" href="../control.html#egse.control.ControlServer.set_delay">set_delay</a></code></li>
+<li><code><a title="egse.control.ControlServer.set_hk_delay" href="../control.html#egse.control.ControlServer.set_hk_delay">set_hk_delay</a></code></li>
 <li><code><a title="egse.control.ControlServer.store_housekeeping_information" href="../control.html#egse.control.ControlServer.store_housekeeping_information">store_housekeeping_information</a></code></li>
 <li><code><a title="egse.control.ControlServer.unregister_from_storage_manager" href="../control.html#egse.control.ControlServer.unregister_from_storage_manager">unregister_from_storage_manager</a></code></li>
 </ul>

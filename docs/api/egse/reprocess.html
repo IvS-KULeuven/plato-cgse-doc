@@ -28,6 +28,7 @@
 </summary>
 <pre><code class="python">import glob
 import logging
+import os.path
 from pathlib import Path
 from typing import Union
 
@@ -38,15 +39,16 @@ from pandas.errors import ParserError
 
 from egse import h5
 from egse.config import find_file
-from egse.dpu.fitsgen import get_hdf5_filenames_for_obsid, get_od
+from egse.dpu.fitsgen import get_hdf5_filenames_for_obsid, get_od, create_fits_from_hdf5, add_synoptics
 from egse.fee.n_fee_hk import ORIGIN as N_FEE_ORIGIN
-from egse.fee.n_fee_hk import get_calibrated_nfee_supply_voltages, get_calibrated_temperatures
-from egse.fee.n_fee_hk import read_hk_info as read_n_fee_hk_info
+from egse.fee.n_fee_hk import ORIGIN as ORIGIN_NFEE_HK
+from egse.fee.n_fee_hk import get_calibrated_supply_voltages, get_calibrated_temperatures
 from egse.fee.nfee import HousekeepingData
 from egse.fov import ORIGIN as FOV_ORIGIN
+from egse.hk import read_conversion_dict
 from egse.obsid import ObservationIdentifier, obsid_from_storage
 from egse.settings import Settings
-from egse.setup import NavigableDict
+from egse.setup import NavigableDict, Setup
 from egse.spw import SpaceWirePacket
 from egse.storage import HDF5
 from egse.storage.persistence import CSV
@@ -91,7 +93,7 @@ LOGGER = logging.getLogger(__name__)
 #         date += delta
 
 
-def reprocess_od(od: str, site: str, sensor_cal: NavigableDict, archive_dir: str, fixed_archive_dir: str,
+def reprocess_od(od: str, site: str, setup: Setup, archive_dir: str, fixed_archive_dir: str,
                  reprocessed_archive_dir: str):
     &#34;&#34;&#34; Re-processing for the given OD.
 
@@ -102,19 +104,21 @@ def reprocess_od(od: str, site: str, sensor_cal: NavigableDict, archive_dir: str
     Args:
         - od: Observation day in the format YYYYMMDD.
         - site: Site ID (CSL/CSL1/CSL2/SRON/IAS/INTA).
-        - sensor_cal: Calibration data for the N-FEE HK.
+        - setup: Setup from which to read all calibration information.
         - archive_dir: Folder (with sub-folders /daily and /obs) in which the HK files are stored.
         - fixed_archive_dir: Folder (with sub-folders /daily and /obs) in which the fixed HK files are stored.
         - reprocessed_archive_dir: Folder (with sub-folders /daily and /obs) in which the re-processed synoptics file
                                    will be stored.
     &#34;&#34;&#34;
 
-    reprocess_daily_n_fee_hk(od, site, sensor_cal, archive_dir, reprocessed_archive_dir)            # N-FEE HK
+    fee_calibration = setup.camera.fee.calibration
+
+    reprocess_daily_n_fee_hk(od, site, fee_calibration, archive_dir, reprocessed_archive_dir)       # N-FEE HK
     reprocess_daily_synoptics(od, site, archive_dir, fixed_archive_dir, reprocessed_archive_dir)    # Synoptics
 
 
-def reprocess_obsid(obsid: Union[str, int, ObservationIdentifier], site: str, sensor_cal: NavigableDict,
-                    archive_dir: str, fixed_archive_dir: str, reprocessed_archive_dir: str):
+def reprocess_obsid(obsid: Union[str, int, ObservationIdentifier], site: str, setup: Setup, archive_dir: str,
+                    fixed_archive_dir: str, reprocessed_archive_dir: str):
     &#34;&#34;&#34; Re-processing for the given obsid.
 
     This re-processing consists of the following steps:
@@ -125,18 +129,22 @@ def reprocess_obsid(obsid: Union[str, int, ObservationIdentifier], site: str, se
     Args:
         - obsid: Observation identifier.
         - site: Site ID (CSL/CSL1/CSL2/SRON/IAS/INTA).
-        - sensor_cal: Calibration data for the N-FEE HK.
+        - setup: Setup from which to read all calibration information.
         - archive_dir: Folder (with sub-folders /daily and /obs) in which the HK files are stored.
         - fixed_archive_dir: Folder (with sub-folders /daily and /obs) in which the fixed HK files are stored.
         - reprocessed_archive_dir: Folder (with sub-folders /daily and /obs) in which the re-processed synoptics file
                                    will be stored.
     &#34;&#34;&#34;
 
-    reprocess_obs_n_fee_hk(obsid, sensor_cal, archive_dir, reprocessed_archive_dir)                 # N-FEE HK
+    fee_calibration = setup.camera.fee.calibration
+
+    reprocess_obs_n_fee_hk(obsid, fee_calibration, archive_dir, reprocessed_archive_dir)            # N-FEE HK
     reprocess_obs_synoptics(obsid, site, archive_dir, fixed_archive_dir, reprocessed_archive_dir)   # Synoptics
 
+    reprocess_ccd_data(obsid, archive_dir, reprocessed_archive_dir, setup)                          # FITS files
 
-def reprocess_daily_n_fee_hk(od: str, site: str, sensor_cal: NavigableDict, archive_dir: str,
+
+def reprocess_daily_n_fee_hk(od: str, site: str, fee_calibration: NavigableDict, archive_dir: str,
                              reprocessed_archive_dir: str):
     &#34;&#34;&#34; Re-processing the N-FEE HK for the given OD.
 
@@ -154,7 +162,7 @@ def reprocess_daily_n_fee_hk(od: str, site: str, sensor_cal: NavigableDict, arch
     Args:
         - od: Observation day in the format YYYYMMDD.
         - site: Site ID (CSL/CSL1/CSL2/SRON/IAS/INTA).
-        - sensor_cal: Calibration data for the N-FEE HK.
+        - fee_calibration: Calibration data for the N-FEE HK.
         - archive_dir: Folder (with sub-folders /daily and /obs) in which the HDF5 files are stored.
         - reprocessed_archive_dir: Folder (with sub-folders /daily and /obs) in which the re-processed N-FEE HK files
                                    will be stored.
@@ -176,10 +184,10 @@ def reprocess_daily_n_fee_hk(od: str, site: str, sensor_cal: NavigableDict, arch
 
     n_fee_hk_filename = f&#34;{reprocessed_archive_od_dir}/{od}_{site}_{N_FEE_ORIGIN}.{CSV.extension}&#34;
 
-    _reprocess_n_fee_hk(hdf5_filenames, n_fee_hk_filename, sensor_cal, reprocessed_archive_od_dir)
+    _reprocess_n_fee_hk(hdf5_filenames, n_fee_hk_filename, fee_calibration, reprocessed_archive_od_dir)
 
 
-def reprocess_obs_n_fee_hk(obsid: Union[str, int, ObservationIdentifier], sensor_cal: NavigableDict,
+def reprocess_obs_n_fee_hk(obsid: Union[str, int, ObservationIdentifier], fee_calibration: NavigableDict,
                            archive_dir: str, reprocessed_archive_dir: str):
     &#34;&#34;&#34; Re-processing the synoptics for the given obsid.
 
@@ -197,7 +205,7 @@ def reprocess_obs_n_fee_hk(obsid: Union[str, int, ObservationIdentifier], sensor
     Args:
         - obsid: Observation identifier.
         - site: Site ID (CSL/CSL1/CSL2/SRON/IAS/INTA).
-        - sensor_cal: Calibration data for the N-FEE HK.
+        - fee_calibration: Calibration data for the N-FEE HK.
         - archive_dir: Folder (with sub-folders /daily and /obs) in which the HDF5 files are stored.
         - reprocessed_archive_dir: Folder (with sub-folders /daily and /obs) in which the re-processed N-FEE HK files
                                    will be stored.
@@ -227,10 +235,10 @@ def reprocess_obs_n_fee_hk(obsid: Union[str, int, ObservationIdentifier], sensor
     else:
         n_fee_hk_filename = f&#34;{reprocessed_archive_obsid_dir}/{n_fee_hk_filename.stem}.{CSV.extension}&#34;
 
-    _reprocess_n_fee_hk(hdf5_filenames, n_fee_hk_filename, sensor_cal, reprocessed_archive_obsid_dir)
+    _reprocess_n_fee_hk(hdf5_filenames, n_fee_hk_filename, fee_calibration, reprocessed_archive_obsid_dir)
 
 
-def _reprocess_n_fee_hk(hdf5_filenames, n_fee_hk_filename: str, sensor_cal: NavigableDict):
+def _reprocess_n_fee_hk(hdf5_filenames, n_fee_hk_filename: str, fee_calibration: NavigableDict):
     &#34;&#34;&#34; Re-processing the N-FEE HK.
 
     The procedure is as follows for the &#34;hk&#34; dataset in all groups of the given list of HDF5 files:
@@ -242,10 +250,16 @@ def _reprocess_n_fee_hk(hdf5_filenames, n_fee_hk_filename: str, sensor_cal: Navi
     Args:
         - hdf5_filenames: Filenames of the HDF5 files containing the raw N-FEE HK.
         - n_fee_hk_filename: Filename for the re-processed N-FEE HK file.
+        - fee_calibration: Calibration data for the N-FEE HK.
     &#34;&#34;&#34;
 
-    name_conversion, n_fee_supply_voltage_cal = read_n_fee_hk_info()
-    column_names = [&#34;timestamp&#34;, *list(name_conversion.values())]
+    hk_names_mapping = read_conversion_dict(ORIGIN_NFEE_HK, use_site=False)
+
+    supply_voltage_calibration = fee_calibration.supply_voltages
+    temperature_calibration = fee_calibration.temperatures
+
+    # name_conversion, n_fee_supply_voltage_cal = read_n_fee_hk_info()
+    column_names = [&#34;timestamp&#34;, *list(hk_names_mapping.values())]
 
     with CSV(filename=n_fee_hk_filename, prep={&#34;column_names&#34;: column_names, &#34;mode&#34;: &#39;w&#39;}) as csv:
 
@@ -271,17 +285,17 @@ def _reprocess_n_fee_hk(hdf5_filenames, n_fee_hk_filename: str, sensor_cal: Navi
 
                             for orig_name in hk_data:
                                 try:
-                                    new_name = name_conversion[orig_name]
+                                    new_name = hk_names_mapping[orig_name]
                                     values[new_name] = hk_data[orig_name]
                                 except KeyError:
                                     pass
 
                             # Apply the correct calibration
 
-                            calibrated_supply_voltages = get_calibrated_nfee_supply_voltages(values,
-                                                                                             n_fee_supply_voltage_cal)
+                            calibrated_supply_voltages = get_calibrated_supply_voltages(values,
+                                                                                        supply_voltage_calibration)
                             values.update(calibrated_supply_voltages)
-                            calibrated_temperatures = get_calibrated_temperatures(values, sensor_cal)
+                            calibrated_temperatures = get_calibrated_temperatures(values, temperature_calibration)
                             values.update(calibrated_temperatures)
 
                             # Store the new N-FEE HK
@@ -344,7 +358,7 @@ def reprocess_obs_synoptics(obsid: Union[str, int, ObservationIdentifier], site:
         - site: Site ID (CSL/CSL1/CSL2/SRON/IAS/INTA).
         - archive_dir: Folder (with sub-folders /daily and /obs) in which the HDF5 files are stored.
         - fixed_archive_dir: Folder (with sub-folders /daily and /obs) in which the fixed HK files are stored.
-        - reprocessed_archive_dir: Folder (with sub-folders /daily and /obs) in which the re-processed N-FEE HK files
+        - reprocessed_archive_dir: Folder (with sub-folders /daily and /obs) in which the re-processed synoptics files
                                    will be stored.
         &#34;&#34;&#34;
 
@@ -367,6 +381,10 @@ def reprocess_obs_synoptics(obsid: Union[str, int, ObservationIdentifier], site:
 
     pattern = f&#34;{obsid}_{SYN_ORIGIN}_*_*.csv&#34;
     synoptics_filename = find_file(pattern, root=archive_obs_dir)
+
+    if not os.path.exists(f&#34;{reprocessed_archive_obs_dir}&#34;):
+        os.makedirs(f&#34;{reprocessed_archive_obs_dir}/{obsid}&#34;)
+
     if synoptics_filename is None:
         od = get_od(obsid, archive_dir)[0]
         synoptics_filename = f&#34;{reprocessed_archive_obs_dir}/{obsid}_{SYN_ORIGIN}_{od}.{CSV.extension}&#34;
@@ -502,11 +520,10 @@ def get_syn_input_origins(site: str):
     &#34;&#34;&#34;
 
     # Non-TH-specific HK files:
-    #   - N-FEE HK (already re-processed)
+    #   - N-FEE HK (potentially re-processed)
     #   - FOV HK
-    #   - TCS HK
 
-    common_syn_input_origins = [N_FEE_ORIGIN, FOV_ORIGIN, TCS_ORIGIN]
+    common_syn_input_origins = [N_FEE_ORIGIN, FOV_ORIGIN]
 
     # TH-specific HK files
 
@@ -530,7 +547,8 @@ def csl_get_syn_input_origins():
     Returns: List of storage mnemonics for the HK files contributing to the synoptics specifically for CSL.
     &#34;&#34;&#34;
 
-    return []
+    return [&#34;OGSE&#34;]
+        #[Settings.load(&#34;OGSE Control Server&#34;).STORAGE_MNEMONIC]
 
 
 def sron_get_syn_input_origins():
@@ -539,7 +557,8 @@ def sron_get_syn_input_origins():
     Returns: List of storage mnemonics for the HK files contributing to the synoptics specifically for SRON.
     &#34;&#34;&#34;
 
-    return [Settings.load(&#34;BeagleBone Lamp Control Server&#34;).STORAGE_MNEMONIC,
+    return [TCS_ORIGIN,
+            Settings.load(&#34;BeagleBone Lamp Control Server&#34;).STORAGE_MNEMONIC,
             Settings.load(&#34;Thorlabs PM100 Control Server&#34;).STORAGE_MNEMONIC,
             Settings.load(&#34;Standa 8SMC5 Control Server&#34;).STORAGE_MNEMONIC,
             Settings.load(&#34;Thorlabs SC10 Control Server&#34;).STORAGE_MNEMONIC,
@@ -555,7 +574,12 @@ def ias_get_syn_input_origins():
     Returns: List of storage mnemonics for the HK files contributing to the synoptics specifically for IAS.
     &#34;&#34;&#34;
 
-    raise NotImplementedError
+    return [TCS_ORIGIN,
+            f&#34;DAS-{Settings.load(&#39;Keithley Control Server&#39;).STORAGE_MNEMONIC}&#34;,
+            f&#34;DAS-{Settings.load(&#39;SRS PTC10 Control Server&#39;).STORAGE_MNEMONIC}&#34;,
+            Settings.load(&#34;Lamp EQ99 Control Server&#34;).STORAGE_MNEMONIC,
+            Settings.load(&#34;Thorlabs PM100 Control Server&#34;).STORAGE_MNEMONIC,
+            &#34;KSC101&#34;]
 
 
 def inta_get_syn_input_origins():
@@ -564,6 +588,8 @@ def inta_get_syn_input_origins():
     Returns: List of storage mnemonics for the HK files contributing to the synoptics specifically for INTA.
     &#34;&#34;&#34;
 
+    # return [TCS_ORIGIN,
+    #         ]
     raise NotImplementedError
 
 
@@ -635,21 +661,9 @@ def get_syn_input_filenames_from_origins_obs(origins: list, obsid: str, archive_
     for origin in origins:
 
         pattern = f&#34;{obsid}_{origin}_*_*.{CSV.extension}&#34;
+        filename = find_file(pattern, root=reprocessed_archive_obs_dir)
 
-        # The N-FEE HK must be re-processed already
-
-        if origin == N_FEE_ORIGIN:
-            filename = find_file(pattern, root=reprocessed_archive_obs_dir)
-
-            if filename is None:
-                LOGGER.debug(f&#34;No re-processed N-FEE HK available in {reprocessed_archive_obs_dir}&#34;)
-            else:
-                filenames.append(f&#34;{reprocessed_archive_obs_dir}/{filename.stem}.{CSV.extension}&#34;)
-
-        # For all other HK: first check whether there is a fixed version.  If there is one, use that; otherwise, use
-        # the original version from the archive (if that is available).
-
-        else:
+        if filename is None:
 
             filename = find_file(pattern, root=fixed_archive_obs_dir)
 
@@ -666,14 +680,27 @@ def get_syn_input_filenames_from_origins_obs(origins: list, obsid: str, archive_
                 filenames.append(f&#34;{fixed_archive_obs_dir}/{filename.stem}.{CSV.extension}&#34;)
                 LOGGER.debug(f&#34;Using the fixed HK for {origin}&#34;)
 
+        else:
+            filenames.append(f&#34;{fixed_archive_obs_dir}/{filename.stem}.{CSV.extension}&#34;)
+            LOGGER.debug(f&#34;Using the re-processed HK for {origin}&#34;)
+
     return filenames
 
 
-# def reprocess_ccd_data(obsid: str, obs_dir: str):
-#
-#
-#     fg = SubProcess(&#34;MyApp&#34;, [sys.executable, &#34;-m&#34;, &#34;egse.dpu.fitsgen&#34;, &#34;for-obsid&#34;, obsid])
-#     fg.execute(detach_from_parent=True)</code></pre>
+def reprocess_ccd_data(obsid: str, archive_dir: str, reprocessed_archive_dir: str, setup: Setup):
+    &#34;&#34;&#34; Re-processing of the CCD data for the given obsid.
+
+    Args:
+        - obsid: Observation identifier.
+        - archive_dir: Folder (with sub-folders /daily and /obs) in which the HDF5 and HK files are stored.
+        - fixed_archive_dir: Folder (with sub-folders /daily and /obs) in which the fixed HK files are stored.
+        - reprocessed_archive_dir: Folder (with sub-folders /daily and /obs) in which the re-processed files will be
+                                   stored.
+    &#34;&#34;&#34;
+
+    hdf5_filenames = get_hdf5_filenames_for_obsid(obsid, data_dir=archive_dir)
+    create_fits_from_hdf5(hdf5_filenames, location=reprocessed_archive_dir, setup=setup)
+    add_synoptics(obsid, data_dir=reprocessed_archive_dir)</code></pre>
 </details>
 </section>
 <section>
@@ -699,7 +726,8 @@ def get_syn_input_filenames_from_origins_obs(origins: list, obsid: str, archive_
     Returns: List of storage mnemonics for the HK files contributing to the synoptics specifically for CSL.
     &#34;&#34;&#34;
 
-    return []</code></pre>
+    return [&#34;OGSE&#34;]
+        #[Settings.load(&#34;OGSE Control Server&#34;).STORAGE_MNEMONIC]</code></pre>
 </details>
 </dd>
 <dt id="egse.reprocess.get_syn_input_filename_obs"><code class="name flex">
@@ -780,21 +808,9 @@ obsid.</li>
     for origin in origins:
 
         pattern = f&#34;{obsid}_{origin}_*_*.{CSV.extension}&#34;
+        filename = find_file(pattern, root=reprocessed_archive_obs_dir)
 
-        # The N-FEE HK must be re-processed already
-
-        if origin == N_FEE_ORIGIN:
-            filename = find_file(pattern, root=reprocessed_archive_obs_dir)
-
-            if filename is None:
-                LOGGER.debug(f&#34;No re-processed N-FEE HK available in {reprocessed_archive_obs_dir}&#34;)
-            else:
-                filenames.append(f&#34;{reprocessed_archive_obs_dir}/{filename.stem}.{CSV.extension}&#34;)
-
-        # For all other HK: first check whether there is a fixed version.  If there is one, use that; otherwise, use
-        # the original version from the archive (if that is available).
-
-        else:
+        if filename is None:
 
             filename = find_file(pattern, root=fixed_archive_obs_dir)
 
@@ -810,6 +826,10 @@ obsid.</li>
             else:
                 filenames.append(f&#34;{fixed_archive_obs_dir}/{filename.stem}.{CSV.extension}&#34;)
                 LOGGER.debug(f&#34;Using the fixed HK for {origin}&#34;)
+
+        else:
+            filenames.append(f&#34;{fixed_archive_obs_dir}/{filename.stem}.{CSV.extension}&#34;)
+            LOGGER.debug(f&#34;Using the re-processed HK for {origin}&#34;)
 
     return filenames</code></pre>
 </details>
@@ -935,11 +955,10 @@ obsid.</li>
     &#34;&#34;&#34;
 
     # Non-TH-specific HK files:
-    #   - N-FEE HK (already re-processed)
+    #   - N-FEE HK (potentially re-processed)
     #   - FOV HK
-    #   - TCS HK
 
-    common_syn_input_origins = [N_FEE_ORIGIN, FOV_ORIGIN, TCS_ORIGIN]
+    common_syn_input_origins = [N_FEE_ORIGIN, FOV_ORIGIN]
 
     # TH-specific HK files
 
@@ -973,7 +992,12 @@ obsid.</li>
     Returns: List of storage mnemonics for the HK files contributing to the synoptics specifically for IAS.
     &#34;&#34;&#34;
 
-    raise NotImplementedError</code></pre>
+    return [TCS_ORIGIN,
+            f&#34;DAS-{Settings.load(&#39;Keithley Control Server&#39;).STORAGE_MNEMONIC}&#34;,
+            f&#34;DAS-{Settings.load(&#39;SRS PTC10 Control Server&#39;).STORAGE_MNEMONIC}&#34;,
+            Settings.load(&#34;Lamp EQ99 Control Server&#34;).STORAGE_MNEMONIC,
+            Settings.load(&#34;Thorlabs PM100 Control Server&#34;).STORAGE_MNEMONIC,
+            &#34;KSC101&#34;]</code></pre>
 </details>
 </dd>
 <dt id="egse.reprocess.inta_get_syn_input_origins"><code class="name flex">
@@ -992,11 +1016,46 @@ obsid.</li>
     Returns: List of storage mnemonics for the HK files contributing to the synoptics specifically for INTA.
     &#34;&#34;&#34;
 
+    # return [TCS_ORIGIN,
+    #         ]
     raise NotImplementedError</code></pre>
 </details>
 </dd>
+<dt id="egse.reprocess.reprocess_ccd_data"><code class="name flex">
+<span>def <span class="ident">reprocess_ccd_data</span></span>(<span>obsid: str, archive_dir: str, reprocessed_archive_dir: str, setup: <a title="egse.setup.Setup" href="setup.html#egse.setup.Setup">Setup</a>)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Re-processing of the CCD data for the given obsid.</p>
+<h2 id="args">Args</h2>
+<ul>
+<li>obsid: Observation identifier.</li>
+<li>archive_dir: Folder (with sub-folders /daily and /obs) in which the HDF5 and HK files are stored.</li>
+<li>fixed_archive_dir: Folder (with sub-folders /daily and /obs) in which the fixed HK files are stored.</li>
+<li>reprocessed_archive_dir: Folder (with sub-folders /daily and /obs) in which the re-processed files will be
+stored.</li>
+</ul></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def reprocess_ccd_data(obsid: str, archive_dir: str, reprocessed_archive_dir: str, setup: Setup):
+    &#34;&#34;&#34; Re-processing of the CCD data for the given obsid.
+
+    Args:
+        - obsid: Observation identifier.
+        - archive_dir: Folder (with sub-folders /daily and /obs) in which the HDF5 and HK files are stored.
+        - fixed_archive_dir: Folder (with sub-folders /daily and /obs) in which the fixed HK files are stored.
+        - reprocessed_archive_dir: Folder (with sub-folders /daily and /obs) in which the re-processed files will be
+                                   stored.
+    &#34;&#34;&#34;
+
+    hdf5_filenames = get_hdf5_filenames_for_obsid(obsid, data_dir=archive_dir)
+    create_fits_from_hdf5(hdf5_filenames, location=reprocessed_archive_dir, setup=setup)
+    add_synoptics(obsid, data_dir=reprocessed_archive_dir)</code></pre>
+</details>
+</dd>
 <dt id="egse.reprocess.reprocess_daily_n_fee_hk"><code class="name flex">
-<span>def <span class="ident">reprocess_daily_n_fee_hk</span></span>(<span>od: str, site: str, sensor_cal: egse.setup.NavigableDict, archive_dir: str, reprocessed_archive_dir: str)</span>
+<span>def <span class="ident">reprocess_daily_n_fee_hk</span></span>(<span>od: str, site: str, fee_calibration: egse.setup.NavigableDict, archive_dir: str, reprocessed_archive_dir: str)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Re-processing the N-FEE HK for the given OD.</p>
@@ -1017,7 +1076,7 @@ file.</p>
 <ul>
 <li>od: Observation day in the format YYYYMMDD.</li>
 <li>site: Site ID (CSL/CSL1/CSL2/SRON/IAS/INTA).</li>
-<li>sensor_cal: Calibration data for the N-FEE HK.</li>
+<li>fee_calibration: Calibration data for the N-FEE HK.</li>
 <li>archive_dir: Folder (with sub-folders /daily and /obs) in which the HDF5 files are stored.</li>
 <li>reprocessed_archive_dir: Folder (with sub-folders /daily and /obs) in which the re-processed N-FEE HK files
 will be stored.</li>
@@ -1026,7 +1085,7 @@ will be stored.</li>
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def reprocess_daily_n_fee_hk(od: str, site: str, sensor_cal: NavigableDict, archive_dir: str,
+<pre><code class="python">def reprocess_daily_n_fee_hk(od: str, site: str, fee_calibration: NavigableDict, archive_dir: str,
                              reprocessed_archive_dir: str):
     &#34;&#34;&#34; Re-processing the N-FEE HK for the given OD.
 
@@ -1044,7 +1103,7 @@ will be stored.</li>
     Args:
         - od: Observation day in the format YYYYMMDD.
         - site: Site ID (CSL/CSL1/CSL2/SRON/IAS/INTA).
-        - sensor_cal: Calibration data for the N-FEE HK.
+        - fee_calibration: Calibration data for the N-FEE HK.
         - archive_dir: Folder (with sub-folders /daily and /obs) in which the HDF5 files are stored.
         - reprocessed_archive_dir: Folder (with sub-folders /daily and /obs) in which the re-processed N-FEE HK files
                                    will be stored.
@@ -1066,7 +1125,7 @@ will be stored.</li>
 
     n_fee_hk_filename = f&#34;{reprocessed_archive_od_dir}/{od}_{site}_{N_FEE_ORIGIN}.{CSV.extension}&#34;
 
-    _reprocess_n_fee_hk(hdf5_filenames, n_fee_hk_filename, sensor_cal, reprocessed_archive_od_dir)</code></pre>
+    _reprocess_n_fee_hk(hdf5_filenames, n_fee_hk_filename, fee_calibration, reprocessed_archive_od_dir)</code></pre>
 </details>
 </dd>
 <dt id="egse.reprocess.reprocess_daily_synoptics"><code class="name flex">
@@ -1131,7 +1190,7 @@ will be stored.</li>
 </details>
 </dd>
 <dt id="egse.reprocess.reprocess_obs_n_fee_hk"><code class="name flex">
-<span>def <span class="ident">reprocess_obs_n_fee_hk</span></span>(<span>obsid: Union[<a title="egse.obsid.ObservationIdentifier" href="obsid.html#egse.obsid.ObservationIdentifier">ObservationIdentifier</a>, str, int], sensor_cal: egse.setup.NavigableDict, archive_dir: str, reprocessed_archive_dir: str)</span>
+<span>def <span class="ident">reprocess_obs_n_fee_hk</span></span>(<span>obsid: Union[<a title="egse.obsid.ObservationIdentifier" href="obsid.html#egse.obsid.ObservationIdentifier">ObservationIdentifier</a>, str, int], fee_calibration: egse.setup.NavigableDict, archive_dir: str, reprocessed_archive_dir: str)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Re-processing the synoptics for the given obsid.</p>
@@ -1152,7 +1211,7 @@ file.</p>
 <ul>
 <li>obsid: Observation identifier.</li>
 <li>site: Site ID (CSL/CSL1/CSL2/SRON/IAS/INTA).</li>
-<li>sensor_cal: Calibration data for the N-FEE HK.</li>
+<li>fee_calibration: Calibration data for the N-FEE HK.</li>
 <li>archive_dir: Folder (with sub-folders /daily and /obs) in which the HDF5 files are stored.</li>
 <li>reprocessed_archive_dir: Folder (with sub-folders /daily and /obs) in which the re-processed N-FEE HK files
 will be stored.</li>
@@ -1161,7 +1220,7 @@ will be stored.</li>
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def reprocess_obs_n_fee_hk(obsid: Union[str, int, ObservationIdentifier], sensor_cal: NavigableDict,
+<pre><code class="python">def reprocess_obs_n_fee_hk(obsid: Union[str, int, ObservationIdentifier], fee_calibration: NavigableDict,
                            archive_dir: str, reprocessed_archive_dir: str):
     &#34;&#34;&#34; Re-processing the synoptics for the given obsid.
 
@@ -1179,7 +1238,7 @@ will be stored.</li>
     Args:
         - obsid: Observation identifier.
         - site: Site ID (CSL/CSL1/CSL2/SRON/IAS/INTA).
-        - sensor_cal: Calibration data for the N-FEE HK.
+        - fee_calibration: Calibration data for the N-FEE HK.
         - archive_dir: Folder (with sub-folders /daily and /obs) in which the HDF5 files are stored.
         - reprocessed_archive_dir: Folder (with sub-folders /daily and /obs) in which the re-processed N-FEE HK files
                                    will be stored.
@@ -1209,7 +1268,7 @@ will be stored.</li>
     else:
         n_fee_hk_filename = f&#34;{reprocessed_archive_obsid_dir}/{n_fee_hk_filename.stem}.{CSV.extension}&#34;
 
-    _reprocess_n_fee_hk(hdf5_filenames, n_fee_hk_filename, sensor_cal, reprocessed_archive_obsid_dir)</code></pre>
+    _reprocess_n_fee_hk(hdf5_filenames, n_fee_hk_filename, fee_calibration, reprocessed_archive_obsid_dir)</code></pre>
 </details>
 </dd>
 <dt id="egse.reprocess.reprocess_obs_synoptics"><code class="name flex">
@@ -1228,7 +1287,7 @@ will be stored.</li>
 <li>site: Site ID (CSL/CSL1/CSL2/SRON/IAS/INTA).</li>
 <li>archive_dir: Folder (with sub-folders /daily and /obs) in which the HDF5 files are stored.</li>
 <li>fixed_archive_dir: Folder (with sub-folders /daily and /obs) in which the fixed HK files are stored.</li>
-<li>reprocessed_archive_dir: Folder (with sub-folders /daily and /obs) in which the re-processed N-FEE HK files
+<li>reprocessed_archive_dir: Folder (with sub-folders /daily and /obs) in which the re-processed synoptics files
 will be stored.</li>
 </ul></div>
 <details class="source">
@@ -1250,7 +1309,7 @@ will be stored.</li>
         - site: Site ID (CSL/CSL1/CSL2/SRON/IAS/INTA).
         - archive_dir: Folder (with sub-folders /daily and /obs) in which the HDF5 files are stored.
         - fixed_archive_dir: Folder (with sub-folders /daily and /obs) in which the fixed HK files are stored.
-        - reprocessed_archive_dir: Folder (with sub-folders /daily and /obs) in which the re-processed N-FEE HK files
+        - reprocessed_archive_dir: Folder (with sub-folders /daily and /obs) in which the re-processed synoptics files
                                    will be stored.
         &#34;&#34;&#34;
 
@@ -1273,6 +1332,10 @@ will be stored.</li>
 
     pattern = f&#34;{obsid}_{SYN_ORIGIN}_*_*.csv&#34;
     synoptics_filename = find_file(pattern, root=archive_obs_dir)
+
+    if not os.path.exists(f&#34;{reprocessed_archive_obs_dir}&#34;):
+        os.makedirs(f&#34;{reprocessed_archive_obs_dir}/{obsid}&#34;)
+
     if synoptics_filename is None:
         od = get_od(obsid, archive_dir)[0]
         synoptics_filename = f&#34;{reprocessed_archive_obs_dir}/{obsid}_{SYN_ORIGIN}_{od}.{CSV.extension}&#34;
@@ -1283,7 +1346,7 @@ will be stored.</li>
 </details>
 </dd>
 <dt id="egse.reprocess.reprocess_obsid"><code class="name flex">
-<span>def <span class="ident">reprocess_obsid</span></span>(<span>obsid: Union[<a title="egse.obsid.ObservationIdentifier" href="obsid.html#egse.obsid.ObservationIdentifier">ObservationIdentifier</a>, str, int], site: str, sensor_cal: egse.setup.NavigableDict, archive_dir: str, fixed_archive_dir: str, reprocessed_archive_dir: str)</span>
+<span>def <span class="ident">reprocess_obsid</span></span>(<span>obsid: Union[<a title="egse.obsid.ObservationIdentifier" href="obsid.html#egse.obsid.ObservationIdentifier">ObservationIdentifier</a>, str, int], site: str, setup: <a title="egse.setup.Setup" href="setup.html#egse.setup.Setup">Setup</a>, archive_dir: str, fixed_archive_dir: str, reprocessed_archive_dir: str)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Re-processing for the given obsid.</p>
@@ -1295,7 +1358,7 @@ will be stored.</li>
 <ul>
 <li>obsid: Observation identifier.</li>
 <li>site: Site ID (CSL/CSL1/CSL2/SRON/IAS/INTA).</li>
-<li>sensor_cal: Calibration data for the N-FEE HK.</li>
+<li>setup: Setup from which to read all calibration information.</li>
 <li>archive_dir: Folder (with sub-folders /daily and /obs) in which the HK files are stored.</li>
 <li>fixed_archive_dir: Folder (with sub-folders /daily and /obs) in which the fixed HK files are stored.</li>
 <li>reprocessed_archive_dir: Folder (with sub-folders /daily and /obs) in which the re-processed synoptics file
@@ -1305,8 +1368,8 @@ will be stored.</li>
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def reprocess_obsid(obsid: Union[str, int, ObservationIdentifier], site: str, sensor_cal: NavigableDict,
-                    archive_dir: str, fixed_archive_dir: str, reprocessed_archive_dir: str):
+<pre><code class="python">def reprocess_obsid(obsid: Union[str, int, ObservationIdentifier], site: str, setup: Setup, archive_dir: str,
+                    fixed_archive_dir: str, reprocessed_archive_dir: str):
     &#34;&#34;&#34; Re-processing for the given obsid.
 
     This re-processing consists of the following steps:
@@ -1317,19 +1380,23 @@ will be stored.</li>
     Args:
         - obsid: Observation identifier.
         - site: Site ID (CSL/CSL1/CSL2/SRON/IAS/INTA).
-        - sensor_cal: Calibration data for the N-FEE HK.
+        - setup: Setup from which to read all calibration information.
         - archive_dir: Folder (with sub-folders /daily and /obs) in which the HK files are stored.
         - fixed_archive_dir: Folder (with sub-folders /daily and /obs) in which the fixed HK files are stored.
         - reprocessed_archive_dir: Folder (with sub-folders /daily and /obs) in which the re-processed synoptics file
                                    will be stored.
     &#34;&#34;&#34;
 
-    reprocess_obs_n_fee_hk(obsid, sensor_cal, archive_dir, reprocessed_archive_dir)                 # N-FEE HK
-    reprocess_obs_synoptics(obsid, site, archive_dir, fixed_archive_dir, reprocessed_archive_dir)   # Synoptics</code></pre>
+    fee_calibration = setup.camera.fee.calibration
+
+    reprocess_obs_n_fee_hk(obsid, fee_calibration, archive_dir, reprocessed_archive_dir)            # N-FEE HK
+    reprocess_obs_synoptics(obsid, site, archive_dir, fixed_archive_dir, reprocessed_archive_dir)   # Synoptics
+
+    reprocess_ccd_data(obsid, archive_dir, reprocessed_archive_dir, setup)                          # FITS files</code></pre>
 </details>
 </dd>
 <dt id="egse.reprocess.reprocess_od"><code class="name flex">
-<span>def <span class="ident">reprocess_od</span></span>(<span>od: str, site: str, sensor_cal: egse.setup.NavigableDict, archive_dir: str, fixed_archive_dir: str, reprocessed_archive_dir: str)</span>
+<span>def <span class="ident">reprocess_od</span></span>(<span>od: str, site: str, setup: <a title="egse.setup.Setup" href="setup.html#egse.setup.Setup">Setup</a>, archive_dir: str, fixed_archive_dir: str, reprocessed_archive_dir: str)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Re-processing for the given OD.</p>
@@ -1340,7 +1407,7 @@ will be stored.</li>
 <ul>
 <li>od: Observation day in the format YYYYMMDD.</li>
 <li>site: Site ID (CSL/CSL1/CSL2/SRON/IAS/INTA).</li>
-<li>sensor_cal: Calibration data for the N-FEE HK.</li>
+<li>setup: Setup from which to read all calibration information.</li>
 <li>archive_dir: Folder (with sub-folders /daily and /obs) in which the HK files are stored.</li>
 <li>fixed_archive_dir: Folder (with sub-folders /daily and /obs) in which the fixed HK files are stored.</li>
 <li>reprocessed_archive_dir: Folder (with sub-folders /daily and /obs) in which the re-processed synoptics file
@@ -1350,7 +1417,7 @@ will be stored.</li>
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def reprocess_od(od: str, site: str, sensor_cal: NavigableDict, archive_dir: str, fixed_archive_dir: str,
+<pre><code class="python">def reprocess_od(od: str, site: str, setup: Setup, archive_dir: str, fixed_archive_dir: str,
                  reprocessed_archive_dir: str):
     &#34;&#34;&#34; Re-processing for the given OD.
 
@@ -1361,14 +1428,16 @@ will be stored.</li>
     Args:
         - od: Observation day in the format YYYYMMDD.
         - site: Site ID (CSL/CSL1/CSL2/SRON/IAS/INTA).
-        - sensor_cal: Calibration data for the N-FEE HK.
+        - setup: Setup from which to read all calibration information.
         - archive_dir: Folder (with sub-folders /daily and /obs) in which the HK files are stored.
         - fixed_archive_dir: Folder (with sub-folders /daily and /obs) in which the fixed HK files are stored.
         - reprocessed_archive_dir: Folder (with sub-folders /daily and /obs) in which the re-processed synoptics file
                                    will be stored.
     &#34;&#34;&#34;
 
-    reprocess_daily_n_fee_hk(od, site, sensor_cal, archive_dir, reprocessed_archive_dir)            # N-FEE HK
+    fee_calibration = setup.camera.fee.calibration
+
+    reprocess_daily_n_fee_hk(od, site, fee_calibration, archive_dir, reprocessed_archive_dir)       # N-FEE HK
     reprocess_daily_synoptics(od, site, archive_dir, fixed_archive_dir, reprocessed_archive_dir)    # Synoptics</code></pre>
 </details>
 </dd>
@@ -1388,7 +1457,8 @@ will be stored.</li>
     Returns: List of storage mnemonics for the HK files contributing to the synoptics specifically for SRON.
     &#34;&#34;&#34;
 
-    return [Settings.load(&#34;BeagleBone Lamp Control Server&#34;).STORAGE_MNEMONIC,
+    return [TCS_ORIGIN,
+            Settings.load(&#34;BeagleBone Lamp Control Server&#34;).STORAGE_MNEMONIC,
             Settings.load(&#34;Thorlabs PM100 Control Server&#34;).STORAGE_MNEMONIC,
             Settings.load(&#34;Standa 8SMC5 Control Server&#34;).STORAGE_MNEMONIC,
             Settings.load(&#34;Thorlabs SC10 Control Server&#34;).STORAGE_MNEMONIC,
@@ -1424,6 +1494,7 @@ will be stored.</li>
 <li><code><a title="egse.reprocess.get_syn_input_origins" href="#egse.reprocess.get_syn_input_origins">get_syn_input_origins</a></code></li>
 <li><code><a title="egse.reprocess.ias_get_syn_input_origins" href="#egse.reprocess.ias_get_syn_input_origins">ias_get_syn_input_origins</a></code></li>
 <li><code><a title="egse.reprocess.inta_get_syn_input_origins" href="#egse.reprocess.inta_get_syn_input_origins">inta_get_syn_input_origins</a></code></li>
+<li><code><a title="egse.reprocess.reprocess_ccd_data" href="#egse.reprocess.reprocess_ccd_data">reprocess_ccd_data</a></code></li>
 <li><code><a title="egse.reprocess.reprocess_daily_n_fee_hk" href="#egse.reprocess.reprocess_daily_n_fee_hk">reprocess_daily_n_fee_hk</a></code></li>
 <li><code><a title="egse.reprocess.reprocess_daily_synoptics" href="#egse.reprocess.reprocess_daily_synoptics">reprocess_daily_synoptics</a></code></li>
 <li><code><a title="egse.reprocess.reprocess_obs_n_fee_hk" href="#egse.reprocess.reprocess_obs_n_fee_hk">reprocess_obs_n_fee_hk</a></code></li>

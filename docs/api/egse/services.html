@@ -41,12 +41,11 @@ logging levels, or to quit the control server in a controlled way.
 
 &#34;&#34;&#34;
 
-import logging
 import inspect
+import logging
 
 from egse.command import ClientServerCommand
 from egse.control import ControlServer
-from egse.decorators import profile
 from egse.protocol import CommandProtocol
 from egse.proxy import Proxy
 from egse.settings import Settings
@@ -75,27 +74,45 @@ class ServiceProtocol(CommandProtocol):
     def get_status(self):
         return super().get_status()
 
-    @profile
-    def handle_monitoring_frequency(self, *args, **kwargs):
-        # FIXME: needs argument checking
-        seconds = int(args[0])
+    def handle_monitoring_frequency(self, freq: float):
+        &#34;&#34;&#34;
+        Sets the monitoring frequency (Hz) to the given freq value. This is only approximate since the frequency is
+        converted into a delay time and the actual execution of the status function is subject to the load on the
+        server and the overhead of the timing.
 
-        MODULE_LOGGER.debug(f&#34;Set monitoring frequency to {seconds} seconds.&#34;)
-        self.control_server.set_delay(seconds)
+        Args:
+            freq: frequency of execution (Hz)
+
+        Returns:
+            Sends back the selected delay time in seconds.
+        &#34;&#34;&#34;
+        seconds = self.control_server.set_delay(1.0 / freq)
+
+        MODULE_LOGGER.debug(f&#34;Set monitoring frequency to {freq}Hz, ± every {seconds} seconds.&#34;)
+
         self.send(seconds)
 
-    @profile 
-    def handle_hk_frequency(self, *args, **kwargs):
-        # FIXME: needs argument checking
-        seconds = int(args[0])
+    def handle_hk_frequency(self, freq: float):
+        &#34;&#34;&#34;
+        Sets the housekeeping frequency (Hz) to the given freq value. This is only approximate since the frequency is
+        converted into a delay time and the actual execution of the `housekeeping` function is subject to the load on
+        the server and the overhead of the timing.
 
-        MODULE_LOGGER.debug(f&#34;Set housekeeping frequency to {seconds} seconds.&#34;)
-        self.control_server.set_hk_delay(seconds)
+        Args:
+            freq: frequency of execution (Hz)
+
+        Returns:
+            Sends back the selected delay time in seconds.
+        &#34;&#34;&#34;
+        seconds = self.control_server.set_hk_delay(1.0 / freq)
+
+        MODULE_LOGGER.debug(f&#34;Set housekeeping frequency to {freq}Hz, ± every {seconds} seconds.&#34;)
+
         self.send(seconds)
 
-    @profile
     def handle_logging_level(self, *args, **kwargs):
-        &#34;&#34;&#34;Set the logging level for the logger with the given name.
+        &#34;&#34;&#34;
+        Set the logging level for the logger with the given name.
 
         When &#39;all&#39; is given for the name of the logger, the level of all loggers for which the name
         starts with &#39;egse&#39; will be changed to `level`.
@@ -103,6 +120,9 @@ class ServiceProtocol(CommandProtocol):
         Args:
             name (str): the name of an existing Logger
             level (int): the logging level
+
+        Returns:
+            Sends back an info message on what level was set.
         &#34;&#34;&#34;
         if args:
             name = args[0]
@@ -128,20 +148,19 @@ class ServiceProtocol(CommandProtocol):
         logging.debug(msg)
         self.send(msg)
 
-    @profile
     def handle_quit(self):
         MODULE_LOGGER.info(f&#34;Sending interrupt to {self.control_server.__class__.__name__}.&#34;)
         self.control_server.quit()
         self.send(f&#34;Sent interrupt to {self.control_server.__class__.__name__}.&#34;)
 
-    @profile
     def handle_process_status(self):
         MODULE_LOGGER.debug(f&#34;Asking for process status of {self.control_server.__class__.__name__}.&#34;)
         self.send(self.get_status())
 
-    @profile
+    # FIXME: This function should be renamed `handle_get_cs_module` in the same spirit as all other service commands
+
     def get_cs_module(self):
-        &#34;&#34;&#34; 
+        &#34;&#34;&#34;
         Returns the module in which the control server has been implemented.
         &#34;&#34;&#34;
         MODULE_LOGGER.debug(&#34;Asking for module of {self.control_server.__class__.__name__}.&#34;)
@@ -266,27 +285,45 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
     def get_status(self):
         return super().get_status()
 
-    @profile
-    def handle_monitoring_frequency(self, *args, **kwargs):
-        # FIXME: needs argument checking
-        seconds = int(args[0])
+    def handle_monitoring_frequency(self, freq: float):
+        &#34;&#34;&#34;
+        Sets the monitoring frequency (Hz) to the given freq value. This is only approximate since the frequency is
+        converted into a delay time and the actual execution of the status function is subject to the load on the
+        server and the overhead of the timing.
 
-        MODULE_LOGGER.debug(f&#34;Set monitoring frequency to {seconds} seconds.&#34;)
-        self.control_server.set_delay(seconds)
+        Args:
+            freq: frequency of execution (Hz)
+
+        Returns:
+            Sends back the selected delay time in seconds.
+        &#34;&#34;&#34;
+        seconds = self.control_server.set_delay(1.0 / freq)
+
+        MODULE_LOGGER.debug(f&#34;Set monitoring frequency to {freq}Hz, ± every {seconds} seconds.&#34;)
+
         self.send(seconds)
 
-    @profile 
-    def handle_hk_frequency(self, *args, **kwargs):
-        # FIXME: needs argument checking
-        seconds = int(args[0])
+    def handle_hk_frequency(self, freq: float):
+        &#34;&#34;&#34;
+        Sets the housekeeping frequency (Hz) to the given freq value. This is only approximate since the frequency is
+        converted into a delay time and the actual execution of the `housekeeping` function is subject to the load on
+        the server and the overhead of the timing.
 
-        MODULE_LOGGER.debug(f&#34;Set housekeeping frequency to {seconds} seconds.&#34;)
-        self.control_server.set_hk_delay(seconds)
+        Args:
+            freq: frequency of execution (Hz)
+
+        Returns:
+            Sends back the selected delay time in seconds.
+        &#34;&#34;&#34;
+        seconds = self.control_server.set_hk_delay(1.0 / freq)
+
+        MODULE_LOGGER.debug(f&#34;Set housekeeping frequency to {freq}Hz, ± every {seconds} seconds.&#34;)
+
         self.send(seconds)
 
-    @profile
     def handle_logging_level(self, *args, **kwargs):
-        &#34;&#34;&#34;Set the logging level for the logger with the given name.
+        &#34;&#34;&#34;
+        Set the logging level for the logger with the given name.
 
         When &#39;all&#39; is given for the name of the logger, the level of all loggers for which the name
         starts with &#39;egse&#39; will be changed to `level`.
@@ -294,6 +331,9 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
         Args:
             name (str): the name of an existing Logger
             level (int): the logging level
+
+        Returns:
+            Sends back an info message on what level was set.
         &#34;&#34;&#34;
         if args:
             name = args[0]
@@ -319,20 +359,19 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
         logging.debug(msg)
         self.send(msg)
 
-    @profile
     def handle_quit(self):
         MODULE_LOGGER.info(f&#34;Sending interrupt to {self.control_server.__class__.__name__}.&#34;)
         self.control_server.quit()
         self.send(f&#34;Sent interrupt to {self.control_server.__class__.__name__}.&#34;)
 
-    @profile
     def handle_process_status(self):
         MODULE_LOGGER.debug(f&#34;Asking for process status of {self.control_server.__class__.__name__}.&#34;)
         self.send(self.get_status())
 
-    @profile
+    # FIXME: This function should be renamed `handle_get_cs_module` in the same spirit as all other service commands
+
     def get_cs_module(self):
-        &#34;&#34;&#34; 
+        &#34;&#34;&#34;
         Returns the module in which the control server has been implemented.
         &#34;&#34;&#34;
         MODULE_LOGGER.debug(&#34;Asking for module of {self.control_server.__class__.__name__}.&#34;)
@@ -354,9 +393,8 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">@profile
-def get_cs_module(self):
-    &#34;&#34;&#34; 
+<pre><code class="python">def get_cs_module(self):
+    &#34;&#34;&#34;
     Returns the module in which the control server has been implemented.
     &#34;&#34;&#34;
     MODULE_LOGGER.debug(&#34;Asking for module of {self.control_server.__class__.__name__}.&#34;)
@@ -364,21 +402,39 @@ def get_cs_module(self):
 </details>
 </dd>
 <dt id="egse.services.ServiceProtocol.handle_hk_frequency"><code class="name flex">
-<span>def <span class="ident">handle_hk_frequency</span></span>(<span>self, *args, **kwargs)</span>
+<span>def <span class="ident">handle_hk_frequency</span></span>(<span>self, freq: float)</span>
 </code></dt>
 <dd>
-<div class="desc"></div>
+<div class="desc"><p>Sets the housekeeping frequency (Hz) to the given freq value. This is only approximate since the frequency is
+converted into a delay time and the actual execution of the <code>housekeeping</code> function is subject to the load on
+the server and the overhead of the timing.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>freq</code></strong></dt>
+<dd>frequency of execution (Hz)</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<p>Sends back the selected delay time in seconds.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">@profile 
-def handle_hk_frequency(self, *args, **kwargs):
-    # FIXME: needs argument checking
-    seconds = int(args[0])
+<pre><code class="python">def handle_hk_frequency(self, freq: float):
+    &#34;&#34;&#34;
+    Sets the housekeeping frequency (Hz) to the given freq value. This is only approximate since the frequency is
+    converted into a delay time and the actual execution of the `housekeeping` function is subject to the load on
+    the server and the overhead of the timing.
 
-    MODULE_LOGGER.debug(f&#34;Set housekeeping frequency to {seconds} seconds.&#34;)
-    self.control_server.set_hk_delay(seconds)
+    Args:
+        freq: frequency of execution (Hz)
+
+    Returns:
+        Sends back the selected delay time in seconds.
+    &#34;&#34;&#34;
+    seconds = self.control_server.set_hk_delay(1.0 / freq)
+
+    MODULE_LOGGER.debug(f&#34;Set housekeeping frequency to {freq}Hz, ± every {seconds} seconds.&#34;)
+
     self.send(seconds)</code></pre>
 </details>
 </dd>
@@ -395,14 +451,16 @@ starts with 'egse' will be changed to <code>level</code>.</p>
 <dd>the name of an existing Logger</dd>
 <dt><strong><code>level</code></strong> :&ensp;<code>int</code></dt>
 <dd>the logging level</dd>
-</dl></div>
+</dl>
+<h2 id="returns">Returns</h2>
+<p>Sends back an info message on what level was set.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">@profile
-def handle_logging_level(self, *args, **kwargs):
-    &#34;&#34;&#34;Set the logging level for the logger with the given name.
+<pre><code class="python">def handle_logging_level(self, *args, **kwargs):
+    &#34;&#34;&#34;
+    Set the logging level for the logger with the given name.
 
     When &#39;all&#39; is given for the name of the logger, the level of all loggers for which the name
     starts with &#39;egse&#39; will be changed to `level`.
@@ -410,6 +468,9 @@ def handle_logging_level(self, *args, **kwargs):
     Args:
         name (str): the name of an existing Logger
         level (int): the logging level
+
+    Returns:
+        Sends back an info message on what level was set.
     &#34;&#34;&#34;
     if args:
         name = args[0]
@@ -437,21 +498,39 @@ def handle_logging_level(self, *args, **kwargs):
 </details>
 </dd>
 <dt id="egse.services.ServiceProtocol.handle_monitoring_frequency"><code class="name flex">
-<span>def <span class="ident">handle_monitoring_frequency</span></span>(<span>self, *args, **kwargs)</span>
+<span>def <span class="ident">handle_monitoring_frequency</span></span>(<span>self, freq: float)</span>
 </code></dt>
 <dd>
-<div class="desc"></div>
+<div class="desc"><p>Sets the monitoring frequency (Hz) to the given freq value. This is only approximate since the frequency is
+converted into a delay time and the actual execution of the status function is subject to the load on the
+server and the overhead of the timing.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>freq</code></strong></dt>
+<dd>frequency of execution (Hz)</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<p>Sends back the selected delay time in seconds.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">@profile
-def handle_monitoring_frequency(self, *args, **kwargs):
-    # FIXME: needs argument checking
-    seconds = int(args[0])
+<pre><code class="python">def handle_monitoring_frequency(self, freq: float):
+    &#34;&#34;&#34;
+    Sets the monitoring frequency (Hz) to the given freq value. This is only approximate since the frequency is
+    converted into a delay time and the actual execution of the status function is subject to the load on the
+    server and the overhead of the timing.
 
-    MODULE_LOGGER.debug(f&#34;Set monitoring frequency to {seconds} seconds.&#34;)
-    self.control_server.set_delay(seconds)
+    Args:
+        freq: frequency of execution (Hz)
+
+    Returns:
+        Sends back the selected delay time in seconds.
+    &#34;&#34;&#34;
+    seconds = self.control_server.set_delay(1.0 / freq)
+
+    MODULE_LOGGER.debug(f&#34;Set monitoring frequency to {freq}Hz, ± every {seconds} seconds.&#34;)
+
     self.send(seconds)</code></pre>
 </details>
 </dd>
@@ -464,8 +543,7 @@ def handle_monitoring_frequency(self, *args, **kwargs):
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">@profile
-def handle_process_status(self):
+<pre><code class="python">def handle_process_status(self):
     MODULE_LOGGER.debug(f&#34;Asking for process status of {self.control_server.__class__.__name__}.&#34;)
     self.send(self.get_status())</code></pre>
 </details>
@@ -479,8 +557,7 @@ def handle_process_status(self):
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">@profile
-def handle_quit(self):
+<pre><code class="python">def handle_quit(self):
     MODULE_LOGGER.info(f&#34;Sending interrupt to {self.control_server.__class__.__name__}.&#34;)
     self.control_server.quit()
     self.send(f&#34;Sent interrupt to {self.control_server.__class__.__name__}.&#34;)</code></pre>

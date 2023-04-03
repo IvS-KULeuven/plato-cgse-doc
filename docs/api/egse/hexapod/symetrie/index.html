@@ -85,7 +85,105 @@ These classes will connect to their control servers and provide all commands to
 control the hexapod and monitor its positions and status.
 
 
-&#34;&#34;&#34;</code></pre>
+&#34;&#34;&#34;
+from egse.device import DeviceFactoryInterface
+from egse.settings import Settings
+
+PUNA_SETTINGS = Settings.load(&#34;PMAC Controller&#34;)
+
+
+def get_hexapod_controller_pars(setup: &#39;Setup&#39; = None) -&gt; (str, int, str, str, str):
+    &#34;&#34;&#34;
+    Returns the hostname (str), port number (int), hexapod id (str), hexapod name (str),
+    and type (str) for the hexapod controller as defined in the Setup and Settings.
+
+    Note the returned values are for the device hardware controller, not the control server.
+
+    If no setup argument is provided, the Setup will be loaded from the GlobalState.
+    &#34;&#34;&#34;
+
+    from egse.state import GlobalState
+    from egse.setup import SetupError
+
+    setup = setup or GlobalState.setup
+
+    try:
+        hexapod_id = setup.gse.hexapod.device_args.device_id
+        hexapod_id = f&#34;H_{hexapod_id}&#34;
+        hexapod_name: str = setup.gse.hexapod.device_args.device_name
+        hostname: str = PUNA_SETTINGS[hexapod_id][&#34;HOSTNAME&#34;]
+        port: int = int(PUNA_SETTINGS[hexapod_id][&#34;PORT&#34;])
+        controller_type: str = PUNA_SETTINGS[hexapod_id][&#34;TYPE&#34;]
+    except AttributeError as exc:
+        raise SetupError(&#34;The Setup doesn&#39;t contain proper controller parameters for the Hexapod.&#34;) from exc
+
+    return hostname, port, hexapod_id, hexapod_name, controller_type
+
+
+class ProxyFactory(DeviceFactoryInterface):
+    &#34;&#34;&#34;
+    A factory class that will create the Proxy that matches the given device name and identifier.
+
+    The device name is matched against the string &#39;puna&#39; or &#39;zonda&#39;. If the device name doesn&#39;t contain
+    one of these names, a ValueError will be raised.
+    &#34;&#34;&#34;
+
+    def create(self, device_name: str, *, device_id: str = None, **_ignored):
+
+        if &#34;puna&#34; in device_name.lower():
+            if not device_id.startswith(&#34;H_&#34;):
+                device_id = f&#34;H_{device_id}&#34;
+
+            controller_type = PUNA_SETTINGS[device_id][&#34;TYPE&#34;]
+            if controller_type == &#34;ALPHA&#34;:
+                from egse.hexapod.symetrie.puna import PunaProxy
+                return PunaProxy()
+            elif controller_type == &#34;ALPHA_PLUS&#34;:
+                from egse.hexapod.symetrie.punaplus import PunaPlusProxy
+                return PunaPlusProxy()
+            else:
+                raise ValueError(f&#34;Unknown controller_type ({controller_type}) for {device_name} – {device_id}&#34;)
+
+        elif &#34;zonda&#34; in device_name.lower():
+            from egse.hexapod.symetrie.zonda import ZondaProxy
+            return ZondaProxy()
+
+        else:
+            raise ValueError(f&#34;Unknown device name: {device_name}&#34;)
+
+
+class ControllerFactory(DeviceFactoryInterface):
+    &#34;&#34;&#34;
+    A factory class that will create the Controller that matches the given device name and identifier.
+
+    The device name is matched against the string &#39;puna&#39; or &#39;zonda&#39;. If the device name doesn&#39;t contain
+    one of these names, a ValueError will be raised.
+    &#34;&#34;&#34;
+    def create(self, device_name: str, *, device_id: str = None, **_ignored):
+
+        if &#34;puna&#34; in device_name.lower():
+            from egse.hexapod.symetrie.puna import PunaController
+            from egse.hexapod.symetrie.punaplus import PunaPlusController
+
+            if not device_id.startswith(&#34;H_&#34;):
+                device_id = f&#34;H_{device_id}&#34;
+
+            hostname = PUNA_SETTINGS[device_id][&#34;HOSTNAME&#34;]
+            port = PUNA_SETTINGS[device_id][&#34;PORT&#34;]
+            controller_type = PUNA_SETTINGS[device_id][&#34;TYPE&#34;]
+            if controller_type == &#34;ALPHA&#34;:
+                return PunaController(hostname=hostname, port=port)
+            elif controller_type == &#34;ALPHA_PLUS&#34;:
+                return PunaPlusController(hostname=hostname, port=port)
+            else:
+                raise ValueError(f&#34;Unknown controller_type ({controller_type}) for {device_name} – {device_id}&#34;)
+
+        elif &#34;zonda&#34; in device_name.lower():
+            from egse.hexapod.symetrie.zonda import ZondaController
+            return ZondaController()
+
+        else:
+            raise ValueError(f&#34;Unknown device name: {device_name}&#34;)</code></pre>
 </details>
 </section>
 <section>
@@ -94,6 +192,11 @@ control the hexapod and monitor its positions and status.
 <dt><code class="name"><a title="egse.hexapod.symetrie.alpha" href="alpha.html">egse.hexapod.symetrie.alpha</a></code></dt>
 <dd>
 <div class="desc"></div>
+</dd>
+<dt><code class="name"><a title="egse.hexapod.symetrie.dynalpha" href="dynalpha.html">egse.hexapod.symetrie.dynalpha</a></code></dt>
+<dd>
+<div class="desc"><p>This module provides the implementation of the commanding interfaces for the Alpha and Alpha+
+controller using the new dynamic commanding scheme. The …</p></div>
 </dd>
 <dt><code class="name"><a title="egse.hexapod.symetrie.hexapod_ui" href="hexapod_ui.html">egse.hexapod.symetrie.hexapod_ui</a></code></dt>
 <dd>
@@ -124,6 +227,10 @@ Symétrie.</p></div>
 <dd>
 <div class="desc"><p>A Graphical User Interface for monitoring and commanding the Symétrie Hexapod …</p></div>
 </dd>
+<dt><code class="name"><a title="egse.hexapod.symetrie.punaplus" href="punaplus.html">egse.hexapod.symetrie.punaplus</a></code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
 <dt><code class="name"><a title="egse.hexapod.symetrie.zonda" href="zonda.html">egse.hexapod.symetrie.zonda</a></code></dt>
 <dd>
 <div class="desc"><p>This module defines the device classes to be used to connect to and control the Hexapod ZONDA from
@@ -150,8 +257,225 @@ Symétrie.</p></div>
 <section>
 </section>
 <section>
+<h2 class="section-title" id="header-functions">Functions</h2>
+<dl>
+<dt id="egse.hexapod.symetrie.get_hexapod_controller_pars"><code class="name flex">
+<span>def <span class="ident">get_hexapod_controller_pars</span></span>(<span>setup: Setup = None) ‑> (<class 'str'>, <class 'int'>, <class 'str'>, <class 'str'>, <class 'str'>)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Returns the hostname (str), port number (int), hexapod id (str), hexapod name (str),
+and type (str) for the hexapod controller as defined in the Setup and Settings.</p>
+<p>Note the returned values are for the device hardware controller, not the control server.</p>
+<p>If no setup argument is provided, the Setup will be loaded from the GlobalState.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_hexapod_controller_pars(setup: &#39;Setup&#39; = None) -&gt; (str, int, str, str, str):
+    &#34;&#34;&#34;
+    Returns the hostname (str), port number (int), hexapod id (str), hexapod name (str),
+    and type (str) for the hexapod controller as defined in the Setup and Settings.
+
+    Note the returned values are for the device hardware controller, not the control server.
+
+    If no setup argument is provided, the Setup will be loaded from the GlobalState.
+    &#34;&#34;&#34;
+
+    from egse.state import GlobalState
+    from egse.setup import SetupError
+
+    setup = setup or GlobalState.setup
+
+    try:
+        hexapod_id = setup.gse.hexapod.device_args.device_id
+        hexapod_id = f&#34;H_{hexapod_id}&#34;
+        hexapod_name: str = setup.gse.hexapod.device_args.device_name
+        hostname: str = PUNA_SETTINGS[hexapod_id][&#34;HOSTNAME&#34;]
+        port: int = int(PUNA_SETTINGS[hexapod_id][&#34;PORT&#34;])
+        controller_type: str = PUNA_SETTINGS[hexapod_id][&#34;TYPE&#34;]
+    except AttributeError as exc:
+        raise SetupError(&#34;The Setup doesn&#39;t contain proper controller parameters for the Hexapod.&#34;) from exc
+
+    return hostname, port, hexapod_id, hexapod_name, controller_type</code></pre>
+</details>
+</dd>
+</dl>
 </section>
 <section>
+<h2 class="section-title" id="header-classes">Classes</h2>
+<dl>
+<dt id="egse.hexapod.symetrie.ControllerFactory"><code class="flex name class">
+<span>class <span class="ident">ControllerFactory</span></span>
+</code></dt>
+<dd>
+<div class="desc"><p>A factory class that will create the Controller that matches the given device name and identifier.</p>
+<p>The device name is matched against the string 'puna' or 'zonda'. If the device name doesn't contain
+one of these names, a ValueError will be raised.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class ControllerFactory(DeviceFactoryInterface):
+    &#34;&#34;&#34;
+    A factory class that will create the Controller that matches the given device name and identifier.
+
+    The device name is matched against the string &#39;puna&#39; or &#39;zonda&#39;. If the device name doesn&#39;t contain
+    one of these names, a ValueError will be raised.
+    &#34;&#34;&#34;
+    def create(self, device_name: str, *, device_id: str = None, **_ignored):
+
+        if &#34;puna&#34; in device_name.lower():
+            from egse.hexapod.symetrie.puna import PunaController
+            from egse.hexapod.symetrie.punaplus import PunaPlusController
+
+            if not device_id.startswith(&#34;H_&#34;):
+                device_id = f&#34;H_{device_id}&#34;
+
+            hostname = PUNA_SETTINGS[device_id][&#34;HOSTNAME&#34;]
+            port = PUNA_SETTINGS[device_id][&#34;PORT&#34;]
+            controller_type = PUNA_SETTINGS[device_id][&#34;TYPE&#34;]
+            if controller_type == &#34;ALPHA&#34;:
+                return PunaController(hostname=hostname, port=port)
+            elif controller_type == &#34;ALPHA_PLUS&#34;:
+                return PunaPlusController(hostname=hostname, port=port)
+            else:
+                raise ValueError(f&#34;Unknown controller_type ({controller_type}) for {device_name} – {device_id}&#34;)
+
+        elif &#34;zonda&#34; in device_name.lower():
+            from egse.hexapod.symetrie.zonda import ZondaController
+            return ZondaController()
+
+        else:
+            raise ValueError(f&#34;Unknown device name: {device_name}&#34;)</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="egse.device.DeviceFactoryInterface" href="../../device.html#egse.device.DeviceFactoryInterface">DeviceFactoryInterface</a></li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="egse.hexapod.symetrie.ControllerFactory.create"><code class="name flex">
+<span>def <span class="ident">create</span></span>(<span>self, device_name: str, *, device_id: str = None, **_ignored)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def create(self, device_name: str, *, device_id: str = None, **_ignored):
+
+    if &#34;puna&#34; in device_name.lower():
+        from egse.hexapod.symetrie.puna import PunaController
+        from egse.hexapod.symetrie.punaplus import PunaPlusController
+
+        if not device_id.startswith(&#34;H_&#34;):
+            device_id = f&#34;H_{device_id}&#34;
+
+        hostname = PUNA_SETTINGS[device_id][&#34;HOSTNAME&#34;]
+        port = PUNA_SETTINGS[device_id][&#34;PORT&#34;]
+        controller_type = PUNA_SETTINGS[device_id][&#34;TYPE&#34;]
+        if controller_type == &#34;ALPHA&#34;:
+            return PunaController(hostname=hostname, port=port)
+        elif controller_type == &#34;ALPHA_PLUS&#34;:
+            return PunaPlusController(hostname=hostname, port=port)
+        else:
+            raise ValueError(f&#34;Unknown controller_type ({controller_type}) for {device_name} – {device_id}&#34;)
+
+    elif &#34;zonda&#34; in device_name.lower():
+        from egse.hexapod.symetrie.zonda import ZondaController
+        return ZondaController()
+
+    else:
+        raise ValueError(f&#34;Unknown device name: {device_name}&#34;)</code></pre>
+</details>
+</dd>
+</dl>
+</dd>
+<dt id="egse.hexapod.symetrie.ProxyFactory"><code class="flex name class">
+<span>class <span class="ident">ProxyFactory</span></span>
+</code></dt>
+<dd>
+<div class="desc"><p>A factory class that will create the Proxy that matches the given device name and identifier.</p>
+<p>The device name is matched against the string 'puna' or 'zonda'. If the device name doesn't contain
+one of these names, a ValueError will be raised.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class ProxyFactory(DeviceFactoryInterface):
+    &#34;&#34;&#34;
+    A factory class that will create the Proxy that matches the given device name and identifier.
+
+    The device name is matched against the string &#39;puna&#39; or &#39;zonda&#39;. If the device name doesn&#39;t contain
+    one of these names, a ValueError will be raised.
+    &#34;&#34;&#34;
+
+    def create(self, device_name: str, *, device_id: str = None, **_ignored):
+
+        if &#34;puna&#34; in device_name.lower():
+            if not device_id.startswith(&#34;H_&#34;):
+                device_id = f&#34;H_{device_id}&#34;
+
+            controller_type = PUNA_SETTINGS[device_id][&#34;TYPE&#34;]
+            if controller_type == &#34;ALPHA&#34;:
+                from egse.hexapod.symetrie.puna import PunaProxy
+                return PunaProxy()
+            elif controller_type == &#34;ALPHA_PLUS&#34;:
+                from egse.hexapod.symetrie.punaplus import PunaPlusProxy
+                return PunaPlusProxy()
+            else:
+                raise ValueError(f&#34;Unknown controller_type ({controller_type}) for {device_name} – {device_id}&#34;)
+
+        elif &#34;zonda&#34; in device_name.lower():
+            from egse.hexapod.symetrie.zonda import ZondaProxy
+            return ZondaProxy()
+
+        else:
+            raise ValueError(f&#34;Unknown device name: {device_name}&#34;)</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="egse.device.DeviceFactoryInterface" href="../../device.html#egse.device.DeviceFactoryInterface">DeviceFactoryInterface</a></li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="egse.hexapod.symetrie.ProxyFactory.create"><code class="name flex">
+<span>def <span class="ident">create</span></span>(<span>self, device_name: str, *, device_id: str = None, **_ignored)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def create(self, device_name: str, *, device_id: str = None, **_ignored):
+
+    if &#34;puna&#34; in device_name.lower():
+        if not device_id.startswith(&#34;H_&#34;):
+            device_id = f&#34;H_{device_id}&#34;
+
+        controller_type = PUNA_SETTINGS[device_id][&#34;TYPE&#34;]
+        if controller_type == &#34;ALPHA&#34;:
+            from egse.hexapod.symetrie.puna import PunaProxy
+            return PunaProxy()
+        elif controller_type == &#34;ALPHA_PLUS&#34;:
+            from egse.hexapod.symetrie.punaplus import PunaPlusProxy
+            return PunaPlusProxy()
+        else:
+            raise ValueError(f&#34;Unknown controller_type ({controller_type}) for {device_name} – {device_id}&#34;)
+
+    elif &#34;zonda&#34; in device_name.lower():
+        from egse.hexapod.symetrie.zonda import ZondaProxy
+        return ZondaProxy()
+
+    else:
+        raise ValueError(f&#34;Unknown device name: {device_name}&#34;)</code></pre>
+</details>
+</dd>
+</dl>
+</dd>
+</dl>
 </section>
 </article>
 <nav id="sidebar">
@@ -168,6 +492,7 @@ Symétrie.</p></div>
 <li><h3><a href="#header-submodules">Sub-modules</a></h3>
 <ul>
 <li><code><a title="egse.hexapod.symetrie.alpha" href="alpha.html">egse.hexapod.symetrie.alpha</a></code></li>
+<li><code><a title="egse.hexapod.symetrie.dynalpha" href="dynalpha.html">egse.hexapod.symetrie.dynalpha</a></code></li>
 <li><code><a title="egse.hexapod.symetrie.hexapod_ui" href="hexapod_ui.html">egse.hexapod.symetrie.hexapod_ui</a></code></li>
 <li><code><a title="egse.hexapod.symetrie.pmac" href="pmac.html">egse.hexapod.symetrie.pmac</a></code></li>
 <li><code><a title="egse.hexapod.symetrie.pmac_regex" href="pmac_regex.html">egse.hexapod.symetrie.pmac_regex</a></code></li>
@@ -175,11 +500,33 @@ Symétrie.</p></div>
 <li><code><a title="egse.hexapod.symetrie.puna_cs" href="puna_cs.html">egse.hexapod.symetrie.puna_cs</a></code></li>
 <li><code><a title="egse.hexapod.symetrie.puna_protocol" href="puna_protocol.html">egse.hexapod.symetrie.puna_protocol</a></code></li>
 <li><code><a title="egse.hexapod.symetrie.puna_ui" href="puna_ui.html">egse.hexapod.symetrie.puna_ui</a></code></li>
+<li><code><a title="egse.hexapod.symetrie.punaplus" href="punaplus.html">egse.hexapod.symetrie.punaplus</a></code></li>
 <li><code><a title="egse.hexapod.symetrie.zonda" href="zonda.html">egse.hexapod.symetrie.zonda</a></code></li>
 <li><code><a title="egse.hexapod.symetrie.zonda_cs" href="zonda_cs.html">egse.hexapod.symetrie.zonda_cs</a></code></li>
 <li><code><a title="egse.hexapod.symetrie.zonda_devif" href="zonda_devif.html">egse.hexapod.symetrie.zonda_devif</a></code></li>
 <li><code><a title="egse.hexapod.symetrie.zonda_protocol" href="zonda_protocol.html">egse.hexapod.symetrie.zonda_protocol</a></code></li>
 <li><code><a title="egse.hexapod.symetrie.zonda_ui" href="zonda_ui.html">egse.hexapod.symetrie.zonda_ui</a></code></li>
+</ul>
+</li>
+<li><h3><a href="#header-functions">Functions</a></h3>
+<ul class="">
+<li><code><a title="egse.hexapod.symetrie.get_hexapod_controller_pars" href="#egse.hexapod.symetrie.get_hexapod_controller_pars">get_hexapod_controller_pars</a></code></li>
+</ul>
+</li>
+<li><h3><a href="#header-classes">Classes</a></h3>
+<ul>
+<li>
+<h4><code><a title="egse.hexapod.symetrie.ControllerFactory" href="#egse.hexapod.symetrie.ControllerFactory">ControllerFactory</a></code></h4>
+<ul class="">
+<li><code><a title="egse.hexapod.symetrie.ControllerFactory.create" href="#egse.hexapod.symetrie.ControllerFactory.create">create</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="egse.hexapod.symetrie.ProxyFactory" href="#egse.hexapod.symetrie.ProxyFactory">ProxyFactory</a></code></h4>
+<ul class="">
+<li><code><a title="egse.hexapod.symetrie.ProxyFactory.create" href="#egse.hexapod.symetrie.ProxyFactory.create">create</a></code></li>
+</ul>
+</li>
 </ul>
 </li>
 </ul>
