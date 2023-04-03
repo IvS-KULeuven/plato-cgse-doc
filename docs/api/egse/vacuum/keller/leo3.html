@@ -74,6 +74,8 @@ class Leo3Protocol(CommandProtocol):
         self.gauge_temperatures      = []
         self.gauge_status             = []
         
+        self.invalid_result = [False] * 6
+        
         for address in self.addresses:
             self.gauge_pressures      += [Gauge(f&#39;GSRON_LEO3_{address}_P&#39;, &#39;&#39;)]
             self.gauge_temperatures   += [Gauge(f&#39;GSRON_LEO3_{address}_T&#39;, &#39;&#39;)]
@@ -105,8 +107,15 @@ class Leo3Protocol(CommandProtocol):
                 result[f&#34;GSRON_LEO3_{address}_P&#34;], _ = self.dev.get_pressure(address)
                 result[f&#34;GSRON_LEO3_{address}_T&#34;], result[f&#39;GSRON_LEO3_{address}_STAT&#39;] = self.dev.get_temperature(address)            
             except Exception as exc:
-                LOGGER.info(f&#34;Unable to get HK for KellerBus {address}: {exc}&#34;)
+                result[f&#34;GSRON_LEO3_{address}_P&#34;]    = 0
+                result[f&#34;GSRON_LEO3_{address}_T&#34;], result[f&#34;GSRON_LEO3_{address}_STAT&#34;] = 0, 0
+
+                if not self.invalid_result[idx]:
+                    self.invalid_result[idx] = True
+                    LOGGER.warning(f&#34;Unable to get HK for KellerBus {address}: {exc}&#34;)
             else:
+                self.invalid_result[idx] = False
+            finally:
                 self.gauge_pressures[idx].set(result[f&#34;GSRON_LEO3_{address}_P&#34;])
                 self.gauge_temperatures[idx].set(result[f&#34;GSRON_LEO3_{address}_T&#34;])
                 self.gauge_status[idx].set(result[f&#39;GSRON_LEO3_{address}_STAT&#39;])
@@ -201,6 +210,8 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
         self.gauge_temperatures      = []
         self.gauge_status             = []
         
+        self.invalid_result = [False] * 6
+        
         for address in self.addresses:
             self.gauge_pressures      += [Gauge(f&#39;GSRON_LEO3_{address}_P&#39;, &#39;&#39;)]
             self.gauge_temperatures   += [Gauge(f&#39;GSRON_LEO3_{address}_T&#39;, &#39;&#39;)]
@@ -232,8 +243,15 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
                 result[f&#34;GSRON_LEO3_{address}_P&#34;], _ = self.dev.get_pressure(address)
                 result[f&#34;GSRON_LEO3_{address}_T&#34;], result[f&#39;GSRON_LEO3_{address}_STAT&#39;] = self.dev.get_temperature(address)            
             except Exception as exc:
-                LOGGER.info(f&#34;Unable to get HK for KellerBus {address}: {exc}&#34;)
+                result[f&#34;GSRON_LEO3_{address}_P&#34;]    = 0
+                result[f&#34;GSRON_LEO3_{address}_T&#34;], result[f&#34;GSRON_LEO3_{address}_STAT&#34;] = 0, 0
+
+                if not self.invalid_result[idx]:
+                    self.invalid_result[idx] = True
+                    LOGGER.warning(f&#34;Unable to get HK for KellerBus {address}: {exc}&#34;)
             else:
+                self.invalid_result[idx] = False
+            finally:
                 self.gauge_pressures[idx].set(result[f&#34;GSRON_LEO3_{address}_P&#34;])
                 self.gauge_temperatures[idx].set(result[f&#34;GSRON_LEO3_{address}_T&#34;])
                 self.gauge_status[idx].set(result[f&#39;GSRON_LEO3_{address}_STAT&#39;])

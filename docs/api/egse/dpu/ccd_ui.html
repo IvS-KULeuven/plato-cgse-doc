@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1" />
 <meta name="generator" content="pdoc 0.10.0" />
 <title>egse.dpu.ccd_ui API documentation</title>
-<meta name="description" content="" />
+<meta name="description" content="This module defines widgets that are common to the DPU GUI and the HDF5 GUI." />
 <link rel="preload stylesheet" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/11.0.1/sanitize.min.css" integrity="sha256-PK9q560IAAa6WVRRh76LtCaI8pjTJ2z11v0miyNNjrs=" crossorigin>
 <link rel="preload stylesheet" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/11.0.1/typography.min.css" integrity="sha256-7l/o7C8jubJiy74VsKTidCy1yBkRtiUGbVkYBylBqUg=" crossorigin>
 <link rel="stylesheet preload" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/10.1.1/styles/github.min.css" crossorigin>
@@ -22,11 +22,13 @@
 <h1 class="title">Module <code>egse.dpu.ccd_ui</code></h1>
 </header>
 <section id="section-intro">
+<p>This module defines widgets that are common to the DPU GUI and the HDF5 GUI.</p>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">import logging
+<pre><code class="python">&#34;&#34;&#34;This module defines widgets that are common to the DPU GUI and the HDF5 GUI.&#34;&#34;&#34;
+import logging
 from datetime import datetime
 from typing import Optional
 
@@ -46,29 +48,32 @@ from PyQt5.QtWidgets import QVBoxLayout
 from PyQt5.QtWidgets import QWidget
 from numpy import unravel_index
 
-from egse.fee import n_fee_side
 from egse.gui.buttons import ToolTouchButton
 from egse.resource import get_resource
 from egse.spw import DataPacket
+from egse.state import GlobalState
 
 LOGGER = logging.getLogger(__name__)
 
 
 class ImageCreator1:
+
     def __init__(self, nr_lines: int, nr_columns: int):
         self.nr_lines = nr_lines
         self.nr_columns = nr_columns
         self.image_E = np.empty((0,), dtype=np.uint16)
         self.image_F = np.empty((0,), dtype=np.uint16)
 
+        self.n_fee_side = GlobalState.setup.camera.fee.ccd_sides.enum
+
     def add_data(self, data_packet: DataPacket):
-        if data_packet.type.ccd_side == n_fee_side.E_SIDE:
+        if data_packet.type.ccd_side == self.n_fee_side.E_SIDE:
             self.image_E = np.concatenate((self.image_E, data_packet.data_as_ndarray))
         else:
             self.image_F = np.concatenate((self.image_F, data_packet.data_as_ndarray))
 
     def get_image(self, side: int):
-        if side == n_fee_side.E_SIDE:
+        if side == self.n_fee_side.E_SIDE:
             return self.image_E.reshape(self.nr_lines, self.nr_columns).T
         else:
             return self.image_F.reshape(self.nr_lines, self.nr_columns).T
@@ -82,10 +87,13 @@ class ImageCreator:
         self.image_E = np.empty((nr_lines * nr_columns,), dtype=np.uint16)
         self.image_F = np.empty((nr_lines * nr_columns,), dtype=np.uint16)
 
+        self.n_fee_side = GlobalState.setup.camera.fee.ccd_sides.enum
+
+
     def add_data(self, data_packet: DataPacket):
         data = data_packet.data_as_ndarray
         data_length = len(data)
-        if data_packet.type.ccd_side == n_fee_side.E_SIDE:
+        if data_packet.type.ccd_side == self.n_fee_side.E_SIDE:
             self.image_E[self.index_E:self.index_E+data_length] = data
             self.index_E += data_length
         else:
@@ -93,7 +101,7 @@ class ImageCreator:
             self.index_F += data_length
 
     def get_image(self, side: int):
-        if side == n_fee_side.E_SIDE:
+        if side == self.n_fee_side.LEFT_SIDE:
             return self.image_E.reshape(self.nr_lines, self.nr_columns).T
         else:
             return np.fliplr(self.image_F.reshape(self.nr_lines, self.nr_columns)).T
@@ -105,29 +113,32 @@ class ImageCreatorFullSize:
 
     def __init__(self, v_start: int, v_end: int, h_end: int):
         # LOGGER.debug(f&#34;{v_start=}, {v_end=}, {h_end=}, {id(self)=}&#34;)
+
+        self.n_fee_side = GlobalState.setup.camera.fee.ccd_sides.enum
+
         self.nr_lines = v_end - v_start + 1
         self.nr_columns = h_end + 1
-        self.index_E = self.index_F = v_start * self.MAX_NR_COLUMNS
+        self.index_left = self.index_right = v_start * self.MAX_NR_COLUMNS
         # self.image_E = np.empty((self.MAX_NR_LINES * self.MAX_NR_COLUMNS,), dtype=np.uint16)
         # self.image_F = np.empty((self.MAX_NR_LINES * self.MAX_NR_COLUMNS,), dtype=np.uint16)
-        self.image_E = np.full((self.MAX_NR_LINES * self.MAX_NR_COLUMNS,), fill_value=np.nan, dtype=np.uint16)
-        self.image_F = np.full((self.MAX_NR_LINES * self.MAX_NR_COLUMNS,), fill_value=np.nan, dtype=np.uint16)
+        self.image_left = np.full((self.MAX_NR_LINES * self.MAX_NR_COLUMNS,), fill_value=np.nan, dtype=np.uint16)
+        self.image_right = np.full((self.MAX_NR_LINES * self.MAX_NR_COLUMNS,), fill_value=np.nan, dtype=np.uint16)
 
     def add_data(self, data_packet: DataPacket):
         data = data_packet.data_as_ndarray
         data_length = len(data)
-        if data_packet.type.ccd_side == n_fee_side.E_SIDE:
-            self.image_E[self.index_E:self.index_E+data_length] = data
-            self.index_E += data_length
+        if data_packet.type.ccd_side == self.n_fee_side.LEFT_SIDE:
+            self.image_left[self.index_left:self.index_left + data_length] = data
+            self.index_left += data_length
         else:
-            self.image_F[self.index_F:self.index_F+data_length] = data
-            self.index_F += data_length
+            self.image_right[self.index_right:self.index_right + data_length] = data
+            self.index_right += data_length
 
     def get_image(self, side: int):
-        if side == n_fee_side.E_SIDE:
-            return self.image_E.reshape(self.MAX_NR_LINES, self.MAX_NR_COLUMNS).T
+        if side == self.n_fee_side.LEFT_SIDE:
+            return self.image_left.reshape(self.MAX_NR_LINES, self.MAX_NR_COLUMNS).T
         else:
-            return np.fliplr(self.image_F.reshape(self.MAX_NR_LINES, self.MAX_NR_COLUMNS)).T
+            return np.fliplr(self.image_right.reshape(self.MAX_NR_LINES, self.MAX_NR_COLUMNS)).T
 
 
 class CCDImageWidget(QWidget):
@@ -245,17 +256,19 @@ class NFEECCDWidget(QWidget):
         &#34;&#34;&#34;
         super().__init__(*args, **kwargs)
 
+        self.n_fee_side = GlobalState.setup.camera.fee.ccd_sides.enum
+
         self._ccd_number = ccd_number  # CGSE CCD number [1-4]
         self.ccd_label = QLabel(f&#34;CCD #{self._ccd_number}&#34;)
 
-        self.graph_E: CCDImageWidget = CCDImageWidget(axisItems={&#39;left&#39;: OffsetAxis()})
-        self.graph_F: CCDImageWidget = CCDImageWidget(axisItems={&#39;left&#39;: OffsetAxis()})
+        self.graph_left: CCDImageWidget = CCDImageWidget(axisItems={&#39;left&#39;: OffsetAxis()})
+        self.graph_right: CCDImageWidget = CCDImageWidget(axisItems={&#39;left&#39;: OffsetAxis()})
 
-        vbox_E = QVBoxLayout()
-        vbox_F = QVBoxLayout()
+        vbox_left = QVBoxLayout()
+        vbox_right = QVBoxLayout()
 
-        vbox_E.addWidget(self.graph_E)
-        vbox_F.addWidget(self.graph_F)
+        vbox_left.addWidget(self.graph_left)
+        vbox_right.addWidget(self.graph_right)
 
         # We used ToolTouchButtons because the buttons are not located in a QToolBar and
         # otherwise the alignment will be messed up.
@@ -307,8 +320,8 @@ class NFEECCDWidget(QWidget):
         header_hbox.addWidget(strut)
 
         hbox = QHBoxLayout()
-        hbox.addLayout(vbox_E)
-        hbox.addLayout(vbox_F)
+        hbox.addLayout(vbox_left)
+        hbox.addLayout(vbox_right)
 
         hbox.setSpacing(0)
         hbox.setContentsMargins(0, 0, 0, 0)
@@ -348,21 +361,21 @@ class NFEECCDWidget(QWidget):
         self.sig_maximize.emit(self._ccd_number)
 
     def clear_image_data(self):
-        if self.graph_E.image_view.image is not None:
-            self.graph_E.image_view.clear()
-            self.graph_E.image_view.autoRange()
+        if self.graph_left.image_view.image is not None:
+            self.graph_left.image_view.clear()
+            self.graph_left.image_view.autoRange()
 
-        if self.graph_F.image_view.image is not None:
-            self.graph_F.image_view.clear()
-            self.graph_F.image_view.autoRange()
+        if self.graph_right.image_view.image is not None:
+            self.graph_right.image_view.clear()
+            self.graph_right.image_view.autoRange()
 
     def zoom_to_brightest_pixel(self):
-        self.graph_E.image_view.set_range_to_brightest_pixel()
-        self.graph_F.image_view.set_range_to_brightest_pixel()
+        self.graph_left.image_view.set_range_to_brightest_pixel()
+        self.graph_right.image_view.set_range_to_brightest_pixel()
 
     def show_image_data(self, side: int, image: Optional[np.ndarray]):
 
-        graph_box = self.graph_F if side == n_fee_side.F_SIDE else self.graph_E
+        graph_box = self.graph_right if side == self.n_fee_side.RIGHT_SIDE else self.graph_left
 
         if image is not None:
             graph_box.setImage(image, autoRange=False, autoLevels=True, levelMode=&#39;mono&#39;)
@@ -386,6 +399,8 @@ class NFEE4CCDWidget(QWidget):
 
         self.ccds = [self.ccd_1, self.ccd_2, self.ccd_3, self.ccd_4]
 
+        self.n_fee_side = GlobalState.setup.camera.fee.ccd_sides.enum
+
         grid_layout = QGridLayout()
 
         grid_layout.addWidget(self.ccd_1, 0, 0)
@@ -400,9 +415,21 @@ class NFEE4CCDWidget(QWidget):
         ]
 
     def mark(self, ccd_idx: int):
+        &#34;&#34;&#34; Set the label of the given CCD to red, the others to black.
+
+        This indicates that the given CCD is active and the others are inactive.
+
+        Args:
+            - ccd_idx: Index of the active CCD.
+        &#34;&#34;&#34;
         for ccd_widget in self.ccds:
             ccd_widget.unmark()
         self.ccds[ccd_idx].mark()
+
+    def unmark(self):
+        &#34;&#34;&#34; Set the CCD labels to black to indicate they are inactive.&#34;&#34;&#34;
+        for ccd_widget in self.ccds:
+            ccd_widget.unmark()
 
     def maximize_view(self, ccd_number: int):
         &#34;&#34;&#34;
@@ -417,10 +444,10 @@ class NFEE4CCDWidget(QWidget):
 
         ccd_idx = ccd_number - 1
 
-        if self.image_data[ccd_idx][n_fee_side.E_SIDE] is not None:
-            widget.show_image_data(n_fee_side.E_SIDE, self.image_data[ccd_idx][n_fee_side.E_SIDE])
-        if self.image_data[ccd_idx][n_fee_side.F_SIDE] is not None:
-            widget.show_image_data(n_fee_side.F_SIDE, self.image_data[ccd_idx][n_fee_side.F_SIDE])
+        if self.image_data[ccd_idx][self.n_fee_side.E_SIDE] is not None:
+            widget.show_image_data(self.n_fee_side.E_SIDE, self.image_data[ccd_idx][self.n_fee_side.E_SIDE])
+        if self.image_data[ccd_idx][self.n_fee_side.F_SIDE] is not None:
+            widget.show_image_data(self.n_fee_side.F_SIDE, self.image_data[ccd_idx][self.n_fee_side.F_SIDE])
 
         self.frame = QFrame()
         self.frame.resize(QSize(800, 600))
@@ -437,7 +464,7 @@ class NFEE4CCDWidget(QWidget):
 
         Args:
             ccd_number: the CGSE CCD number [1-4]
-            ccd_side: 1 = left side, 0 = right side (see egse.fee.fee_side)
+            ccd_side: 1 = left side, 0 = right side
             image: Numpy array with the CCD image data
 
         &#34;&#34;&#34;
@@ -837,10 +864,13 @@ with a PlotItem instance as its view::</p>
         self.image_E = np.empty((nr_lines * nr_columns,), dtype=np.uint16)
         self.image_F = np.empty((nr_lines * nr_columns,), dtype=np.uint16)
 
+        self.n_fee_side = GlobalState.setup.camera.fee.ccd_sides.enum
+
+
     def add_data(self, data_packet: DataPacket):
         data = data_packet.data_as_ndarray
         data_length = len(data)
-        if data_packet.type.ccd_side == n_fee_side.E_SIDE:
+        if data_packet.type.ccd_side == self.n_fee_side.E_SIDE:
             self.image_E[self.index_E:self.index_E+data_length] = data
             self.index_E += data_length
         else:
@@ -848,7 +878,7 @@ with a PlotItem instance as its view::</p>
             self.index_F += data_length
 
     def get_image(self, side: int):
-        if side == n_fee_side.E_SIDE:
+        if side == self.n_fee_side.LEFT_SIDE:
             return self.image_E.reshape(self.nr_lines, self.nr_columns).T
         else:
             return np.fliplr(self.image_F.reshape(self.nr_lines, self.nr_columns)).T</code></pre>
@@ -867,7 +897,7 @@ with a PlotItem instance as its view::</p>
 <pre><code class="python">def add_data(self, data_packet: DataPacket):
     data = data_packet.data_as_ndarray
     data_length = len(data)
-    if data_packet.type.ccd_side == n_fee_side.E_SIDE:
+    if data_packet.type.ccd_side == self.n_fee_side.E_SIDE:
         self.image_E[self.index_E:self.index_E+data_length] = data
         self.index_E += data_length
     else:
@@ -885,7 +915,7 @@ with a PlotItem instance as its view::</p>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def get_image(self, side: int):
-    if side == n_fee_side.E_SIDE:
+    if side == self.n_fee_side.LEFT_SIDE:
         return self.image_E.reshape(self.nr_lines, self.nr_columns).T
     else:
         return np.fliplr(self.image_F.reshape(self.nr_lines, self.nr_columns)).T</code></pre>
@@ -904,20 +934,23 @@ with a PlotItem instance as its view::</p>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">class ImageCreator1:
+
     def __init__(self, nr_lines: int, nr_columns: int):
         self.nr_lines = nr_lines
         self.nr_columns = nr_columns
         self.image_E = np.empty((0,), dtype=np.uint16)
         self.image_F = np.empty((0,), dtype=np.uint16)
 
+        self.n_fee_side = GlobalState.setup.camera.fee.ccd_sides.enum
+
     def add_data(self, data_packet: DataPacket):
-        if data_packet.type.ccd_side == n_fee_side.E_SIDE:
+        if data_packet.type.ccd_side == self.n_fee_side.E_SIDE:
             self.image_E = np.concatenate((self.image_E, data_packet.data_as_ndarray))
         else:
             self.image_F = np.concatenate((self.image_F, data_packet.data_as_ndarray))
 
     def get_image(self, side: int):
-        if side == n_fee_side.E_SIDE:
+        if side == self.n_fee_side.E_SIDE:
             return self.image_E.reshape(self.nr_lines, self.nr_columns).T
         else:
             return self.image_F.reshape(self.nr_lines, self.nr_columns).T</code></pre>
@@ -934,7 +967,7 @@ with a PlotItem instance as its view::</p>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def add_data(self, data_packet: DataPacket):
-    if data_packet.type.ccd_side == n_fee_side.E_SIDE:
+    if data_packet.type.ccd_side == self.n_fee_side.E_SIDE:
         self.image_E = np.concatenate((self.image_E, data_packet.data_as_ndarray))
     else:
         self.image_F = np.concatenate((self.image_F, data_packet.data_as_ndarray))</code></pre>
@@ -950,7 +983,7 @@ with a PlotItem instance as its view::</p>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def get_image(self, side: int):
-    if side == n_fee_side.E_SIDE:
+    if side == self.n_fee_side.E_SIDE:
         return self.image_E.reshape(self.nr_lines, self.nr_columns).T
     else:
         return self.image_F.reshape(self.nr_lines, self.nr_columns).T</code></pre>
@@ -974,29 +1007,32 @@ with a PlotItem instance as its view::</p>
 
     def __init__(self, v_start: int, v_end: int, h_end: int):
         # LOGGER.debug(f&#34;{v_start=}, {v_end=}, {h_end=}, {id(self)=}&#34;)
+
+        self.n_fee_side = GlobalState.setup.camera.fee.ccd_sides.enum
+
         self.nr_lines = v_end - v_start + 1
         self.nr_columns = h_end + 1
-        self.index_E = self.index_F = v_start * self.MAX_NR_COLUMNS
+        self.index_left = self.index_right = v_start * self.MAX_NR_COLUMNS
         # self.image_E = np.empty((self.MAX_NR_LINES * self.MAX_NR_COLUMNS,), dtype=np.uint16)
         # self.image_F = np.empty((self.MAX_NR_LINES * self.MAX_NR_COLUMNS,), dtype=np.uint16)
-        self.image_E = np.full((self.MAX_NR_LINES * self.MAX_NR_COLUMNS,), fill_value=np.nan, dtype=np.uint16)
-        self.image_F = np.full((self.MAX_NR_LINES * self.MAX_NR_COLUMNS,), fill_value=np.nan, dtype=np.uint16)
+        self.image_left = np.full((self.MAX_NR_LINES * self.MAX_NR_COLUMNS,), fill_value=np.nan, dtype=np.uint16)
+        self.image_right = np.full((self.MAX_NR_LINES * self.MAX_NR_COLUMNS,), fill_value=np.nan, dtype=np.uint16)
 
     def add_data(self, data_packet: DataPacket):
         data = data_packet.data_as_ndarray
         data_length = len(data)
-        if data_packet.type.ccd_side == n_fee_side.E_SIDE:
-            self.image_E[self.index_E:self.index_E+data_length] = data
-            self.index_E += data_length
+        if data_packet.type.ccd_side == self.n_fee_side.LEFT_SIDE:
+            self.image_left[self.index_left:self.index_left + data_length] = data
+            self.index_left += data_length
         else:
-            self.image_F[self.index_F:self.index_F+data_length] = data
-            self.index_F += data_length
+            self.image_right[self.index_right:self.index_right + data_length] = data
+            self.index_right += data_length
 
     def get_image(self, side: int):
-        if side == n_fee_side.E_SIDE:
-            return self.image_E.reshape(self.MAX_NR_LINES, self.MAX_NR_COLUMNS).T
+        if side == self.n_fee_side.LEFT_SIDE:
+            return self.image_left.reshape(self.MAX_NR_LINES, self.MAX_NR_COLUMNS).T
         else:
-            return np.fliplr(self.image_F.reshape(self.MAX_NR_LINES, self.MAX_NR_COLUMNS)).T</code></pre>
+            return np.fliplr(self.image_right.reshape(self.MAX_NR_LINES, self.MAX_NR_COLUMNS)).T</code></pre>
 </details>
 <h3>Class variables</h3>
 <dl>
@@ -1023,12 +1059,12 @@ with a PlotItem instance as its view::</p>
 <pre><code class="python">def add_data(self, data_packet: DataPacket):
     data = data_packet.data_as_ndarray
     data_length = len(data)
-    if data_packet.type.ccd_side == n_fee_side.E_SIDE:
-        self.image_E[self.index_E:self.index_E+data_length] = data
-        self.index_E += data_length
+    if data_packet.type.ccd_side == self.n_fee_side.LEFT_SIDE:
+        self.image_left[self.index_left:self.index_left + data_length] = data
+        self.index_left += data_length
     else:
-        self.image_F[self.index_F:self.index_F+data_length] = data
-        self.index_F += data_length</code></pre>
+        self.image_right[self.index_right:self.index_right + data_length] = data
+        self.index_right += data_length</code></pre>
 </details>
 </dd>
 <dt id="egse.dpu.ccd_ui.ImageCreatorFullSize.get_image"><code class="name flex">
@@ -1041,10 +1077,10 @@ with a PlotItem instance as its view::</p>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def get_image(self, side: int):
-    if side == n_fee_side.E_SIDE:
-        return self.image_E.reshape(self.MAX_NR_LINES, self.MAX_NR_COLUMNS).T
+    if side == self.n_fee_side.LEFT_SIDE:
+        return self.image_left.reshape(self.MAX_NR_LINES, self.MAX_NR_COLUMNS).T
     else:
-        return np.fliplr(self.image_F.reshape(self.MAX_NR_LINES, self.MAX_NR_COLUMNS)).T</code></pre>
+        return np.fliplr(self.image_right.reshape(self.MAX_NR_LINES, self.MAX_NR_COLUMNS)).T</code></pre>
 </details>
 </dd>
 </dl>
@@ -1076,6 +1112,8 @@ with a PlotItem instance as its view::</p>
 
         self.ccds = [self.ccd_1, self.ccd_2, self.ccd_3, self.ccd_4]
 
+        self.n_fee_side = GlobalState.setup.camera.fee.ccd_sides.enum
+
         grid_layout = QGridLayout()
 
         grid_layout.addWidget(self.ccd_1, 0, 0)
@@ -1090,9 +1128,21 @@ with a PlotItem instance as its view::</p>
         ]
 
     def mark(self, ccd_idx: int):
+        &#34;&#34;&#34; Set the label of the given CCD to red, the others to black.
+
+        This indicates that the given CCD is active and the others are inactive.
+
+        Args:
+            - ccd_idx: Index of the active CCD.
+        &#34;&#34;&#34;
         for ccd_widget in self.ccds:
             ccd_widget.unmark()
         self.ccds[ccd_idx].mark()
+
+    def unmark(self):
+        &#34;&#34;&#34; Set the CCD labels to black to indicate they are inactive.&#34;&#34;&#34;
+        for ccd_widget in self.ccds:
+            ccd_widget.unmark()
 
     def maximize_view(self, ccd_number: int):
         &#34;&#34;&#34;
@@ -1107,10 +1157,10 @@ with a PlotItem instance as its view::</p>
 
         ccd_idx = ccd_number - 1
 
-        if self.image_data[ccd_idx][n_fee_side.E_SIDE] is not None:
-            widget.show_image_data(n_fee_side.E_SIDE, self.image_data[ccd_idx][n_fee_side.E_SIDE])
-        if self.image_data[ccd_idx][n_fee_side.F_SIDE] is not None:
-            widget.show_image_data(n_fee_side.F_SIDE, self.image_data[ccd_idx][n_fee_side.F_SIDE])
+        if self.image_data[ccd_idx][self.n_fee_side.E_SIDE] is not None:
+            widget.show_image_data(self.n_fee_side.E_SIDE, self.image_data[ccd_idx][self.n_fee_side.E_SIDE])
+        if self.image_data[ccd_idx][self.n_fee_side.F_SIDE] is not None:
+            widget.show_image_data(self.n_fee_side.F_SIDE, self.image_data[ccd_idx][self.n_fee_side.F_SIDE])
 
         self.frame = QFrame()
         self.frame.resize(QSize(800, 600))
@@ -1127,7 +1177,7 @@ with a PlotItem instance as its view::</p>
 
         Args:
             ccd_number: the CGSE CCD number [1-4]
-            ccd_side: 1 = left side, 0 = right side (see egse.fee.fee_side)
+            ccd_side: 1 = left side, 0 = right side
             image: Numpy array with the CCD image data
 
         &#34;&#34;&#34;
@@ -1164,12 +1214,24 @@ with a PlotItem instance as its view::</p>
 <span>def <span class="ident">mark</span></span>(<span>self, ccd_idx: int)</span>
 </code></dt>
 <dd>
-<div class="desc"></div>
+<div class="desc"><p>Set the label of the given CCD to red, the others to black.</p>
+<p>This indicates that the given CCD is active and the others are inactive.</p>
+<h2 id="args">Args</h2>
+<ul>
+<li>ccd_idx: Index of the active CCD.</li>
+</ul></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def mark(self, ccd_idx: int):
+    &#34;&#34;&#34; Set the label of the given CCD to red, the others to black.
+
+    This indicates that the given CCD is active and the others are inactive.
+
+    Args:
+        - ccd_idx: Index of the active CCD.
+    &#34;&#34;&#34;
     for ccd_widget in self.ccds:
         ccd_widget.unmark()
     self.ccds[ccd_idx].mark()</code></pre>
@@ -1202,10 +1264,10 @@ with a PlotItem instance as its view::</p>
 
     ccd_idx = ccd_number - 1
 
-    if self.image_data[ccd_idx][n_fee_side.E_SIDE] is not None:
-        widget.show_image_data(n_fee_side.E_SIDE, self.image_data[ccd_idx][n_fee_side.E_SIDE])
-    if self.image_data[ccd_idx][n_fee_side.F_SIDE] is not None:
-        widget.show_image_data(n_fee_side.F_SIDE, self.image_data[ccd_idx][n_fee_side.F_SIDE])
+    if self.image_data[ccd_idx][self.n_fee_side.E_SIDE] is not None:
+        widget.show_image_data(self.n_fee_side.E_SIDE, self.image_data[ccd_idx][self.n_fee_side.E_SIDE])
+    if self.image_data[ccd_idx][self.n_fee_side.F_SIDE] is not None:
+        widget.show_image_data(self.n_fee_side.F_SIDE, self.image_data[ccd_idx][self.n_fee_side.F_SIDE])
 
     self.frame = QFrame()
     self.frame.resize(QSize(800, 600))
@@ -1223,7 +1285,7 @@ with a PlotItem instance as its view::</p>
 <dt><strong><code>ccd_number</code></strong></dt>
 <dd>the CGSE CCD number [1-4]</dd>
 <dt><strong><code>ccd_side</code></strong></dt>
-<dd>1 = left side, 0 = right side (see egse.fee.fee_side)</dd>
+<dd>1 = left side, 0 = right side</dd>
 <dt><strong><code>image</code></strong></dt>
 <dd>Numpy array with the CCD image data</dd>
 </dl></div>
@@ -1237,7 +1299,7 @@ with a PlotItem instance as its view::</p>
 
     Args:
         ccd_number: the CGSE CCD number [1-4]
-        ccd_side: 1 = left side, 0 = right side (see egse.fee.fee_side)
+        ccd_side: 1 = left side, 0 = right side
         image: Numpy array with the CCD image data
 
     &#34;&#34;&#34;
@@ -1245,6 +1307,21 @@ with a PlotItem instance as its view::</p>
 
     self.image_data[ccd_number-1][ccd_side] = image
     self.ccds[ccd_number-1].show_image_data(ccd_side, image)</code></pre>
+</details>
+</dd>
+<dt id="egse.dpu.ccd_ui.NFEE4CCDWidget.unmark"><code class="name flex">
+<span>def <span class="ident">unmark</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Set the CCD labels to black to indicate they are inactive.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def unmark(self):
+    &#34;&#34;&#34; Set the CCD labels to black to indicate they are inactive.&#34;&#34;&#34;
+    for ccd_widget in self.ccds:
+        ccd_widget.unmark()</code></pre>
 </details>
 </dd>
 </dl>
@@ -1282,17 +1359,19 @@ with a PlotItem instance as its view::</p>
         &#34;&#34;&#34;
         super().__init__(*args, **kwargs)
 
+        self.n_fee_side = GlobalState.setup.camera.fee.ccd_sides.enum
+
         self._ccd_number = ccd_number  # CGSE CCD number [1-4]
         self.ccd_label = QLabel(f&#34;CCD #{self._ccd_number}&#34;)
 
-        self.graph_E: CCDImageWidget = CCDImageWidget(axisItems={&#39;left&#39;: OffsetAxis()})
-        self.graph_F: CCDImageWidget = CCDImageWidget(axisItems={&#39;left&#39;: OffsetAxis()})
+        self.graph_left: CCDImageWidget = CCDImageWidget(axisItems={&#39;left&#39;: OffsetAxis()})
+        self.graph_right: CCDImageWidget = CCDImageWidget(axisItems={&#39;left&#39;: OffsetAxis()})
 
-        vbox_E = QVBoxLayout()
-        vbox_F = QVBoxLayout()
+        vbox_left = QVBoxLayout()
+        vbox_right = QVBoxLayout()
 
-        vbox_E.addWidget(self.graph_E)
-        vbox_F.addWidget(self.graph_F)
+        vbox_left.addWidget(self.graph_left)
+        vbox_right.addWidget(self.graph_right)
 
         # We used ToolTouchButtons because the buttons are not located in a QToolBar and
         # otherwise the alignment will be messed up.
@@ -1344,8 +1423,8 @@ with a PlotItem instance as its view::</p>
         header_hbox.addWidget(strut)
 
         hbox = QHBoxLayout()
-        hbox.addLayout(vbox_E)
-        hbox.addLayout(vbox_F)
+        hbox.addLayout(vbox_left)
+        hbox.addLayout(vbox_right)
 
         hbox.setSpacing(0)
         hbox.setContentsMargins(0, 0, 0, 0)
@@ -1385,21 +1464,21 @@ with a PlotItem instance as its view::</p>
         self.sig_maximize.emit(self._ccd_number)
 
     def clear_image_data(self):
-        if self.graph_E.image_view.image is not None:
-            self.graph_E.image_view.clear()
-            self.graph_E.image_view.autoRange()
+        if self.graph_left.image_view.image is not None:
+            self.graph_left.image_view.clear()
+            self.graph_left.image_view.autoRange()
 
-        if self.graph_F.image_view.image is not None:
-            self.graph_F.image_view.clear()
-            self.graph_F.image_view.autoRange()
+        if self.graph_right.image_view.image is not None:
+            self.graph_right.image_view.clear()
+            self.graph_right.image_view.autoRange()
 
     def zoom_to_brightest_pixel(self):
-        self.graph_E.image_view.set_range_to_brightest_pixel()
-        self.graph_F.image_view.set_range_to_brightest_pixel()
+        self.graph_left.image_view.set_range_to_brightest_pixel()
+        self.graph_right.image_view.set_range_to_brightest_pixel()
 
     def show_image_data(self, side: int, image: Optional[np.ndarray]):
 
-        graph_box = self.graph_F if side == n_fee_side.F_SIDE else self.graph_E
+        graph_box = self.graph_right if side == self.n_fee_side.RIGHT_SIDE else self.graph_left
 
         if image is not None:
             graph_box.setImage(image, autoRange=False, autoLevels=True, levelMode=&#39;mono&#39;)</code></pre>
@@ -1440,13 +1519,13 @@ def ccd_number(self):
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def clear_image_data(self):
-    if self.graph_E.image_view.image is not None:
-        self.graph_E.image_view.clear()
-        self.graph_E.image_view.autoRange()
+    if self.graph_left.image_view.image is not None:
+        self.graph_left.image_view.clear()
+        self.graph_left.image_view.autoRange()
 
-    if self.graph_F.image_view.image is not None:
-        self.graph_F.image_view.clear()
-        self.graph_F.image_view.autoRange()</code></pre>
+    if self.graph_right.image_view.image is not None:
+        self.graph_right.image_view.clear()
+        self.graph_right.image_view.autoRange()</code></pre>
 </details>
 </dd>
 <dt id="egse.dpu.ccd_ui.NFEECCDWidget.mark"><code class="name flex">
@@ -1487,7 +1566,7 @@ def ccd_number(self):
 </summary>
 <pre><code class="python">def show_image_data(self, side: int, image: Optional[np.ndarray]):
 
-    graph_box = self.graph_F if side == n_fee_side.F_SIDE else self.graph_E
+    graph_box = self.graph_right if side == self.n_fee_side.RIGHT_SIDE else self.graph_left
 
     if image is not None:
         graph_box.setImage(image, autoRange=False, autoLevels=True, levelMode=&#39;mono&#39;)</code></pre>
@@ -1523,8 +1602,8 @@ def ccd_number(self):
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def zoom_to_brightest_pixel(self):
-    self.graph_E.image_view.set_range_to_brightest_pixel()
-    self.graph_F.image_view.set_range_to_brightest_pixel()</code></pre>
+    self.graph_left.image_view.set_range_to_brightest_pixel()
+    self.graph_right.image_view.set_range_to_brightest_pixel()</code></pre>
 </details>
 </dd>
 </dl>
@@ -1850,6 +1929,7 @@ thus the tick should display 0.001 * 1000 = 1.</p></div>
 <li><code><a title="egse.dpu.ccd_ui.NFEE4CCDWidget.mark" href="#egse.dpu.ccd_ui.NFEE4CCDWidget.mark">mark</a></code></li>
 <li><code><a title="egse.dpu.ccd_ui.NFEE4CCDWidget.maximize_view" href="#egse.dpu.ccd_ui.NFEE4CCDWidget.maximize_view">maximize_view</a></code></li>
 <li><code><a title="egse.dpu.ccd_ui.NFEE4CCDWidget.show_ccd_image" href="#egse.dpu.ccd_ui.NFEE4CCDWidget.show_ccd_image">show_ccd_image</a></code></li>
+<li><code><a title="egse.dpu.ccd_ui.NFEE4CCDWidget.unmark" href="#egse.dpu.ccd_ui.NFEE4CCDWidget.unmark">unmark</a></code></li>
 </ul>
 </li>
 <li>

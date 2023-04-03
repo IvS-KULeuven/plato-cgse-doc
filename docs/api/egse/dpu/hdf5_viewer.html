@@ -89,7 +89,6 @@ from egse.dpu.hdf5_ui import GroupPropertiesModel
 from egse.dpu.hdf5_ui import MainWindowGUI
 from egse.dpu.hdf5_ui import PropertiesModel
 from egse.exceptions import InternalError
-from egse.fee import n_fee_side
 from egse.fee.nfee import HousekeepingData
 from egse.reg import RegisterMap
 from egse.setup import SetupError
@@ -155,6 +154,8 @@ class Worker(QRunnable):
 class MainWindow(QMainWindow, MainWindowGUI):
     def __init__(self):
         super().__init__()
+
+        self.n_fee_side = GlobalState.setup.camera.fee.ccd_sides.enum
 
         # Setup the complete GUI
 
@@ -348,14 +349,14 @@ class MainWindow(QMainWindow, MainWindowGUI):
         self.progress.setValue(progress)
 
     def show_image_data(self, data: Tuple):
-        ccd_nr, image_e, image_f = data
+        ccd_nr, image_left, image_right = data
         # MODULE_LOGGER.info(f&#34;{ccd_nr=}, {image_e.shape=}, {image_f.shape}&#34;)
         self.graph_box.ccd_number = ccd_nr
-        if image_e is not None and sum(image_e.shape) &gt; 0:
-            self.graph_box.show_image_data(n_fee_side.E_SIDE, image_e)
+        if image_left is not None and sum(image_left.shape) &gt; 0:
+            self.graph_box.show_image_data(self.n_fee_side.LEFT_SIDE, image_left)
             self.data_view.setCurrentWidget(self.graph_box)
-        if image_f is not None and sum(image_f.shape) &gt; 0:
-            self.graph_box.show_image_data(n_fee_side.F_SIDE, image_f)
+        if image_right is not None and sum(image_right.shape) &gt; 0:
+            self.graph_box.show_image_data(self.n_fee_side.RIGHT_SIDE, image_right)
             self.data_view.setCurrentWidget(self.graph_box)
 
 
@@ -403,6 +404,8 @@ def ndarray_to_str(data: np.ndarray):
 def create_image(hdf_item: h5py.Group, v_start: int, v_end: int, h_end: int,
                  signals: WorkerSignals):
 
+    n_fee_side = GlobalState.setup.camera.fee.ccd_sides.enum
+
     # MODULE_LOGGER.info(f&#34;Creating image: {v_start=}, {v_end=}&#34;)
 
     nr_lines = v_end - v_start + 1
@@ -436,12 +439,12 @@ def create_image(hdf_item: h5py.Group, v_start: int, v_end: int, h_end: int,
     # MODULE_LOGGER.info(f&#34;{image_e.shape=}, {image_f.shape=}&#34;)
     # MODULE_LOGGER.info(f&#34;{last_packet=}&#34;)
 
-    image_e = image.get_image(n_fee_side.E_SIDE).astype(float)
-    image_f = image.get_image(n_fee_side.F_SIDE).astype(float)
+    image_left = image.get_image(n_fee_side.LEFT_SIDE).astype(float)
+    image_right = image.get_image(n_fee_side.RIGHT_SIDE).astype(float)
 
     try:
-        image_e[image_e == 0] = np.nan
-        image_f[image_f == 0] = np.nan
+        image_left[image_left == 0] = np.nan
+        image_right[image_right == 0] = np.nan
     except (Exception, ) as exc:
         MODULE_LOGGER.error(exc)
 
@@ -462,7 +465,7 @@ def create_image(hdf_item: h5py.Group, v_start: int, v_end: int, h_end: int,
 
     # MODULE_LOGGER.info(f&#34;Return: {ccd_nr=}, {image_e.shape=}, {image_f.shape=}&#34;)
 
-    return ccd_nr, image_e, image_f
+    return ccd_nr, image_left, image_right
 
 
 def find_current_register_map(hdf_item: h5py.Group) -&gt; Optional[RegisterMap]:
@@ -539,6 +542,8 @@ if __name__ == &#34;__main__&#34;:
 <pre><code class="python">def create_image(hdf_item: h5py.Group, v_start: int, v_end: int, h_end: int,
                  signals: WorkerSignals):
 
+    n_fee_side = GlobalState.setup.camera.fee.ccd_sides.enum
+
     # MODULE_LOGGER.info(f&#34;Creating image: {v_start=}, {v_end=}&#34;)
 
     nr_lines = v_end - v_start + 1
@@ -572,12 +577,12 @@ if __name__ == &#34;__main__&#34;:
     # MODULE_LOGGER.info(f&#34;{image_e.shape=}, {image_f.shape=}&#34;)
     # MODULE_LOGGER.info(f&#34;{last_packet=}&#34;)
 
-    image_e = image.get_image(n_fee_side.E_SIDE).astype(float)
-    image_f = image.get_image(n_fee_side.F_SIDE).astype(float)
+    image_left = image.get_image(n_fee_side.LEFT_SIDE).astype(float)
+    image_right = image.get_image(n_fee_side.RIGHT_SIDE).astype(float)
 
     try:
-        image_e[image_e == 0] = np.nan
-        image_f[image_f == 0] = np.nan
+        image_left[image_left == 0] = np.nan
+        image_right[image_right == 0] = np.nan
     except (Exception, ) as exc:
         MODULE_LOGGER.error(exc)
 
@@ -598,7 +603,7 @@ if __name__ == &#34;__main__&#34;:
 
     # MODULE_LOGGER.info(f&#34;Return: {ccd_nr=}, {image_e.shape=}, {image_f.shape=}&#34;)
 
-    return ccd_nr, image_e, image_f</code></pre>
+    return ccd_nr, image_left, image_right</code></pre>
 </details>
 </dd>
 <dt id="egse.dpu.hdf5_viewer.find_current_register_map"><code class="name flex">
@@ -736,6 +741,8 @@ if __name__ == &#34;__main__&#34;:
     def __init__(self):
         super().__init__()
 
+        self.n_fee_side = GlobalState.setup.camera.fee.ccd_sides.enum
+
         # Setup the complete GUI
 
         self.setup_gui(self)
@@ -928,14 +935,14 @@ if __name__ == &#34;__main__&#34;:
         self.progress.setValue(progress)
 
     def show_image_data(self, data: Tuple):
-        ccd_nr, image_e, image_f = data
+        ccd_nr, image_left, image_right = data
         # MODULE_LOGGER.info(f&#34;{ccd_nr=}, {image_e.shape=}, {image_f.shape}&#34;)
         self.graph_box.ccd_number = ccd_nr
-        if image_e is not None and sum(image_e.shape) &gt; 0:
-            self.graph_box.show_image_data(n_fee_side.E_SIDE, image_e)
+        if image_left is not None and sum(image_left.shape) &gt; 0:
+            self.graph_box.show_image_data(self.n_fee_side.LEFT_SIDE, image_left)
             self.data_view.setCurrentWidget(self.graph_box)
-        if image_f is not None and sum(image_f.shape) &gt; 0:
-            self.graph_box.show_image_data(n_fee_side.F_SIDE, image_f)
+        if image_right is not None and sum(image_right.shape) &gt; 0:
+            self.graph_box.show_image_data(self.n_fee_side.RIGHT_SIDE, image_right)
             self.data_view.setCurrentWidget(self.graph_box)</code></pre>
 </details>
 <h3>Ancestors</h3>
@@ -1195,14 +1202,14 @@ if __name__ == &#34;__main__&#34;:
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def show_image_data(self, data: Tuple):
-    ccd_nr, image_e, image_f = data
+    ccd_nr, image_left, image_right = data
     # MODULE_LOGGER.info(f&#34;{ccd_nr=}, {image_e.shape=}, {image_f.shape}&#34;)
     self.graph_box.ccd_number = ccd_nr
-    if image_e is not None and sum(image_e.shape) &gt; 0:
-        self.graph_box.show_image_data(n_fee_side.E_SIDE, image_e)
+    if image_left is not None and sum(image_left.shape) &gt; 0:
+        self.graph_box.show_image_data(self.n_fee_side.LEFT_SIDE, image_left)
         self.data_view.setCurrentWidget(self.graph_box)
-    if image_f is not None and sum(image_f.shape) &gt; 0:
-        self.graph_box.show_image_data(n_fee_side.F_SIDE, image_f)
+    if image_right is not None and sum(image_right.shape) &gt; 0:
+        self.graph_box.show_image_data(self.n_fee_side.RIGHT_SIDE, image_right)
         self.data_view.setCurrentWidget(self.graph_box)</code></pre>
 </details>
 </dd>

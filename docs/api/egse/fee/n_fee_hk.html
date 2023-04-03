@@ -36,7 +36,6 @@ from typing import List
 import click
 import invoke
 import numpy as np
-import pandas
 import rich
 import sys
 import time
@@ -56,11 +55,9 @@ from prometheus_client import start_http_server
 
 import egse.logger
 from egse.fee.nfee import HousekeepingData
-from egse.hk import TmDictionaryColumns
 from egse.hk import convert_hk_names
 from egse.hk import read_conversion_dict
 from egse.metrics import define_metrics
-from egse.resource import get_resource
 from egse.settings import Settings
 from egse.setup import NavigableDict, SetupError
 from egse.state import GlobalState
@@ -84,21 +81,6 @@ ORIGIN = &#34;N-FEE-HK&#34;
 TIMEOUT = 1  # timeout for polling the data distribution from the DPU CS
 
 HK_TIMESTAMP_NAME = &#34;timestamp&#34;
-
-# These are the names (with the correct prefix) of the calibrated N-FEE HK.  The name of the
-# corresponding raw/uncalibrated N-FEE HK is obtained by appending &#34;_RAW&#34; to these names. Each
-# array represents N-FEE sensors that need to be calibrated the same way.
-
-TOU_SENSOR_NAMES = [
-    &#34;NFEE_TOU_TRP5&#34;, &#34;NFEE_TOU_TRP6&#34;, &#34;NFEE_TOU_TRP8&#34;, &#34;NFEE_TOU_TRP21&#34;, &#34;NFEE_TOU_TRP31&#34;,
-    &#34;NFEE_TOU_TRP41&#34;]
-CCD_SENSOR_NAMES = [
-    &#34;NFEE_T_CCD1&#34;, &#34;NFEE_T_CCD2&#34;, &#34;NFEE_T_CCD3&#34;, &#34;NFEE_T_CCD4&#34;]
-BOARD_SENSOR_NAMES_PT1000 = [
-    &#34;NFEE_T_PCB1&#34;, &#34;NFEE_T_PCB2&#34;, &#34;NFEE_T_ADC&#34;, &#34;NFEE_T_CDS&#34;,&#34;NFEE_T_ANALOG&#34;]
-BOARD_SENSOR_NAMES_ISL71590 = [
-    &#34;NFEE_T_PCB3&#34;, &#34;NFEE_T_PCB4&#34;]
-
 
 class GeneratorSignals(QObject):
     finished = pyqtSignal()
@@ -266,44 +248,6 @@ class MainWindow(QMainWindow):
         LOGGER.info(&#34;AFTER UNREGISTER STORAGE&#34;)
 
 
-def read_hk_info() -&gt; (dict, dict):
-    &#34;&#34;&#34; Read the table with the HK information, i.e. the TM dictionary.
-
-    Returns:
-        - Dictionary relating the original HK names with the ones starting with the correct prefix (NFEE_)
-        - Dictionary relating the HK names (with the correct prefix) with the slope a and offset b for the
-          calibration of the supply voltages
-    &#34;&#34;&#34;
-
-    filename = get_resource(f&#34;:/data/tm-dictionary.csv&#34;)
-    hk_info_table = pandas.read_csv(filename, sep=&#34;;&#34;)
-
-    storage_mnemonic = hk_info_table[TmDictionaryColumns.STORAGE_MNEMONIC].values
-    hk_names = hk_info_table[TmDictionaryColumns.CORRECT_HK_NAMES].values
-    original_names = hk_info_table[TmDictionaryColumns.ORIGINAL_EGSE_HK_NAMES].values
-    nfee_cal_offset_b = hk_info_table[TmDictionaryColumns.CAL_OFFSET_B].values
-    nfee_cal_slope_a = hk_info_table[TmDictionaryColumns.CAL_SLOPE_A].values
-
-    # Name conversion
-
-    nfee_selection = np.where(storage_mnemonic == &#34;N-FEE-HK&#34;)
-    original_names = original_names[nfee_selection]
-    new_names = hk_names[nfee_selection]
-
-    # Supply voltage calibration
-
-    nfee_selection = np.where(np.logical_and(storage_mnemonic == &#34;N-FEE-HK&#34;, np.isfinite(nfee_cal_offset_b)))
-
-    nfee_supply_voltage_names = hk_names[nfee_selection]
-    nfee_cal_offset_b = nfee_cal_offset_b[nfee_selection]
-    nfee_cal_slope_a = nfee_cal_slope_a[nfee_selection]
-
-    name_conversion = dict(zip(original_names, new_names))
-    nfee_supply_voltage_cal = dict(zip(nfee_supply_voltage_names, list(zip(nfee_cal_slope_a, nfee_cal_offset_b))))
-
-    return name_conversion, nfee_supply_voltage_cal
-
-
 class HousekeepingGenerator:
 
     def __init__(self):
@@ -316,36 +260,23 @@ class HousekeepingGenerator:
         self.data_puller = None
         self.threadpool = QThreadPool()
 
-        # Read from the HK info file:
-        #   - name of the HK parameters with the raw values for the N-FEE supply voltages
-        #   - value of the offset (b) for the calibration
-        #   - values of the slope (a) for the calibration
+        # The hk_names_mapping is a dictionary that maps the original device telemetry parameter
+        # names to the correct device names as defined in the CGSE. The keys in the mapping are
+        # the original device name, the values are the CGSE corrected names
 
-        self.name_conversion, self.nfee_supply_voltage_cal = read_hk_info()
-        hk_header = self.name_conversion.values()
+        self.hk_names_mapping = read_conversion_dict(ORIGIN, use_site=False)
+        hk_header = self.hk_names_mapping.values()
 
         # Read from the setup: sensor calibration data (as a NavigableDict)
 
-        self.sensor_calibration = self.read_temp_calibration()
+        self.supply_voltage_calibration = GlobalState.setup.camera.fee.calibration.supply_voltages
+        self.temperature_calibration = GlobalState.setup.camera.fee.calibration.temperatures
 
         self.current_data = DataCollector(
             [HK_TIMESTAMP_NAME, *hk_header]
         )
 
-        # The hk_names_mapping is a dictionary that maps the original device telemetry parameter
-        # names to the correct device names as defined in the CGSE. The keys in the mapping are
-        # the original device name, the values are the CGSE corrected names.
-
-        self.hk_names_mapping = read_conversion_dict(ORIGIN, use_site=False)
         self.hk_metrics = define_metrics(ORIGIN, dashboard=&#39;*&#39;)
-
-    def read_temp_calibration(self) -&gt; NavigableDict:
-        &#34;&#34;&#34; Read the temperature calibration from the designated file.
-
-        Returns: N-FEE temperature calibration as a NavigableDict.
-        &#34;&#34;&#34;
-
-        return GlobalState.setup.camera.fee.calibration
 
     def run(self):
         self.start_pulling_data()
@@ -379,12 +310,13 @@ class HousekeepingGenerator:
         # and append them to the rest of the HK
 
         self.current_data = convert_hk_names(dict(zip(self.current_data.keys(), self.current_data.values())),
-                                             self.name_conversion)
+                                             self.hk_names_mapping)
         # Calibration (supply voltages + temperatures)
 
-        calibrated_supply_voltages = get_calibrated_nfee_supply_voltages(self.current_data, self.nfee_supply_voltage_cal)
+        calibrated_supply_voltages = get_calibrated_supply_voltages(self.current_data,
+                                                                    self.supply_voltage_calibration)
         self.current_data.update(calibrated_supply_voltages)
-        calibrated_temperatures = get_calibrated_temperatures(self.current_data, self.sensor_calibration)
+        calibrated_temperatures = get_calibrated_temperatures(self.current_data, self.temperature_calibration)
         self.current_data.update(calibrated_temperatures)
 
         with StorageProxy() as storage:
@@ -444,92 +376,90 @@ class HousekeepingGenerator:
         LOGGER.warning(&#34;ERROR: %s&#34; % t)
 
 
-def get_calibrated_nfee_supply_voltages(current_data, nfee_supply_voltage_cal):
+def get_calibrated_supply_voltages(counts, supply_voltage_calibration):
     &#34;&#34;&#34; Calibrate the N-FEE supply voltages.
 
     The difference in naming between calibrated and uncalibrated housekeeping is the suffix &#34;_RAW&#34;.
 
     The calibration consist of applying a linear function to the raw values.
 
+    Args:
+        - counts: Uncalibrated, raw data for all HK.
+        - supply_voltage_calibration: Supply voltage calibration s read from the YAML file that was specified in the
+                                      setup
+
     Returns: Dictionary with calibrated supply voltages [V].
     &#34;&#34;&#34;
 
     supply_voltages = {}
 
-    for hk_name, (nfee_cal_slope_a, nfee_cal_offset_b) in nfee_supply_voltage_cal.items():
+    for cal_name in supply_voltage_calibration:
 
-        if current_data[hk_name] is not None:
+        raw_name = cal_name + &#34;_RAW&#34;
+        cal = supply_voltage_calibration[cal_name]
 
-            supply_voltage = nfee_cal_slope_a * current_data[hk_name] + nfee_cal_offset_b
+        if counts[raw_name] is not None:
 
-            supply_voltages[hk_name[:-4]] = supply_voltage
+            supply_voltage = cal.gain * counts[raw_name] + cal.offset
+
+            supply_voltages[cal_name] = supply_voltage
 
     return supply_voltages
 
 
-def get_calibrated_temperatures(current_data, sensor_calibration):
+def get_calibrated_temperatures(counts, sensor_calibration):
     &#34;&#34;&#34; Calibrate the N-FEE temperatures.
 
     The calibrated temperatures come from:
 
         - TOU TRP PT1000 sensors
-        - CCD PT100 sensors
+        - CCD PT100/PT1000 sensors
         - PT1000 board sensors
         - ISL71590 board sensors
 
     The difference in naming between calibrated and uncalibrated temperatures is the suffix &#34;_RAW&#34;.
+
+    Args:
+        - counts: Uncalibrated, raw data for all HK.
+        - sensor_calibration: N-FEE temperature calibration as read from the YAML file that was specified in the setup
 
     Returns: Dictionary with calibrated temperatures [°C].
     &#34;&#34;&#34;
 
     temperatures = {}
 
-    # TOU TRP PT1000 sensors
-
-    tou_temperatures = get_calibrated_tou_temperatures(current_data, sensor_calibration)
-    temperatures.update(tou_temperatures)
-
-    # CCD PT100 sensors
-
-    ccd_temperatures = get_calibrated_ccd_temperatures(current_data, sensor_calibration)
-    temperatures.update(ccd_temperatures)
-
-    # Board sensors
-
-    board_temperatures = get_calibrated_board_temperatures(current_data, sensor_calibration)
-    temperatures.update(board_temperatures)
+    for sensor_type in sensor_calibration:
+        temperatures.update(get_calibrated_temperatures_for_type(counts, sensor_calibration, sensor_type))
 
     return temperatures
 
 
-def get_calibrated_tou_temperatures(current_data, sensor_calibration) -&gt; dict:
-    &#34;&#34;&#34; Calibrate the N-FEE TOU temperatures.
+def get_calibrated_temperatures_for_type(counts, sensor_calibration, sensor_type) -&gt; dict:
+    &#34;&#34;&#34; Calibrate the N-FEE temperatures for the given sensor type.
 
-    The difference in naming between calibrated and uncalibrated housekeeping is the suffix &#34;_RAW&#34;.
+    Args:
+        - counts: Uncalibrated, raw data [ADU]
+        - sensor_calibration: Calibration information for the given sensor type
+        - sensor_calibration: N-FEE sensor calibration as read from the YAML file that was specified in the setup
 
-    The calibration consists of the following steps:
-
-        - apply factor to convert counts to voltage
-        - apply factor to convert voltage to resistance
-        - apply Von Dusen equation to convert resistance to temperature
-
-    Returns: Dictionary with calibrated TOU temperatures [°C].
+    Returns: Dictionary with calibrated temperatures [°C] for the given sensor type.
     &#34;&#34;&#34;
+
+    cal = sensor_calibration[sensor_type]
 
     temperatures = {}
 
-    # TOU TRP PT1000 sensors
+    for cal_name in cal.sensor_names:
 
-    cal = sensor_calibration[&#34;TOU TRP PT1000&#34;]
+        raw_name = cal_name + &#34;_RAW&#34;
 
-    for cal_name in TOU_SENSOR_NAMES:
+        if counts[raw_name] is not None:
 
-        hk_name = cal_name + &#34;_RAW&#34;
+            sensor_info = cal[cal_name] if cal_name in cal else cal
 
-        if current_data[hk_name] is not None:
             try:
-                resistance = current_data[hk_name] * float(cal.counts_to_voltage) * cal.voltage_to_resistance
-                temperature = np.polyval(cal.von_dusen_coefficients, resistance)
+                temperature = counts_to_temperature(cal_name, counts[raw_name], sensor_info)
+
             except AttributeError as exc:
                 raise SetupError(&#34;Not all TOU TRP PT1000 calibration information is available in the setup under &#34;
                                  &#34;setup.camera.fee.calibration.&#34;, {exc})
@@ -539,103 +469,160 @@ def get_calibrated_tou_temperatures(current_data, sensor_calibration) -&gt; dict
     return temperatures
 
 
-def get_calibrated_ccd_temperatures(current_data, sensor_calibration) -&gt; dict:
-    &#34;&#34;&#34; Calibrate the N-FEE CCD temperatures.
+def counts_to_temperature(sensor_name: str, counts: float, sensor_info: NavigableDict):
+    &#34;&#34;&#34; Convert the given counts for the given sensor to temperature.
 
-    The difference in naming between calibrated and uncalibrated housekeeping is the suffix &#34;_RAW&#34;.
+    Args:
+        - sensor_name: Sensor name
+        - counts: Uncalibrated, raw data [ADU]
+        - sensor_info: Calibration information for the given sensor (type)
 
-    The calibration consists of the following steps:
-
-        - apply factor to convert counts to voltage
-        - apply factor to convert voltage to resistance
-        - apply Von Dusen equation to convert resistance to temperature
-
-    Returns: Dictionary with calibrated CCD temperatures [°C].
+    Returns: Calibrated temperature [°C] for the given sensor
     &#34;&#34;&#34;
 
-    temperatures = {}
+    # Conversion: temperature = counts * gain + offset
 
-    # CCD PT100 sensors
+    if &#34;counts_to_temperature_gain&#34; in sensor_info and &#34;counts_to_temperature_offset&#34; in sensor_info:
+        return counts * sensor_info.counts_to_temperature_gain + sensor_info.counts_to_temperature_offset
 
-    cal = sensor_calibration[&#34;CCD PT100&#34;]
+    # Conversion: counts -&gt; resistance -&gt; temperature
 
-    for cal_name in CCD_SENSOR_NAMES:
-
-        hk_name = cal_name + &#34;_RAW&#34;
-
-        if current_data[hk_name] is not None:
-            try:
-                resistance = current_data[hk_name] * cal.counts_to_voltage * cal.voltage_to_resistance \
-                             - cal.series_resistance[int(cal_name[-1])]
-                temperature = np.polyval(cal.von_dusen_coefficients, resistance)
-            except AttributeError as exc:
-                raise SetupError(&#34;Not all CCD PT100 calibration information is available in the setup under &#34;
-                                 &#34;setup.camera.fee.calibration.&#34;, {exc})
-
-            temperatures[cal_name] = temperature
-
-    return temperatures
-
-    try:
-        cal.series_res
-    except AttributeError as exc:
-        print(exc)
+    else:
+        resistance = counts_to_resistance(sensor_name, counts, sensor_info)
+        return resistance_to_temperature(sensor_name, resistance, sensor_info)
 
 
-def get_calibrated_board_temperatures(current_data, sensor_calibration) -&gt; dict:
-    &#34;&#34;&#34; Calibrate the N-FEE board sensor temperatures.
+def counts_to_resistance(sensor_name: str, counts: float, sensor_info: NavigableDict):
+    &#34;&#34;&#34; Convert the given counts for the given sensor to resistance.
 
-    The difference in naming between calibrated and uncalibrated housekeeping is the suffix &#34;_RAW&#34;.
+    Args:
+        - sensor_name: Sensor name
+        - counts: Uncalibrated, raw data [ADU]
+        - sensor_info: Calibration information for the given sensor (type)
 
-    For the PT1000 board sensors, the calibration consists of the following steps:
-
-        - apply factor to convert counts to voltage
-        - apply factor to convert voltage to resistance
-        - apply Von Dusen equation to convert resistance to temperature
-
-    For the ISL71590 board sensors, the calibration consist of applying a linear function to the raw values.
-
-    Returns: Dictionary with calibrated board sensor temperatures [°C].
+    Returns: Resistance [Ohm] for the given sensor.
     &#34;&#34;&#34;
 
-    temperatures = {}
+    # Offset (if any)
 
-    # PT1000 board sensors
+    counts_to_resistance_offset = sensor_info.counts_to_resistance_offset \
+        if &#34;counts_to_resistance_offset&#34; in sensor_info \
+        else 0
 
-    cal = sensor_calibration[&#34;BOARD PT1000&#34;]
+    # Conversion: counts -&gt; voltage -&gt; resistance
 
-    for cal_name in BOARD_SENSOR_NAMES_PT1000:
+    if &#34;counts_to_voltage_gain&#34; in sensor_info and &#34;voltage_to_resistance_gain&#34; in sensor_info:
+        return counts * sensor_info.counts_to_voltage_gain * sensor_info.voltage_to_resistance_gain \
+               + counts_to_resistance_offset
 
-        hk_name = cal_name + &#34;_RAW&#34;
+    # Conversion: counts -&gt; resistance
 
-        if current_data[hk_name] is not None:
-            try:
-                resistance = current_data[hk_name] * cal.counts_to_voltage * cal.voltage_to_resistance
-                temperature = np.polyval(cal.von_dusen_coefficients, resistance)
-            except AttributeError as exc:
-                raise SetupError(&#34;Not all BOARD PT1000 calibration information is available in the setup under &#34;
-                                 &#34;setup.camera.fee.calibration.&#34;, {exc})
+    elif &#34;counts_to_resistance_gain&#34; in sensor_info:
+        return counts * sensor_info.counts_to_resistance_gain \
+               + counts_to_resistance_offset
 
-            temperatures[cal_name] = temperature
+    raise SetupError(f&#34;Setup does not contain info for conversion from counts to resistance for {sensor_name}&#34;)
 
-    # ISL71590 board sensors
 
-    cal = sensor_calibration[&#34;BOARD ISL71590&#34;]
+def resistance_to_temperature(sensor_name: str, resistance: float, sensor_info: NavigableDict):
+    &#34;&#34;&#34; Convert the given resistance for the given sensor to counts.
 
-    for cal_name in BOARD_SENSOR_NAMES_ISL71590:
+    Args:
+        - sensor_name: Sensor name
+        - resistance: Resistance [Ohm]
+        - sensor_info: Calibration information for the given sensor (type)
 
-        hk_name = cal_name + &#34;_RAW&#34;
+    Returns: Temperature [°C] for the given sensor.
+    &#34;&#34;&#34;
 
-        if current_data[hk_name] is not None:
-            try:
-                temperature = cal.slope * current_data[hk_name] + cal.offset
-            except AttributeError as exc:
-                raise SetupError(&#34;Not all BOARD ISL71590 calibration information is available in the setup under &#34;
-                                 &#34;setup.camera.fee.calibration.&#34;, {exc})
+    resistance_to_temperature_info = sensor_info.resistance_to_temperature
 
-            temperatures[cal_name] = temperature
+    # Series resistance (if any)
 
-    return temperatures
+    if &#34;series_resistance&#34; in resistance_to_temperature_info:
+
+        series_resistance = resistance_to_temperature_info.series_resistance
+        if sensor_name in resistance_to_temperature_info:
+            series_resistance = series_resistance[sensor_name]
+        resistance -= series_resistance
+
+    method: str = resistance_to_temperature_info.method
+
+    # Polynomial
+
+    if method == &#34;polynomial&#34;:
+
+        # Coefficients given for conversion temperature -&gt; resistance
+
+        if &#34;temperature_to_resistance_coefficients&#34; in resistance_to_temperature_info:
+            return solve_temperature(resistance_to_temperature_info.temperature_to_resistance_coefficients, resistance)
+
+        # Coefficients given for conversion resistance -&gt; temperature
+
+        if &#34;resistance_to_temperature_coefficients&#34; in resistance_to_temperature_info:
+            return np.polyval(resistance_to_temperature_info.resistance_to_temperature_coefficients, resistance)
+
+    # Callendar - van Dusen equation
+
+    if method == &#34;callendar_van_dusen&#34;:
+        standard = resistance_to_temperature_info.standard
+        ref_resistance = resistance_to_temperature_info.ref_resistance
+        return callendar_van_dusen(resistance, ref_resistance, standard)
+
+    else:
+        raise SetupError(f&#34;Setup does not contain info for conversion from resistance to temperature for {sensor_name}&#34;)
+
+
+def solve_temperature(temperature_to_resistance_coefficients, resistance):
+    &#34;&#34;&#34; Solve the temperature from the temperature -&gt; resistance polynomial.
+
+    For the given temperature -&gt; resistance polynomial and the given resistance, we determine what the corresponding
+    temperature is by:
+        - Finding the roots of
+            polynomial(temperature) = resistance
+        - Discarding the roots with an imaginary component
+        - Selecting the remaining root in the relevant temperature regime (here: [-200°C, 200°C])
+    &#34;&#34;&#34;
+
+    temperature_to_resistance_poly = np.poly1d(temperature_to_resistance_coefficients)
+    temperatures = (temperature_to_resistance_poly - resistance).roots
+
+    for temperature in temperatures:
+        if temperature.imag == 0 and -200 &lt;= temperature &lt;= 200:
+            return temperature.real
+
+
+def callendar_van_dusen(resistance, ref_resistance, standard):
+    &#34;&#34;&#34; Solve the Callendar - van Dusen equation for temperature.
+
+    Args:
+        - resistance: Resistance [Ohm] for which to calculate the temperature
+        - ref_resistance: Resistance [Ohm] for a temperature of 0°C
+
+    Return: Temperature [°C] corresponding to the given resistance.
+    &#34;&#34;&#34;
+
+    # Resistances higher than the reference resistance correspond to
+
+    coefficients = GlobalState.setup.sensor_calibration.callendar_van_dusen[standard]
+
+    # Positive temperatures
+
+    if resistance &gt;= ref_resistance:
+        resistance_to_temperature_coefficients = [ref_resistance * coefficients.C,
+                                                  -ref_resistance * 100 * coefficients.C,
+                                                  ref_resistance * coefficients.B,
+                                                  ref_resistance * coefficients.A, ref_resistance * 1]
+
+    # Negative temperatures
+
+    else:
+        resistance_to_temperature_coefficients = [ref_resistance * coefficients.B,
+                                                  ref_resistance * coefficients.A,
+                                                  ref_resistance * 1]
+
+    return solve_temperature(resistance_to_temperature_coefficients, resistance)
+
 
 
 @click.group()
@@ -775,269 +762,280 @@ if __name__ == &#39;__main__&#39;:
 <section>
 <h2 class="section-title" id="header-functions">Functions</h2>
 <dl>
-<dt id="egse.fee.n_fee_hk.get_calibrated_board_temperatures"><code class="name flex">
-<span>def <span class="ident">get_calibrated_board_temperatures</span></span>(<span>current_data, sensor_calibration) ‑> dict</span>
+<dt id="egse.fee.n_fee_hk.callendar_van_dusen"><code class="name flex">
+<span>def <span class="ident">callendar_van_dusen</span></span>(<span>resistance, ref_resistance, standard)</span>
 </code></dt>
 <dd>
-<div class="desc"><p>Calibrate the N-FEE board sensor temperatures.</p>
-<p>The difference in naming between calibrated and uncalibrated housekeeping is the suffix "_RAW".</p>
-<p>For the PT1000 board sensors, the calibration consists of the following steps:</p>
-<pre><code>- apply factor to convert counts to voltage
-- apply factor to convert voltage to resistance
-- apply Von Dusen equation to convert resistance to temperature
-</code></pre>
-<p>For the ISL71590 board sensors, the calibration consist of applying a linear function to the raw values.</p>
-<p>Returns: Dictionary with calibrated board sensor temperatures [°C].</p></div>
+<div class="desc"><p>Solve the Callendar - van Dusen equation for temperature.</p>
+<h2 id="args">Args</h2>
+<ul>
+<li>resistance: Resistance [Ohm] for which to calculate the temperature</li>
+<li>ref_resistance: Resistance [Ohm] for a temperature of 0°C
+Return: Temperature [°C] corresponding to the given resistance.</li>
+</ul></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def get_calibrated_board_temperatures(current_data, sensor_calibration) -&gt; dict:
-    &#34;&#34;&#34; Calibrate the N-FEE board sensor temperatures.
+<pre><code class="python">def callendar_van_dusen(resistance, ref_resistance, standard):
+    &#34;&#34;&#34; Solve the Callendar - van Dusen equation for temperature.
 
-    The difference in naming between calibrated and uncalibrated housekeeping is the suffix &#34;_RAW&#34;.
+    Args:
+        - resistance: Resistance [Ohm] for which to calculate the temperature
+        - ref_resistance: Resistance [Ohm] for a temperature of 0°C
 
-    For the PT1000 board sensors, the calibration consists of the following steps:
-
-        - apply factor to convert counts to voltage
-        - apply factor to convert voltage to resistance
-        - apply Von Dusen equation to convert resistance to temperature
-
-    For the ISL71590 board sensors, the calibration consist of applying a linear function to the raw values.
-
-    Returns: Dictionary with calibrated board sensor temperatures [°C].
+    Return: Temperature [°C] corresponding to the given resistance.
     &#34;&#34;&#34;
 
-    temperatures = {}
+    # Resistances higher than the reference resistance correspond to
 
-    # PT1000 board sensors
+    coefficients = GlobalState.setup.sensor_calibration.callendar_van_dusen[standard]
 
-    cal = sensor_calibration[&#34;BOARD PT1000&#34;]
+    # Positive temperatures
 
-    for cal_name in BOARD_SENSOR_NAMES_PT1000:
+    if resistance &gt;= ref_resistance:
+        resistance_to_temperature_coefficients = [ref_resistance * coefficients.C,
+                                                  -ref_resistance * 100 * coefficients.C,
+                                                  ref_resistance * coefficients.B,
+                                                  ref_resistance * coefficients.A, ref_resistance * 1]
 
-        hk_name = cal_name + &#34;_RAW&#34;
+    # Negative temperatures
 
-        if current_data[hk_name] is not None:
-            try:
-                resistance = current_data[hk_name] * cal.counts_to_voltage * cal.voltage_to_resistance
-                temperature = np.polyval(cal.von_dusen_coefficients, resistance)
-            except AttributeError as exc:
-                raise SetupError(&#34;Not all BOARD PT1000 calibration information is available in the setup under &#34;
-                                 &#34;setup.camera.fee.calibration.&#34;, {exc})
+    else:
+        resistance_to_temperature_coefficients = [ref_resistance * coefficients.B,
+                                                  ref_resistance * coefficients.A,
+                                                  ref_resistance * 1]
 
-            temperatures[cal_name] = temperature
-
-    # ISL71590 board sensors
-
-    cal = sensor_calibration[&#34;BOARD ISL71590&#34;]
-
-    for cal_name in BOARD_SENSOR_NAMES_ISL71590:
-
-        hk_name = cal_name + &#34;_RAW&#34;
-
-        if current_data[hk_name] is not None:
-            try:
-                temperature = cal.slope * current_data[hk_name] + cal.offset
-            except AttributeError as exc:
-                raise SetupError(&#34;Not all BOARD ISL71590 calibration information is available in the setup under &#34;
-                                 &#34;setup.camera.fee.calibration.&#34;, {exc})
-
-            temperatures[cal_name] = temperature
-
-    return temperatures</code></pre>
+    return solve_temperature(resistance_to_temperature_coefficients, resistance)</code></pre>
 </details>
 </dd>
-<dt id="egse.fee.n_fee_hk.get_calibrated_ccd_temperatures"><code class="name flex">
-<span>def <span class="ident">get_calibrated_ccd_temperatures</span></span>(<span>current_data, sensor_calibration) ‑> dict</span>
+<dt id="egse.fee.n_fee_hk.counts_to_resistance"><code class="name flex">
+<span>def <span class="ident">counts_to_resistance</span></span>(<span>sensor_name: str, counts: float, sensor_info: egse.setup.NavigableDict)</span>
 </code></dt>
 <dd>
-<div class="desc"><p>Calibrate the N-FEE CCD temperatures.</p>
-<p>The difference in naming between calibrated and uncalibrated housekeeping is the suffix "_RAW".</p>
-<p>The calibration consists of the following steps:</p>
-<pre><code>- apply factor to convert counts to voltage
-- apply factor to convert voltage to resistance
-- apply Von Dusen equation to convert resistance to temperature
-</code></pre>
-<p>Returns: Dictionary with calibrated CCD temperatures [°C].</p></div>
+<div class="desc"><p>Convert the given counts for the given sensor to resistance.</p>
+<h2 id="args">Args</h2>
+<ul>
+<li>sensor_name: Sensor name</li>
+<li>counts: Uncalibrated, raw data [ADU]</li>
+<li>sensor_info: Calibration information for the given sensor (type)
+Returns: Resistance [Ohm] for the given sensor.</li>
+</ul></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def get_calibrated_ccd_temperatures(current_data, sensor_calibration) -&gt; dict:
-    &#34;&#34;&#34; Calibrate the N-FEE CCD temperatures.
+<pre><code class="python">def counts_to_resistance(sensor_name: str, counts: float, sensor_info: NavigableDict):
+    &#34;&#34;&#34; Convert the given counts for the given sensor to resistance.
 
-    The difference in naming between calibrated and uncalibrated housekeeping is the suffix &#34;_RAW&#34;.
+    Args:
+        - sensor_name: Sensor name
+        - counts: Uncalibrated, raw data [ADU]
+        - sensor_info: Calibration information for the given sensor (type)
 
-    The calibration consists of the following steps:
-
-        - apply factor to convert counts to voltage
-        - apply factor to convert voltage to resistance
-        - apply Von Dusen equation to convert resistance to temperature
-
-    Returns: Dictionary with calibrated CCD temperatures [°C].
+    Returns: Resistance [Ohm] for the given sensor.
     &#34;&#34;&#34;
 
-    temperatures = {}
+    # Offset (if any)
 
-    # CCD PT100 sensors
+    counts_to_resistance_offset = sensor_info.counts_to_resistance_offset \
+        if &#34;counts_to_resistance_offset&#34; in sensor_info \
+        else 0
 
-    cal = sensor_calibration[&#34;CCD PT100&#34;]
+    # Conversion: counts -&gt; voltage -&gt; resistance
 
-    for cal_name in CCD_SENSOR_NAMES:
+    if &#34;counts_to_voltage_gain&#34; in sensor_info and &#34;voltage_to_resistance_gain&#34; in sensor_info:
+        return counts * sensor_info.counts_to_voltage_gain * sensor_info.voltage_to_resistance_gain \
+               + counts_to_resistance_offset
 
-        hk_name = cal_name + &#34;_RAW&#34;
+    # Conversion: counts -&gt; resistance
 
-        if current_data[hk_name] is not None:
-            try:
-                resistance = current_data[hk_name] * cal.counts_to_voltage * cal.voltage_to_resistance \
-                             - cal.series_resistance[int(cal_name[-1])]
-                temperature = np.polyval(cal.von_dusen_coefficients, resistance)
-            except AttributeError as exc:
-                raise SetupError(&#34;Not all CCD PT100 calibration information is available in the setup under &#34;
-                                 &#34;setup.camera.fee.calibration.&#34;, {exc})
+    elif &#34;counts_to_resistance_gain&#34; in sensor_info:
+        return counts * sensor_info.counts_to_resistance_gain \
+               + counts_to_resistance_offset
 
-            temperatures[cal_name] = temperature
-
-    return temperatures
-
-    try:
-        cal.series_res
-    except AttributeError as exc:
-        print(exc)</code></pre>
+    raise SetupError(f&#34;Setup does not contain info for conversion from counts to resistance for {sensor_name}&#34;)</code></pre>
 </details>
 </dd>
-<dt id="egse.fee.n_fee_hk.get_calibrated_nfee_supply_voltages"><code class="name flex">
-<span>def <span class="ident">get_calibrated_nfee_supply_voltages</span></span>(<span>current_data, nfee_supply_voltage_cal)</span>
+<dt id="egse.fee.n_fee_hk.counts_to_temperature"><code class="name flex">
+<span>def <span class="ident">counts_to_temperature</span></span>(<span>sensor_name: str, counts: float, sensor_info: egse.setup.NavigableDict)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Convert the given counts for the given sensor to temperature.</p>
+<h2 id="args">Args</h2>
+<ul>
+<li>sensor_name: Sensor name</li>
+<li>counts: Uncalibrated, raw data [ADU]</li>
+<li>sensor_info: Calibration information for the given sensor (type)
+Returns: Calibrated temperature [°C] for the given sensor</li>
+</ul></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def counts_to_temperature(sensor_name: str, counts: float, sensor_info: NavigableDict):
+    &#34;&#34;&#34; Convert the given counts for the given sensor to temperature.
+
+    Args:
+        - sensor_name: Sensor name
+        - counts: Uncalibrated, raw data [ADU]
+        - sensor_info: Calibration information for the given sensor (type)
+
+    Returns: Calibrated temperature [°C] for the given sensor
+    &#34;&#34;&#34;
+
+    # Conversion: temperature = counts * gain + offset
+
+    if &#34;counts_to_temperature_gain&#34; in sensor_info and &#34;counts_to_temperature_offset&#34; in sensor_info:
+        return counts * sensor_info.counts_to_temperature_gain + sensor_info.counts_to_temperature_offset
+
+    # Conversion: counts -&gt; resistance -&gt; temperature
+
+    else:
+        resistance = counts_to_resistance(sensor_name, counts, sensor_info)
+        return resistance_to_temperature(sensor_name, resistance, sensor_info)</code></pre>
+</details>
+</dd>
+<dt id="egse.fee.n_fee_hk.get_calibrated_supply_voltages"><code class="name flex">
+<span>def <span class="ident">get_calibrated_supply_voltages</span></span>(<span>counts, supply_voltage_calibration)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Calibrate the N-FEE supply voltages.</p>
 <p>The difference in naming between calibrated and uncalibrated housekeeping is the suffix "_RAW".</p>
 <p>The calibration consist of applying a linear function to the raw values.</p>
-<p>Returns: Dictionary with calibrated supply voltages [V].</p></div>
+<h2 id="args">Args</h2>
+<ul>
+<li>counts: Uncalibrated, raw data for all HK.</li>
+<li>supply_voltage_calibration: Supply voltage calibration s read from the YAML file that was specified in the
+setup
+Returns: Dictionary with calibrated supply voltages [V].</li>
+</ul></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def get_calibrated_nfee_supply_voltages(current_data, nfee_supply_voltage_cal):
+<pre><code class="python">def get_calibrated_supply_voltages(counts, supply_voltage_calibration):
     &#34;&#34;&#34; Calibrate the N-FEE supply voltages.
 
     The difference in naming between calibrated and uncalibrated housekeeping is the suffix &#34;_RAW&#34;.
 
     The calibration consist of applying a linear function to the raw values.
 
+    Args:
+        - counts: Uncalibrated, raw data for all HK.
+        - supply_voltage_calibration: Supply voltage calibration s read from the YAML file that was specified in the
+                                      setup
+
     Returns: Dictionary with calibrated supply voltages [V].
     &#34;&#34;&#34;
 
     supply_voltages = {}
 
-    for hk_name, (nfee_cal_slope_a, nfee_cal_offset_b) in nfee_supply_voltage_cal.items():
+    for cal_name in supply_voltage_calibration:
 
-        if current_data[hk_name] is not None:
+        raw_name = cal_name + &#34;_RAW&#34;
+        cal = supply_voltage_calibration[cal_name]
 
-            supply_voltage = nfee_cal_slope_a * current_data[hk_name] + nfee_cal_offset_b
+        if counts[raw_name] is not None:
 
-            supply_voltages[hk_name[:-4]] = supply_voltage
+            supply_voltage = cal.gain * counts[raw_name] + cal.offset
+
+            supply_voltages[cal_name] = supply_voltage
 
     return supply_voltages</code></pre>
 </details>
 </dd>
 <dt id="egse.fee.n_fee_hk.get_calibrated_temperatures"><code class="name flex">
-<span>def <span class="ident">get_calibrated_temperatures</span></span>(<span>current_data, sensor_calibration)</span>
+<span>def <span class="ident">get_calibrated_temperatures</span></span>(<span>counts, sensor_calibration)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Calibrate the N-FEE temperatures.</p>
 <p>The calibrated temperatures come from:</p>
 <pre><code>- TOU TRP PT1000 sensors
-- CCD PT100 sensors
+- CCD PT100/PT1000 sensors
 - PT1000 board sensors
 - ISL71590 board sensors
 </code></pre>
 <p>The difference in naming between calibrated and uncalibrated temperatures is the suffix "_RAW".</p>
-<p>Returns: Dictionary with calibrated temperatures [°C].</p></div>
+<h2 id="args">Args</h2>
+<ul>
+<li>counts: Uncalibrated, raw data for all HK.</li>
+<li>sensor_calibration: N-FEE temperature calibration as read from the YAML file that was specified in the setup
+Returns: Dictionary with calibrated temperatures [°C].</li>
+</ul></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def get_calibrated_temperatures(current_data, sensor_calibration):
+<pre><code class="python">def get_calibrated_temperatures(counts, sensor_calibration):
     &#34;&#34;&#34; Calibrate the N-FEE temperatures.
 
     The calibrated temperatures come from:
 
         - TOU TRP PT1000 sensors
-        - CCD PT100 sensors
+        - CCD PT100/PT1000 sensors
         - PT1000 board sensors
         - ISL71590 board sensors
 
     The difference in naming between calibrated and uncalibrated temperatures is the suffix &#34;_RAW&#34;.
+
+    Args:
+        - counts: Uncalibrated, raw data for all HK.
+        - sensor_calibration: N-FEE temperature calibration as read from the YAML file that was specified in the setup
 
     Returns: Dictionary with calibrated temperatures [°C].
     &#34;&#34;&#34;
 
     temperatures = {}
 
-    # TOU TRP PT1000 sensors
-
-    tou_temperatures = get_calibrated_tou_temperatures(current_data, sensor_calibration)
-    temperatures.update(tou_temperatures)
-
-    # CCD PT100 sensors
-
-    ccd_temperatures = get_calibrated_ccd_temperatures(current_data, sensor_calibration)
-    temperatures.update(ccd_temperatures)
-
-    # Board sensors
-
-    board_temperatures = get_calibrated_board_temperatures(current_data, sensor_calibration)
-    temperatures.update(board_temperatures)
+    for sensor_type in sensor_calibration:
+        temperatures.update(get_calibrated_temperatures_for_type(counts, sensor_calibration, sensor_type))
 
     return temperatures</code></pre>
 </details>
 </dd>
-<dt id="egse.fee.n_fee_hk.get_calibrated_tou_temperatures"><code class="name flex">
-<span>def <span class="ident">get_calibrated_tou_temperatures</span></span>(<span>current_data, sensor_calibration) ‑> dict</span>
+<dt id="egse.fee.n_fee_hk.get_calibrated_temperatures_for_type"><code class="name flex">
+<span>def <span class="ident">get_calibrated_temperatures_for_type</span></span>(<span>counts, sensor_calibration, sensor_type) ‑> dict</span>
 </code></dt>
 <dd>
-<div class="desc"><p>Calibrate the N-FEE TOU temperatures.</p>
-<p>The difference in naming between calibrated and uncalibrated housekeeping is the suffix "_RAW".</p>
-<p>The calibration consists of the following steps:</p>
-<pre><code>- apply factor to convert counts to voltage
-- apply factor to convert voltage to resistance
-- apply Von Dusen equation to convert resistance to temperature
-</code></pre>
-<p>Returns: Dictionary with calibrated TOU temperatures [°C].</p></div>
+<div class="desc"><p>Calibrate the N-FEE temperatures for the given sensor type.</p>
+<h2 id="args">Args</h2>
+<ul>
+<li>counts: Uncalibrated, raw data [ADU]</li>
+<li>sensor_calibration: Calibration information for the given sensor type</li>
+<li>sensor_calibration: N-FEE sensor calibration as read from the YAML file that was specified in the setup
+Returns: Dictionary with calibrated temperatures [°C] for the given sensor type.</li>
+</ul></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def get_calibrated_tou_temperatures(current_data, sensor_calibration) -&gt; dict:
-    &#34;&#34;&#34; Calibrate the N-FEE TOU temperatures.
+<pre><code class="python">def get_calibrated_temperatures_for_type(counts, sensor_calibration, sensor_type) -&gt; dict:
+    &#34;&#34;&#34; Calibrate the N-FEE temperatures for the given sensor type.
 
-    The difference in naming between calibrated and uncalibrated housekeeping is the suffix &#34;_RAW&#34;.
+    Args:
+        - counts: Uncalibrated, raw data [ADU]
+        - sensor_calibration: Calibration information for the given sensor type
+        - sensor_calibration: N-FEE sensor calibration as read from the YAML file that was specified in the setup
 
-    The calibration consists of the following steps:
-
-        - apply factor to convert counts to voltage
-        - apply factor to convert voltage to resistance
-        - apply Von Dusen equation to convert resistance to temperature
-
-    Returns: Dictionary with calibrated TOU temperatures [°C].
+    Returns: Dictionary with calibrated temperatures [°C] for the given sensor type.
     &#34;&#34;&#34;
+
+    cal = sensor_calibration[sensor_type]
 
     temperatures = {}
 
-    # TOU TRP PT1000 sensors
+    for cal_name in cal.sensor_names:
 
-    cal = sensor_calibration[&#34;TOU TRP PT1000&#34;]
+        raw_name = cal_name + &#34;_RAW&#34;
 
-    for cal_name in TOU_SENSOR_NAMES:
+        if counts[raw_name] is not None:
 
-        hk_name = cal_name + &#34;_RAW&#34;
+            sensor_info = cal[cal_name] if cal_name in cal else cal
 
-        if current_data[hk_name] is not None:
             try:
-                resistance = current_data[hk_name] * float(cal.counts_to_voltage) * cal.voltage_to_resistance
-                temperature = np.polyval(cal.von_dusen_coefficients, resistance)
+                temperature = counts_to_temperature(cal_name, counts[raw_name], sensor_info)
+
             except AttributeError as exc:
                 raise SetupError(&#34;Not all TOU TRP PT1000 calibration information is available in the setup under &#34;
                                  &#34;setup.camera.fee.calibration.&#34;, {exc})
@@ -1047,57 +1045,69 @@ if __name__ == &#39;__main__&#39;:
     return temperatures</code></pre>
 </details>
 </dd>
-<dt id="egse.fee.n_fee_hk.read_hk_info"><code class="name flex">
-<span>def <span class="ident">read_hk_info</span></span>(<span>) ‑> (<class 'dict'>, <class 'dict'>)</span>
+<dt id="egse.fee.n_fee_hk.resistance_to_temperature"><code class="name flex">
+<span>def <span class="ident">resistance_to_temperature</span></span>(<span>sensor_name: str, resistance: float, sensor_info: egse.setup.NavigableDict)</span>
 </code></dt>
 <dd>
-<div class="desc"><p>Read the table with the HK information, i.e. the TM dictionary.</p>
-<h2 id="returns">Returns</h2>
+<div class="desc"><p>Convert the given resistance for the given sensor to counts.</p>
+<h2 id="args">Args</h2>
 <ul>
-<li>Dictionary relating the original HK names with the ones starting with the correct prefix (NFEE_)</li>
-<li>Dictionary relating the HK names (with the correct prefix) with the slope a and offset b for the
-calibration of the supply voltages</li>
+<li>sensor_name: Sensor name</li>
+<li>resistance: Resistance [Ohm]</li>
+<li>sensor_info: Calibration information for the given sensor (type)
+Returns: Temperature [°C] for the given sensor.</li>
 </ul></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def read_hk_info() -&gt; (dict, dict):
-    &#34;&#34;&#34; Read the table with the HK information, i.e. the TM dictionary.
+<pre><code class="python">def resistance_to_temperature(sensor_name: str, resistance: float, sensor_info: NavigableDict):
+    &#34;&#34;&#34; Convert the given resistance for the given sensor to counts.
 
-    Returns:
-        - Dictionary relating the original HK names with the ones starting with the correct prefix (NFEE_)
-        - Dictionary relating the HK names (with the correct prefix) with the slope a and offset b for the
-          calibration of the supply voltages
+    Args:
+        - sensor_name: Sensor name
+        - resistance: Resistance [Ohm]
+        - sensor_info: Calibration information for the given sensor (type)
+
+    Returns: Temperature [°C] for the given sensor.
     &#34;&#34;&#34;
 
-    filename = get_resource(f&#34;:/data/tm-dictionary.csv&#34;)
-    hk_info_table = pandas.read_csv(filename, sep=&#34;;&#34;)
+    resistance_to_temperature_info = sensor_info.resistance_to_temperature
 
-    storage_mnemonic = hk_info_table[TmDictionaryColumns.STORAGE_MNEMONIC].values
-    hk_names = hk_info_table[TmDictionaryColumns.CORRECT_HK_NAMES].values
-    original_names = hk_info_table[TmDictionaryColumns.ORIGINAL_EGSE_HK_NAMES].values
-    nfee_cal_offset_b = hk_info_table[TmDictionaryColumns.CAL_OFFSET_B].values
-    nfee_cal_slope_a = hk_info_table[TmDictionaryColumns.CAL_SLOPE_A].values
+    # Series resistance (if any)
 
-    # Name conversion
+    if &#34;series_resistance&#34; in resistance_to_temperature_info:
 
-    nfee_selection = np.where(storage_mnemonic == &#34;N-FEE-HK&#34;)
-    original_names = original_names[nfee_selection]
-    new_names = hk_names[nfee_selection]
+        series_resistance = resistance_to_temperature_info.series_resistance
+        if sensor_name in resistance_to_temperature_info:
+            series_resistance = series_resistance[sensor_name]
+        resistance -= series_resistance
 
-    # Supply voltage calibration
+    method: str = resistance_to_temperature_info.method
 
-    nfee_selection = np.where(np.logical_and(storage_mnemonic == &#34;N-FEE-HK&#34;, np.isfinite(nfee_cal_offset_b)))
+    # Polynomial
 
-    nfee_supply_voltage_names = hk_names[nfee_selection]
-    nfee_cal_offset_b = nfee_cal_offset_b[nfee_selection]
-    nfee_cal_slope_a = nfee_cal_slope_a[nfee_selection]
+    if method == &#34;polynomial&#34;:
 
-    name_conversion = dict(zip(original_names, new_names))
-    nfee_supply_voltage_cal = dict(zip(nfee_supply_voltage_names, list(zip(nfee_cal_slope_a, nfee_cal_offset_b))))
+        # Coefficients given for conversion temperature -&gt; resistance
 
-    return name_conversion, nfee_supply_voltage_cal</code></pre>
+        if &#34;temperature_to_resistance_coefficients&#34; in resistance_to_temperature_info:
+            return solve_temperature(resistance_to_temperature_info.temperature_to_resistance_coefficients, resistance)
+
+        # Coefficients given for conversion resistance -&gt; temperature
+
+        if &#34;resistance_to_temperature_coefficients&#34; in resistance_to_temperature_info:
+            return np.polyval(resistance_to_temperature_info.resistance_to_temperature_coefficients, resistance)
+
+    # Callendar - van Dusen equation
+
+    if method == &#34;callendar_van_dusen&#34;:
+        standard = resistance_to_temperature_info.standard
+        ref_resistance = resistance_to_temperature_info.ref_resistance
+        return callendar_van_dusen(resistance, ref_resistance, standard)
+
+    else:
+        raise SetupError(f&#34;Setup does not contain info for conversion from resistance to temperature for {sensor_name}&#34;)</code></pre>
 </details>
 </dd>
 <dt id="egse.fee.n_fee_hk.send_request"><code class="name flex">
@@ -1128,6 +1138,40 @@ calibration of the supply voltages</li>
     socket.close(linger=0)
 
     return response</code></pre>
+</details>
+</dd>
+<dt id="egse.fee.n_fee_hk.solve_temperature"><code class="name flex">
+<span>def <span class="ident">solve_temperature</span></span>(<span>temperature_to_resistance_coefficients, resistance)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Solve the temperature from the temperature -&gt; resistance polynomial.</p>
+<p>For the given temperature -&gt; resistance polynomial and the given resistance, we determine what the corresponding
+temperature is by:
+- Finding the roots of
+polynomial(temperature) = resistance
+- Discarding the roots with an imaginary component
+- Selecting the remaining root in the relevant temperature regime (here: [-200°C, 200°C])</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def solve_temperature(temperature_to_resistance_coefficients, resistance):
+    &#34;&#34;&#34; Solve the temperature from the temperature -&gt; resistance polynomial.
+
+    For the given temperature -&gt; resistance polynomial and the given resistance, we determine what the corresponding
+    temperature is by:
+        - Finding the roots of
+            polynomial(temperature) = resistance
+        - Discarding the roots with an imaginary component
+        - Selecting the remaining root in the relevant temperature regime (here: [-200°C, 200°C])
+    &#34;&#34;&#34;
+
+    temperature_to_resistance_poly = np.poly1d(temperature_to_resistance_coefficients)
+    temperatures = (temperature_to_resistance_poly - resistance).roots
+
+    for temperature in temperatures:
+        if temperature.imag == 0 and -200 &lt;= temperature &lt;= 200:
+            return temperature.real</code></pre>
 </details>
 </dd>
 </dl>
@@ -1483,36 +1527,23 @@ def run(self):
         self.data_puller = None
         self.threadpool = QThreadPool()
 
-        # Read from the HK info file:
-        #   - name of the HK parameters with the raw values for the N-FEE supply voltages
-        #   - value of the offset (b) for the calibration
-        #   - values of the slope (a) for the calibration
+        # The hk_names_mapping is a dictionary that maps the original device telemetry parameter
+        # names to the correct device names as defined in the CGSE. The keys in the mapping are
+        # the original device name, the values are the CGSE corrected names
 
-        self.name_conversion, self.nfee_supply_voltage_cal = read_hk_info()
-        hk_header = self.name_conversion.values()
+        self.hk_names_mapping = read_conversion_dict(ORIGIN, use_site=False)
+        hk_header = self.hk_names_mapping.values()
 
         # Read from the setup: sensor calibration data (as a NavigableDict)
 
-        self.sensor_calibration = self.read_temp_calibration()
+        self.supply_voltage_calibration = GlobalState.setup.camera.fee.calibration.supply_voltages
+        self.temperature_calibration = GlobalState.setup.camera.fee.calibration.temperatures
 
         self.current_data = DataCollector(
             [HK_TIMESTAMP_NAME, *hk_header]
         )
 
-        # The hk_names_mapping is a dictionary that maps the original device telemetry parameter
-        # names to the correct device names as defined in the CGSE. The keys in the mapping are
-        # the original device name, the values are the CGSE corrected names.
-
-        self.hk_names_mapping = read_conversion_dict(ORIGIN, use_site=False)
         self.hk_metrics = define_metrics(ORIGIN, dashboard=&#39;*&#39;)
-
-    def read_temp_calibration(self) -&gt; NavigableDict:
-        &#34;&#34;&#34; Read the temperature calibration from the designated file.
-
-        Returns: N-FEE temperature calibration as a NavigableDict.
-        &#34;&#34;&#34;
-
-        return GlobalState.setup.camera.fee.calibration
 
     def run(self):
         self.start_pulling_data()
@@ -1546,12 +1577,13 @@ def run(self):
         # and append them to the rest of the HK
 
         self.current_data = convert_hk_names(dict(zip(self.current_data.keys(), self.current_data.values())),
-                                             self.name_conversion)
+                                             self.hk_names_mapping)
         # Calibration (supply voltages + temperatures)
 
-        calibrated_supply_voltages = get_calibrated_nfee_supply_voltages(self.current_data, self.nfee_supply_voltage_cal)
+        calibrated_supply_voltages = get_calibrated_supply_voltages(self.current_data,
+                                                                    self.supply_voltage_calibration)
         self.current_data.update(calibrated_supply_voltages)
-        calibrated_temperatures = get_calibrated_temperatures(self.current_data, self.sensor_calibration)
+        calibrated_temperatures = get_calibrated_temperatures(self.current_data, self.temperature_calibration)
         self.current_data.update(calibrated_temperatures)
 
         with StorageProxy() as storage:
@@ -1612,25 +1644,6 @@ def run(self):
 </details>
 <h3>Methods</h3>
 <dl>
-<dt id="egse.fee.n_fee_hk.HousekeepingGenerator.read_temp_calibration"><code class="name flex">
-<span>def <span class="ident">read_temp_calibration</span></span>(<span>self) ‑> egse.setup.NavigableDict</span>
-</code></dt>
-<dd>
-<div class="desc"><p>Read the temperature calibration from the designated file.</p>
-<p>Returns: N-FEE temperature calibration as a NavigableDict.</p></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def read_temp_calibration(self) -&gt; NavigableDict:
-    &#34;&#34;&#34; Read the temperature calibration from the designated file.
-
-    Returns: N-FEE temperature calibration as a NavigableDict.
-    &#34;&#34;&#34;
-
-    return GlobalState.setup.camera.fee.calibration</code></pre>
-</details>
-</dd>
 <dt id="egse.fee.n_fee_hk.HousekeepingGenerator.run"><code class="name flex">
 <span>def <span class="ident">run</span></span>(<span>self)</span>
 </code></dt>
@@ -1662,12 +1675,13 @@ def run(self):
     # and append them to the rest of the HK
 
     self.current_data = convert_hk_names(dict(zip(self.current_data.keys(), self.current_data.values())),
-                                         self.name_conversion)
+                                         self.hk_names_mapping)
     # Calibration (supply voltages + temperatures)
 
-    calibrated_supply_voltages = get_calibrated_nfee_supply_voltages(self.current_data, self.nfee_supply_voltage_cal)
+    calibrated_supply_voltages = get_calibrated_supply_voltages(self.current_data,
+                                                                self.supply_voltage_calibration)
     self.current_data.update(calibrated_supply_voltages)
-    calibrated_temperatures = get_calibrated_temperatures(self.current_data, self.sensor_calibration)
+    calibrated_temperatures = get_calibrated_temperatures(self.current_data, self.temperature_calibration)
     self.current_data.update(calibrated_temperatures)
 
     with StorageProxy() as storage:
@@ -1952,13 +1966,15 @@ No data</p>
 </li>
 <li><h3><a href="#header-functions">Functions</a></h3>
 <ul class="">
-<li><code><a title="egse.fee.n_fee_hk.get_calibrated_board_temperatures" href="#egse.fee.n_fee_hk.get_calibrated_board_temperatures">get_calibrated_board_temperatures</a></code></li>
-<li><code><a title="egse.fee.n_fee_hk.get_calibrated_ccd_temperatures" href="#egse.fee.n_fee_hk.get_calibrated_ccd_temperatures">get_calibrated_ccd_temperatures</a></code></li>
-<li><code><a title="egse.fee.n_fee_hk.get_calibrated_nfee_supply_voltages" href="#egse.fee.n_fee_hk.get_calibrated_nfee_supply_voltages">get_calibrated_nfee_supply_voltages</a></code></li>
+<li><code><a title="egse.fee.n_fee_hk.callendar_van_dusen" href="#egse.fee.n_fee_hk.callendar_van_dusen">callendar_van_dusen</a></code></li>
+<li><code><a title="egse.fee.n_fee_hk.counts_to_resistance" href="#egse.fee.n_fee_hk.counts_to_resistance">counts_to_resistance</a></code></li>
+<li><code><a title="egse.fee.n_fee_hk.counts_to_temperature" href="#egse.fee.n_fee_hk.counts_to_temperature">counts_to_temperature</a></code></li>
+<li><code><a title="egse.fee.n_fee_hk.get_calibrated_supply_voltages" href="#egse.fee.n_fee_hk.get_calibrated_supply_voltages">get_calibrated_supply_voltages</a></code></li>
 <li><code><a title="egse.fee.n_fee_hk.get_calibrated_temperatures" href="#egse.fee.n_fee_hk.get_calibrated_temperatures">get_calibrated_temperatures</a></code></li>
-<li><code><a title="egse.fee.n_fee_hk.get_calibrated_tou_temperatures" href="#egse.fee.n_fee_hk.get_calibrated_tou_temperatures">get_calibrated_tou_temperatures</a></code></li>
-<li><code><a title="egse.fee.n_fee_hk.read_hk_info" href="#egse.fee.n_fee_hk.read_hk_info">read_hk_info</a></code></li>
+<li><code><a title="egse.fee.n_fee_hk.get_calibrated_temperatures_for_type" href="#egse.fee.n_fee_hk.get_calibrated_temperatures_for_type">get_calibrated_temperatures_for_type</a></code></li>
+<li><code><a title="egse.fee.n_fee_hk.resistance_to_temperature" href="#egse.fee.n_fee_hk.resistance_to_temperature">resistance_to_temperature</a></code></li>
 <li><code><a title="egse.fee.n_fee_hk.send_request" href="#egse.fee.n_fee_hk.send_request">send_request</a></code></li>
+<li><code><a title="egse.fee.n_fee_hk.solve_temperature" href="#egse.fee.n_fee_hk.solve_temperature">solve_temperature</a></code></li>
 </ul>
 </li>
 <li><h3><a href="#header-classes">Classes</a></h3>
@@ -1989,7 +2005,6 @@ No data</p>
 <li>
 <h4><code><a title="egse.fee.n_fee_hk.HousekeepingGenerator" href="#egse.fee.n_fee_hk.HousekeepingGenerator">HousekeepingGenerator</a></code></h4>
 <ul class="">
-<li><code><a title="egse.fee.n_fee_hk.HousekeepingGenerator.read_temp_calibration" href="#egse.fee.n_fee_hk.HousekeepingGenerator.read_temp_calibration">read_temp_calibration</a></code></li>
 <li><code><a title="egse.fee.n_fee_hk.HousekeepingGenerator.run" href="#egse.fee.n_fee_hk.HousekeepingGenerator.run">run</a></code></li>
 <li><code><a title="egse.fee.n_fee_hk.HousekeepingGenerator.send_hk_data_to_storage" href="#egse.fee.n_fee_hk.HousekeepingGenerator.send_hk_data_to_storage">send_hk_data_to_storage</a></code></li>
 <li><code><a title="egse.fee.n_fee_hk.HousekeepingGenerator.start_pulling_data" href="#egse.fee.n_fee_hk.HousekeepingGenerator.start_pulling_data">start_pulling_data</a></code></li>

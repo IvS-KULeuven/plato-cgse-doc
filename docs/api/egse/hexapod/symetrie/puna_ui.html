@@ -53,14 +53,18 @@ platform that supports Python and Qt5.
 import argparse
 import logging
 import multiprocessing
-from pathlib import Path
-
 import sys
 import threading
+from enum import IntEnum
+from pathlib import Path
 
 from PyQt5.QtCore import QLockFile
 
-from egse.hexapod.symetrie.puna import get_endpoint_hexapod_controller
+from egse.hexapod.symetrie import ControllerFactory
+from egse.hexapod.symetrie import ProxyFactory
+from egse.hexapod.symetrie import get_hexapod_controller_pars
+from egse.hexapod.symetrie.punaplus import PunaPlusController
+from egse.hexapod.symetrie.punaplus import PunaPlusProxy
 
 multiprocessing.current_process().name = &#34;puna_ui&#34;
 
@@ -78,7 +82,6 @@ from egse.hexapod.symetrie.hexapod_ui import ActuatorStates
 from egse.hexapod.symetrie.hexapod_ui import HexapodUIController
 from egse.hexapod.symetrie.hexapod_ui import HexapodUIModel
 from egse.hexapod.symetrie.hexapod_ui import HexapodUIView
-from egse.hexapod.symetrie.puna import PunaController
 from egse.hexapod.symetrie.puna import PunaProxy
 from egse.hexapod.symetrie.puna import PunaSimulator
 from egse.process import ProcessStatus
@@ -88,10 +91,19 @@ from egse.system import do_every
 
 MODULE_LOGGER = logging.getLogger(__name__)
 
+
+class DeviceControllerType(IntEnum):
+    ALPHA = 0
+    ALPHA_PLUS = 1
+
+
+DCT = DeviceControllerType
+
+
 # Status LEDs define the number of status leds (length of the list), the description and the
 # default color when the LED is on.
 
-STATUS_LEDS = [
+STATUS_LEDS_ALPHA = [
     [&#34;Error&#34;, Indic.RED],  # bit 0
     [&#34;System Initialized&#34;, Indic.GREEN],  # bit 1
     [&#34;In position&#34;, Indic.GREEN],  # bit 2
@@ -118,11 +130,37 @@ STATUS_LEDS = [
     [&#34;Reserved&#34;, Indic.BLACK],  # bit 23
 ]
 
+STATUS_LEDS_ALPHA_PLUS = [
+    [&#34;Error&#34;, Indic.RED],  # bit 0
+    [&#34;System Initialized&#34;, Indic.GREEN],  # bit 1
+    [&#34;Control On&#34;, Indic.GREEN],  # bit 2
+    [&#34;In Position&#34;, Indic.GREEN],  # bit 3
+    [&#34;Motion Task Running&#34;, Indic.GREEN],  # bit 4
+    [&#34;Home Task Running&#34;, Indic.GREEN],  # bit 5
+    [&#34;Home Complete&#34;, Indic.GREEN],  # bit 6
+    [&#34;Home Virtual&#34;, Indic.GREEN],  # bit 7
+    [&#34;Phase Found&#34;, Indic.GREEN],  # bit 8
+    [&#34;Brake on&#34;, Indic.GREEN],  # bit 9
+    [&#34;Motion Restricted&#34;, Indic.RED],  # bit 10
+    [&#34;Power on Encoders&#34;, Indic.GREEN],  # bit 11
+    [&#34;Power on Limit switches&#34;, Indic.GREEN],  # bit 12
+    [&#34;Power on Drives&#34;, Indic.GREEN],  # bit 13
+    [&#34;Emergency Stop&#34;, Indic.RED],  # bit 14
+]
+
+STATUS_LEDS = {
+    DCT.ALPHA: STATUS_LEDS_ALPHA,
+    DCT.ALPHA_PLUS: STATUS_LEDS_ALPHA_PLUS
+}
+
 # The index of the Control LED
 
-CONTROL_ONOFF = 3
+CONTROL_ONOFF = {
+    DCT.ALPHA: 3,
+    DCT.ALPHA_PLUS: 2
+}
 
-ACTUATOR_STATE_LABELS = [
+ACTUATOR_STATE_LABELS_ALPHA = [
     &#34;In position&#34;,
     &#34;Control loop on servo motors active&#34;,
     &#34;Homing done&#34;,
@@ -138,15 +176,45 @@ ACTUATOR_STATE_LABELS = [
     &#34;Phasing error (brushless engine only)&#34;,
 ]
 
+ACTUATOR_STATE_LABELS_ALPHA_PLUS = [
+    &#34;Error: &#34;,
+    &#34;Control On: &#34;,
+    &#34;In Position: &#34;,
+    &#34;Motion Task Running: &#34;,
+    &#34;Home task running: &#34;,
+    &#34;Home complete: &#34;,
+    &#34;Phase found: &#34;,
+    &#34;Brake on: &#34;,
+    &#34;Home HW input: &#34;,
+    &#34;Negative HW limit switch: &#34;,
+    &#34;Positive HW limit switch: &#34;,
+    &#34;SW limit reached: &#34;,
+    &#34;Following Error: &#34;,
+    &#34;Drive fault: &#34;,
+    &#34;Encoder error: &#34;,
+]
+
+ACTUATOR_STATE_LABELS = {
+    DCT.ALPHA: ACTUATOR_STATE_LABELS_ALPHA,
+    DCT.ALPHA_PLUS: ACTUATOR_STATE_LABELS_ALPHA_PLUS
+}
+
 GUI_SETTINGS = Settings.load(&#34;PUNA GUI&#34;)
 
+
 class PunaUIView(HexapodUIView):
-    def __init__(self):
+    def __init__(self, device_controller_type: DCT, device_id: str):
         super().__init__()
 
-        self.setWindowTitle(&#34;Hexapod PUNA Controller&#34;)
+        self.dct = device_controller_type
 
-        self.actuator_states = ActuatorStates(labels=ACTUATOR_STATE_LABELS)
+        if self.dct == DCT.ALPHA:
+            title = f&#34;Hexapod PUNA Controller (Alpha) – {device_id}&#34;
+        else:
+            title = f&#34;Hexapod PUNA Controller (Alpha+) – {device_id}&#34;
+
+        self.setWindowTitle(title)
+        self.actuator_states = ActuatorStates(labels=ACTUATOR_STATE_LABELS[self.dct])
 
         self.init_gui()
 
@@ -184,7 +252,7 @@ class PunaUIView(HexapodUIView):
         self.createToolbar()
         self.createStatusBar()
 
-        self.states = States(STATUS_LEDS)
+        self.states = States(STATUS_LEDS[self.dct])
 
         user_positions_widget = self.createUserPositionWidget()
         mach_positions_widget = self.createMachinePositionWidget()
@@ -224,7 +292,7 @@ class PunaUIView(HexapodUIView):
             self.statusBar().showMessage(message, msecs=timeout)
         if mode:
             self.mode_label.setStyleSheet(
-                f&#34;border: 0; &#34; f&#34;color: {&#39;red&#39; if mode == &#39;Simulator&#39; else &#39;black&#39;};&#34;
+                f&#34;border: 0; &#34; f&#34;color: {&#39;red&#39; if &#39;Simulator&#39; in mode else &#39;black&#39;};&#34;
             )
             self.mode_label.setText(f&#34;mode: {mode}&#34;)
         self.statusBar().repaint()
@@ -260,7 +328,7 @@ class PunaUIView(HexapodUIView):
         if states is None:
             return
 
-        self.updateControlButton(states[CONTROL_ONOFF])
+        self.updateControlButton(states[CONTROL_ONOFF[self.dct]])
         self.states.set_states(states)
 
     def updateControlButton(self, flag):
@@ -271,11 +339,11 @@ class PunaUIView(HexapodUIView):
 class PunaUIModel(HexapodUIModel):
     def __init__(self, connection_type):
 
+        hostname, port, dev_id, dev_name, _ = get_hexapod_controller_pars()
         if connection_type == &#34;proxy&#34;:
-            device = PunaProxy()
+            device = ProxyFactory().create(dev_name, device_id=dev_id)
         elif connection_type == &#34;direct&#34;:
-            hostname, port = get_endpoint_hexapod_controller()
-            device = PunaController(hostname=hostname, port=port)
+            device = ControllerFactory().create(dev_name, device_id=dev_id)
             device.connect()
         elif connection_type == &#34;simulator&#34;:
             device = PunaSimulator()
@@ -286,12 +354,22 @@ class PunaUIModel(HexapodUIModel):
 
         super().__init__(connection_type, device)
 
+        self._device_id = dev_id
+
         if device is not None:
             MODULE_LOGGER.debug(f&#34;Hexapod initialized as {device.__class__.__name__}&#34;)
+
+    @property
+    def device_id(self):
+        return self._device_id
+
+    def get_device_controller_type(self) -&gt; DCT:
+        return DCT.ALPHA_PLUS if isinstance(self.device, (PunaPlusProxy, PunaPlusController)) else DCT.ALPHA
 
     def get_speed(self):
         vt, vr, vt_min, vr_min, vt_max, vr_max = self.device.get_speed()
         return vt, vr
+
 
 class PunaUIController(HexapodUIController):
     def __init__(self, model: PunaUIModel, view: PunaUIView):
@@ -354,7 +432,9 @@ def main():
             Settings.set_profiling(True)
 
         if args.type == &#34;proxy&#34;:
-            proxy = PunaProxy()
+            *_, device_id, device_name, _ = get_hexapod_controller_pars()
+            factory = ProxyFactory()
+            proxy = factory.create(device_name, device_id=device_id)
             if not proxy.ping():
                 description = &#34;Could not connect to Hexapod Control Server&#34;
                 info_text = (
@@ -367,8 +447,8 @@ def main():
 
                 show_warning_message(description, info_text)
 
-        view = PunaUIView()
         model = PunaUIModel(args.type)
+        view = PunaUIView(model.get_device_controller_type(), model.device_id)
         PunaUIController(model, view)
 
         view.show()
@@ -434,7 +514,9 @@ if __name__ == &#34;__main__&#34;:
             Settings.set_profiling(True)
 
         if args.type == &#34;proxy&#34;:
-            proxy = PunaProxy()
+            *_, device_id, device_name, _ = get_hexapod_controller_pars()
+            factory = ProxyFactory()
+            proxy = factory.create(device_name, device_id=device_id)
             if not proxy.ping():
                 description = &#34;Could not connect to Hexapod Control Server&#34;
                 info_text = (
@@ -447,8 +529,8 @@ if __name__ == &#34;__main__&#34;:
 
                 show_warning_message(description, info_text)
 
-        view = PunaUIView()
         model = PunaUIModel(args.type)
+        view = PunaUIView(model.get_device_controller_type(), model.device_id)
         PunaUIController(model, view)
 
         view.show()
@@ -500,6 +582,70 @@ if __name__ == &#34;__main__&#34;:
 <section>
 <h2 class="section-title" id="header-classes">Classes</h2>
 <dl>
+<dt id="egse.hexapod.symetrie.puna_ui.DeviceControllerType"><code class="flex name class">
+<span>class <span class="ident">DeviceControllerType</span></span>
+<span>(</span><span>value, names=None, *, module=None, qualname=None, type=None, start=1)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>An enumeration.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class DeviceControllerType(IntEnum):
+    ALPHA = 0
+    ALPHA_PLUS = 1</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>enum.IntEnum</li>
+<li>builtins.int</li>
+<li>enum.Enum</li>
+</ul>
+<h3>Class variables</h3>
+<dl>
+<dt id="egse.hexapod.symetrie.puna_ui.DeviceControllerType.ALPHA"><code class="name">var <span class="ident">ALPHA</span></code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="egse.hexapod.symetrie.puna_ui.DeviceControllerType.ALPHA_PLUS"><code class="name">var <span class="ident">ALPHA_PLUS</span></code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+</dl>
+</dd>
+<dt id="egse.hexapod.symetrie.puna_ui.DeviceControllerType"><code class="flex name class">
+<span>class <span class="ident">DCT</span></span>
+<span>(</span><span>value, names=None, *, module=None, qualname=None, type=None, start=1)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>An enumeration.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class DeviceControllerType(IntEnum):
+    ALPHA = 0
+    ALPHA_PLUS = 1</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>enum.IntEnum</li>
+<li>builtins.int</li>
+<li>enum.Enum</li>
+</ul>
+<h3>Class variables</h3>
+<dl>
+<dt id="egse.hexapod.symetrie.puna_ui.DeviceControllerType.ALPHA"><code class="name">var <span class="ident">ALPHA</span></code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="egse.hexapod.symetrie.puna_ui.DeviceControllerType.ALPHA_PLUS"><code class="name">var <span class="ident">ALPHA_PLUS</span></code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+</dl>
+</dd>
 <dt id="egse.hexapod.symetrie.puna_ui.PunaUIController"><code class="flex name class">
 <span>class <span class="ident">PunaUIController</span></span>
 <span>(</span><span>model: <a title="egse.hexapod.symetrie.puna_ui.PunaUIModel" href="#egse.hexapod.symetrie.puna_ui.PunaUIModel">PunaUIModel</a>, view: <a title="egse.hexapod.symetrie.puna_ui.PunaUIView" href="#egse.hexapod.symetrie.puna_ui.PunaUIView">PunaUIView</a>)</span>
@@ -552,11 +698,11 @@ inheritance.</p></div>
 <pre><code class="python">class PunaUIModel(HexapodUIModel):
     def __init__(self, connection_type):
 
+        hostname, port, dev_id, dev_name, _ = get_hexapod_controller_pars()
         if connection_type == &#34;proxy&#34;:
-            device = PunaProxy()
+            device = ProxyFactory().create(dev_name, device_id=dev_id)
         elif connection_type == &#34;direct&#34;:
-            hostname, port = get_endpoint_hexapod_controller()
-            device = PunaController(hostname=hostname, port=port)
+            device = ControllerFactory().create(dev_name, device_id=dev_id)
             device.connect()
         elif connection_type == &#34;simulator&#34;:
             device = PunaSimulator()
@@ -567,8 +713,17 @@ inheritance.</p></div>
 
         super().__init__(connection_type, device)
 
+        self._device_id = dev_id
+
         if device is not None:
             MODULE_LOGGER.debug(f&#34;Hexapod initialized as {device.__class__.__name__}&#34;)
+
+    @property
+    def device_id(self):
+        return self._device_id
+
+    def get_device_controller_type(self) -&gt; DCT:
+        return DCT.ALPHA_PLUS if isinstance(self.device, (PunaPlusProxy, PunaPlusController)) else DCT.ALPHA
 
     def get_speed(self):
         vt, vr, vt_min, vr_min, vt_max, vr_max = self.device.get_speed()
@@ -578,8 +733,36 @@ inheritance.</p></div>
 <ul class="hlist">
 <li><a title="egse.hexapod.symetrie.hexapod_ui.HexapodUIModel" href="hexapod_ui.html#egse.hexapod.symetrie.hexapod_ui.HexapodUIModel">HexapodUIModel</a></li>
 </ul>
+<h3>Instance variables</h3>
+<dl>
+<dt id="egse.hexapod.symetrie.puna_ui.PunaUIModel.device_id"><code class="name">var <span class="ident">device_id</span></code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@property
+def device_id(self):
+    return self._device_id</code></pre>
+</details>
+</dd>
+</dl>
 <h3>Methods</h3>
 <dl>
+<dt id="egse.hexapod.symetrie.puna_ui.PunaUIModel.get_device_controller_type"><code class="name flex">
+<span>def <span class="ident">get_device_controller_type</span></span>(<span>self) ‑> <a title="egse.hexapod.symetrie.puna_ui.DeviceControllerType" href="#egse.hexapod.symetrie.puna_ui.DeviceControllerType">DeviceControllerType</a></span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_device_controller_type(self) -&gt; DCT:
+    return DCT.ALPHA_PLUS if isinstance(self.device, (PunaPlusProxy, PunaPlusController)) else DCT.ALPHA</code></pre>
+</details>
+</dd>
 <dt id="egse.hexapod.symetrie.puna_ui.PunaUIModel.get_speed"><code class="name flex">
 <span>def <span class="ident">get_speed</span></span>(<span>self)</span>
 </code></dt>
@@ -598,6 +781,7 @@ inheritance.</p></div>
 </dd>
 <dt id="egse.hexapod.symetrie.puna_ui.PunaUIView"><code class="flex name class">
 <span>class <span class="ident">PunaUIView</span></span>
+<span>(</span><span>device_controller_type: <a title="egse.hexapod.symetrie.puna_ui.DeviceControllerType" href="#egse.hexapod.symetrie.puna_ui.DeviceControllerType">DeviceControllerType</a>, device_id: str)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>QMainWindow(parent: QWidget = None, flags: Union[Qt.WindowFlags, Qt.WindowType] = Qt.WindowFlags())</p></div>
@@ -606,12 +790,18 @@ inheritance.</p></div>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">class PunaUIView(HexapodUIView):
-    def __init__(self):
+    def __init__(self, device_controller_type: DCT, device_id: str):
         super().__init__()
 
-        self.setWindowTitle(&#34;Hexapod PUNA Controller&#34;)
+        self.dct = device_controller_type
 
-        self.actuator_states = ActuatorStates(labels=ACTUATOR_STATE_LABELS)
+        if self.dct == DCT.ALPHA:
+            title = f&#34;Hexapod PUNA Controller (Alpha) – {device_id}&#34;
+        else:
+            title = f&#34;Hexapod PUNA Controller (Alpha+) – {device_id}&#34;
+
+        self.setWindowTitle(title)
+        self.actuator_states = ActuatorStates(labels=ACTUATOR_STATE_LABELS[self.dct])
 
         self.init_gui()
 
@@ -649,7 +839,7 @@ inheritance.</p></div>
         self.createToolbar()
         self.createStatusBar()
 
-        self.states = States(STATUS_LEDS)
+        self.states = States(STATUS_LEDS[self.dct])
 
         user_positions_widget = self.createUserPositionWidget()
         mach_positions_widget = self.createMachinePositionWidget()
@@ -689,7 +879,7 @@ inheritance.</p></div>
             self.statusBar().showMessage(message, msecs=timeout)
         if mode:
             self.mode_label.setStyleSheet(
-                f&#34;border: 0; &#34; f&#34;color: {&#39;red&#39; if mode == &#39;Simulator&#39; else &#39;black&#39;};&#34;
+                f&#34;border: 0; &#34; f&#34;color: {&#39;red&#39; if &#39;Simulator&#39; in mode else &#39;black&#39;};&#34;
             )
             self.mode_label.setText(f&#34;mode: {mode}&#34;)
         self.statusBar().repaint()
@@ -725,7 +915,7 @@ inheritance.</p></div>
         if states is None:
             return
 
-        self.updateControlButton(states[CONTROL_ONOFF])
+        self.updateControlButton(states[CONTROL_ONOFF[self.dct]])
         self.states.set_states(states)
 
     def updateControlButton(self, flag):
@@ -788,7 +978,7 @@ inheritance.</p></div>
     self.createToolbar()
     self.createStatusBar()
 
-    self.states = States(STATUS_LEDS)
+    self.states = States(STATUS_LEDS[self.dct])
 
     user_positions_widget = self.createUserPositionWidget()
     mach_positions_widget = self.createMachinePositionWidget()
@@ -888,7 +1078,7 @@ inheritance.</p></div>
     if states is None:
         return
 
-    self.updateControlButton(states[CONTROL_ONOFF])
+    self.updateControlButton(states[CONTROL_ONOFF[self.dct]])
     self.states.set_states(states)</code></pre>
 </details>
 </dd>
@@ -906,7 +1096,7 @@ inheritance.</p></div>
         self.statusBar().showMessage(message, msecs=timeout)
     if mode:
         self.mode_label.setStyleSheet(
-            f&#34;border: 0; &#34; f&#34;color: {&#39;red&#39; if mode == &#39;Simulator&#39; else &#39;black&#39;};&#34;
+            f&#34;border: 0; &#34; f&#34;color: {&#39;red&#39; if &#39;Simulator&#39; in mode else &#39;black&#39;};&#34;
         )
         self.mode_label.setText(f&#34;mode: {mode}&#34;)
     self.statusBar().repaint()</code></pre>
@@ -937,11 +1127,27 @@ inheritance.</p></div>
 <li><h3><a href="#header-classes">Classes</a></h3>
 <ul>
 <li>
+<h4><code><a title="egse.hexapod.symetrie.puna_ui.DeviceControllerType" href="#egse.hexapod.symetrie.puna_ui.DeviceControllerType">DeviceControllerType</a></code></h4>
+<ul class="">
+<li><code><a title="egse.hexapod.symetrie.puna_ui.DeviceControllerType.ALPHA" href="#egse.hexapod.symetrie.puna_ui.DeviceControllerType.ALPHA">ALPHA</a></code></li>
+<li><code><a title="egse.hexapod.symetrie.puna_ui.DeviceControllerType.ALPHA_PLUS" href="#egse.hexapod.symetrie.puna_ui.DeviceControllerType.ALPHA_PLUS">ALPHA_PLUS</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="egse.hexapod.symetrie.puna_ui.DeviceControllerType" href="#egse.hexapod.symetrie.puna_ui.DeviceControllerType">DeviceControllerType</a></code></h4>
+<ul class="">
+<li><code><a title="egse.hexapod.symetrie.puna_ui.DeviceControllerType.ALPHA" href="#egse.hexapod.symetrie.puna_ui.DeviceControllerType.ALPHA">ALPHA</a></code></li>
+<li><code><a title="egse.hexapod.symetrie.puna_ui.DeviceControllerType.ALPHA_PLUS" href="#egse.hexapod.symetrie.puna_ui.DeviceControllerType.ALPHA_PLUS">ALPHA_PLUS</a></code></li>
+</ul>
+</li>
+<li>
 <h4><code><a title="egse.hexapod.symetrie.puna_ui.PunaUIController" href="#egse.hexapod.symetrie.puna_ui.PunaUIController">PunaUIController</a></code></h4>
 </li>
 <li>
 <h4><code><a title="egse.hexapod.symetrie.puna_ui.PunaUIModel" href="#egse.hexapod.symetrie.puna_ui.PunaUIModel">PunaUIModel</a></code></h4>
 <ul class="">
+<li><code><a title="egse.hexapod.symetrie.puna_ui.PunaUIModel.device_id" href="#egse.hexapod.symetrie.puna_ui.PunaUIModel.device_id">device_id</a></code></li>
+<li><code><a title="egse.hexapod.symetrie.puna_ui.PunaUIModel.get_device_controller_type" href="#egse.hexapod.symetrie.puna_ui.PunaUIModel.get_device_controller_type">get_device_controller_type</a></code></li>
 <li><code><a title="egse.hexapod.symetrie.puna_ui.PunaUIModel.get_speed" href="#egse.hexapod.symetrie.puna_ui.PunaUIModel.get_speed">get_speed</a></code></li>
 </ul>
 </li>

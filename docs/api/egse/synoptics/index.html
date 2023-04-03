@@ -28,6 +28,7 @@
 </summary>
 <pre><code class="python">import logging
 import os
+from pathlib import Path
 
 import numpy as np
 import pandas
@@ -38,13 +39,14 @@ from egse.control import ControlServer
 from egse.control import Failure
 from egse.control import is_control_server_active
 from egse.decorators import dynamic_interface
+from egse.env import get_data_storage_location
 from egse.hk import TmDictionaryColumns
 from egse.metrics import define_metrics
 from egse.obsid import obsid_from_storage
 from egse.protocol import CommandProtocol
 from egse.proxy import Proxy
-from egse.resource import get_resource
 from egse.settings import Settings
+from egse.state import GlobalState
 from egse.storage import StorageProxy
 from egse.storage import is_storage_manager_active
 from egse.storage import register_to_storage_manager
@@ -198,13 +200,21 @@ class SynopticsManagerController(SynopticsManagerInterface):
 
             logger.error(&#34;No Storage Manager available!!!!&#34;)
 
-        self.syn_names, self.original_name_egse, self.original_name_th = read_hk_info()
-
         # Register to storage
 
+        self.syn_names = read_all_syn_names()
         self.register_to_storage()
 
+        self.hk_info_read = False
+        self.original_name_egse, self.original_name_th = None, None
+
+        self.synoptics_metrics = None
+
+    def read_hk_info(self):
+        self.syn_names, self.original_name_egse, self.original_name_th = read_hk_info()
         self.synoptics_metrics = define_metrics(ORIGIN)
+
+        self.hk_info_read = True
 
     def register_to_storage(self):
         &#34;&#34;&#34; Register the Synoptics Manager to the storage.
@@ -220,6 +230,9 @@ class SynopticsManagerController(SynopticsManagerInterface):
         Args:
             - common_hk: Non-TH-specific HK that needs to be included in the synoptics.
         &#34;&#34;&#34;
+
+        if not self.hk_info_read:
+            self.read_hk_info()
 
         common_synoptics = {}
 
@@ -244,6 +257,9 @@ class SynopticsManagerController(SynopticsManagerInterface):
             - th_hk: TH-specific HK that needs to be included in the synoptics.
         &#34;&#34;&#34;
 
+        if not self.hk_info_read:
+            self.read_hk_info()
+
         th_synoptics = {}
 
         for hk_name, cal_value in th_hk.items():
@@ -257,7 +273,7 @@ class SynopticsManagerController(SynopticsManagerInterface):
                 # do add the timestamp although it&#39;s not in the tm-dictionary
                 if hk_name == &#34;timestamp&#34;:
                     th_synoptics[hk_name] = cal_value
-                    
+
         self.store_synoptics(th_synoptics)
 
     def store_synoptics(self, synoptics: dict):
@@ -285,17 +301,26 @@ class SynopticsManagerController(SynopticsManagerInterface):
             - name: Name of the synoptical parameter and its metrics.
             - value: Value to store in the given metrics.
         &#34;&#34;&#34;
-        
+
+        if not self.hk_info_read:
+            self.read_hk_info()
+
         try:
             self.synoptics_metrics[name].set(value)
         except KeyError:
             logger.debug(f&#34;Cannot store synoptics metrics: {name} is not a synoptical parameter&#34;)
 
 
-def read_hk_info():
+def read_hk_info() -&gt; (dict, dict):
+    &#34;&#34;&#34; Read the table with the HK information, i.e. the TM dictionary.
 
-    filename = get_resource(f&#34;:/data/tm-dictionary.csv&#34;)
-    hk_info_table = pandas.read_csv(filename, sep=&#34;;&#34;)
+    Returns:
+        - List with the name of the timestamp and synoptics
+        - Dictionary with the original name at the TH you are currently at
+        - Dictionary with the original name from the EGSE (not TH-specific)
+    &#34;&#34;&#34;
+
+    hk_info_table = GlobalState.setup.telemetry.dictionary
 
     syn_selection = np.where(hk_info_table[TmDictionaryColumns.STORAGE_MNEMONIC].values == ORIGIN)
     syn_names = hk_info_table[TmDictionaryColumns.CORRECT_HK_NAMES].values[syn_selection]
@@ -320,6 +345,39 @@ def read_hk_info():
     syn_names = np.concatenate(([&#34;timestamp&#34;], syn_names))
 
     return syn_names, original_name_egse, original_name_th
+
+
+def read_all_syn_names():
+    &#34;&#34;&#34; Return all synoptical names that have been used so far.
+
+    Not all camera models will use the same synoptics: this is defined in the TM dictionary that is mentioned in the
+    setup.  Since the Synoptical Manager is a core process, it will be started before a setup is loaded, so it cannot
+    determine the names of the columns of its HK file from there. However, at start-up, the column names need to be
+    known, for the registration to the Storage Manager.
+
+    The work-around is to read the synoptical names from all TM dictionaries that have been used to far, and use those.
+
+    Returns: Synoptical names used for all camera models so far.
+    &#34;&#34;&#34;
+
+    tm_location_dir = Path(os.environ[&#34;PLATO_CONF_REPO_LOCATION&#34;]) / &#34;data&#34; / &#34;common&#34; / &#34;telemetry&#34;
+    tm_filenames = os.listdir(tm_location_dir)
+
+    all_syn_names = np.array([])
+
+    for tm_filename in tm_filenames:
+        if tm_filename.endswith(&#34;.csv&#34;):
+            tm_filepath = tm_location_dir / tm_filename
+            hk_info_table = pandas.read_csv(tm_filepath, sep=&#34;;&#34;)
+
+            syn_selection = np.where(hk_info_table[TmDictionaryColumns.STORAGE_MNEMONIC].values == ORIGIN)
+            syn_names = hk_info_table[TmDictionaryColumns.CORRECT_HK_NAMES].values[syn_selection]
+
+            all_syn_names = np.append(all_syn_names, syn_names)
+
+    all_syn_names = np.unique(all_syn_names)
+    
+    return np.concatenate(([&#34;timestamp&#34;], all_syn_names))
 
 
 class SynopticsManagerProxy(Proxy, SynopticsManagerInterface):
@@ -351,15 +409,19 @@ class SynopticsManagerProxy(Proxy, SynopticsManagerInterface):
 
 
 def get_synoptics_table(obsid: str, data_dir=None):
-    &#34;&#34;&#34; Read and return the synoptics table for the given obsid as a pandas DataFrame.
+    &#34;&#34;&#34;
+    Read and return the synoptics table for the given obsid as a pandas DataFrame.
 
     Args:
-        - obsid: Observation identifier [TEST_LAB or TEST_LAB_SETUP].
+        obsid: Observation identifier [TEST_LAB or TEST_LAB_SETUP].
+        data_dir: Folder (with sub-folders /daily and /obs) in which the data files are stored. If this argument is not
+            provided, the data_dir will be determined from the environment variable PLATO_DATA_STORAGE_LOCATION.
 
-    Returns: Synoptics table for the given obsid as a pandas DataFrame.
+    Returns:
+        Synoptics table for the given obsid as a pandas DataFrame.
     &#34;&#34;&#34;
 
-    data_dir = data_dir or os.environ[&#39;PLATO_DATA_STORAGE_LOCATION&#39;]
+    data_dir = data_dir or get_data_storage_location()
 
     obsid = obsid_from_storage(obsid, data_dir=data_dir)
     obs_dir = f&#34;{data_dir}/obs/{obsid}&#34;  # Where the synoptics file is stored
@@ -398,24 +460,33 @@ def get_synoptics_table(obsid: str, data_dir=None):
 <dd>
 <div class="desc"><p>Read and return the synoptics table for the given obsid as a pandas DataFrame.</p>
 <h2 id="args">Args</h2>
-<ul>
-<li>obsid: Observation identifier [TEST_LAB or TEST_LAB_SETUP].
-Returns: Synoptics table for the given obsid as a pandas DataFrame.</li>
-</ul></div>
+<dl>
+<dt><strong><code>obsid</code></strong></dt>
+<dd>Observation identifier [TEST_LAB or TEST_LAB_SETUP].</dd>
+<dt><strong><code>data_dir</code></strong></dt>
+<dd>Folder (with sub-folders /daily and /obs) in which the data files are stored. If this argument is not
+provided, the data_dir will be determined from the environment variable PLATO_DATA_STORAGE_LOCATION.</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<p>Synoptics table for the given obsid as a pandas DataFrame.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def get_synoptics_table(obsid: str, data_dir=None):
-    &#34;&#34;&#34; Read and return the synoptics table for the given obsid as a pandas DataFrame.
+    &#34;&#34;&#34;
+    Read and return the synoptics table for the given obsid as a pandas DataFrame.
 
     Args:
-        - obsid: Observation identifier [TEST_LAB or TEST_LAB_SETUP].
+        obsid: Observation identifier [TEST_LAB or TEST_LAB_SETUP].
+        data_dir: Folder (with sub-folders /daily and /obs) in which the data files are stored. If this argument is not
+            provided, the data_dir will be determined from the environment variable PLATO_DATA_STORAGE_LOCATION.
 
-    Returns: Synoptics table for the given obsid as a pandas DataFrame.
+    Returns:
+        Synoptics table for the given obsid as a pandas DataFrame.
     &#34;&#34;&#34;
 
-    data_dir = data_dir or os.environ[&#39;PLATO_DATA_STORAGE_LOCATION&#39;]
+    data_dir = data_dir or get_data_storage_location()
 
     obsid = obsid_from_storage(obsid, data_dir=data_dir)
     obs_dir = f&#34;{data_dir}/obs/{obsid}&#34;  # Where the synoptics file is stored
@@ -459,19 +530,80 @@ Returns: Synoptics table for the given obsid as a pandas DataFrame.</li>
     return is_control_server_active(endpoint, timeout)</code></pre>
 </details>
 </dd>
-<dt id="egse.synoptics.read_hk_info"><code class="name flex">
-<span>def <span class="ident">read_hk_info</span></span>(<span>)</span>
+<dt id="egse.synoptics.read_all_syn_names"><code class="name flex">
+<span>def <span class="ident">read_all_syn_names</span></span>(<span>)</span>
 </code></dt>
 <dd>
-<div class="desc"></div>
+<div class="desc"><p>Return all synoptical names that have been used so far.</p>
+<p>Not all camera models will use the same synoptics: this is defined in the TM dictionary that is mentioned in the
+setup.
+Since the Synoptical Manager is a core process, it will be started before a setup is loaded, so it cannot
+determine the names of the columns of its HK file from there. However, at start-up, the column names need to be
+known, for the registration to the Storage Manager.</p>
+<p>The work-around is to read the synoptical names from all TM dictionaries that have been used to far, and use those.</p>
+<p>Returns: Synoptical names used for all camera models so far.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def read_hk_info():
+<pre><code class="python">def read_all_syn_names():
+    &#34;&#34;&#34; Return all synoptical names that have been used so far.
 
-    filename = get_resource(f&#34;:/data/tm-dictionary.csv&#34;)
-    hk_info_table = pandas.read_csv(filename, sep=&#34;;&#34;)
+    Not all camera models will use the same synoptics: this is defined in the TM dictionary that is mentioned in the
+    setup.  Since the Synoptical Manager is a core process, it will be started before a setup is loaded, so it cannot
+    determine the names of the columns of its HK file from there. However, at start-up, the column names need to be
+    known, for the registration to the Storage Manager.
+
+    The work-around is to read the synoptical names from all TM dictionaries that have been used to far, and use those.
+
+    Returns: Synoptical names used for all camera models so far.
+    &#34;&#34;&#34;
+
+    tm_location_dir = Path(os.environ[&#34;PLATO_CONF_REPO_LOCATION&#34;]) / &#34;data&#34; / &#34;common&#34; / &#34;telemetry&#34;
+    tm_filenames = os.listdir(tm_location_dir)
+
+    all_syn_names = np.array([])
+
+    for tm_filename in tm_filenames:
+        if tm_filename.endswith(&#34;.csv&#34;):
+            tm_filepath = tm_location_dir / tm_filename
+            hk_info_table = pandas.read_csv(tm_filepath, sep=&#34;;&#34;)
+
+            syn_selection = np.where(hk_info_table[TmDictionaryColumns.STORAGE_MNEMONIC].values == ORIGIN)
+            syn_names = hk_info_table[TmDictionaryColumns.CORRECT_HK_NAMES].values[syn_selection]
+
+            all_syn_names = np.append(all_syn_names, syn_names)
+
+    all_syn_names = np.unique(all_syn_names)
+    
+    return np.concatenate(([&#34;timestamp&#34;], all_syn_names))</code></pre>
+</details>
+</dd>
+<dt id="egse.synoptics.read_hk_info"><code class="name flex">
+<span>def <span class="ident">read_hk_info</span></span>(<span>) ‑> (<class 'dict'>, <class 'dict'>)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Read the table with the HK information, i.e. the TM dictionary.</p>
+<h2 id="returns">Returns</h2>
+<ul>
+<li>List with the name of the timestamp and synoptics</li>
+<li>Dictionary with the original name at the TH you are currently at</li>
+<li>Dictionary with the original name from the EGSE (not TH-specific)</li>
+</ul></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def read_hk_info() -&gt; (dict, dict):
+    &#34;&#34;&#34; Read the table with the HK information, i.e. the TM dictionary.
+
+    Returns:
+        - List with the name of the timestamp and synoptics
+        - Dictionary with the original name at the TH you are currently at
+        - Dictionary with the original name from the EGSE (not TH-specific)
+    &#34;&#34;&#34;
+
+    hk_info_table = GlobalState.setup.telemetry.dictionary
 
     syn_selection = np.where(hk_info_table[TmDictionaryColumns.STORAGE_MNEMONIC].values == ORIGIN)
     syn_names = hk_info_table[TmDictionaryColumns.CORRECT_HK_NAMES].values[syn_selection]
@@ -562,13 +694,21 @@ Returns: Synoptics table for the given obsid as a pandas DataFrame.</li>
 
             logger.error(&#34;No Storage Manager available!!!!&#34;)
 
-        self.syn_names, self.original_name_egse, self.original_name_th = read_hk_info()
-
         # Register to storage
 
+        self.syn_names = read_all_syn_names()
         self.register_to_storage()
 
+        self.hk_info_read = False
+        self.original_name_egse, self.original_name_th = None, None
+
+        self.synoptics_metrics = None
+
+    def read_hk_info(self):
+        self.syn_names, self.original_name_egse, self.original_name_th = read_hk_info()
         self.synoptics_metrics = define_metrics(ORIGIN)
+
+        self.hk_info_read = True
 
     def register_to_storage(self):
         &#34;&#34;&#34; Register the Synoptics Manager to the storage.
@@ -584,6 +724,9 @@ Returns: Synoptics table for the given obsid as a pandas DataFrame.</li>
         Args:
             - common_hk: Non-TH-specific HK that needs to be included in the synoptics.
         &#34;&#34;&#34;
+
+        if not self.hk_info_read:
+            self.read_hk_info()
 
         common_synoptics = {}
 
@@ -608,6 +751,9 @@ Returns: Synoptics table for the given obsid as a pandas DataFrame.</li>
             - th_hk: TH-specific HK that needs to be included in the synoptics.
         &#34;&#34;&#34;
 
+        if not self.hk_info_read:
+            self.read_hk_info()
+
         th_synoptics = {}
 
         for hk_name, cal_value in th_hk.items():
@@ -621,7 +767,7 @@ Returns: Synoptics table for the given obsid as a pandas DataFrame.</li>
                 # do add the timestamp although it&#39;s not in the tm-dictionary
                 if hk_name == &#34;timestamp&#34;:
                     th_synoptics[hk_name] = cal_value
-                    
+
         self.store_synoptics(th_synoptics)
 
     def store_synoptics(self, synoptics: dict):
@@ -649,7 +795,10 @@ Returns: Synoptics table for the given obsid as a pandas DataFrame.</li>
             - name: Name of the synoptical parameter and its metrics.
             - value: Value to store in the given metrics.
         &#34;&#34;&#34;
-        
+
+        if not self.hk_info_read:
+            self.read_hk_info()
+
         try:
             self.synoptics_metrics[name].set(value)
         except KeyError:
@@ -661,6 +810,22 @@ Returns: Synoptics table for the given obsid as a pandas DataFrame.</li>
 </ul>
 <h3>Methods</h3>
 <dl>
+<dt id="egse.synoptics.SynopticsManagerController.read_hk_info"><code class="name flex">
+<span>def <span class="ident">read_hk_info</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def read_hk_info(self):
+    self.syn_names, self.original_name_egse, self.original_name_th = read_hk_info()
+    self.synoptics_metrics = define_metrics(ORIGIN)
+
+    self.hk_info_read = True</code></pre>
+</details>
+</dd>
 <dt id="egse.synoptics.SynopticsManagerController.register_to_storage"><code class="name flex">
 <span>def <span class="ident">register_to_storage</span></span>(<span>self)</span>
 </code></dt>
@@ -700,6 +865,9 @@ Returns: Synoptics table for the given obsid as a pandas DataFrame.</li>
         - common_hk: Non-TH-specific HK that needs to be included in the synoptics.
     &#34;&#34;&#34;
 
+    if not self.hk_info_read:
+        self.read_hk_info()
+
     common_synoptics = {}
 
     for hk_name, cal_value in common_hk.items():
@@ -738,7 +906,10 @@ Returns: Synoptics table for the given obsid as a pandas DataFrame.</li>
         - name: Name of the synoptical parameter and its metrics.
         - value: Value to store in the given metrics.
     &#34;&#34;&#34;
-    
+
+    if not self.hk_info_read:
+        self.read_hk_info()
+
     try:
         self.synoptics_metrics[name].set(value)
     except KeyError:
@@ -793,6 +964,9 @@ Returns: Synoptics table for the given obsid as a pandas DataFrame.</li>
         - th_hk: TH-specific HK that needs to be included in the synoptics.
     &#34;&#34;&#34;
 
+    if not self.hk_info_read:
+        self.read_hk_info()
+
     th_synoptics = {}
 
     for hk_name, cal_value in th_hk.items():
@@ -806,7 +980,7 @@ Returns: Synoptics table for the given obsid as a pandas DataFrame.</li>
             # do add the timestamp although it&#39;s not in the tm-dictionary
             if hk_name == &#34;timestamp&#34;:
                 th_synoptics[hk_name] = cal_value
-                
+
     self.store_synoptics(th_synoptics)</code></pre>
 </details>
 </dd>
@@ -1211,6 +1385,7 @@ these are taken from the settings file.</p>
 <ul class="">
 <li><code><a title="egse.synoptics.get_synoptics_table" href="#egse.synoptics.get_synoptics_table">get_synoptics_table</a></code></li>
 <li><code><a title="egse.synoptics.is_synoptics_manager_active" href="#egse.synoptics.is_synoptics_manager_active">is_synoptics_manager_active</a></code></li>
+<li><code><a title="egse.synoptics.read_all_syn_names" href="#egse.synoptics.read_all_syn_names">read_all_syn_names</a></code></li>
 <li><code><a title="egse.synoptics.read_hk_info" href="#egse.synoptics.read_hk_info">read_hk_info</a></code></li>
 </ul>
 </li>
@@ -1222,6 +1397,7 @@ these are taken from the settings file.</p>
 <li>
 <h4><code><a title="egse.synoptics.SynopticsManagerController" href="#egse.synoptics.SynopticsManagerController">SynopticsManagerController</a></code></h4>
 <ul class="">
+<li><code><a title="egse.synoptics.SynopticsManagerController.read_hk_info" href="#egse.synoptics.SynopticsManagerController.read_hk_info">read_hk_info</a></code></li>
 <li><code><a title="egse.synoptics.SynopticsManagerController.register_to_storage" href="#egse.synoptics.SynopticsManagerController.register_to_storage">register_to_storage</a></code></li>
 <li><code><a title="egse.synoptics.SynopticsManagerController.store_common_synoptics" href="#egse.synoptics.SynopticsManagerController.store_common_synoptics">store_common_synoptics</a></code></li>
 <li><code><a title="egse.synoptics.SynopticsManagerController.store_metrics" href="#egse.synoptics.SynopticsManagerController.store_metrics">store_metrics</a></code></li>

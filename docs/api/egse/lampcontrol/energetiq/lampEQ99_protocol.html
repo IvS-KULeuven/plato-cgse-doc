@@ -36,9 +36,10 @@ from egse.lampcontrol.energetiq.lampEQ99_devif import LampEQ99Command
 from egse.synoptics import SynopticsManagerProxy
 from egse.system import format_datetime
 from egse.zmq_ser import bind_address
+from egse.lampcontrol.energetiq.lampEQ99_encode_decode_errors import encode_lamp_errors
 
 COMMAND_SETTINGS = Settings.load(filename=&#34;eq99.yaml&#34;)
-
+SITE_ID = Settings.load(&#34;SITE&#34;).ID
 
 class LampEQ99Protocol(CommandProtocol):
     def __init__(self, control_server: ControlServer):
@@ -73,16 +74,19 @@ class LampEQ99Protocol(CommandProtocol):
         _enable = self.lamp.get_lamp()
         _status = self.lamp.get_lamp_status()
         _time = self.lamp.get_lamp_time()
-        _errors = self.lamp.lamp_errors()
 
-        _data = [_enable, _status, _time, _errors]
+        errors = self.lamp.lamp_errors()
+        list_code_errors = [int(error) for error in errors[len(&#34;Error Message: &#34;):].split(&#34;,&#34;)[::2]]
+        _encoded_errors = encode_lamp_errors(list_code_errors)
+
+        _data = [_enable, _status, _time, _encoded_errors]
 
         # TODO Incl. the laser status
 
-        for idx, key in enumerate([&#34;GIAS_LAMP_ON&#34;, &#34;GIAS_LAMP_STATUS&#34;, &#34;GIAS_LAMP_ON_TIME&#34;, &#34;GIAS_LAMP_ERRORS&#34;]):
+        for idx, key in enumerate([f&#34;G{SITE_ID}_LAMP_ON&#34;, f&#34;G{SITE_ID}_LAMP_STATUS&#34;, f&#34;G{SITE_ID}_LAMP_ON_TIME&#34;, f&#34;G{SITE_ID}_LAMP_ERRORS&#34;]):
             result[key] = _data[idx]
 
-        # TODO Incl. laser status (&#34;GIAS_LASER_ON&#34;) -&gt; also update the TM dictionary
+        # TODO Incl. laser status (&#34;G{SITE_ID}_LASER_ON&#34;) -&gt; also update the TM dictionary
 
         for key, value in result.items():
             if key != &#34;timestamp&#34;:
@@ -152,16 +156,19 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
         _enable = self.lamp.get_lamp()
         _status = self.lamp.get_lamp_status()
         _time = self.lamp.get_lamp_time()
-        _errors = self.lamp.lamp_errors()
 
-        _data = [_enable, _status, _time, _errors]
+        errors = self.lamp.lamp_errors()
+        list_code_errors = [int(error) for error in errors[len(&#34;Error Message: &#34;):].split(&#34;,&#34;)[::2]]
+        _encoded_errors = encode_lamp_errors(list_code_errors)
+
+        _data = [_enable, _status, _time, _encoded_errors]
 
         # TODO Incl. the laser status
 
-        for idx, key in enumerate([&#34;GIAS_LAMP_ON&#34;, &#34;GIAS_LAMP_STATUS&#34;, &#34;GIAS_LAMP_ON_TIME&#34;, &#34;GIAS_LAMP_ERRORS&#34;]):
+        for idx, key in enumerate([f&#34;G{SITE_ID}_LAMP_ON&#34;, f&#34;G{SITE_ID}_LAMP_STATUS&#34;, f&#34;G{SITE_ID}_LAMP_ON_TIME&#34;, f&#34;G{SITE_ID}_LAMP_ERRORS&#34;]):
             result[key] = _data[idx]
 
-        # TODO Incl. laser status (&#34;GIAS_LASER_ON&#34;) -&gt; also update the TM dictionary
+        # TODO Incl. laser status (&#34;G{SITE_ID}_LASER_ON&#34;) -&gt; also update the TM dictionary
 
         for key, value in result.items():
             if key != &#34;timestamp&#34;:

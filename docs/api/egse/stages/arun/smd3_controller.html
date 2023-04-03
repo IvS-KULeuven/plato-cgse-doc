@@ -37,6 +37,7 @@ from egse.serialdevice import SerialDevice
 from egse.command import Command
 from egse.settings import Settings
 from egse.stages.arun.smd3_interface import Smd3Interface
+from egse.state import GlobalState
 
 logger = logging.getLogger(&#39;smd3_controller&#39;)
 
@@ -82,15 +83,19 @@ SFLAGS = {
 
 class Smd3Controller(SerialDevice, Smd3Interface):
     STEP_SIZE_MM        = 5E-3 # step size (5um) but in mm
-    IN_FOV_POSITION     = 37800
+
     def __init__(self, port=&#39;/dev/smd3&#39;, baudrate=115200):
         # Load device configuration from the common-egse global config file
         self._port              = DEVICE_SETTINGS.PORT if port is None else port
         self._baudrate          = DEVICE_SETTINGS.BAUDRATE if baudrate is None else baudrate
+        
+        setup = GlobalState.setup
+        self._in_fov_position = setup.gse.smd3.configuration.in_fov_position
 
         self.status = {}
         self.fault  = {}
         self.homed  = False
+        self.homing_thread = None
         self.limits = {&#39;positive&#39;:None, 
                        &#39;negative&#39;:None}
         
@@ -101,9 +106,7 @@ class Smd3Controller(SerialDevice, Smd3Interface):
         # Clear any triggered flags
         self.clear_flags()
         
-        # Attempt to home the hartmann mask
-        home_thread = Thread(target=self.homing_procedure, daemon=True)
-        home_thread.start()
+        self.configure_limits()
         
     # General methods
     def get_idn(self):
@@ -344,23 +347,11 @@ class Smd3Controller(SerialDevice, Smd3Interface):
     
     def configure_homing(self):
         self.select_mode(Smd3Mode.HOME)
-        self.acceleration(100)
-        self.deceleration(100)
-        self.acceleration_current(0.150)
-        self.hold_current(0)
-        self.run_current(0.150)
-        self.start_frequency(10)
-        self.target_frequency(1000)
+        self.target_frequency(100)
     
     def configure_remote(self):
         self.select_mode(Smd3Mode.REMOTE)
-        self.acceleration(100)
-        self.deceleration(100)
-        self.acceleration_current(0.150)
-        self.hold_current(0)
-        self.run_current(0.150)
-        self.start_frequency(10)
-        self.target_frequency(2000)
+        self.target_frequency(500)
     
     def save_status(self, status_word):
         for bits, name in SFLAGS.items():
@@ -370,7 +361,36 @@ class Smd3Controller(SerialDevice, Smd3Interface):
         for bits, name in EFLAGS.items():
             self.fault[name]  = bool(int(error_word, 0) &amp; (1 &lt;&lt; bits))
     
-    def homing_procedure(self):
+    def run_homing(self):
+        if self.homing_thread is not None:
+            if self.homing_thread.is_alive():
+                return
+        
+        self.homing_thread = Thread(target=self.hardware_homing_procedure)
+        self.homing_thread.start()
+    
+    def software_homing_procedure(self):
+        logger.info(&#34;Starting homing procedure...&#34;)
+        logger.info(&#34;Moving into the end stop&#34;)
+        
+        self.relative_move(-100000)
+
+        # until we stop moving
+        time.sleep(0.1)
+        _, _, velocity = self.actual_frequency()
+        while float(velocity) != 0.0:
+            _, _, velocity = self.actual_frequency()
+            time.sleep(1)
+            
+        time.sleep(0.1)
+    
+        self.actual_position(0.0)
+        self.limits[&#39;negative&#39;] = 0
+        
+        self.homed = True
+        logger.info(&#34;Homing procedure completed!&#34;)
+    
+    def hardware_homing_procedure(self):
         self.configure_homing()
         self.configure_limits()
         logger.info(&#34;Starting homing procedure...&#34;)
@@ -392,25 +412,6 @@ class Smd3Controller(SerialDevice, Smd3Interface):
          # Reset actual position
         self.actual_position(0.0)
         self.limits[&#39;negative&#39;] = 0
-        logger.info(&#34;Negative home found! Negative home at: 0&#34;)
-
-        # Positive homing procedure
-        # Home postive side
-        self.home(&#39;+&#39;)
-
-        # Wait until we start moving
-        time.sleep(0.1)
-        _, _, velocity = self.actual_frequency()
-        while float(velocity) != 0.0:
-            _, _, velocity = self.actual_frequency()
-            time.sleep(1)
-
-        # Wait a little bit until we actually stopped
-        time.sleep(0.1)
-        
-        _, _, position = self.actual_position()
-        self.limits[&#39;positive&#39;] = float(position)
-        logger.info(&#34;Positive home found!. Positive home at: {}&#34;.format(position))
 
         self.homed = True
         
@@ -421,7 +422,7 @@ class Smd3Controller(SerialDevice, Smd3Interface):
     def move_mask_fov(self, enable: bool):
         if self.homed:
             if enable:
-                self.absolute_move(self.IN_FOV_POSITION)
+                self.absolute_move(self._in_fov_position)
             else:
                 self.absolute_move(self.limits[&#39;negative&#39;])
         else:
@@ -430,7 +431,7 @@ class Smd3Controller(SerialDevice, Smd3Interface):
     def mask_in_fov(self):
         if self.homed:
             _, _, position = self.actual_position()
-            if self.limits[&#39;positive&#39;] - 1 &lt;= round(float(position)) &lt;= self.limits[&#39;positive&#39;] + 1:
+            if self._in_fov_position - 1 &lt;= round(float(position)) &lt;= self._in_fov_position + 1:
                 return True
             else:
                 return False
@@ -562,15 +563,19 @@ if __name__ == &#39;__main__&#39;:
 </summary>
 <pre><code class="python">class Smd3Controller(SerialDevice, Smd3Interface):
     STEP_SIZE_MM        = 5E-3 # step size (5um) but in mm
-    IN_FOV_POSITION     = 37800
+
     def __init__(self, port=&#39;/dev/smd3&#39;, baudrate=115200):
         # Load device configuration from the common-egse global config file
         self._port              = DEVICE_SETTINGS.PORT if port is None else port
         self._baudrate          = DEVICE_SETTINGS.BAUDRATE if baudrate is None else baudrate
+        
+        setup = GlobalState.setup
+        self._in_fov_position = setup.gse.smd3.configuration.in_fov_position
 
         self.status = {}
         self.fault  = {}
         self.homed  = False
+        self.homing_thread = None
         self.limits = {&#39;positive&#39;:None, 
                        &#39;negative&#39;:None}
         
@@ -581,9 +586,7 @@ if __name__ == &#39;__main__&#39;:
         # Clear any triggered flags
         self.clear_flags()
         
-        # Attempt to home the hartmann mask
-        home_thread = Thread(target=self.homing_procedure, daemon=True)
-        home_thread.start()
+        self.configure_limits()
         
     # General methods
     def get_idn(self):
@@ -824,23 +827,11 @@ if __name__ == &#39;__main__&#39;:
     
     def configure_homing(self):
         self.select_mode(Smd3Mode.HOME)
-        self.acceleration(100)
-        self.deceleration(100)
-        self.acceleration_current(0.150)
-        self.hold_current(0)
-        self.run_current(0.150)
-        self.start_frequency(10)
-        self.target_frequency(1000)
+        self.target_frequency(100)
     
     def configure_remote(self):
         self.select_mode(Smd3Mode.REMOTE)
-        self.acceleration(100)
-        self.deceleration(100)
-        self.acceleration_current(0.150)
-        self.hold_current(0)
-        self.run_current(0.150)
-        self.start_frequency(10)
-        self.target_frequency(2000)
+        self.target_frequency(500)
     
     def save_status(self, status_word):
         for bits, name in SFLAGS.items():
@@ -850,7 +841,36 @@ if __name__ == &#39;__main__&#39;:
         for bits, name in EFLAGS.items():
             self.fault[name]  = bool(int(error_word, 0) &amp; (1 &lt;&lt; bits))
     
-    def homing_procedure(self):
+    def run_homing(self):
+        if self.homing_thread is not None:
+            if self.homing_thread.is_alive():
+                return
+        
+        self.homing_thread = Thread(target=self.hardware_homing_procedure)
+        self.homing_thread.start()
+    
+    def software_homing_procedure(self):
+        logger.info(&#34;Starting homing procedure...&#34;)
+        logger.info(&#34;Moving into the end stop&#34;)
+        
+        self.relative_move(-100000)
+
+        # until we stop moving
+        time.sleep(0.1)
+        _, _, velocity = self.actual_frequency()
+        while float(velocity) != 0.0:
+            _, _, velocity = self.actual_frequency()
+            time.sleep(1)
+            
+        time.sleep(0.1)
+    
+        self.actual_position(0.0)
+        self.limits[&#39;negative&#39;] = 0
+        
+        self.homed = True
+        logger.info(&#34;Homing procedure completed!&#34;)
+    
+    def hardware_homing_procedure(self):
         self.configure_homing()
         self.configure_limits()
         logger.info(&#34;Starting homing procedure...&#34;)
@@ -872,25 +892,6 @@ if __name__ == &#39;__main__&#39;:
          # Reset actual position
         self.actual_position(0.0)
         self.limits[&#39;negative&#39;] = 0
-        logger.info(&#34;Negative home found! Negative home at: 0&#34;)
-
-        # Positive homing procedure
-        # Home postive side
-        self.home(&#39;+&#39;)
-
-        # Wait until we start moving
-        time.sleep(0.1)
-        _, _, velocity = self.actual_frequency()
-        while float(velocity) != 0.0:
-            _, _, velocity = self.actual_frequency()
-            time.sleep(1)
-
-        # Wait a little bit until we actually stopped
-        time.sleep(0.1)
-        
-        _, _, position = self.actual_position()
-        self.limits[&#39;positive&#39;] = float(position)
-        logger.info(&#34;Positive home found!. Positive home at: {}&#34;.format(position))
 
         self.homed = True
         
@@ -901,7 +902,7 @@ if __name__ == &#39;__main__&#39;:
     def move_mask_fov(self, enable: bool):
         if self.homed:
             if enable:
-                self.absolute_move(self.IN_FOV_POSITION)
+                self.absolute_move(self._in_fov_position)
             else:
                 self.absolute_move(self.limits[&#39;negative&#39;])
         else:
@@ -910,7 +911,7 @@ if __name__ == &#39;__main__&#39;:
     def mask_in_fov(self):
         if self.homed:
             _, _, position = self.actual_position()
-            if self.limits[&#39;positive&#39;] - 1 &lt;= round(float(position)) &lt;= self.limits[&#39;positive&#39;] + 1:
+            if self._in_fov_position - 1 &lt;= round(float(position)) &lt;= self._in_fov_position + 1:
                 return True
             else:
                 return False
@@ -962,10 +963,6 @@ if __name__ == &#39;__main__&#39;:
 </ul>
 <h3>Class variables</h3>
 <dl>
-<dt id="egse.stages.arun.smd3_controller.Smd3Controller.IN_FOV_POSITION"><code class="name">var <span class="ident">IN_FOV_POSITION</span></code></dt>
-<dd>
-<div class="desc"></div>
-</dd>
 <dt id="egse.stages.arun.smd3_controller.Smd3Controller.STEP_SIZE_MM"><code class="name">var <span class="ident">STEP_SIZE_MM</span></code></dt>
 <dd>
 <div class="desc"></div>
@@ -1114,13 +1111,7 @@ if __name__ == &#39;__main__&#39;:
 </summary>
 <pre><code class="python">def configure_homing(self):
     self.select_mode(Smd3Mode.HOME)
-    self.acceleration(100)
-    self.deceleration(100)
-    self.acceleration_current(0.150)
-    self.hold_current(0)
-    self.run_current(0.150)
-    self.start_frequency(10)
-    self.target_frequency(1000)</code></pre>
+    self.target_frequency(100)</code></pre>
 </details>
 </dd>
 <dt id="egse.stages.arun.smd3_controller.Smd3Controller.configure_limits"><code class="name flex">
@@ -1153,13 +1144,7 @@ if __name__ == &#39;__main__&#39;:
 </summary>
 <pre><code class="python">def configure_remote(self):
     self.select_mode(Smd3Mode.REMOTE)
-    self.acceleration(100)
-    self.deceleration(100)
-    self.acceleration_current(0.150)
-    self.hold_current(0)
-    self.run_current(0.150)
-    self.start_frequency(10)
-    self.target_frequency(2000)</code></pre>
+    self.target_frequency(500)</code></pre>
 </details>
 </dd>
 <dt id="egse.stages.arun.smd3_controller.Smd3Controller.deceleration"><code class="name flex">
@@ -1262,6 +1247,45 @@ if __name__ == &#39;__main__&#39;:
         return self._query(&#39;L\r\n&#39;)</code></pre>
 </details>
 </dd>
+<dt id="egse.stages.arun.smd3_controller.Smd3Controller.hardware_homing_procedure"><code class="name flex">
+<span>def <span class="ident">hardware_homing_procedure</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def hardware_homing_procedure(self):
+    self.configure_homing()
+    self.configure_limits()
+    logger.info(&#34;Starting homing procedure...&#34;)
+
+    # Negative homing procedure
+    # Home negative side
+    self.home(&#39;-&#39;)
+
+    # Wait until we stat moving
+    time.sleep(0.1)
+    _, _, velocity = self.actual_frequency()
+    while float(velocity) != 0.0:
+        _, _, velocity = self.actual_frequency()
+        time.sleep(1)
+    
+    # Wait a little bit until we actually stopped    
+    time.sleep(0.1)
+    
+     # Reset actual position
+    self.actual_position(0.0)
+    self.limits[&#39;negative&#39;] = 0
+
+    self.homed = True
+    
+    logger.info(&#34;Homing procedure completed!&#34;)
+    
+    self.configure_remote()</code></pre>
+</details>
+</dd>
 <dt id="egse.stages.arun.smd3_controller.Smd3Controller.hold_current"><code class="name flex">
 <span>def <span class="ident">hold_current</span></span>(<span>self, current=None)</span>
 </code></dt>
@@ -1292,64 +1316,6 @@ if __name__ == &#39;__main__&#39;:
         return self._query(&#39;RUNH,{}\r\n&#39;.format(direction))
     else:
         raise Smd3Exception(&#34;Direction can only be &#39;-&#39; or &#39;+&#39;&#34;)</code></pre>
-</details>
-</dd>
-<dt id="egse.stages.arun.smd3_controller.Smd3Controller.homing_procedure"><code class="name flex">
-<span>def <span class="ident">homing_procedure</span></span>(<span>self)</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def homing_procedure(self):
-    self.configure_homing()
-    self.configure_limits()
-    logger.info(&#34;Starting homing procedure...&#34;)
-
-    # Negative homing procedure
-    # Home negative side
-    self.home(&#39;-&#39;)
-
-    # Wait until we stat moving
-    time.sleep(0.1)
-    _, _, velocity = self.actual_frequency()
-    while float(velocity) != 0.0:
-        _, _, velocity = self.actual_frequency()
-        time.sleep(1)
-    
-    # Wait a little bit until we actually stopped    
-    time.sleep(0.1)
-    
-     # Reset actual position
-    self.actual_position(0.0)
-    self.limits[&#39;negative&#39;] = 0
-    logger.info(&#34;Negative home found! Negative home at: 0&#34;)
-
-    # Positive homing procedure
-    # Home postive side
-    self.home(&#39;+&#39;)
-
-    # Wait until we start moving
-    time.sleep(0.1)
-    _, _, velocity = self.actual_frequency()
-    while float(velocity) != 0.0:
-        _, _, velocity = self.actual_frequency()
-        time.sleep(1)
-
-    # Wait a little bit until we actually stopped
-    time.sleep(0.1)
-    
-    _, _, position = self.actual_position()
-    self.limits[&#39;positive&#39;] = float(position)
-    logger.info(&#34;Positive home found!. Positive home at: {}&#34;.format(position))
-
-    self.homed = True
-    
-    logger.info(&#34;Homing procedure completed!&#34;)
-    
-    self.configure_remote()</code></pre>
 </details>
 </dd>
 <dt id="egse.stages.arun.smd3_controller.Smd3Controller.interpolate"><code class="name flex">
@@ -1432,7 +1398,7 @@ if __name__ == &#39;__main__&#39;:
 <pre><code class="python">def mask_in_fov(self):
     if self.homed:
         _, _, position = self.actual_position()
-        if self.limits[&#39;positive&#39;] - 1 &lt;= round(float(position)) &lt;= self.limits[&#39;positive&#39;] + 1:
+        if self._in_fov_position - 1 &lt;= round(float(position)) &lt;= self._in_fov_position + 1:
             return True
         else:
             return False
@@ -1452,7 +1418,7 @@ if __name__ == &#39;__main__&#39;:
 <pre><code class="python">def move_mask_fov(self, enable: bool):
     if self.homed:
         if enable:
-            self.absolute_move(self.IN_FOV_POSITION)
+            self.absolute_move(self._in_fov_position)
         else:
             self.absolute_move(self.limits[&#39;negative&#39;])
     else:
@@ -1626,6 +1592,24 @@ if __name__ == &#39;__main__&#39;:
         return self._query(&#39;IR\r\n&#39;)</code></pre>
 </details>
 </dd>
+<dt id="egse.stages.arun.smd3_controller.Smd3Controller.run_homing"><code class="name flex">
+<span>def <span class="ident">run_homing</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def run_homing(self):
+    if self.homing_thread is not None:
+        if self.homing_thread.is_alive():
+            return
+    
+    self.homing_thread = Thread(target=self.hardware_homing_procedure)
+    self.homing_thread.start()</code></pre>
+</details>
+</dd>
 <dt id="egse.stages.arun.smd3_controller.Smd3Controller.save_fault"><code class="name flex">
 <span>def <span class="ident">save_fault</span></span>(<span>self, error_word)</span>
 </code></dt>
@@ -1697,6 +1681,37 @@ if __name__ == &#39;__main__&#39;:
         return self._query(&#39;FW,{}\r\n&#39;.format(fw))
     else:
         return self._query(&#39;FW\r\n&#39;)</code></pre>
+</details>
+</dd>
+<dt id="egse.stages.arun.smd3_controller.Smd3Controller.software_homing_procedure"><code class="name flex">
+<span>def <span class="ident">software_homing_procedure</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def software_homing_procedure(self):
+    logger.info(&#34;Starting homing procedure...&#34;)
+    logger.info(&#34;Moving into the end stop&#34;)
+    
+    self.relative_move(-100000)
+
+    # until we stop moving
+    time.sleep(0.1)
+    _, _, velocity = self.actual_frequency()
+    while float(velocity) != 0.0:
+        _, _, velocity = self.actual_frequency()
+        time.sleep(1)
+        
+    time.sleep(0.1)
+
+    self.actual_position(0.0)
+    self.limits[&#39;negative&#39;] = 0
+    
+    self.homed = True
+    logger.info(&#34;Homing procedure completed!&#34;)</code></pre>
 </details>
 </dd>
 <dt id="egse.stages.arun.smd3_controller.Smd3Controller.start_frequency"><code class="name flex">
@@ -1933,7 +1948,6 @@ if __name__ == &#39;__main__&#39;:
 <li>
 <h4><code><a title="egse.stages.arun.smd3_controller.Smd3Controller" href="#egse.stages.arun.smd3_controller.Smd3Controller">Smd3Controller</a></code></h4>
 <ul class="">
-<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.IN_FOV_POSITION" href="#egse.stages.arun.smd3_controller.Smd3Controller.IN_FOV_POSITION">IN_FOV_POSITION</a></code></li>
 <li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.STEP_SIZE_MM" href="#egse.stages.arun.smd3_controller.Smd3Controller.STEP_SIZE_MM">STEP_SIZE_MM</a></code></li>
 <li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.absolute_move" href="#egse.stages.arun.smd3_controller.Smd3Controller.absolute_move">absolute_move</a></code></li>
 <li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.acceleration" href="#egse.stages.arun.smd3_controller.Smd3Controller.acceleration">acceleration</a></code></li>
@@ -1954,9 +1968,9 @@ if __name__ == &#39;__main__&#39;:
 <li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.get_temperature" href="#egse.stages.arun.smd3_controller.Smd3Controller.get_temperature">get_temperature</a></code></li>
 <li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.get_version" href="#egse.stages.arun.smd3_controller.Smd3Controller.get_version">get_version</a></code></li>
 <li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.global_limit" href="#egse.stages.arun.smd3_controller.Smd3Controller.global_limit">global_limit</a></code></li>
+<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.hardware_homing_procedure" href="#egse.stages.arun.smd3_controller.Smd3Controller.hardware_homing_procedure">hardware_homing_procedure</a></code></li>
 <li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.hold_current" href="#egse.stages.arun.smd3_controller.Smd3Controller.hold_current">hold_current</a></code></li>
 <li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.home" href="#egse.stages.arun.smd3_controller.Smd3Controller.home">home</a></code></li>
-<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.homing_procedure" href="#egse.stages.arun.smd3_controller.Smd3Controller.homing_procedure">homing_procedure</a></code></li>
 <li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.interpolate" href="#egse.stages.arun.smd3_controller.Smd3Controller.interpolate">interpolate</a></code></li>
 <li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.limit_polarity" href="#egse.stages.arun.smd3_controller.Smd3Controller.limit_polarity">limit_polarity</a></code></li>
 <li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.limit_stop_mode" href="#egse.stages.arun.smd3_controller.Smd3Controller.limit_stop_mode">limit_stop_mode</a></code></li>
@@ -1975,11 +1989,13 @@ if __name__ == &#39;__main__&#39;:
 <li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.relative_position" href="#egse.stages.arun.smd3_controller.Smd3Controller.relative_position">relative_position</a></code></li>
 <li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.resolution" href="#egse.stages.arun.smd3_controller.Smd3Controller.resolution">resolution</a></code></li>
 <li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.run_current" href="#egse.stages.arun.smd3_controller.Smd3Controller.run_current">run_current</a></code></li>
+<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.run_homing" href="#egse.stages.arun.smd3_controller.Smd3Controller.run_homing">run_homing</a></code></li>
 <li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.save_fault" href="#egse.stages.arun.smd3_controller.Smd3Controller.save_fault">save_fault</a></code></li>
 <li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.save_status" href="#egse.stages.arun.smd3_controller.Smd3Controller.save_status">save_status</a></code></li>
 <li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.select_mode" href="#egse.stages.arun.smd3_controller.Smd3Controller.select_mode">select_mode</a></code></li>
 <li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.select_tsensor" href="#egse.stages.arun.smd3_controller.Smd3Controller.select_tsensor">select_tsensor</a></code></li>
 <li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.set_freewheel" href="#egse.stages.arun.smd3_controller.Smd3Controller.set_freewheel">set_freewheel</a></code></li>
+<li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.software_homing_procedure" href="#egse.stages.arun.smd3_controller.Smd3Controller.software_homing_procedure">software_homing_procedure</a></code></li>
 <li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.start_frequency" href="#egse.stages.arun.smd3_controller.Smd3Controller.start_frequency">start_frequency</a></code></li>
 <li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.step_edge" href="#egse.stages.arun.smd3_controller.Smd3Controller.step_edge">step_edge</a></code></li>
 <li><code><a title="egse.stages.arun.smd3_controller.Smd3Controller.stop" href="#egse.stages.arun.smd3_controller.Smd3Controller.stop">stop</a></code></li>

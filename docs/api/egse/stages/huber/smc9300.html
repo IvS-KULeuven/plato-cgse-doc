@@ -345,7 +345,8 @@ class HuberSMC9300Interface(DeviceInterface):
 
     @dynamic_command(
         cmd_type=&#34;write&#34;, cmd_string=&#34;move${axis}:${distance}&#34;,
-        process_cmd_string=process_cmd_string)
+        process_cmd_string=process_cmd_string,
+    )
     def move_direct(self, axis: int, distance: float) -&gt; None:
         &#34;&#34;&#34;
         Moves the stage relative to the current position in the given distance.
@@ -357,6 +358,40 @@ class HuberSMC9300Interface(DeviceInterface):
             distance: when the given axis is a rotation stage, the distance is given
                 in degrees [deg], for a translation stage, the distance is given
                 in millimeter [mm].
+        &#34;&#34;&#34;
+        raise NotImplementedError
+
+    @dynamic_command(
+        cmd_type=&#34;write&#34;, cmd_string=&#34;home${axis}:he;hm${pos}&#34;,
+        process_cmd_string=process_cmd_string,
+    )
+    def home_forward_direction(self, axis: int, pos: float = 0):
+        &#34;&#34;&#34;
+        Execute a home position search procedure for the given axis. This function will search in
+        forward direction for the encoder ECZ (index) signal and set the position to `pos`.
+
+        Args:
+            axis: the integer identifier of one of the axis controlled by the SMC, this
+                  should be &#39;3&#39; for the translation stage (the other axes have an absolute encoder).
+            pos: after the home is found, set the position to `pos`.
+
+        &#34;&#34;&#34;
+        raise NotImplementedError
+
+    @dynamic_command(
+        cmd_type=&#34;write&#34;, cmd_string=&#34;home${axis}:he;hr${pos}&#34;,
+        process_cmd_string=process_cmd_string,
+    )
+    def home_reverse_direction(self, axis: int, pos: float = 0):
+        &#34;&#34;&#34;
+        Execute a home position search procedure for the given axis. This function will search in
+        reverse direction for the encoder ECZ (index) signal and set the position to `pos`.
+
+        Args:
+            axis: the integer identifier of one of the axis controlled by the SMC, this
+                  should be &#39;3&#39; for the translation stage (the other axes have an absolute encoder).
+            pos: after the home is found, set the position to `pos`.
+
         &#34;&#34;&#34;
         raise NotImplementedError
 
@@ -886,6 +921,7 @@ if __name__ == &#34;__main__&#34;:
         print(f&#34;{huber.get_parameter(axis=axis_, name=&#39;ffast&#39;)=}&#34;)
         print(f&#34;{huber.get_parameter(axis=axis_, name=&#39;frun&#39;)=}&#34;)
         print(f&#34;{huber.get_parameter(axis=axis_, name=&#39;rofs&#39;)=}&#34;)
+        print(f&#34;{huber.get_parameter(axis=axis_, name=&#39;erofs&#39;)=}&#34;)
 
         print(f&#34;{huber.get_parameter(axis=axis_, name=&#39;ecl&#39;)=}&#34;)
         print(f&#34;{huber.get_parameter(axis=axis_, name=&#39;edev&#39;)=}&#34;)
@@ -1280,7 +1316,7 @@ A carriage return and newline is appended to the command.</p></div>
 <dl>
 <dt id="egse.stages.huber.smc9300.HuberSMC9300Controller"><code class="flex name class">
 <span>class <span class="ident">HuberSMC9300Controller</span></span>
-<span>(</span><span>hostname='XXX.XXX.XXX.XXX', port=4243)</span>
+<span>(</span><span>hostname='localhost', port=4243)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>The HuberSmC9300Controller class is used to directly communicate with the HUBER SMC9300
@@ -1413,6 +1449,8 @@ configuration file.</dd>
 <li><code><a title="egse.stages.huber.smc9300.HuberSMC9300Interface.get_version" href="#egse.stages.huber.smc9300.HuberSMC9300Interface.get_version">get_version</a></code></li>
 <li><code><a title="egse.stages.huber.smc9300.HuberSMC9300Interface.goto" href="#egse.stages.huber.smc9300.HuberSMC9300Interface.goto">goto</a></code></li>
 <li><code><a title="egse.stages.huber.smc9300.HuberSMC9300Interface.goto_direct" href="#egse.stages.huber.smc9300.HuberSMC9300Interface.goto_direct">goto_direct</a></code></li>
+<li><code><a title="egse.stages.huber.smc9300.HuberSMC9300Interface.home_forward_direction" href="#egse.stages.huber.smc9300.HuberSMC9300Interface.home_forward_direction">home_forward_direction</a></code></li>
+<li><code><a title="egse.stages.huber.smc9300.HuberSMC9300Interface.home_reverse_direction" href="#egse.stages.huber.smc9300.HuberSMC9300Interface.home_reverse_direction">home_reverse_direction</a></code></li>
 <li><code><a title="egse.stages.huber.smc9300.HuberSMC9300Interface.info" href="#egse.stages.huber.smc9300.HuberSMC9300Interface.info">info</a></code></li>
 <li><code><a title="egse.stages.huber.smc9300.HuberSMC9300Interface.is_in_position" href="#egse.stages.huber.smc9300.HuberSMC9300Interface.is_in_position">is_in_position</a></code></li>
 <li><code><a title="egse.stages.huber.smc9300.HuberSMC9300Interface.is_simulator" href="../../device.html#egse.device.DeviceInterface.is_simulator">is_simulator</a></code></li>
@@ -1573,7 +1611,8 @@ configuration file.</dd>
 
     @dynamic_command(
         cmd_type=&#34;write&#34;, cmd_string=&#34;move${axis}:${distance}&#34;,
-        process_cmd_string=process_cmd_string)
+        process_cmd_string=process_cmd_string,
+    )
     def move_direct(self, axis: int, distance: float) -&gt; None:
         &#34;&#34;&#34;
         Moves the stage relative to the current position in the given distance.
@@ -1585,6 +1624,40 @@ configuration file.</dd>
             distance: when the given axis is a rotation stage, the distance is given
                 in degrees [deg], for a translation stage, the distance is given
                 in millimeter [mm].
+        &#34;&#34;&#34;
+        raise NotImplementedError
+
+    @dynamic_command(
+        cmd_type=&#34;write&#34;, cmd_string=&#34;home${axis}:he;hm${pos}&#34;,
+        process_cmd_string=process_cmd_string,
+    )
+    def home_forward_direction(self, axis: int, pos: float = 0):
+        &#34;&#34;&#34;
+        Execute a home position search procedure for the given axis. This function will search in
+        forward direction for the encoder ECZ (index) signal and set the position to `pos`.
+
+        Args:
+            axis: the integer identifier of one of the axis controlled by the SMC, this
+                  should be &#39;3&#39; for the translation stage (the other axes have an absolute encoder).
+            pos: after the home is found, set the position to `pos`.
+
+        &#34;&#34;&#34;
+        raise NotImplementedError
+
+    @dynamic_command(
+        cmd_type=&#34;write&#34;, cmd_string=&#34;home${axis}:he;hr${pos}&#34;,
+        process_cmd_string=process_cmd_string,
+    )
+    def home_reverse_direction(self, axis: int, pos: float = 0):
+        &#34;&#34;&#34;
+        Execute a home position search procedure for the given axis. This function will search in
+        reverse direction for the encoder ECZ (index) signal and set the position to `pos`.
+
+        Args:
+            axis: the integer identifier of one of the axis controlled by the SMC, this
+                  should be &#39;3&#39; for the translation stage (the other axes have an absolute encoder).
+            pos: after the home is found, set the position to `pos`.
+
         &#34;&#34;&#34;
         raise NotImplementedError
 
@@ -2308,6 +2381,78 @@ def goto_direct(self, axis: int, position: float) -&gt; None:
     raise NotImplementedError</code></pre>
 </details>
 </dd>
+<dt id="egse.stages.huber.smc9300.HuberSMC9300Interface.home_forward_direction"><code class="name flex">
+<span>def <span class="ident">home_forward_direction</span></span>(<span>self, axis: int, pos: float = 0)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Execute a home position search procedure for the given axis. This function will search in
+forward direction for the encoder ECZ (index) signal and set the position to <code>pos</code>.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>axis</code></strong></dt>
+<dd>the integer identifier of one of the axis controlled by the SMC, this
+should be '3' for the translation stage (the other axes have an absolute encoder).</dd>
+<dt><strong><code>pos</code></strong></dt>
+<dd>after the home is found, set the position to <code>pos</code>.</dd>
+</dl></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@dynamic_command(
+    cmd_type=&#34;write&#34;, cmd_string=&#34;home${axis}:he;hm${pos}&#34;,
+    process_cmd_string=process_cmd_string,
+)
+def home_forward_direction(self, axis: int, pos: float = 0):
+    &#34;&#34;&#34;
+    Execute a home position search procedure for the given axis. This function will search in
+    forward direction for the encoder ECZ (index) signal and set the position to `pos`.
+
+    Args:
+        axis: the integer identifier of one of the axis controlled by the SMC, this
+              should be &#39;3&#39; for the translation stage (the other axes have an absolute encoder).
+        pos: after the home is found, set the position to `pos`.
+
+    &#34;&#34;&#34;
+    raise NotImplementedError</code></pre>
+</details>
+</dd>
+<dt id="egse.stages.huber.smc9300.HuberSMC9300Interface.home_reverse_direction"><code class="name flex">
+<span>def <span class="ident">home_reverse_direction</span></span>(<span>self, axis: int, pos: float = 0)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Execute a home position search procedure for the given axis. This function will search in
+reverse direction for the encoder ECZ (index) signal and set the position to <code>pos</code>.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>axis</code></strong></dt>
+<dd>the integer identifier of one of the axis controlled by the SMC, this
+should be '3' for the translation stage (the other axes have an absolute encoder).</dd>
+<dt><strong><code>pos</code></strong></dt>
+<dd>after the home is found, set the position to <code>pos</code>.</dd>
+</dl></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@dynamic_command(
+    cmd_type=&#34;write&#34;, cmd_string=&#34;home${axis}:he;hr${pos}&#34;,
+    process_cmd_string=process_cmd_string,
+)
+def home_reverse_direction(self, axis: int, pos: float = 0):
+    &#34;&#34;&#34;
+    Execute a home position search procedure for the given axis. This function will search in
+    reverse direction for the encoder ECZ (index) signal and set the position to `pos`.
+
+    Args:
+        axis: the integer identifier of one of the axis controlled by the SMC, this
+              should be &#39;3&#39; for the translation stage (the other axes have an absolute encoder).
+        pos: after the home is found, set the position to `pos`.
+
+    &#34;&#34;&#34;
+    raise NotImplementedError</code></pre>
+</details>
+</dd>
 <dt id="egse.stages.huber.smc9300.HuberSMC9300Interface.info"><code class="name flex">
 <span>def <span class="ident">info</span></span>(<span>self) ‑> str</span>
 </code></dt>
@@ -2426,7 +2571,8 @@ in millimeter [mm].</dd>
 </summary>
 <pre><code class="python">@dynamic_command(
     cmd_type=&#34;write&#34;, cmd_string=&#34;move${axis}:${distance}&#34;,
-    process_cmd_string=process_cmd_string)
+    process_cmd_string=process_cmd_string,
+)
 def move_direct(self, axis: int, distance: float) -&gt; None:
     &#34;&#34;&#34;
     Moves the stage relative to the current position in the given distance.
@@ -2816,6 +2962,8 @@ to the HUBER Hardware Controller remotely.</p>
 <li><code><a title="egse.stages.huber.smc9300.HuberSMC9300Interface.get_version" href="#egse.stages.huber.smc9300.HuberSMC9300Interface.get_version">get_version</a></code></li>
 <li><code><a title="egse.stages.huber.smc9300.HuberSMC9300Interface.goto" href="#egse.stages.huber.smc9300.HuberSMC9300Interface.goto">goto</a></code></li>
 <li><code><a title="egse.stages.huber.smc9300.HuberSMC9300Interface.goto_direct" href="#egse.stages.huber.smc9300.HuberSMC9300Interface.goto_direct">goto_direct</a></code></li>
+<li><code><a title="egse.stages.huber.smc9300.HuberSMC9300Interface.home_forward_direction" href="#egse.stages.huber.smc9300.HuberSMC9300Interface.home_forward_direction">home_forward_direction</a></code></li>
+<li><code><a title="egse.stages.huber.smc9300.HuberSMC9300Interface.home_reverse_direction" href="#egse.stages.huber.smc9300.HuberSMC9300Interface.home_reverse_direction">home_reverse_direction</a></code></li>
 <li><code><a title="egse.stages.huber.smc9300.HuberSMC9300Interface.info" href="#egse.stages.huber.smc9300.HuberSMC9300Interface.info">info</a></code></li>
 <li><code><a title="egse.stages.huber.smc9300.HuberSMC9300Interface.is_connected" href="../../device.html#egse.device.DeviceConnectionInterface.is_connected">is_connected</a></code></li>
 <li><code><a title="egse.stages.huber.smc9300.HuberSMC9300Interface.is_in_position" href="#egse.stages.huber.smc9300.HuberSMC9300Interface.is_in_position">is_in_position</a></code></li>
@@ -2900,6 +3048,8 @@ to the HUBER Hardware Controller remotely.</p>
 <li><code><a title="egse.stages.huber.smc9300.HuberSMC9300Interface.get_version" href="#egse.stages.huber.smc9300.HuberSMC9300Interface.get_version">get_version</a></code></li>
 <li><code><a title="egse.stages.huber.smc9300.HuberSMC9300Interface.goto" href="#egse.stages.huber.smc9300.HuberSMC9300Interface.goto">goto</a></code></li>
 <li><code><a title="egse.stages.huber.smc9300.HuberSMC9300Interface.goto_direct" href="#egse.stages.huber.smc9300.HuberSMC9300Interface.goto_direct">goto_direct</a></code></li>
+<li><code><a title="egse.stages.huber.smc9300.HuberSMC9300Interface.home_forward_direction" href="#egse.stages.huber.smc9300.HuberSMC9300Interface.home_forward_direction">home_forward_direction</a></code></li>
+<li><code><a title="egse.stages.huber.smc9300.HuberSMC9300Interface.home_reverse_direction" href="#egse.stages.huber.smc9300.HuberSMC9300Interface.home_reverse_direction">home_reverse_direction</a></code></li>
 <li><code><a title="egse.stages.huber.smc9300.HuberSMC9300Interface.info" href="#egse.stages.huber.smc9300.HuberSMC9300Interface.info">info</a></code></li>
 <li><code><a title="egse.stages.huber.smc9300.HuberSMC9300Interface.is_connected" href="../../device.html#egse.device.DeviceConnectionInterface.is_connected">is_connected</a></code></li>
 <li><code><a title="egse.stages.huber.smc9300.HuberSMC9300Interface.is_in_position" href="#egse.stages.huber.smc9300.HuberSMC9300Interface.is_in_position">is_in_position</a></code></li>
@@ -2977,6 +3127,8 @@ to the HUBER Hardware Controller remotely.</p>
 <li><code><a title="egse.stages.huber.smc9300.HuberSMC9300Interface.get_version" href="#egse.stages.huber.smc9300.HuberSMC9300Interface.get_version">get_version</a></code></li>
 <li><code><a title="egse.stages.huber.smc9300.HuberSMC9300Interface.goto" href="#egse.stages.huber.smc9300.HuberSMC9300Interface.goto">goto</a></code></li>
 <li><code><a title="egse.stages.huber.smc9300.HuberSMC9300Interface.goto_direct" href="#egse.stages.huber.smc9300.HuberSMC9300Interface.goto_direct">goto_direct</a></code></li>
+<li><code><a title="egse.stages.huber.smc9300.HuberSMC9300Interface.home_forward_direction" href="#egse.stages.huber.smc9300.HuberSMC9300Interface.home_forward_direction">home_forward_direction</a></code></li>
+<li><code><a title="egse.stages.huber.smc9300.HuberSMC9300Interface.home_reverse_direction" href="#egse.stages.huber.smc9300.HuberSMC9300Interface.home_reverse_direction">home_reverse_direction</a></code></li>
 <li><code><a title="egse.stages.huber.smc9300.HuberSMC9300Interface.info" href="#egse.stages.huber.smc9300.HuberSMC9300Interface.info">info</a></code></li>
 <li><code><a title="egse.stages.huber.smc9300.HuberSMC9300Interface.is_in_position" href="#egse.stages.huber.smc9300.HuberSMC9300Interface.is_in_position">is_in_position</a></code></li>
 <li><code><a title="egse.stages.huber.smc9300.HuberSMC9300Interface.move" href="#egse.stages.huber.smc9300.HuberSMC9300Interface.move">move</a></code></li>

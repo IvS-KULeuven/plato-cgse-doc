@@ -149,6 +149,8 @@ def dynamic_command(
         process_cmd_string: Callable = None,
         process_kwargs: Callable = None,
         use_format: bool = False,
+        pre_cmd: Callable = None,
+        post_cmd: Callable = None,
 ):
     &#34;&#34;&#34;Convert an interface method into a dynamic command.
 
@@ -175,6 +177,18 @@ def dynamic_command(
     process the response before it is returned, and to process the cmd_string before it is sent
     to the transport function.
 
+    The `pre_cmd` and `post_cmd` keywords specify a callable/function to be executed before and/or
+    after the actual command was executed (i.e. send to the device). These functions are called
+    with specific keyword arguments that allow additional device interaction and response processing.
+    The `pre_cmd` function is called with the keyword argument `transport=` which passes the device
+    transport. This allows the function to interact with the device again through the methods defined
+    by the DeviceTransport interface. The `pre_cmd` function must not return anything.
+    The `post_cmd` function is called with the keyword arguments `transport=` and `response=`.
+    The response argument contains the response from the command that was previously sent to the
+    device. The `post_cmd` function can use this response to parse its content and act against
+    this content, although possible, it is usually not a good idea to alter the content of the
+    response argument. The `post_cmd` function shall return (i.e. pass through) the response.
+
     This decorator can add the following static attributes to the method:
 
     * __dynamic_interface
@@ -183,6 +197,8 @@ def dynamic_command(
     * __process_response
     * __process_cmd_string
     * __use_format
+    * __pre_cmd
+    * __post_cmd
 
     Args:
         cmd_type (str): one of &#39;read&#39;, &#39;write&#39;, &#39;query&#39;, or &#39;transaction&#39; [required keyword]
@@ -191,6 +207,8 @@ def dynamic_command(
         process_cmd_string (Callable): function to process the command string after substitution
         process_kwargs (Callable): function to expand the kwargs after substitution
         use_format (bool): use string formatting instead of string templates
+        pre_cmd (Callable): the function to execute before the command is executed
+        post_cmd (Callable): the function to execute after the command is executed
     &#34;&#34;&#34;
 
     # Perform some checks on required arguments
@@ -222,6 +240,12 @@ def dynamic_command(
 
         if use_format:
             setattr(func, &#34;__use_format&#34;, True)
+
+        if pre_cmd is not None:
+            setattr(func, &#34;__pre_cmd&#34;, pre_cmd)
+
+        if post_cmd is not None:
+            setattr(func, &#34;__post_cmd&#34;, post_cmd)
 
         return func
 
@@ -348,6 +372,10 @@ class DynamicCommandMixin:
 
             response = None
 
+            with contextlib.suppress(AttributeError):
+                getattr(attr, &#34;__pre_cmd&#34;)(transport=self.transport,
+                                           function_name=attr.__name__, cmd_str=cmd_str, args=args, kwargs=kwargs)
+
             if hasattr(attr, &#34;__write_command&#34;):
                 self.transport.write(cmd_str)
             elif hasattr(attr, &#34;__read_command&#34;):
@@ -361,8 +389,11 @@ class DynamicCommandMixin:
                                    f&#34;a command type decorator.&#34;)
 
             with contextlib.suppress(AttributeError):
+                response = getattr(attr, &#34;__post_cmd&#34;)(transport=self.transport, response=response)
+
+            with contextlib.suppress(AttributeError):
                 process_response = getattr(attr, &#34;__process_response&#34;)
-                response = process_response(response)
+                response = process_response(response=response)
 
             return response
 
@@ -534,7 +565,7 @@ Returns: Given command string with a line feed appended (if not present yet).</l
 </details>
 </dd>
 <dt id="egse.mixin.dynamic_command"><code class="name flex">
-<span>def <span class="ident">dynamic_command</span></span>(<span>*, cmd_type: str, cmd_string: str = None, process_response: Callable = None, process_cmd_string: Callable = None, process_kwargs: Callable = None, use_format: bool = False)</span>
+<span>def <span class="ident">dynamic_command</span></span>(<span>*, cmd_type: str, cmd_string: str = None, process_response: Callable = None, process_cmd_string: Callable = None, process_kwargs: Callable = None, use_format: bool = False, pre_cmd: Callable = None, post_cmd: Callable = None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Convert an interface method into a dynamic command.</p>
@@ -556,6 +587,17 @@ use_format=True
 <p>The process_response and process_cmd_string keywords allow you to specify a pure function to
 process the response before it is returned, and to process the cmd_string before it is sent
 to the transport function.</p>
+<p>The <code>pre_cmd</code> and <code>post_cmd</code> keywords specify a callable/function to be executed before and/or
+after the actual command was executed (i.e. send to the device). These functions are called
+with specific keyword arguments that allow additional device interaction and response processing.
+The <code>pre_cmd</code> function is called with the keyword argument <code>transport=</code> which passes the device
+transport. This allows the function to interact with the device again through the methods defined
+by the DeviceTransport interface. The <code>pre_cmd</code> function must not return anything.
+The <code>post_cmd</code> function is called with the keyword arguments <code>transport=</code> and <code>response=</code>.
+The response argument contains the response from the command that was previously sent to the
+device. The <code>post_cmd</code> function can use this response to parse its content and act against
+this content, although possible, it is usually not a good idea to alter the content of the
+response argument. The <code>post_cmd</code> function shall return (i.e. pass through) the response.</p>
 <p>This decorator can add the following static attributes to the method:</p>
 <ul>
 <li>__dynamic_interface</li>
@@ -564,6 +606,8 @@ to the transport function.</p>
 <li>__process_response</li>
 <li>__process_cmd_string</li>
 <li>__use_format</li>
+<li>__pre_cmd</li>
+<li>__post_cmd</li>
 </ul>
 <h2 id="args">Args</h2>
 <dl>
@@ -579,6 +623,10 @@ to the transport function.</p>
 <dd>function to expand the kwargs after substitution</dd>
 <dt><strong><code>use_format</code></strong> :&ensp;<code>bool</code></dt>
 <dd>use string formatting instead of string templates</dd>
+<dt><strong><code>pre_cmd</code></strong> :&ensp;<code>Callable</code></dt>
+<dd>the function to execute before the command is executed</dd>
+<dt><strong><code>post_cmd</code></strong> :&ensp;<code>Callable</code></dt>
+<dd>the function to execute after the command is executed</dd>
 </dl></div>
 <details class="source">
 <summary>
@@ -592,6 +640,8 @@ to the transport function.</p>
         process_cmd_string: Callable = None,
         process_kwargs: Callable = None,
         use_format: bool = False,
+        pre_cmd: Callable = None,
+        post_cmd: Callable = None,
 ):
     &#34;&#34;&#34;Convert an interface method into a dynamic command.
 
@@ -618,6 +668,18 @@ to the transport function.</p>
     process the response before it is returned, and to process the cmd_string before it is sent
     to the transport function.
 
+    The `pre_cmd` and `post_cmd` keywords specify a callable/function to be executed before and/or
+    after the actual command was executed (i.e. send to the device). These functions are called
+    with specific keyword arguments that allow additional device interaction and response processing.
+    The `pre_cmd` function is called with the keyword argument `transport=` which passes the device
+    transport. This allows the function to interact with the device again through the methods defined
+    by the DeviceTransport interface. The `pre_cmd` function must not return anything.
+    The `post_cmd` function is called with the keyword arguments `transport=` and `response=`.
+    The response argument contains the response from the command that was previously sent to the
+    device. The `post_cmd` function can use this response to parse its content and act against
+    this content, although possible, it is usually not a good idea to alter the content of the
+    response argument. The `post_cmd` function shall return (i.e. pass through) the response.
+
     This decorator can add the following static attributes to the method:
 
     * __dynamic_interface
@@ -626,6 +688,8 @@ to the transport function.</p>
     * __process_response
     * __process_cmd_string
     * __use_format
+    * __pre_cmd
+    * __post_cmd
 
     Args:
         cmd_type (str): one of &#39;read&#39;, &#39;write&#39;, &#39;query&#39;, or &#39;transaction&#39; [required keyword]
@@ -634,6 +698,8 @@ to the transport function.</p>
         process_cmd_string (Callable): function to process the command string after substitution
         process_kwargs (Callable): function to expand the kwargs after substitution
         use_format (bool): use string formatting instead of string templates
+        pre_cmd (Callable): the function to execute before the command is executed
+        post_cmd (Callable): the function to execute after the command is executed
     &#34;&#34;&#34;
 
     # Perform some checks on required arguments
@@ -665,6 +731,12 @@ to the transport function.</p>
 
         if use_format:
             setattr(func, &#34;__use_format&#34;, True)
+
+        if pre_cmd is not None:
+            setattr(func, &#34;__pre_cmd&#34;, pre_cmd)
+
+        if post_cmd is not None:
+            setattr(func, &#34;__post_cmd&#34;, post_cmd)
 
         return func
 
@@ -818,6 +890,10 @@ methods to read, write, and query an instrument.</p>
 
             response = None
 
+            with contextlib.suppress(AttributeError):
+                getattr(attr, &#34;__pre_cmd&#34;)(transport=self.transport,
+                                           function_name=attr.__name__, cmd_str=cmd_str, args=args, kwargs=kwargs)
+
             if hasattr(attr, &#34;__write_command&#34;):
                 self.transport.write(cmd_str)
             elif hasattr(attr, &#34;__read_command&#34;):
@@ -831,8 +907,11 @@ methods to read, write, and query an instrument.</p>
                                    f&#34;a command type decorator.&#34;)
 
             with contextlib.suppress(AttributeError):
+                response = getattr(attr, &#34;__post_cmd&#34;)(transport=self.transport, response=response)
+
+            with contextlib.suppress(AttributeError):
                 process_response = getattr(attr, &#34;__process_response&#34;)
-                response = process_response(response)
+                response = process_response(response=response)
 
             return response
 
@@ -880,6 +959,8 @@ methods to read, write, and query an instrument.</p>
 <li><a title="egse.aeu.aeu.CRIOController" href="aeu/aeu.html#egse.aeu.aeu.CRIOController">CRIOController</a></li>
 <li><a title="egse.aeu.aeu.PSUController" href="aeu/aeu.html#egse.aeu.aeu.PSUController">PSUController</a></li>
 <li><a title="egse.collimator.fcul.ogse.OGSEController" href="collimator/fcul/ogse.html#egse.collimator.fcul.ogse.OGSEController">OGSEController</a></li>
+<li><a title="egse.dyndummy.DummyController" href="dyndummy.html#egse.dyndummy.DummyController">DummyController</a></li>
+<li><a title="egse.hexapod.symetrie.punaplus.PunaPlusController" href="hexapod/symetrie/punaplus.html#egse.hexapod.symetrie.punaplus.PunaPlusController">PunaPlusController</a></li>
 <li><a title="egse.stages.huber.smc9300.HuberSMC9300Controller" href="stages/huber/smc9300.html#egse.stages.huber.smc9300.HuberSMC9300Controller">HuberSMC9300Controller</a></li>
 <li><a title="egse.tcs.tcs.TCSController" href="tcs/tcs.html#egse.tcs.tcs.TCSController">TCSController</a></li>
 <li><a title="egse.tempcontrol.keithley.daq6510.DAQ6510Controller" href="tempcontrol/keithley/daq6510.html#egse.tempcontrol.keithley.daq6510.DAQ6510Controller">DAQ6510Controller</a></li>
@@ -1045,6 +1126,10 @@ for that method in the corresponding Interface class.</p>
 
         response = None
 
+        with contextlib.suppress(AttributeError):
+            getattr(attr, &#34;__pre_cmd&#34;)(transport=self.transport,
+                                       function_name=attr.__name__, cmd_str=cmd_str, args=args, kwargs=kwargs)
+
         if hasattr(attr, &#34;__write_command&#34;):
             self.transport.write(cmd_str)
         elif hasattr(attr, &#34;__read_command&#34;):
@@ -1058,8 +1143,11 @@ for that method in the corresponding Interface class.</p>
                                f&#34;a command type decorator.&#34;)
 
         with contextlib.suppress(AttributeError):
+            response = getattr(attr, &#34;__post_cmd&#34;)(transport=self.transport, response=response)
+
+        with contextlib.suppress(AttributeError):
             process_response = getattr(attr, &#34;__process_response&#34;)
-            response = process_response(response)
+            response = process_response(response=response)
 
         return response
 

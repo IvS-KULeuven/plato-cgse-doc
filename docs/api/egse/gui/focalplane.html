@@ -61,6 +61,7 @@ from egse.coordinates import ccd_to_focal_plane_coordinates
 from egse.coordinates import focal_plane_coordinates_to_angles
 from egse.gui.formatter import degree_formatter
 from egse.settings import Settings
+from egse.state import GlobalState
 
 FONT = QFont(&#34;Helvetica&#34;, 18)
 
@@ -78,6 +79,7 @@ ZEROPOINT = Settings.load(&#34;CCD&#34;).ZEROPOINT          # CCD zeropoint (x, 
 NUM_ROWS = Settings.load(&#34;CCD&#34;).NUM_ROWS
 NUM_COLUMNS = Settings.load(&#34;CCD&#34;).NUM_COLUMNS
 
+
 class FocalPlane(FigureCanvas):
 
     &#34;&#34;&#34;
@@ -94,6 +96,8 @@ class FocalPlane(FigureCanvas):
         Initialisation of a plot of the focal plane, with a blue circle indicating the
         field-of-view.
         &#34;&#34;&#34;
+        self.fee_side = GlobalState.setup.camera.fee.ccd_sides.enum
+        self.ccd_id = GlobalState.setup.camera.fee.ccd_numbering.CCD_ID
 
         self.figure = Figure()
         self.ax = self.figure.add_subplot(111)
@@ -166,53 +170,57 @@ class FocalPlane(FigureCanvas):
         # Readout registers
 
         self.ax.plot([-ZEROPOINT[0], ZEROPOINT[1]], [-ZEROPOINT[1], -
-                                                     ZEROPOINT[1]], color=&#34;k&#34;, linewidth=3)   # CCD 1
+                                                     ZEROPOINT[1]], color=&#34;k&#34;, linewidth=3)   # Upper left CCD
         self.ax.plot([ZEROPOINT[1], ZEROPOINT[1]], [-ZEROPOINT[0],
-                                                    ZEROPOINT[1]], color=&#34;k&#34;, linewidth=3)    # CCD 2
+                                                    ZEROPOINT[1]], color=&#34;k&#34;, linewidth=3)    # Lower left CCD
         self.ax.plot([ZEROPOINT[0], -ZEROPOINT[1]], [ZEROPOINT[1],
-                                                     ZEROPOINT[1]], color=&#34;k&#34;, linewidth=3)   # CCD 3
+                                                     ZEROPOINT[1]], color=&#34;k&#34;, linewidth=3)   # Lower right CCD
         self.ax.plot([-ZEROPOINT[1], -ZEROPOINT[1]], [ZEROPOINT[0], -
-                                                      ZEROPOINT[1]], color=&#34;k&#34;, linewidth=3)  # CCD 3
+                                                      ZEROPOINT[1]], color=&#34;k&#34;, linewidth=3)  # Upper right CCD
 
         # CCD middle
 
         self.ax.plot([ZEROPOINT[0] - NUM_COLUMNS / 2 * PIXEL_SIZE, ZEROPOINT[0] - NUM_COLUMNS / 2 * PIXEL_SIZE],
                      [-ZEROPOINT[0], ZEROPOINT[1]], color=&#34;k&#34;, linewidth=1,
-                     linestyle=&#34;dotted&#34;)  # CCD 1
+                     linestyle=&#34;dotted&#34;)  # Upper left CCD
         self.ax.plot([-ZEROPOINT[1], ZEROPOINT[0]],
                      [ZEROPOINT[0] - NUM_COLUMNS / 2 * PIXEL_SIZE, ZEROPOINT[0] - NUM_COLUMNS / 2 * PIXEL_SIZE],
-                     color=&#34;k&#34;, linewidth=1, linestyle=&#34;dotted&#34;)  # CCD 2
+                     color=&#34;k&#34;, linewidth=1, linestyle=&#34;dotted&#34;)  # Lower left CCD
         self.ax.plot([-ZEROPOINT[0] + NUM_COLUMNS / 2 * PIXEL_SIZE, -ZEROPOINT[0] + NUM_COLUMNS / 2 * PIXEL_SIZE],
                      [-ZEROPOINT[1], ZEROPOINT[0]], color=&#34;k&#34;, linewidth=1,
-                     linestyle=&#34;dotted&#34;)  # CCD 3
+                     linestyle=&#34;dotted&#34;)  # Lower right CCD
         self.ax.plot([-ZEROPOINT[0], ZEROPOINT[1]],
                      [-ZEROPOINT[0] + NUM_COLUMNS / 2 * PIXEL_SIZE, -ZEROPOINT[0] + NUM_COLUMNS / 2 * PIXEL_SIZE],
-                     color=&#34;k&#34;, linewidth=1, linestyle=&#34;dotted&#34;)  # CCD 4
+                     color=&#34;k&#34;, linewidth=1, linestyle=&#34;dotted&#34;)  # Upper right CCD
 
         # CCD codes
 
-        self.ax.text(-80, 70, &#34;CCD #1&#34;)     # CCD 1
-        self.ax.text(-80, -75, &#34;CCD #2&#34;)    # CCD 2
-        self.ax.text(60, -75, &#34;CCD #3&#34;)     # CCD 3
-        self.ax.text(60, 70, &#34;CCD #4&#34;)      # CCD 4
+        self.ax.text(-80, 70, self.ccd_id[2])     # Upper left CCD
+        self.ax.text(-80, -75, self.ccd_id[3])    # Lower left CCD
+        self.ax.text(60, -75, self.ccd_id[0])     # Lower right CCD
+        self.ax.text(60, 70, self.ccd_id[1])      # Upper right CCD
 
-        self.ax.text(-30, 10, &#34;E&#34;, rotation=180)  # CCD 1, side E
-        self.ax.text(-75, 10, &#34;F&#34;, rotation=180)  # CCD 1, side F
-        self.ax.text(-20, -15, &#34;E&#34;, rotation=-90)  # CCD 2, side E
-        self.ax.text(-20, -75, &#34;F&#34;, rotation=-90)  # CCD 2, side F
-        self.ax.text(10, -15, &#34;E&#34;)  # CCD 3, side E
-        self.ax.text(50, -15, &#34;F&#34;)  # CCD 3, side F
-        self.ax.text(10, 10, &#34;E&#34;, rotation=90)  # CCD 4, side E
-        self.ax.text(10, 50, &#34;F&#34;, rotation=90)  # CCD 4, side F
+        self.ax.text(-30, 10, self.fee_side.LEFT_SIDE.name, rotation=180)       # Upper leftCCD, left side
+        self.ax.text(-75, 10, self.fee_side.RIGHT_SIDE.name, rotation=180)      # Upper left CCD, right side
+        self.ax.text(-20, -15, self.fee_side.LEFT_SIDE.name, rotation=-90)      # Lower left CCD, left side
+        self.ax.text(-20, -75, self.fee_side.RIGHT_SIDE.name, rotation=-90)     # Lower left CCD, right side
+        self.ax.text(10, -15, self.fee_side.LEFT_SIDE.name)                     # Lower right CCD, left side
+        self.ax.text(50, -15, self.fee_side.RIGHT_SIDE.name)                    # Lower right CCD, right side
+        self.ax.text(10, 10, self.fee_side.LEFT_SIDE.name, rotation=90)         # Upper right CCD, left side
+        self.ax.text(10, 50, self.fee_side.RIGHT_SIDE.name, rotation=90)        # Upper right CCD, right side
 
-        self.ax.plot([-ZEROPOINT[0], ZEROPOINT[1], ZEROPOINT[1], -ZEROPOINT[0], -ZEROPOINT[0]], [ZEROPOINT[0],
-                                                                                                 ZEROPOINT[0], -ZEROPOINT[1], -ZEROPOINT[1], ZEROPOINT[0]], color=&#34;k&#34;, linewidth=1)  # CCD 1
-        self.ax.plot([-ZEROPOINT[0], ZEROPOINT[1], ZEROPOINT[1], -ZEROPOINT[0], -ZEROPOINT[0]], [-ZEROPOINT[0], -
-                                                                                                 ZEROPOINT[0], ZEROPOINT[1], ZEROPOINT[1], -ZEROPOINT[0]], color=&#34;k&#34;, linewidth=1)  # CCD 2
-        self.ax.plot([-ZEROPOINT[1], ZEROPOINT[0], ZEROPOINT[0], -ZEROPOINT[1], -ZEROPOINT[1]], [-ZEROPOINT[0], -
-                                                                                                 ZEROPOINT[0], ZEROPOINT[1], ZEROPOINT[1], -ZEROPOINT[0]], color=&#34;k&#34;, linewidth=1)  # CCD 3
-        self.ax.plot([-ZEROPOINT[1], ZEROPOINT[0], ZEROPOINT[0], -ZEROPOINT[1], -ZEROPOINT[1]], [ZEROPOINT[0],
-                                                                                                 ZEROPOINT[0], -ZEROPOINT[1], -ZEROPOINT[1], ZEROPOINT[0]], color=&#34;k&#34;, linewidth=1)  # CCD 4
+        self.ax.plot([-ZEROPOINT[0], ZEROPOINT[1], ZEROPOINT[1], -ZEROPOINT[0], -ZEROPOINT[0]],
+                     [ZEROPOINT[0], ZEROPOINT[0], -ZEROPOINT[1], -ZEROPOINT[1], ZEROPOINT[0]],
+                     color=&#34;k&#34;, linewidth=1)  # Upper left CCD
+        self.ax.plot([-ZEROPOINT[0], ZEROPOINT[1], ZEROPOINT[1], -ZEROPOINT[0], -ZEROPOINT[0]],
+                     [-ZEROPOINT[0], - ZEROPOINT[0], ZEROPOINT[1], ZEROPOINT[1], -ZEROPOINT[0]],
+                     color=&#34;k&#34;, linewidth=1)  # Lower left CCD
+        self.ax.plot([-ZEROPOINT[1], ZEROPOINT[0], ZEROPOINT[0], -ZEROPOINT[1], -ZEROPOINT[1]],
+                     [-ZEROPOINT[0], - ZEROPOINT[0], ZEROPOINT[1], ZEROPOINT[1], -ZEROPOINT[0]],
+                     color=&#34;k&#34;, linewidth=1)  # Lower right CCD
+        self.ax.plot([-ZEROPOINT[1], ZEROPOINT[0], ZEROPOINT[0], -ZEROPOINT[1], -ZEROPOINT[1]],
+                     [ZEROPOINT[0], ZEROPOINT[0], -ZEROPOINT[1], -ZEROPOINT[1], ZEROPOINT[0]],
+                     color=&#34;k&#34;, linewidth=1)  # Upper right CCD
 
         # Grid lines
 
@@ -285,46 +293,62 @@ class FocalPlane(FigureCanvas):
 
         # Readout registers
 
-        self.ax.plot([-ZEROPOINT[0] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE], [-ZEROPOINT[1] /
-                                                                               PIXEL_SIZE, -ZEROPOINT[1] / PIXEL_SIZE], color=&#34;k&#34;, linewidth=3)  # CCD 1
-        self.ax.plot([ZEROPOINT[1] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE], [-ZEROPOINT[0] /
-                                                                              PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE], color=&#34;k&#34;, linewidth=3)    # CCD 2
-        self.ax.plot([ZEROPOINT[0] / PIXEL_SIZE, -ZEROPOINT[1] / PIXEL_SIZE], [ZEROPOINT[1] /
-                                                                               PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE], color=&#34;k&#34;, linewidth=3)    # CCD 3
-        self.ax.plot([-ZEROPOINT[1] / PIXEL_SIZE, -ZEROPOINT[1] / PIXEL_SIZE], [ZEROPOINT[0] /
-                                                                                PIXEL_SIZE, -ZEROPOINT[1] / PIXEL_SIZE], color=&#34;k&#34;, linewidth=3)  # CCD 4
+        self.ax.plot([-ZEROPOINT[0] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE],
+                     [-ZEROPOINT[1] / PIXEL_SIZE, -ZEROPOINT[1] / PIXEL_SIZE],
+                     color=&#34;k&#34;, linewidth=3)  # Upper left CCD
+        self.ax.plot([ZEROPOINT[1] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE],
+                     [-ZEROPOINT[0] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE],
+                     color=&#34;k&#34;, linewidth=3)    # Lower left CCD
+        self.ax.plot([ZEROPOINT[0] / PIXEL_SIZE, -ZEROPOINT[1] / PIXEL_SIZE],
+                     [ZEROPOINT[1] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE],
+                     color=&#34;k&#34;, linewidth=3)    # Lower right CCD
+        self.ax.plot([-ZEROPOINT[1] / PIXEL_SIZE, -ZEROPOINT[1] / PIXEL_SIZE],
+                     [ZEROPOINT[0] / PIXEL_SIZE, -ZEROPOINT[1] / PIXEL_SIZE],
+                     color=&#34;k&#34;, linewidth=3)  # Upper right CCD
 
         # CCD middle
 
-        self.ax.plot([ZEROPOINT[0] / PIXEL_SIZE - NUM_COLUMNS / 2, ZEROPOINT[0] / PIXEL_SIZE - NUM_COLUMNS / 2], [-ZEROPOINT[0] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE], color=&#34;k&#34;, linewidth=1, linestyle=&#34;dotted&#34;)  # CCD 1
-        self.ax.plot([-ZEROPOINT[1] / PIXEL_SIZE, ZEROPOINT[0] / PIXEL_SIZE], [ZEROPOINT[0] / PIXEL_SIZE - NUM_COLUMNS / 2, ZEROPOINT[0] / PIXEL_SIZE - NUM_COLUMNS / 2], color=&#34;k&#34;, linewidth=1, linestyle=&#34;dotted&#34;)  # CCD 2
-        self.ax.plot([-ZEROPOINT[0] / PIXEL_SIZE + NUM_COLUMNS / 2, -ZEROPOINT[0] / PIXEL_SIZE + NUM_COLUMNS / 2], [-ZEROPOINT[1] / PIXEL_SIZE, ZEROPOINT[0] / PIXEL_SIZE], color=&#34;k&#34;, linewidth=1, linestyle=&#34;dotted&#34;)  # CCD 3
-        self.ax.plot([-ZEROPOINT[0] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE], [-ZEROPOINT[0] / PIXEL_SIZE + NUM_COLUMNS / 2, -ZEROPOINT[0] / PIXEL_SIZE + NUM_COLUMNS / 2], color=&#34;k&#34;, linewidth=1, linestyle=&#34;dotted&#34;)  # CCD 4
+        self.ax.plot([ZEROPOINT[0] / PIXEL_SIZE - NUM_COLUMNS / 2, ZEROPOINT[0] / PIXEL_SIZE - NUM_COLUMNS / 2],
+                     [-ZEROPOINT[0] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE],
+                     color=&#34;k&#34;, linewidth=1, linestyle=&#34;dotted&#34;)  # Upper left CCD
+        self.ax.plot([-ZEROPOINT[1] / PIXEL_SIZE, ZEROPOINT[0] / PIXEL_SIZE],
+                     [ZEROPOINT[0] / PIXEL_SIZE - NUM_COLUMNS / 2, ZEROPOINT[0] / PIXEL_SIZE - NUM_COLUMNS / 2],
+                     color=&#34;k&#34;, linewidth=1, linestyle=&#34;dotted&#34;)  # Lower left CCD
+        self.ax.plot([-ZEROPOINT[0] / PIXEL_SIZE + NUM_COLUMNS / 2, -ZEROPOINT[0] / PIXEL_SIZE + NUM_COLUMNS / 2],
+                     [-ZEROPOINT[1] / PIXEL_SIZE, ZEROPOINT[0] / PIXEL_SIZE],
+                     color=&#34;k&#34;, linewidth=1, linestyle=&#34;dotted&#34;)  # Lower right CCD
+        self.ax.plot([-ZEROPOINT[0] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE],
+                     [-ZEROPOINT[0] / PIXEL_SIZE + NUM_COLUMNS / 2, -ZEROPOINT[0] / PIXEL_SIZE + NUM_COLUMNS / 2],
+                     color=&#34;k&#34;, linewidth=1, linestyle=&#34;dotted&#34;)  # Upper right CCD
 
         # CCD codes
 
-        self.ax.text(-80 / PIXEL_SIZE, 70 / PIXEL_SIZE, &#34;CCD #1&#34;)     # CCD 1
-        self.ax.text(-80 / PIXEL_SIZE, -75 / PIXEL_SIZE, &#34;CCD #2&#34;)    # CCD 2
-        self.ax.text(60 / PIXEL_SIZE, -75 / PIXEL_SIZE, &#34;CCD #3&#34;)     # CCD 3
-        self.ax.text(60 / PIXEL_SIZE, 70 / PIXEL_SIZE, &#34;CCD #4&#34;)      # CCD 4
+        self.ax.text(-80 / PIXEL_SIZE, 70 / PIXEL_SIZE, self.ccd_id[2])     # Upper left CCD
+        self.ax.text(-80 / PIXEL_SIZE, -75 / PIXEL_SIZE, self.ccd_id[3])    # Lower left CCD
+        self.ax.text(60 / PIXEL_SIZE, -75 / PIXEL_SIZE, self.ccd_id[0])     # Lower right CCD
+        self.ax.text(60 / PIXEL_SIZE, 70 / PIXEL_SIZE, self.ccd_id[1])      # Upper right CCD
 
-        self.ax.text(-30 / PIXEL_SIZE, 10 / PIXEL_SIZE, &#34;E&#34;, rotation=180)      # CCD 1, side E
-        self.ax.text(-75 / PIXEL_SIZE, 10 / PIXEL_SIZE, &#34;F&#34;, rotation=180)      # CCD 1, side F
-        self.ax.text(-20 / PIXEL_SIZE, -15 / PIXEL_SIZE, &#34;E&#34;, rotation=-90)     # CCD 2, side E
-        self.ax.text(-20 / PIXEL_SIZE, -75 / PIXEL_SIZE, &#34;F&#34;, rotation=-90)     # CCD 2, side F
-        self.ax.text(10 / PIXEL_SIZE, -15 / PIXEL_SIZE, &#34;E&#34;)                    # CCD 3, side E
-        self.ax.text(50 / PIXEL_SIZE, -15 / PIXEL_SIZE, &#34;F&#34;)                    # CCD 3, side F
-        self.ax.text(10 / PIXEL_SIZE, 10 / PIXEL_SIZE, &#34;E&#34;, rotation=90)        # CCD 4, side E
-        self.ax.text(10 / PIXEL_SIZE, 50 / PIXEL_SIZE, &#34;F&#34;, rotation=90)        # CCD 4, side F
+        self.ax.text(-30 / PIXEL_SIZE, 10 / PIXEL_SIZE, self.fee_side.LEFT_SIDE.name, rotation=180)     # Upper left CCD, left side
+        self.ax.text(-75 / PIXEL_SIZE, 10 / PIXEL_SIZE, self.fee_side.RIGHT_SIDE.name, rotation=180)    # Upper left CCD, right side
+        self.ax.text(-20 / PIXEL_SIZE, -15 / PIXEL_SIZE, self.fee_side.LEFT_SIDE.name, rotation=-90)    # Lower left CCD, left side
+        self.ax.text(-20 / PIXEL_SIZE, -75 / PIXEL_SIZE, self.fee_side.RIGHT_SIDE.name, rotation=-90)   # Lower left CCD, right side
+        self.ax.text(10 / PIXEL_SIZE, -15 / PIXEL_SIZE, self.fee_side.LEFT_SIDE.name)   # Lower right CCD, left side
+        self.ax.text(50 / PIXEL_SIZE, -15 / PIXEL_SIZE, self.fee_side.RIGHT_SIDE.name)  # Lower right CCD, right side
+        self.ax.text(10 / PIXEL_SIZE, 10 / PIXEL_SIZE, self.fee_side.LEFT_SIDE.name, rotation=90)   # Upper right CCD, left side
+        self.ax.text(10 / PIXEL_SIZE, 50 / PIXEL_SIZE, self.fee_side.RIGHT_SIDE.name, rotation=90)  # Upper right CCD, right side
 
-        self.ax.plot([-ZEROPOINT[0] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE, -ZEROPOINT[0] / PIXEL_SIZE, -ZEROPOINT[0] / PIXEL_SIZE], [ZEROPOINT[0] /
-                                                                                                                                                                  PIXEL_SIZE, ZEROPOINT[0] / PIXEL_SIZE, -ZEROPOINT[1] / PIXEL_SIZE, -ZEROPOINT[1] / PIXEL_SIZE, ZEROPOINT[0] / PIXEL_SIZE], color=&#34;k&#34;, linewidth=1)  # CCD 1
-        self.ax.plot([-ZEROPOINT[0] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE, -ZEROPOINT[0] / PIXEL_SIZE, -ZEROPOINT[0] / PIXEL_SIZE], [-ZEROPOINT[0] /
-                                                                                                                                                                  PIXEL_SIZE, -ZEROPOINT[0] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE, -ZEROPOINT[0] / PIXEL_SIZE], color=&#34;k&#34;, linewidth=1)  # CCD 2
-        self.ax.plot([-ZEROPOINT[1] / PIXEL_SIZE, ZEROPOINT[0] / PIXEL_SIZE, ZEROPOINT[0] / PIXEL_SIZE, -ZEROPOINT[1] / PIXEL_SIZE, -ZEROPOINT[1] / PIXEL_SIZE], [-ZEROPOINT[0] /
-                                                                                                                                                                  PIXEL_SIZE, -ZEROPOINT[0] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE, -ZEROPOINT[0] / PIXEL_SIZE], color=&#34;k&#34;, linewidth=1)  # CCD 3
-        self.ax.plot([-ZEROPOINT[1] / PIXEL_SIZE, ZEROPOINT[0] / PIXEL_SIZE, ZEROPOINT[0] / PIXEL_SIZE, -ZEROPOINT[1] / PIXEL_SIZE, -ZEROPOINT[1] / PIXEL_SIZE], [ZEROPOINT[0] /
-                                                                                                                                                                  PIXEL_SIZE, ZEROPOINT[0] / PIXEL_SIZE, -ZEROPOINT[1] / PIXEL_SIZE, -ZEROPOINT[1] / PIXEL_SIZE, ZEROPOINT[0] / PIXEL_SIZE], color=&#34;k&#34;, linewidth=1)  # CCD 4
+        self.ax.plot([-ZEROPOINT[0] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE, -ZEROPOINT[0] / PIXEL_SIZE, -ZEROPOINT[0] / PIXEL_SIZE],
+                     [ZEROPOINT[0] / PIXEL_SIZE, ZEROPOINT[0] / PIXEL_SIZE, -ZEROPOINT[1] / PIXEL_SIZE, -ZEROPOINT[1] / PIXEL_SIZE, ZEROPOINT[0] / PIXEL_SIZE],
+                     color=&#34;k&#34;, linewidth=1)  # Upper left CCD
+        self.ax.plot([-ZEROPOINT[0] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE, -ZEROPOINT[0] / PIXEL_SIZE, -ZEROPOINT[0] / PIXEL_SIZE],
+                     [-ZEROPOINT[0] / PIXEL_SIZE, -ZEROPOINT[0] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE, -ZEROPOINT[0] / PIXEL_SIZE],
+                     color=&#34;k&#34;, linewidth=1)  # Lower left CCD
+        self.ax.plot([-ZEROPOINT[1] / PIXEL_SIZE, ZEROPOINT[0] / PIXEL_SIZE, ZEROPOINT[0] / PIXEL_SIZE, -ZEROPOINT[1] / PIXEL_SIZE, -ZEROPOINT[1] / PIXEL_SIZE],
+                     [-ZEROPOINT[0] / PIXEL_SIZE, -ZEROPOINT[0] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE, -ZEROPOINT[0] / PIXEL_SIZE],
+                     color=&#34;k&#34;, linewidth=1)  # Lower right CCD
+        self.ax.plot([-ZEROPOINT[1] / PIXEL_SIZE, ZEROPOINT[0] / PIXEL_SIZE, ZEROPOINT[0] / PIXEL_SIZE, -ZEROPOINT[1] / PIXEL_SIZE, -ZEROPOINT[1] / PIXEL_SIZE],
+                     [ZEROPOINT[0] / PIXEL_SIZE, ZEROPOINT[0] / PIXEL_SIZE, -ZEROPOINT[1] / PIXEL_SIZE, -ZEROPOINT[1] / PIXEL_SIZE, ZEROPOINT[0] / PIXEL_SIZE],
+                     color=&#34;k&#34;, linewidth=1)  # Upper right CCD
 
         # Grid lines
 
@@ -357,7 +381,8 @@ class FocalPlane(FigureCanvas):
         # Circle indicating the size of the FOV [mm]
 
         self.circle = plt.Circle(
-            (0, 0), FOV_SETTINGS.RADIUS_DEGREES, color=&#39;b&#39;, fill=False, label=&#34;FOV&#34;, linewidth=1, transform=self.ax.transData._b)
+            (0, 0), FOV_SETTINGS.RADIUS_DEGREES, color=&#39;b&#39;, fill=False, label=&#34;FOV&#34;, linewidth=1,
+            transform=self.ax.transData._b)
         self.ax.add_artist(self.circle)
 
         # Range
@@ -371,26 +396,26 @@ class FocalPlane(FigureCanvas):
         # CCD codes
 
         theta, phi = focal_plane_coordinates_to_angles(-30, 10)
-        self.ax.text(radians(phi), theta, &#34;E&#34;, rotation=180)      # CCD 1, side E
+        self.ax.text(radians(phi), theta, self.fee_side.LEFT_SIDE.name, rotation=180)      # Upper left CCD, left side
         theta, phi = focal_plane_coordinates_to_angles(-75, 10)
-        self.ax.text(radians(phi), theta, &#34;F&#34;, rotation=180)      # CCD 1, side F
+        self.ax.text(radians(phi), theta, self.fee_side.RIGHT_SIDE.name, rotation=180)     # Upper left CCD, right side
         theta, phi = focal_plane_coordinates_to_angles(-20, -15)
-        self.ax.text(radians(phi), theta, &#34;E&#34;, rotation=-90)     # CCD 2, side E
+        self.ax.text(radians(phi), theta, self.fee_side.LEFT_SIDE.name, rotation=-90)      # Lower left CCD, left side
         theta, phi = focal_plane_coordinates_to_angles(-20, -75)
-        self.ax.text(radians(phi), theta, &#34;F&#34;, rotation=-90)     # CCD 2, side F
+        self.ax.text(radians(phi), theta, self.fee_side.RIGHT_SIDE.name, rotation=-90)     # Lower left CCD, right side
         theta, phi = focal_plane_coordinates_to_angles(10, -15)
-        self.ax.text(radians(phi), theta, &#34;E&#34;)                    # CCD 3, side E
+        self.ax.text(radians(phi), theta, self.fee_side.LEFT_SIDE.name)                    # Lower right CCD, left side
         theta, phi = focal_plane_coordinates_to_angles(50, -15)
-        self.ax.text(radians(phi), theta, &#34;F&#34;)                    # CCD 3, side F
+        self.ax.text(radians(phi), theta, self.fee_side.RIGHT_SIDE.name)                   # Lower right CCD, right side
         theta, phi = focal_plane_coordinates_to_angles(10, 10)
-        self.ax.text(radians(phi), theta, &#34;E&#34;, rotation=90)        # CCD 4, side E
+        self.ax.text(radians(phi), theta, self.fee_side.LEFT_SIDE.name, rotation=90)       # Upper right CCD, left side
         theta, phi = focal_plane_coordinates_to_angles(10, 50)
-        self.ax.text(radians(phi), theta, &#34;F&#34;, rotation=90)        # CCD 4, side F
+        self.ax.text(radians(phi), theta, self.fee_side.RIGHT_SIDE.name, rotation=90)      # Upper right CCD, right side
 
-        self.ax.text(radians(135), 22, &#34;CCD #1&#34;, ha=&#34;center&#34;)              # CCD 1
-        self.ax.text(radians(-135), 22, &#34;CCD #2&#34;, ha=&#34;center&#34;, va=&#34;top&#34;)   # CCD 2
-        self.ax.text(radians(-45), 22, &#34;CCD #3&#34;, ha=&#34;center&#34;, va=&#34;top&#34;)    # CCD 3
-        self.ax.text(radians(45), 22, &#34;CCD #4&#34;, ha=&#34;center&#34;)               #  CCD 4
+        self.ax.text(radians(135), 22, self.ccd_id[2], ha=&#34;center&#34;)              # Upper left CCD
+        self.ax.text(radians(-135), 22, self.ccd_id[3], ha=&#34;center&#34;, va=&#34;top&#34;)   # Lower left CCD
+        self.ax.text(radians(-45), 22, self.ccd_id[0], ha=&#34;center&#34;, va=&#34;top&#34;)    # Lower right CCD
+        self.ax.text(radians(45), 22, self.ccd_id[1], ha=&#34;center&#34;)               # Upper right CCD
 
         (theta1_ccd1, phi1_ccd1) = focal_plane_coordinates_to_angles(-ZEROPOINT[0], -ZEROPOINT[1])
         (theta2_ccd1, phi2_ccd1) = focal_plane_coordinates_to_angles(ZEROPOINT[1], -ZEROPOINT[1])
@@ -403,7 +428,8 @@ class FocalPlane(FigureCanvas):
         phi4_ccd1 = radians(phi4_ccd1)
 
         self.ax.plot([phi1_ccd1, phi2_ccd1], [theta1_ccd1, theta2_ccd1], color=&#34;k&#34;, linewidth=3)
-        self.ax.plot([phi1_ccd1, phi2_ccd1, phi3_ccd1, phi4_ccd1, phi1_ccd1], [theta1_ccd1, theta2_ccd1, theta3_ccd1, theta4_ccd1, theta1_ccd1], color=&#34;k&#34;, linewidth=1)
+        self.ax.plot([phi1_ccd1, phi2_ccd1, phi3_ccd1, phi4_ccd1, phi1_ccd1],
+                     [theta1_ccd1, theta2_ccd1, theta3_ccd1, theta4_ccd1, theta1_ccd1], color=&#34;k&#34;, linewidth=1)
 
         (theta1_ccd2, phi1_ccd2) = focal_plane_coordinates_to_angles(ZEROPOINT[1], -ZEROPOINT[0])
         (theta2_ccd2, phi2_ccd2) = focal_plane_coordinates_to_angles(ZEROPOINT[1], ZEROPOINT[1])
@@ -416,7 +442,8 @@ class FocalPlane(FigureCanvas):
         phi4_ccd2 = radians(phi4_ccd2)
 
         self.ax.plot([phi1_ccd2, phi2_ccd2], [theta1_ccd2, theta2_ccd2], color=&#34;k&#34;, linewidth=3)
-        self.ax.plot([phi1_ccd2, phi2_ccd2, phi3_ccd2, phi4_ccd2, phi1_ccd2], [theta1_ccd2, theta2_ccd2, theta3_ccd2, theta4_ccd2, theta1_ccd2], color=&#34;k&#34;, linewidth=1)
+        self.ax.plot([phi1_ccd2, phi2_ccd2, phi3_ccd2, phi4_ccd2, phi1_ccd2],
+                     [theta1_ccd2, theta2_ccd2, theta3_ccd2, theta4_ccd2, theta1_ccd2], color=&#34;k&#34;, linewidth=1)
 
         (theta1_ccd3, phi1_ccd3) = focal_plane_coordinates_to_angles(ZEROPOINT[0], ZEROPOINT[1])
         (theta2_ccd3, phi2_ccd3) = focal_plane_coordinates_to_angles(-ZEROPOINT[1], ZEROPOINT[1])
@@ -429,7 +456,8 @@ class FocalPlane(FigureCanvas):
         phi4_ccd3 = radians(phi4_ccd3)
 
         self.ax.plot([phi1_ccd3, phi2_ccd3], [theta1_ccd3, theta2_ccd3], color=&#34;k&#34;, linewidth=3)
-        self.ax.plot([phi1_ccd3, phi2_ccd3, phi3_ccd3, phi4_ccd3, phi1_ccd3], [theta1_ccd3, theta2_ccd3, theta3_ccd3, theta4_ccd3, theta1_ccd3], color=&#34;k&#34;, linewidth=1)
+        self.ax.plot([phi1_ccd3, phi2_ccd3, phi3_ccd3, phi4_ccd3, phi1_ccd3],
+                     [theta1_ccd3, theta2_ccd3, theta3_ccd3, theta4_ccd3, theta1_ccd3], color=&#34;k&#34;, linewidth=1)
 
         (theta1_ccd4, phi1_ccd4) = focal_plane_coordinates_to_angles(-ZEROPOINT[1], ZEROPOINT[0])
         (theta2_ccd4, phi2_ccd4) = focal_plane_coordinates_to_angles(-ZEROPOINT[1], -ZEROPOINT[1])
@@ -442,7 +470,8 @@ class FocalPlane(FigureCanvas):
         phi4_ccd4 = radians(phi4_ccd4)
 
         self.ax.plot([phi1_ccd4, phi2_ccd4], [theta1_ccd4, theta2_ccd4], color=&#34;k&#34;, linewidth=3)
-        self.ax.plot([phi1_ccd4, phi2_ccd4, phi3_ccd4, phi4_ccd4, phi1_ccd4], [theta1_ccd4, theta2_ccd4, theta3_ccd4, theta4_ccd4, theta1_ccd4], color=&#34;k&#34;, linewidth=1)
+        self.ax.plot([phi1_ccd4, phi2_ccd4, phi3_ccd4, phi4_ccd4, phi1_ccd4],
+                     [theta1_ccd4, theta2_ccd4, theta3_ccd4, theta4_ccd4, theta1_ccd4], color=&#34;k&#34;, linewidth=1)
 
         # CCD middle
 
@@ -450,25 +479,25 @@ class FocalPlane(FigureCanvas):
         (theta2, phi2) = focal_plane_coordinates_to_angles((ZEROPOINT[1] - ZEROPOINT[0]) / 2, ZEROPOINT[0])
         phi1 = radians(phi1)
         phi2 = radians(phi2)
-        self.ax.plot([phi1, phi2], [theta1, theta2], color=&#34;k&#34;, linewidth=1, linestyle=&#34;dotted&#34;)    # CCD 1
+        self.ax.plot([phi1, phi2], [theta1, theta2], color=&#34;k&#34;, linewidth=1, linestyle=&#34;dotted&#34;)    # Upper left CCD
 
         (theta1, phi1) = focal_plane_coordinates_to_angles(ZEROPOINT[0], -(ZEROPOINT[1] - ZEROPOINT[0]) / 2)
         (theta2, phi2) = focal_plane_coordinates_to_angles(-ZEROPOINT[1], -(ZEROPOINT[1] - ZEROPOINT[0]) / 2)
         phi1 = radians(phi1)
         phi2 = radians(phi2)
-        self.ax.plot([phi1, phi2], [theta1, theta2], color=&#34;k&#34;, linewidth=1, linestyle=&#34;dotted&#34;)    # CCD 2
+        self.ax.plot([phi1, phi2], [theta1, theta2], color=&#34;k&#34;, linewidth=1, linestyle=&#34;dotted&#34;)    # Lower left CCD
 
         (theta1, phi1) = focal_plane_coordinates_to_angles(-(ZEROPOINT[1] - ZEROPOINT[0]) / 2, ZEROPOINT[1])
         (theta2, phi2) = focal_plane_coordinates_to_angles(-(ZEROPOINT[1] - ZEROPOINT[0]) / 2, -ZEROPOINT[0])
         phi1 = radians(phi1)
         phi2 = radians(phi2)
-        self.ax.plot([phi1, phi2], [theta1, theta2], color=&#34;k&#34;, linewidth=1, linestyle=&#34;dotted&#34;)    # CCD 3
+        self.ax.plot([phi1, phi2], [theta1, theta2], color=&#34;k&#34;, linewidth=1, linestyle=&#34;dotted&#34;)    # Lower right CCD
 
         (theta1, phi1) = focal_plane_coordinates_to_angles(-ZEROPOINT[0], (ZEROPOINT[1] - ZEROPOINT[0]) / 2)
         (theta2, phi2) = focal_plane_coordinates_to_angles(ZEROPOINT[1], (ZEROPOINT[1] - ZEROPOINT[0]) / 2)
         phi1 = radians(phi1)
         phi2 = radians(phi2)
-        self.ax.plot([phi1, phi2], [theta1, theta2], color=&#34;k&#34;, linewidth=1, linestyle=&#34;dotted&#34;)    # CCD 4
+        self.ax.plot([phi1, phi2], [theta1, theta2], color=&#34;k&#34;, linewidth=1, linestyle=&#34;dotted&#34;)    # Uoper right CCD
 
         # Grid lines
 
@@ -627,10 +656,14 @@ class FocalPlaneWithSubField(FocalPlane):
 
         # Draw the sub-field
 
-        (x_fp_1, y_fp_1) = ccd_to_focal_plane_coordinates(self.zeropoint_row, self.zeropoint_column, self.ccd_code)
-        (x_fp_2, y_fp_2) = ccd_to_focal_plane_coordinates(self.zeropoint_row + self.num_rows, self.zeropoint_column, self.ccd_code)
-        (x_fp_3, y_fp_3) = ccd_to_focal_plane_coordinates(self.zeropoint_row + self.num_rows, self.zeropoint_column + self.num_columns, self.ccd_code)
-        (x_fp_4, y_fp_4) = ccd_to_focal_plane_coordinates(self.zeropoint_row, self.zeropoint_column + self.num_columns, self.ccd_code)
+        (x_fp_1, y_fp_1) = ccd_to_focal_plane_coordinates(
+            self.zeropoint_row, self.zeropoint_column, self.ccd_code)
+        (x_fp_2, y_fp_2) = ccd_to_focal_plane_coordinates(
+            self.zeropoint_row + self.num_rows, self.zeropoint_column, self.ccd_code)
+        (x_fp_3, y_fp_3) = ccd_to_focal_plane_coordinates(
+            self.zeropoint_row + self.num_rows, self.zeropoint_column + self.num_columns, self.ccd_code)
+        (x_fp_4, y_fp_4) = ccd_to_focal_plane_coordinates(
+            self.zeropoint_row, self.zeropoint_column + self.num_columns, self.ccd_code)
 
         if self.coordinate_system == COORDINATE_SYSTEMS[&#34;Focal plane&#34;]:
 
@@ -1325,6 +1358,8 @@ field-of-view.</p></div>
         Initialisation of a plot of the focal plane, with a blue circle indicating the
         field-of-view.
         &#34;&#34;&#34;
+        self.fee_side = GlobalState.setup.camera.fee.ccd_sides.enum
+        self.ccd_id = GlobalState.setup.camera.fee.ccd_numbering.CCD_ID
 
         self.figure = Figure()
         self.ax = self.figure.add_subplot(111)
@@ -1397,53 +1432,57 @@ field-of-view.</p></div>
         # Readout registers
 
         self.ax.plot([-ZEROPOINT[0], ZEROPOINT[1]], [-ZEROPOINT[1], -
-                                                     ZEROPOINT[1]], color=&#34;k&#34;, linewidth=3)   # CCD 1
+                                                     ZEROPOINT[1]], color=&#34;k&#34;, linewidth=3)   # Upper left CCD
         self.ax.plot([ZEROPOINT[1], ZEROPOINT[1]], [-ZEROPOINT[0],
-                                                    ZEROPOINT[1]], color=&#34;k&#34;, linewidth=3)    # CCD 2
+                                                    ZEROPOINT[1]], color=&#34;k&#34;, linewidth=3)    # Lower left CCD
         self.ax.plot([ZEROPOINT[0], -ZEROPOINT[1]], [ZEROPOINT[1],
-                                                     ZEROPOINT[1]], color=&#34;k&#34;, linewidth=3)   # CCD 3
+                                                     ZEROPOINT[1]], color=&#34;k&#34;, linewidth=3)   # Lower right CCD
         self.ax.plot([-ZEROPOINT[1], -ZEROPOINT[1]], [ZEROPOINT[0], -
-                                                      ZEROPOINT[1]], color=&#34;k&#34;, linewidth=3)  # CCD 3
+                                                      ZEROPOINT[1]], color=&#34;k&#34;, linewidth=3)  # Upper right CCD
 
         # CCD middle
 
         self.ax.plot([ZEROPOINT[0] - NUM_COLUMNS / 2 * PIXEL_SIZE, ZEROPOINT[0] - NUM_COLUMNS / 2 * PIXEL_SIZE],
                      [-ZEROPOINT[0], ZEROPOINT[1]], color=&#34;k&#34;, linewidth=1,
-                     linestyle=&#34;dotted&#34;)  # CCD 1
+                     linestyle=&#34;dotted&#34;)  # Upper left CCD
         self.ax.plot([-ZEROPOINT[1], ZEROPOINT[0]],
                      [ZEROPOINT[0] - NUM_COLUMNS / 2 * PIXEL_SIZE, ZEROPOINT[0] - NUM_COLUMNS / 2 * PIXEL_SIZE],
-                     color=&#34;k&#34;, linewidth=1, linestyle=&#34;dotted&#34;)  # CCD 2
+                     color=&#34;k&#34;, linewidth=1, linestyle=&#34;dotted&#34;)  # Lower left CCD
         self.ax.plot([-ZEROPOINT[0] + NUM_COLUMNS / 2 * PIXEL_SIZE, -ZEROPOINT[0] + NUM_COLUMNS / 2 * PIXEL_SIZE],
                      [-ZEROPOINT[1], ZEROPOINT[0]], color=&#34;k&#34;, linewidth=1,
-                     linestyle=&#34;dotted&#34;)  # CCD 3
+                     linestyle=&#34;dotted&#34;)  # Lower right CCD
         self.ax.plot([-ZEROPOINT[0], ZEROPOINT[1]],
                      [-ZEROPOINT[0] + NUM_COLUMNS / 2 * PIXEL_SIZE, -ZEROPOINT[0] + NUM_COLUMNS / 2 * PIXEL_SIZE],
-                     color=&#34;k&#34;, linewidth=1, linestyle=&#34;dotted&#34;)  # CCD 4
+                     color=&#34;k&#34;, linewidth=1, linestyle=&#34;dotted&#34;)  # Upper right CCD
 
         # CCD codes
 
-        self.ax.text(-80, 70, &#34;CCD #1&#34;)     # CCD 1
-        self.ax.text(-80, -75, &#34;CCD #2&#34;)    # CCD 2
-        self.ax.text(60, -75, &#34;CCD #3&#34;)     # CCD 3
-        self.ax.text(60, 70, &#34;CCD #4&#34;)      # CCD 4
+        self.ax.text(-80, 70, self.ccd_id[2])     # Upper left CCD
+        self.ax.text(-80, -75, self.ccd_id[3])    # Lower left CCD
+        self.ax.text(60, -75, self.ccd_id[0])     # Lower right CCD
+        self.ax.text(60, 70, self.ccd_id[1])      # Upper right CCD
 
-        self.ax.text(-30, 10, &#34;E&#34;, rotation=180)  # CCD 1, side E
-        self.ax.text(-75, 10, &#34;F&#34;, rotation=180)  # CCD 1, side F
-        self.ax.text(-20, -15, &#34;E&#34;, rotation=-90)  # CCD 2, side E
-        self.ax.text(-20, -75, &#34;F&#34;, rotation=-90)  # CCD 2, side F
-        self.ax.text(10, -15, &#34;E&#34;)  # CCD 3, side E
-        self.ax.text(50, -15, &#34;F&#34;)  # CCD 3, side F
-        self.ax.text(10, 10, &#34;E&#34;, rotation=90)  # CCD 4, side E
-        self.ax.text(10, 50, &#34;F&#34;, rotation=90)  # CCD 4, side F
+        self.ax.text(-30, 10, self.fee_side.LEFT_SIDE.name, rotation=180)       # Upper leftCCD, left side
+        self.ax.text(-75, 10, self.fee_side.RIGHT_SIDE.name, rotation=180)      # Upper left CCD, right side
+        self.ax.text(-20, -15, self.fee_side.LEFT_SIDE.name, rotation=-90)      # Lower left CCD, left side
+        self.ax.text(-20, -75, self.fee_side.RIGHT_SIDE.name, rotation=-90)     # Lower left CCD, right side
+        self.ax.text(10, -15, self.fee_side.LEFT_SIDE.name)                     # Lower right CCD, left side
+        self.ax.text(50, -15, self.fee_side.RIGHT_SIDE.name)                    # Lower right CCD, right side
+        self.ax.text(10, 10, self.fee_side.LEFT_SIDE.name, rotation=90)         # Upper right CCD, left side
+        self.ax.text(10, 50, self.fee_side.RIGHT_SIDE.name, rotation=90)        # Upper right CCD, right side
 
-        self.ax.plot([-ZEROPOINT[0], ZEROPOINT[1], ZEROPOINT[1], -ZEROPOINT[0], -ZEROPOINT[0]], [ZEROPOINT[0],
-                                                                                                 ZEROPOINT[0], -ZEROPOINT[1], -ZEROPOINT[1], ZEROPOINT[0]], color=&#34;k&#34;, linewidth=1)  # CCD 1
-        self.ax.plot([-ZEROPOINT[0], ZEROPOINT[1], ZEROPOINT[1], -ZEROPOINT[0], -ZEROPOINT[0]], [-ZEROPOINT[0], -
-                                                                                                 ZEROPOINT[0], ZEROPOINT[1], ZEROPOINT[1], -ZEROPOINT[0]], color=&#34;k&#34;, linewidth=1)  # CCD 2
-        self.ax.plot([-ZEROPOINT[1], ZEROPOINT[0], ZEROPOINT[0], -ZEROPOINT[1], -ZEROPOINT[1]], [-ZEROPOINT[0], -
-                                                                                                 ZEROPOINT[0], ZEROPOINT[1], ZEROPOINT[1], -ZEROPOINT[0]], color=&#34;k&#34;, linewidth=1)  # CCD 3
-        self.ax.plot([-ZEROPOINT[1], ZEROPOINT[0], ZEROPOINT[0], -ZEROPOINT[1], -ZEROPOINT[1]], [ZEROPOINT[0],
-                                                                                                 ZEROPOINT[0], -ZEROPOINT[1], -ZEROPOINT[1], ZEROPOINT[0]], color=&#34;k&#34;, linewidth=1)  # CCD 4
+        self.ax.plot([-ZEROPOINT[0], ZEROPOINT[1], ZEROPOINT[1], -ZEROPOINT[0], -ZEROPOINT[0]],
+                     [ZEROPOINT[0], ZEROPOINT[0], -ZEROPOINT[1], -ZEROPOINT[1], ZEROPOINT[0]],
+                     color=&#34;k&#34;, linewidth=1)  # Upper left CCD
+        self.ax.plot([-ZEROPOINT[0], ZEROPOINT[1], ZEROPOINT[1], -ZEROPOINT[0], -ZEROPOINT[0]],
+                     [-ZEROPOINT[0], - ZEROPOINT[0], ZEROPOINT[1], ZEROPOINT[1], -ZEROPOINT[0]],
+                     color=&#34;k&#34;, linewidth=1)  # Lower left CCD
+        self.ax.plot([-ZEROPOINT[1], ZEROPOINT[0], ZEROPOINT[0], -ZEROPOINT[1], -ZEROPOINT[1]],
+                     [-ZEROPOINT[0], - ZEROPOINT[0], ZEROPOINT[1], ZEROPOINT[1], -ZEROPOINT[0]],
+                     color=&#34;k&#34;, linewidth=1)  # Lower right CCD
+        self.ax.plot([-ZEROPOINT[1], ZEROPOINT[0], ZEROPOINT[0], -ZEROPOINT[1], -ZEROPOINT[1]],
+                     [ZEROPOINT[0], ZEROPOINT[0], -ZEROPOINT[1], -ZEROPOINT[1], ZEROPOINT[0]],
+                     color=&#34;k&#34;, linewidth=1)  # Upper right CCD
 
         # Grid lines
 
@@ -1516,46 +1555,62 @@ field-of-view.</p></div>
 
         # Readout registers
 
-        self.ax.plot([-ZEROPOINT[0] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE], [-ZEROPOINT[1] /
-                                                                               PIXEL_SIZE, -ZEROPOINT[1] / PIXEL_SIZE], color=&#34;k&#34;, linewidth=3)  # CCD 1
-        self.ax.plot([ZEROPOINT[1] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE], [-ZEROPOINT[0] /
-                                                                              PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE], color=&#34;k&#34;, linewidth=3)    # CCD 2
-        self.ax.plot([ZEROPOINT[0] / PIXEL_SIZE, -ZEROPOINT[1] / PIXEL_SIZE], [ZEROPOINT[1] /
-                                                                               PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE], color=&#34;k&#34;, linewidth=3)    # CCD 3
-        self.ax.plot([-ZEROPOINT[1] / PIXEL_SIZE, -ZEROPOINT[1] / PIXEL_SIZE], [ZEROPOINT[0] /
-                                                                                PIXEL_SIZE, -ZEROPOINT[1] / PIXEL_SIZE], color=&#34;k&#34;, linewidth=3)  # CCD 4
+        self.ax.plot([-ZEROPOINT[0] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE],
+                     [-ZEROPOINT[1] / PIXEL_SIZE, -ZEROPOINT[1] / PIXEL_SIZE],
+                     color=&#34;k&#34;, linewidth=3)  # Upper left CCD
+        self.ax.plot([ZEROPOINT[1] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE],
+                     [-ZEROPOINT[0] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE],
+                     color=&#34;k&#34;, linewidth=3)    # Lower left CCD
+        self.ax.plot([ZEROPOINT[0] / PIXEL_SIZE, -ZEROPOINT[1] / PIXEL_SIZE],
+                     [ZEROPOINT[1] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE],
+                     color=&#34;k&#34;, linewidth=3)    # Lower right CCD
+        self.ax.plot([-ZEROPOINT[1] / PIXEL_SIZE, -ZEROPOINT[1] / PIXEL_SIZE],
+                     [ZEROPOINT[0] / PIXEL_SIZE, -ZEROPOINT[1] / PIXEL_SIZE],
+                     color=&#34;k&#34;, linewidth=3)  # Upper right CCD
 
         # CCD middle
 
-        self.ax.plot([ZEROPOINT[0] / PIXEL_SIZE - NUM_COLUMNS / 2, ZEROPOINT[0] / PIXEL_SIZE - NUM_COLUMNS / 2], [-ZEROPOINT[0] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE], color=&#34;k&#34;, linewidth=1, linestyle=&#34;dotted&#34;)  # CCD 1
-        self.ax.plot([-ZEROPOINT[1] / PIXEL_SIZE, ZEROPOINT[0] / PIXEL_SIZE], [ZEROPOINT[0] / PIXEL_SIZE - NUM_COLUMNS / 2, ZEROPOINT[0] / PIXEL_SIZE - NUM_COLUMNS / 2], color=&#34;k&#34;, linewidth=1, linestyle=&#34;dotted&#34;)  # CCD 2
-        self.ax.plot([-ZEROPOINT[0] / PIXEL_SIZE + NUM_COLUMNS / 2, -ZEROPOINT[0] / PIXEL_SIZE + NUM_COLUMNS / 2], [-ZEROPOINT[1] / PIXEL_SIZE, ZEROPOINT[0] / PIXEL_SIZE], color=&#34;k&#34;, linewidth=1, linestyle=&#34;dotted&#34;)  # CCD 3
-        self.ax.plot([-ZEROPOINT[0] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE], [-ZEROPOINT[0] / PIXEL_SIZE + NUM_COLUMNS / 2, -ZEROPOINT[0] / PIXEL_SIZE + NUM_COLUMNS / 2], color=&#34;k&#34;, linewidth=1, linestyle=&#34;dotted&#34;)  # CCD 4
+        self.ax.plot([ZEROPOINT[0] / PIXEL_SIZE - NUM_COLUMNS / 2, ZEROPOINT[0] / PIXEL_SIZE - NUM_COLUMNS / 2],
+                     [-ZEROPOINT[0] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE],
+                     color=&#34;k&#34;, linewidth=1, linestyle=&#34;dotted&#34;)  # Upper left CCD
+        self.ax.plot([-ZEROPOINT[1] / PIXEL_SIZE, ZEROPOINT[0] / PIXEL_SIZE],
+                     [ZEROPOINT[0] / PIXEL_SIZE - NUM_COLUMNS / 2, ZEROPOINT[0] / PIXEL_SIZE - NUM_COLUMNS / 2],
+                     color=&#34;k&#34;, linewidth=1, linestyle=&#34;dotted&#34;)  # Lower left CCD
+        self.ax.plot([-ZEROPOINT[0] / PIXEL_SIZE + NUM_COLUMNS / 2, -ZEROPOINT[0] / PIXEL_SIZE + NUM_COLUMNS / 2],
+                     [-ZEROPOINT[1] / PIXEL_SIZE, ZEROPOINT[0] / PIXEL_SIZE],
+                     color=&#34;k&#34;, linewidth=1, linestyle=&#34;dotted&#34;)  # Lower right CCD
+        self.ax.plot([-ZEROPOINT[0] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE],
+                     [-ZEROPOINT[0] / PIXEL_SIZE + NUM_COLUMNS / 2, -ZEROPOINT[0] / PIXEL_SIZE + NUM_COLUMNS / 2],
+                     color=&#34;k&#34;, linewidth=1, linestyle=&#34;dotted&#34;)  # Upper right CCD
 
         # CCD codes
 
-        self.ax.text(-80 / PIXEL_SIZE, 70 / PIXEL_SIZE, &#34;CCD #1&#34;)     # CCD 1
-        self.ax.text(-80 / PIXEL_SIZE, -75 / PIXEL_SIZE, &#34;CCD #2&#34;)    # CCD 2
-        self.ax.text(60 / PIXEL_SIZE, -75 / PIXEL_SIZE, &#34;CCD #3&#34;)     # CCD 3
-        self.ax.text(60 / PIXEL_SIZE, 70 / PIXEL_SIZE, &#34;CCD #4&#34;)      # CCD 4
+        self.ax.text(-80 / PIXEL_SIZE, 70 / PIXEL_SIZE, self.ccd_id[2])     # Upper left CCD
+        self.ax.text(-80 / PIXEL_SIZE, -75 / PIXEL_SIZE, self.ccd_id[3])    # Lower left CCD
+        self.ax.text(60 / PIXEL_SIZE, -75 / PIXEL_SIZE, self.ccd_id[0])     # Lower right CCD
+        self.ax.text(60 / PIXEL_SIZE, 70 / PIXEL_SIZE, self.ccd_id[1])      # Upper right CCD
 
-        self.ax.text(-30 / PIXEL_SIZE, 10 / PIXEL_SIZE, &#34;E&#34;, rotation=180)      # CCD 1, side E
-        self.ax.text(-75 / PIXEL_SIZE, 10 / PIXEL_SIZE, &#34;F&#34;, rotation=180)      # CCD 1, side F
-        self.ax.text(-20 / PIXEL_SIZE, -15 / PIXEL_SIZE, &#34;E&#34;, rotation=-90)     # CCD 2, side E
-        self.ax.text(-20 / PIXEL_SIZE, -75 / PIXEL_SIZE, &#34;F&#34;, rotation=-90)     # CCD 2, side F
-        self.ax.text(10 / PIXEL_SIZE, -15 / PIXEL_SIZE, &#34;E&#34;)                    # CCD 3, side E
-        self.ax.text(50 / PIXEL_SIZE, -15 / PIXEL_SIZE, &#34;F&#34;)                    # CCD 3, side F
-        self.ax.text(10 / PIXEL_SIZE, 10 / PIXEL_SIZE, &#34;E&#34;, rotation=90)        # CCD 4, side E
-        self.ax.text(10 / PIXEL_SIZE, 50 / PIXEL_SIZE, &#34;F&#34;, rotation=90)        # CCD 4, side F
+        self.ax.text(-30 / PIXEL_SIZE, 10 / PIXEL_SIZE, self.fee_side.LEFT_SIDE.name, rotation=180)     # Upper left CCD, left side
+        self.ax.text(-75 / PIXEL_SIZE, 10 / PIXEL_SIZE, self.fee_side.RIGHT_SIDE.name, rotation=180)    # Upper left CCD, right side
+        self.ax.text(-20 / PIXEL_SIZE, -15 / PIXEL_SIZE, self.fee_side.LEFT_SIDE.name, rotation=-90)    # Lower left CCD, left side
+        self.ax.text(-20 / PIXEL_SIZE, -75 / PIXEL_SIZE, self.fee_side.RIGHT_SIDE.name, rotation=-90)   # Lower left CCD, right side
+        self.ax.text(10 / PIXEL_SIZE, -15 / PIXEL_SIZE, self.fee_side.LEFT_SIDE.name)   # Lower right CCD, left side
+        self.ax.text(50 / PIXEL_SIZE, -15 / PIXEL_SIZE, self.fee_side.RIGHT_SIDE.name)  # Lower right CCD, right side
+        self.ax.text(10 / PIXEL_SIZE, 10 / PIXEL_SIZE, self.fee_side.LEFT_SIDE.name, rotation=90)   # Upper right CCD, left side
+        self.ax.text(10 / PIXEL_SIZE, 50 / PIXEL_SIZE, self.fee_side.RIGHT_SIDE.name, rotation=90)  # Upper right CCD, right side
 
-        self.ax.plot([-ZEROPOINT[0] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE, -ZEROPOINT[0] / PIXEL_SIZE, -ZEROPOINT[0] / PIXEL_SIZE], [ZEROPOINT[0] /
-                                                                                                                                                                  PIXEL_SIZE, ZEROPOINT[0] / PIXEL_SIZE, -ZEROPOINT[1] / PIXEL_SIZE, -ZEROPOINT[1] / PIXEL_SIZE, ZEROPOINT[0] / PIXEL_SIZE], color=&#34;k&#34;, linewidth=1)  # CCD 1
-        self.ax.plot([-ZEROPOINT[0] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE, -ZEROPOINT[0] / PIXEL_SIZE, -ZEROPOINT[0] / PIXEL_SIZE], [-ZEROPOINT[0] /
-                                                                                                                                                                  PIXEL_SIZE, -ZEROPOINT[0] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE, -ZEROPOINT[0] / PIXEL_SIZE], color=&#34;k&#34;, linewidth=1)  # CCD 2
-        self.ax.plot([-ZEROPOINT[1] / PIXEL_SIZE, ZEROPOINT[0] / PIXEL_SIZE, ZEROPOINT[0] / PIXEL_SIZE, -ZEROPOINT[1] / PIXEL_SIZE, -ZEROPOINT[1] / PIXEL_SIZE], [-ZEROPOINT[0] /
-                                                                                                                                                                  PIXEL_SIZE, -ZEROPOINT[0] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE, -ZEROPOINT[0] / PIXEL_SIZE], color=&#34;k&#34;, linewidth=1)  # CCD 3
-        self.ax.plot([-ZEROPOINT[1] / PIXEL_SIZE, ZEROPOINT[0] / PIXEL_SIZE, ZEROPOINT[0] / PIXEL_SIZE, -ZEROPOINT[1] / PIXEL_SIZE, -ZEROPOINT[1] / PIXEL_SIZE], [ZEROPOINT[0] /
-                                                                                                                                                                  PIXEL_SIZE, ZEROPOINT[0] / PIXEL_SIZE, -ZEROPOINT[1] / PIXEL_SIZE, -ZEROPOINT[1] / PIXEL_SIZE, ZEROPOINT[0] / PIXEL_SIZE], color=&#34;k&#34;, linewidth=1)  # CCD 4
+        self.ax.plot([-ZEROPOINT[0] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE, -ZEROPOINT[0] / PIXEL_SIZE, -ZEROPOINT[0] / PIXEL_SIZE],
+                     [ZEROPOINT[0] / PIXEL_SIZE, ZEROPOINT[0] / PIXEL_SIZE, -ZEROPOINT[1] / PIXEL_SIZE, -ZEROPOINT[1] / PIXEL_SIZE, ZEROPOINT[0] / PIXEL_SIZE],
+                     color=&#34;k&#34;, linewidth=1)  # Upper left CCD
+        self.ax.plot([-ZEROPOINT[0] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE, -ZEROPOINT[0] / PIXEL_SIZE, -ZEROPOINT[0] / PIXEL_SIZE],
+                     [-ZEROPOINT[0] / PIXEL_SIZE, -ZEROPOINT[0] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE, -ZEROPOINT[0] / PIXEL_SIZE],
+                     color=&#34;k&#34;, linewidth=1)  # Lower left CCD
+        self.ax.plot([-ZEROPOINT[1] / PIXEL_SIZE, ZEROPOINT[0] / PIXEL_SIZE, ZEROPOINT[0] / PIXEL_SIZE, -ZEROPOINT[1] / PIXEL_SIZE, -ZEROPOINT[1] / PIXEL_SIZE],
+                     [-ZEROPOINT[0] / PIXEL_SIZE, -ZEROPOINT[0] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE, -ZEROPOINT[0] / PIXEL_SIZE],
+                     color=&#34;k&#34;, linewidth=1)  # Lower right CCD
+        self.ax.plot([-ZEROPOINT[1] / PIXEL_SIZE, ZEROPOINT[0] / PIXEL_SIZE, ZEROPOINT[0] / PIXEL_SIZE, -ZEROPOINT[1] / PIXEL_SIZE, -ZEROPOINT[1] / PIXEL_SIZE],
+                     [ZEROPOINT[0] / PIXEL_SIZE, ZEROPOINT[0] / PIXEL_SIZE, -ZEROPOINT[1] / PIXEL_SIZE, -ZEROPOINT[1] / PIXEL_SIZE, ZEROPOINT[0] / PIXEL_SIZE],
+                     color=&#34;k&#34;, linewidth=1)  # Upper right CCD
 
         # Grid lines
 
@@ -1588,7 +1643,8 @@ field-of-view.</p></div>
         # Circle indicating the size of the FOV [mm]
 
         self.circle = plt.Circle(
-            (0, 0), FOV_SETTINGS.RADIUS_DEGREES, color=&#39;b&#39;, fill=False, label=&#34;FOV&#34;, linewidth=1, transform=self.ax.transData._b)
+            (0, 0), FOV_SETTINGS.RADIUS_DEGREES, color=&#39;b&#39;, fill=False, label=&#34;FOV&#34;, linewidth=1,
+            transform=self.ax.transData._b)
         self.ax.add_artist(self.circle)
 
         # Range
@@ -1602,26 +1658,26 @@ field-of-view.</p></div>
         # CCD codes
 
         theta, phi = focal_plane_coordinates_to_angles(-30, 10)
-        self.ax.text(radians(phi), theta, &#34;E&#34;, rotation=180)      # CCD 1, side E
+        self.ax.text(radians(phi), theta, self.fee_side.LEFT_SIDE.name, rotation=180)      # Upper left CCD, left side
         theta, phi = focal_plane_coordinates_to_angles(-75, 10)
-        self.ax.text(radians(phi), theta, &#34;F&#34;, rotation=180)      # CCD 1, side F
+        self.ax.text(radians(phi), theta, self.fee_side.RIGHT_SIDE.name, rotation=180)     # Upper left CCD, right side
         theta, phi = focal_plane_coordinates_to_angles(-20, -15)
-        self.ax.text(radians(phi), theta, &#34;E&#34;, rotation=-90)     # CCD 2, side E
+        self.ax.text(radians(phi), theta, self.fee_side.LEFT_SIDE.name, rotation=-90)      # Lower left CCD, left side
         theta, phi = focal_plane_coordinates_to_angles(-20, -75)
-        self.ax.text(radians(phi), theta, &#34;F&#34;, rotation=-90)     # CCD 2, side F
+        self.ax.text(radians(phi), theta, self.fee_side.RIGHT_SIDE.name, rotation=-90)     # Lower left CCD, right side
         theta, phi = focal_plane_coordinates_to_angles(10, -15)
-        self.ax.text(radians(phi), theta, &#34;E&#34;)                    # CCD 3, side E
+        self.ax.text(radians(phi), theta, self.fee_side.LEFT_SIDE.name)                    # Lower right CCD, left side
         theta, phi = focal_plane_coordinates_to_angles(50, -15)
-        self.ax.text(radians(phi), theta, &#34;F&#34;)                    # CCD 3, side F
+        self.ax.text(radians(phi), theta, self.fee_side.RIGHT_SIDE.name)                   # Lower right CCD, right side
         theta, phi = focal_plane_coordinates_to_angles(10, 10)
-        self.ax.text(radians(phi), theta, &#34;E&#34;, rotation=90)        # CCD 4, side E
+        self.ax.text(radians(phi), theta, self.fee_side.LEFT_SIDE.name, rotation=90)       # Upper right CCD, left side
         theta, phi = focal_plane_coordinates_to_angles(10, 50)
-        self.ax.text(radians(phi), theta, &#34;F&#34;, rotation=90)        # CCD 4, side F
+        self.ax.text(radians(phi), theta, self.fee_side.RIGHT_SIDE.name, rotation=90)      # Upper right CCD, right side
 
-        self.ax.text(radians(135), 22, &#34;CCD #1&#34;, ha=&#34;center&#34;)              # CCD 1
-        self.ax.text(radians(-135), 22, &#34;CCD #2&#34;, ha=&#34;center&#34;, va=&#34;top&#34;)   # CCD 2
-        self.ax.text(radians(-45), 22, &#34;CCD #3&#34;, ha=&#34;center&#34;, va=&#34;top&#34;)    # CCD 3
-        self.ax.text(radians(45), 22, &#34;CCD #4&#34;, ha=&#34;center&#34;)               #  CCD 4
+        self.ax.text(radians(135), 22, self.ccd_id[2], ha=&#34;center&#34;)              # Upper left CCD
+        self.ax.text(radians(-135), 22, self.ccd_id[3], ha=&#34;center&#34;, va=&#34;top&#34;)   # Lower left CCD
+        self.ax.text(radians(-45), 22, self.ccd_id[0], ha=&#34;center&#34;, va=&#34;top&#34;)    # Lower right CCD
+        self.ax.text(radians(45), 22, self.ccd_id[1], ha=&#34;center&#34;)               # Upper right CCD
 
         (theta1_ccd1, phi1_ccd1) = focal_plane_coordinates_to_angles(-ZEROPOINT[0], -ZEROPOINT[1])
         (theta2_ccd1, phi2_ccd1) = focal_plane_coordinates_to_angles(ZEROPOINT[1], -ZEROPOINT[1])
@@ -1634,7 +1690,8 @@ field-of-view.</p></div>
         phi4_ccd1 = radians(phi4_ccd1)
 
         self.ax.plot([phi1_ccd1, phi2_ccd1], [theta1_ccd1, theta2_ccd1], color=&#34;k&#34;, linewidth=3)
-        self.ax.plot([phi1_ccd1, phi2_ccd1, phi3_ccd1, phi4_ccd1, phi1_ccd1], [theta1_ccd1, theta2_ccd1, theta3_ccd1, theta4_ccd1, theta1_ccd1], color=&#34;k&#34;, linewidth=1)
+        self.ax.plot([phi1_ccd1, phi2_ccd1, phi3_ccd1, phi4_ccd1, phi1_ccd1],
+                     [theta1_ccd1, theta2_ccd1, theta3_ccd1, theta4_ccd1, theta1_ccd1], color=&#34;k&#34;, linewidth=1)
 
         (theta1_ccd2, phi1_ccd2) = focal_plane_coordinates_to_angles(ZEROPOINT[1], -ZEROPOINT[0])
         (theta2_ccd2, phi2_ccd2) = focal_plane_coordinates_to_angles(ZEROPOINT[1], ZEROPOINT[1])
@@ -1647,7 +1704,8 @@ field-of-view.</p></div>
         phi4_ccd2 = radians(phi4_ccd2)
 
         self.ax.plot([phi1_ccd2, phi2_ccd2], [theta1_ccd2, theta2_ccd2], color=&#34;k&#34;, linewidth=3)
-        self.ax.plot([phi1_ccd2, phi2_ccd2, phi3_ccd2, phi4_ccd2, phi1_ccd2], [theta1_ccd2, theta2_ccd2, theta3_ccd2, theta4_ccd2, theta1_ccd2], color=&#34;k&#34;, linewidth=1)
+        self.ax.plot([phi1_ccd2, phi2_ccd2, phi3_ccd2, phi4_ccd2, phi1_ccd2],
+                     [theta1_ccd2, theta2_ccd2, theta3_ccd2, theta4_ccd2, theta1_ccd2], color=&#34;k&#34;, linewidth=1)
 
         (theta1_ccd3, phi1_ccd3) = focal_plane_coordinates_to_angles(ZEROPOINT[0], ZEROPOINT[1])
         (theta2_ccd3, phi2_ccd3) = focal_plane_coordinates_to_angles(-ZEROPOINT[1], ZEROPOINT[1])
@@ -1660,7 +1718,8 @@ field-of-view.</p></div>
         phi4_ccd3 = radians(phi4_ccd3)
 
         self.ax.plot([phi1_ccd3, phi2_ccd3], [theta1_ccd3, theta2_ccd3], color=&#34;k&#34;, linewidth=3)
-        self.ax.plot([phi1_ccd3, phi2_ccd3, phi3_ccd3, phi4_ccd3, phi1_ccd3], [theta1_ccd3, theta2_ccd3, theta3_ccd3, theta4_ccd3, theta1_ccd3], color=&#34;k&#34;, linewidth=1)
+        self.ax.plot([phi1_ccd3, phi2_ccd3, phi3_ccd3, phi4_ccd3, phi1_ccd3],
+                     [theta1_ccd3, theta2_ccd3, theta3_ccd3, theta4_ccd3, theta1_ccd3], color=&#34;k&#34;, linewidth=1)
 
         (theta1_ccd4, phi1_ccd4) = focal_plane_coordinates_to_angles(-ZEROPOINT[1], ZEROPOINT[0])
         (theta2_ccd4, phi2_ccd4) = focal_plane_coordinates_to_angles(-ZEROPOINT[1], -ZEROPOINT[1])
@@ -1673,7 +1732,8 @@ field-of-view.</p></div>
         phi4_ccd4 = radians(phi4_ccd4)
 
         self.ax.plot([phi1_ccd4, phi2_ccd4], [theta1_ccd4, theta2_ccd4], color=&#34;k&#34;, linewidth=3)
-        self.ax.plot([phi1_ccd4, phi2_ccd4, phi3_ccd4, phi4_ccd4, phi1_ccd4], [theta1_ccd4, theta2_ccd4, theta3_ccd4, theta4_ccd4, theta1_ccd4], color=&#34;k&#34;, linewidth=1)
+        self.ax.plot([phi1_ccd4, phi2_ccd4, phi3_ccd4, phi4_ccd4, phi1_ccd4],
+                     [theta1_ccd4, theta2_ccd4, theta3_ccd4, theta4_ccd4, theta1_ccd4], color=&#34;k&#34;, linewidth=1)
 
         # CCD middle
 
@@ -1681,25 +1741,25 @@ field-of-view.</p></div>
         (theta2, phi2) = focal_plane_coordinates_to_angles((ZEROPOINT[1] - ZEROPOINT[0]) / 2, ZEROPOINT[0])
         phi1 = radians(phi1)
         phi2 = radians(phi2)
-        self.ax.plot([phi1, phi2], [theta1, theta2], color=&#34;k&#34;, linewidth=1, linestyle=&#34;dotted&#34;)    # CCD 1
+        self.ax.plot([phi1, phi2], [theta1, theta2], color=&#34;k&#34;, linewidth=1, linestyle=&#34;dotted&#34;)    # Upper left CCD
 
         (theta1, phi1) = focal_plane_coordinates_to_angles(ZEROPOINT[0], -(ZEROPOINT[1] - ZEROPOINT[0]) / 2)
         (theta2, phi2) = focal_plane_coordinates_to_angles(-ZEROPOINT[1], -(ZEROPOINT[1] - ZEROPOINT[0]) / 2)
         phi1 = radians(phi1)
         phi2 = radians(phi2)
-        self.ax.plot([phi1, phi2], [theta1, theta2], color=&#34;k&#34;, linewidth=1, linestyle=&#34;dotted&#34;)    # CCD 2
+        self.ax.plot([phi1, phi2], [theta1, theta2], color=&#34;k&#34;, linewidth=1, linestyle=&#34;dotted&#34;)    # Lower left CCD
 
         (theta1, phi1) = focal_plane_coordinates_to_angles(-(ZEROPOINT[1] - ZEROPOINT[0]) / 2, ZEROPOINT[1])
         (theta2, phi2) = focal_plane_coordinates_to_angles(-(ZEROPOINT[1] - ZEROPOINT[0]) / 2, -ZEROPOINT[0])
         phi1 = radians(phi1)
         phi2 = radians(phi2)
-        self.ax.plot([phi1, phi2], [theta1, theta2], color=&#34;k&#34;, linewidth=1, linestyle=&#34;dotted&#34;)    # CCD 3
+        self.ax.plot([phi1, phi2], [theta1, theta2], color=&#34;k&#34;, linewidth=1, linestyle=&#34;dotted&#34;)    # Lower right CCD
 
         (theta1, phi1) = focal_plane_coordinates_to_angles(-ZEROPOINT[0], (ZEROPOINT[1] - ZEROPOINT[0]) / 2)
         (theta2, phi2) = focal_plane_coordinates_to_angles(ZEROPOINT[1], (ZEROPOINT[1] - ZEROPOINT[0]) / 2)
         phi1 = radians(phi1)
         phi2 = radians(phi2)
-        self.ax.plot([phi1, phi2], [theta1, theta2], color=&#34;k&#34;, linewidth=1, linestyle=&#34;dotted&#34;)    # CCD 4
+        self.ax.plot([phi1, phi2], [theta1, theta2], color=&#34;k&#34;, linewidth=1, linestyle=&#34;dotted&#34;)    # Uoper right CCD
 
         # Grid lines
 
@@ -1776,7 +1836,8 @@ field-of-view.</p></div>
     # Circle indicating the size of the FOV [mm]
 
     self.circle = plt.Circle(
-        (0, 0), FOV_SETTINGS.RADIUS_DEGREES, color=&#39;b&#39;, fill=False, label=&#34;FOV&#34;, linewidth=1, transform=self.ax.transData._b)
+        (0, 0), FOV_SETTINGS.RADIUS_DEGREES, color=&#39;b&#39;, fill=False, label=&#34;FOV&#34;, linewidth=1,
+        transform=self.ax.transData._b)
     self.ax.add_artist(self.circle)
 
     # Range
@@ -1790,26 +1851,26 @@ field-of-view.</p></div>
     # CCD codes
 
     theta, phi = focal_plane_coordinates_to_angles(-30, 10)
-    self.ax.text(radians(phi), theta, &#34;E&#34;, rotation=180)      # CCD 1, side E
+    self.ax.text(radians(phi), theta, self.fee_side.LEFT_SIDE.name, rotation=180)      # Upper left CCD, left side
     theta, phi = focal_plane_coordinates_to_angles(-75, 10)
-    self.ax.text(radians(phi), theta, &#34;F&#34;, rotation=180)      # CCD 1, side F
+    self.ax.text(radians(phi), theta, self.fee_side.RIGHT_SIDE.name, rotation=180)     # Upper left CCD, right side
     theta, phi = focal_plane_coordinates_to_angles(-20, -15)
-    self.ax.text(radians(phi), theta, &#34;E&#34;, rotation=-90)     # CCD 2, side E
+    self.ax.text(radians(phi), theta, self.fee_side.LEFT_SIDE.name, rotation=-90)      # Lower left CCD, left side
     theta, phi = focal_plane_coordinates_to_angles(-20, -75)
-    self.ax.text(radians(phi), theta, &#34;F&#34;, rotation=-90)     # CCD 2, side F
+    self.ax.text(radians(phi), theta, self.fee_side.RIGHT_SIDE.name, rotation=-90)     # Lower left CCD, right side
     theta, phi = focal_plane_coordinates_to_angles(10, -15)
-    self.ax.text(radians(phi), theta, &#34;E&#34;)                    # CCD 3, side E
+    self.ax.text(radians(phi), theta, self.fee_side.LEFT_SIDE.name)                    # Lower right CCD, left side
     theta, phi = focal_plane_coordinates_to_angles(50, -15)
-    self.ax.text(radians(phi), theta, &#34;F&#34;)                    # CCD 3, side F
+    self.ax.text(radians(phi), theta, self.fee_side.RIGHT_SIDE.name)                   # Lower right CCD, right side
     theta, phi = focal_plane_coordinates_to_angles(10, 10)
-    self.ax.text(radians(phi), theta, &#34;E&#34;, rotation=90)        # CCD 4, side E
+    self.ax.text(radians(phi), theta, self.fee_side.LEFT_SIDE.name, rotation=90)       # Upper right CCD, left side
     theta, phi = focal_plane_coordinates_to_angles(10, 50)
-    self.ax.text(radians(phi), theta, &#34;F&#34;, rotation=90)        # CCD 4, side F
+    self.ax.text(radians(phi), theta, self.fee_side.RIGHT_SIDE.name, rotation=90)      # Upper right CCD, right side
 
-    self.ax.text(radians(135), 22, &#34;CCD #1&#34;, ha=&#34;center&#34;)              # CCD 1
-    self.ax.text(radians(-135), 22, &#34;CCD #2&#34;, ha=&#34;center&#34;, va=&#34;top&#34;)   # CCD 2
-    self.ax.text(radians(-45), 22, &#34;CCD #3&#34;, ha=&#34;center&#34;, va=&#34;top&#34;)    # CCD 3
-    self.ax.text(radians(45), 22, &#34;CCD #4&#34;, ha=&#34;center&#34;)               #  CCD 4
+    self.ax.text(radians(135), 22, self.ccd_id[2], ha=&#34;center&#34;)              # Upper left CCD
+    self.ax.text(radians(-135), 22, self.ccd_id[3], ha=&#34;center&#34;, va=&#34;top&#34;)   # Lower left CCD
+    self.ax.text(radians(-45), 22, self.ccd_id[0], ha=&#34;center&#34;, va=&#34;top&#34;)    # Lower right CCD
+    self.ax.text(radians(45), 22, self.ccd_id[1], ha=&#34;center&#34;)               # Upper right CCD
 
     (theta1_ccd1, phi1_ccd1) = focal_plane_coordinates_to_angles(-ZEROPOINT[0], -ZEROPOINT[1])
     (theta2_ccd1, phi2_ccd1) = focal_plane_coordinates_to_angles(ZEROPOINT[1], -ZEROPOINT[1])
@@ -1822,7 +1883,8 @@ field-of-view.</p></div>
     phi4_ccd1 = radians(phi4_ccd1)
 
     self.ax.plot([phi1_ccd1, phi2_ccd1], [theta1_ccd1, theta2_ccd1], color=&#34;k&#34;, linewidth=3)
-    self.ax.plot([phi1_ccd1, phi2_ccd1, phi3_ccd1, phi4_ccd1, phi1_ccd1], [theta1_ccd1, theta2_ccd1, theta3_ccd1, theta4_ccd1, theta1_ccd1], color=&#34;k&#34;, linewidth=1)
+    self.ax.plot([phi1_ccd1, phi2_ccd1, phi3_ccd1, phi4_ccd1, phi1_ccd1],
+                 [theta1_ccd1, theta2_ccd1, theta3_ccd1, theta4_ccd1, theta1_ccd1], color=&#34;k&#34;, linewidth=1)
 
     (theta1_ccd2, phi1_ccd2) = focal_plane_coordinates_to_angles(ZEROPOINT[1], -ZEROPOINT[0])
     (theta2_ccd2, phi2_ccd2) = focal_plane_coordinates_to_angles(ZEROPOINT[1], ZEROPOINT[1])
@@ -1835,7 +1897,8 @@ field-of-view.</p></div>
     phi4_ccd2 = radians(phi4_ccd2)
 
     self.ax.plot([phi1_ccd2, phi2_ccd2], [theta1_ccd2, theta2_ccd2], color=&#34;k&#34;, linewidth=3)
-    self.ax.plot([phi1_ccd2, phi2_ccd2, phi3_ccd2, phi4_ccd2, phi1_ccd2], [theta1_ccd2, theta2_ccd2, theta3_ccd2, theta4_ccd2, theta1_ccd2], color=&#34;k&#34;, linewidth=1)
+    self.ax.plot([phi1_ccd2, phi2_ccd2, phi3_ccd2, phi4_ccd2, phi1_ccd2],
+                 [theta1_ccd2, theta2_ccd2, theta3_ccd2, theta4_ccd2, theta1_ccd2], color=&#34;k&#34;, linewidth=1)
 
     (theta1_ccd3, phi1_ccd3) = focal_plane_coordinates_to_angles(ZEROPOINT[0], ZEROPOINT[1])
     (theta2_ccd3, phi2_ccd3) = focal_plane_coordinates_to_angles(-ZEROPOINT[1], ZEROPOINT[1])
@@ -1848,7 +1911,8 @@ field-of-view.</p></div>
     phi4_ccd3 = radians(phi4_ccd3)
 
     self.ax.plot([phi1_ccd3, phi2_ccd3], [theta1_ccd3, theta2_ccd3], color=&#34;k&#34;, linewidth=3)
-    self.ax.plot([phi1_ccd3, phi2_ccd3, phi3_ccd3, phi4_ccd3, phi1_ccd3], [theta1_ccd3, theta2_ccd3, theta3_ccd3, theta4_ccd3, theta1_ccd3], color=&#34;k&#34;, linewidth=1)
+    self.ax.plot([phi1_ccd3, phi2_ccd3, phi3_ccd3, phi4_ccd3, phi1_ccd3],
+                 [theta1_ccd3, theta2_ccd3, theta3_ccd3, theta4_ccd3, theta1_ccd3], color=&#34;k&#34;, linewidth=1)
 
     (theta1_ccd4, phi1_ccd4) = focal_plane_coordinates_to_angles(-ZEROPOINT[1], ZEROPOINT[0])
     (theta2_ccd4, phi2_ccd4) = focal_plane_coordinates_to_angles(-ZEROPOINT[1], -ZEROPOINT[1])
@@ -1861,7 +1925,8 @@ field-of-view.</p></div>
     phi4_ccd4 = radians(phi4_ccd4)
 
     self.ax.plot([phi1_ccd4, phi2_ccd4], [theta1_ccd4, theta2_ccd4], color=&#34;k&#34;, linewidth=3)
-    self.ax.plot([phi1_ccd4, phi2_ccd4, phi3_ccd4, phi4_ccd4, phi1_ccd4], [theta1_ccd4, theta2_ccd4, theta3_ccd4, theta4_ccd4, theta1_ccd4], color=&#34;k&#34;, linewidth=1)
+    self.ax.plot([phi1_ccd4, phi2_ccd4, phi3_ccd4, phi4_ccd4, phi1_ccd4],
+                 [theta1_ccd4, theta2_ccd4, theta3_ccd4, theta4_ccd4, theta1_ccd4], color=&#34;k&#34;, linewidth=1)
 
     # CCD middle
 
@@ -1869,25 +1934,25 @@ field-of-view.</p></div>
     (theta2, phi2) = focal_plane_coordinates_to_angles((ZEROPOINT[1] - ZEROPOINT[0]) / 2, ZEROPOINT[0])
     phi1 = radians(phi1)
     phi2 = radians(phi2)
-    self.ax.plot([phi1, phi2], [theta1, theta2], color=&#34;k&#34;, linewidth=1, linestyle=&#34;dotted&#34;)    # CCD 1
+    self.ax.plot([phi1, phi2], [theta1, theta2], color=&#34;k&#34;, linewidth=1, linestyle=&#34;dotted&#34;)    # Upper left CCD
 
     (theta1, phi1) = focal_plane_coordinates_to_angles(ZEROPOINT[0], -(ZEROPOINT[1] - ZEROPOINT[0]) / 2)
     (theta2, phi2) = focal_plane_coordinates_to_angles(-ZEROPOINT[1], -(ZEROPOINT[1] - ZEROPOINT[0]) / 2)
     phi1 = radians(phi1)
     phi2 = radians(phi2)
-    self.ax.plot([phi1, phi2], [theta1, theta2], color=&#34;k&#34;, linewidth=1, linestyle=&#34;dotted&#34;)    # CCD 2
+    self.ax.plot([phi1, phi2], [theta1, theta2], color=&#34;k&#34;, linewidth=1, linestyle=&#34;dotted&#34;)    # Lower left CCD
 
     (theta1, phi1) = focal_plane_coordinates_to_angles(-(ZEROPOINT[1] - ZEROPOINT[0]) / 2, ZEROPOINT[1])
     (theta2, phi2) = focal_plane_coordinates_to_angles(-(ZEROPOINT[1] - ZEROPOINT[0]) / 2, -ZEROPOINT[0])
     phi1 = radians(phi1)
     phi2 = radians(phi2)
-    self.ax.plot([phi1, phi2], [theta1, theta2], color=&#34;k&#34;, linewidth=1, linestyle=&#34;dotted&#34;)    # CCD 3
+    self.ax.plot([phi1, phi2], [theta1, theta2], color=&#34;k&#34;, linewidth=1, linestyle=&#34;dotted&#34;)    # Lower right CCD
 
     (theta1, phi1) = focal_plane_coordinates_to_angles(-ZEROPOINT[0], (ZEROPOINT[1] - ZEROPOINT[0]) / 2)
     (theta2, phi2) = focal_plane_coordinates_to_angles(ZEROPOINT[1], (ZEROPOINT[1] - ZEROPOINT[0]) / 2)
     phi1 = radians(phi1)
     phi2 = radians(phi2)
-    self.ax.plot([phi1, phi2], [theta1, theta2], color=&#34;k&#34;, linewidth=1, linestyle=&#34;dotted&#34;)    # CCD 4
+    self.ax.plot([phi1, phi2], [theta1, theta2], color=&#34;k&#34;, linewidth=1, linestyle=&#34;dotted&#34;)    # Uoper right CCD
 
     # Grid lines
 
@@ -1983,53 +2048,57 @@ field-of-view.</p></div>
     # Readout registers
 
     self.ax.plot([-ZEROPOINT[0], ZEROPOINT[1]], [-ZEROPOINT[1], -
-                                                 ZEROPOINT[1]], color=&#34;k&#34;, linewidth=3)   # CCD 1
+                                                 ZEROPOINT[1]], color=&#34;k&#34;, linewidth=3)   # Upper left CCD
     self.ax.plot([ZEROPOINT[1], ZEROPOINT[1]], [-ZEROPOINT[0],
-                                                ZEROPOINT[1]], color=&#34;k&#34;, linewidth=3)    # CCD 2
+                                                ZEROPOINT[1]], color=&#34;k&#34;, linewidth=3)    # Lower left CCD
     self.ax.plot([ZEROPOINT[0], -ZEROPOINT[1]], [ZEROPOINT[1],
-                                                 ZEROPOINT[1]], color=&#34;k&#34;, linewidth=3)   # CCD 3
+                                                 ZEROPOINT[1]], color=&#34;k&#34;, linewidth=3)   # Lower right CCD
     self.ax.plot([-ZEROPOINT[1], -ZEROPOINT[1]], [ZEROPOINT[0], -
-                                                  ZEROPOINT[1]], color=&#34;k&#34;, linewidth=3)  # CCD 3
+                                                  ZEROPOINT[1]], color=&#34;k&#34;, linewidth=3)  # Upper right CCD
 
     # CCD middle
 
     self.ax.plot([ZEROPOINT[0] - NUM_COLUMNS / 2 * PIXEL_SIZE, ZEROPOINT[0] - NUM_COLUMNS / 2 * PIXEL_SIZE],
                  [-ZEROPOINT[0], ZEROPOINT[1]], color=&#34;k&#34;, linewidth=1,
-                 linestyle=&#34;dotted&#34;)  # CCD 1
+                 linestyle=&#34;dotted&#34;)  # Upper left CCD
     self.ax.plot([-ZEROPOINT[1], ZEROPOINT[0]],
                  [ZEROPOINT[0] - NUM_COLUMNS / 2 * PIXEL_SIZE, ZEROPOINT[0] - NUM_COLUMNS / 2 * PIXEL_SIZE],
-                 color=&#34;k&#34;, linewidth=1, linestyle=&#34;dotted&#34;)  # CCD 2
+                 color=&#34;k&#34;, linewidth=1, linestyle=&#34;dotted&#34;)  # Lower left CCD
     self.ax.plot([-ZEROPOINT[0] + NUM_COLUMNS / 2 * PIXEL_SIZE, -ZEROPOINT[0] + NUM_COLUMNS / 2 * PIXEL_SIZE],
                  [-ZEROPOINT[1], ZEROPOINT[0]], color=&#34;k&#34;, linewidth=1,
-                 linestyle=&#34;dotted&#34;)  # CCD 3
+                 linestyle=&#34;dotted&#34;)  # Lower right CCD
     self.ax.plot([-ZEROPOINT[0], ZEROPOINT[1]],
                  [-ZEROPOINT[0] + NUM_COLUMNS / 2 * PIXEL_SIZE, -ZEROPOINT[0] + NUM_COLUMNS / 2 * PIXEL_SIZE],
-                 color=&#34;k&#34;, linewidth=1, linestyle=&#34;dotted&#34;)  # CCD 4
+                 color=&#34;k&#34;, linewidth=1, linestyle=&#34;dotted&#34;)  # Upper right CCD
 
     # CCD codes
 
-    self.ax.text(-80, 70, &#34;CCD #1&#34;)     # CCD 1
-    self.ax.text(-80, -75, &#34;CCD #2&#34;)    # CCD 2
-    self.ax.text(60, -75, &#34;CCD #3&#34;)     # CCD 3
-    self.ax.text(60, 70, &#34;CCD #4&#34;)      # CCD 4
+    self.ax.text(-80, 70, self.ccd_id[2])     # Upper left CCD
+    self.ax.text(-80, -75, self.ccd_id[3])    # Lower left CCD
+    self.ax.text(60, -75, self.ccd_id[0])     # Lower right CCD
+    self.ax.text(60, 70, self.ccd_id[1])      # Upper right CCD
 
-    self.ax.text(-30, 10, &#34;E&#34;, rotation=180)  # CCD 1, side E
-    self.ax.text(-75, 10, &#34;F&#34;, rotation=180)  # CCD 1, side F
-    self.ax.text(-20, -15, &#34;E&#34;, rotation=-90)  # CCD 2, side E
-    self.ax.text(-20, -75, &#34;F&#34;, rotation=-90)  # CCD 2, side F
-    self.ax.text(10, -15, &#34;E&#34;)  # CCD 3, side E
-    self.ax.text(50, -15, &#34;F&#34;)  # CCD 3, side F
-    self.ax.text(10, 10, &#34;E&#34;, rotation=90)  # CCD 4, side E
-    self.ax.text(10, 50, &#34;F&#34;, rotation=90)  # CCD 4, side F
+    self.ax.text(-30, 10, self.fee_side.LEFT_SIDE.name, rotation=180)       # Upper leftCCD, left side
+    self.ax.text(-75, 10, self.fee_side.RIGHT_SIDE.name, rotation=180)      # Upper left CCD, right side
+    self.ax.text(-20, -15, self.fee_side.LEFT_SIDE.name, rotation=-90)      # Lower left CCD, left side
+    self.ax.text(-20, -75, self.fee_side.RIGHT_SIDE.name, rotation=-90)     # Lower left CCD, right side
+    self.ax.text(10, -15, self.fee_side.LEFT_SIDE.name)                     # Lower right CCD, left side
+    self.ax.text(50, -15, self.fee_side.RIGHT_SIDE.name)                    # Lower right CCD, right side
+    self.ax.text(10, 10, self.fee_side.LEFT_SIDE.name, rotation=90)         # Upper right CCD, left side
+    self.ax.text(10, 50, self.fee_side.RIGHT_SIDE.name, rotation=90)        # Upper right CCD, right side
 
-    self.ax.plot([-ZEROPOINT[0], ZEROPOINT[1], ZEROPOINT[1], -ZEROPOINT[0], -ZEROPOINT[0]], [ZEROPOINT[0],
-                                                                                             ZEROPOINT[0], -ZEROPOINT[1], -ZEROPOINT[1], ZEROPOINT[0]], color=&#34;k&#34;, linewidth=1)  # CCD 1
-    self.ax.plot([-ZEROPOINT[0], ZEROPOINT[1], ZEROPOINT[1], -ZEROPOINT[0], -ZEROPOINT[0]], [-ZEROPOINT[0], -
-                                                                                             ZEROPOINT[0], ZEROPOINT[1], ZEROPOINT[1], -ZEROPOINT[0]], color=&#34;k&#34;, linewidth=1)  # CCD 2
-    self.ax.plot([-ZEROPOINT[1], ZEROPOINT[0], ZEROPOINT[0], -ZEROPOINT[1], -ZEROPOINT[1]], [-ZEROPOINT[0], -
-                                                                                             ZEROPOINT[0], ZEROPOINT[1], ZEROPOINT[1], -ZEROPOINT[0]], color=&#34;k&#34;, linewidth=1)  # CCD 3
-    self.ax.plot([-ZEROPOINT[1], ZEROPOINT[0], ZEROPOINT[0], -ZEROPOINT[1], -ZEROPOINT[1]], [ZEROPOINT[0],
-                                                                                             ZEROPOINT[0], -ZEROPOINT[1], -ZEROPOINT[1], ZEROPOINT[0]], color=&#34;k&#34;, linewidth=1)  # CCD 4
+    self.ax.plot([-ZEROPOINT[0], ZEROPOINT[1], ZEROPOINT[1], -ZEROPOINT[0], -ZEROPOINT[0]],
+                 [ZEROPOINT[0], ZEROPOINT[0], -ZEROPOINT[1], -ZEROPOINT[1], ZEROPOINT[0]],
+                 color=&#34;k&#34;, linewidth=1)  # Upper left CCD
+    self.ax.plot([-ZEROPOINT[0], ZEROPOINT[1], ZEROPOINT[1], -ZEROPOINT[0], -ZEROPOINT[0]],
+                 [-ZEROPOINT[0], - ZEROPOINT[0], ZEROPOINT[1], ZEROPOINT[1], -ZEROPOINT[0]],
+                 color=&#34;k&#34;, linewidth=1)  # Lower left CCD
+    self.ax.plot([-ZEROPOINT[1], ZEROPOINT[0], ZEROPOINT[0], -ZEROPOINT[1], -ZEROPOINT[1]],
+                 [-ZEROPOINT[0], - ZEROPOINT[0], ZEROPOINT[1], ZEROPOINT[1], -ZEROPOINT[0]],
+                 color=&#34;k&#34;, linewidth=1)  # Lower right CCD
+    self.ax.plot([-ZEROPOINT[1], ZEROPOINT[0], ZEROPOINT[0], -ZEROPOINT[1], -ZEROPOINT[1]],
+                 [ZEROPOINT[0], ZEROPOINT[0], -ZEROPOINT[1], -ZEROPOINT[1], ZEROPOINT[0]],
+                 color=&#34;k&#34;, linewidth=1)  # Upper right CCD
 
     # Grid lines
 
@@ -2119,46 +2188,62 @@ field-of-view.</p></div>
 
     # Readout registers
 
-    self.ax.plot([-ZEROPOINT[0] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE], [-ZEROPOINT[1] /
-                                                                           PIXEL_SIZE, -ZEROPOINT[1] / PIXEL_SIZE], color=&#34;k&#34;, linewidth=3)  # CCD 1
-    self.ax.plot([ZEROPOINT[1] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE], [-ZEROPOINT[0] /
-                                                                          PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE], color=&#34;k&#34;, linewidth=3)    # CCD 2
-    self.ax.plot([ZEROPOINT[0] / PIXEL_SIZE, -ZEROPOINT[1] / PIXEL_SIZE], [ZEROPOINT[1] /
-                                                                           PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE], color=&#34;k&#34;, linewidth=3)    # CCD 3
-    self.ax.plot([-ZEROPOINT[1] / PIXEL_SIZE, -ZEROPOINT[1] / PIXEL_SIZE], [ZEROPOINT[0] /
-                                                                            PIXEL_SIZE, -ZEROPOINT[1] / PIXEL_SIZE], color=&#34;k&#34;, linewidth=3)  # CCD 4
+    self.ax.plot([-ZEROPOINT[0] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE],
+                 [-ZEROPOINT[1] / PIXEL_SIZE, -ZEROPOINT[1] / PIXEL_SIZE],
+                 color=&#34;k&#34;, linewidth=3)  # Upper left CCD
+    self.ax.plot([ZEROPOINT[1] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE],
+                 [-ZEROPOINT[0] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE],
+                 color=&#34;k&#34;, linewidth=3)    # Lower left CCD
+    self.ax.plot([ZEROPOINT[0] / PIXEL_SIZE, -ZEROPOINT[1] / PIXEL_SIZE],
+                 [ZEROPOINT[1] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE],
+                 color=&#34;k&#34;, linewidth=3)    # Lower right CCD
+    self.ax.plot([-ZEROPOINT[1] / PIXEL_SIZE, -ZEROPOINT[1] / PIXEL_SIZE],
+                 [ZEROPOINT[0] / PIXEL_SIZE, -ZEROPOINT[1] / PIXEL_SIZE],
+                 color=&#34;k&#34;, linewidth=3)  # Upper right CCD
 
     # CCD middle
 
-    self.ax.plot([ZEROPOINT[0] / PIXEL_SIZE - NUM_COLUMNS / 2, ZEROPOINT[0] / PIXEL_SIZE - NUM_COLUMNS / 2], [-ZEROPOINT[0] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE], color=&#34;k&#34;, linewidth=1, linestyle=&#34;dotted&#34;)  # CCD 1
-    self.ax.plot([-ZEROPOINT[1] / PIXEL_SIZE, ZEROPOINT[0] / PIXEL_SIZE], [ZEROPOINT[0] / PIXEL_SIZE - NUM_COLUMNS / 2, ZEROPOINT[0] / PIXEL_SIZE - NUM_COLUMNS / 2], color=&#34;k&#34;, linewidth=1, linestyle=&#34;dotted&#34;)  # CCD 2
-    self.ax.plot([-ZEROPOINT[0] / PIXEL_SIZE + NUM_COLUMNS / 2, -ZEROPOINT[0] / PIXEL_SIZE + NUM_COLUMNS / 2], [-ZEROPOINT[1] / PIXEL_SIZE, ZEROPOINT[0] / PIXEL_SIZE], color=&#34;k&#34;, linewidth=1, linestyle=&#34;dotted&#34;)  # CCD 3
-    self.ax.plot([-ZEROPOINT[0] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE], [-ZEROPOINT[0] / PIXEL_SIZE + NUM_COLUMNS / 2, -ZEROPOINT[0] / PIXEL_SIZE + NUM_COLUMNS / 2], color=&#34;k&#34;, linewidth=1, linestyle=&#34;dotted&#34;)  # CCD 4
+    self.ax.plot([ZEROPOINT[0] / PIXEL_SIZE - NUM_COLUMNS / 2, ZEROPOINT[0] / PIXEL_SIZE - NUM_COLUMNS / 2],
+                 [-ZEROPOINT[0] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE],
+                 color=&#34;k&#34;, linewidth=1, linestyle=&#34;dotted&#34;)  # Upper left CCD
+    self.ax.plot([-ZEROPOINT[1] / PIXEL_SIZE, ZEROPOINT[0] / PIXEL_SIZE],
+                 [ZEROPOINT[0] / PIXEL_SIZE - NUM_COLUMNS / 2, ZEROPOINT[0] / PIXEL_SIZE - NUM_COLUMNS / 2],
+                 color=&#34;k&#34;, linewidth=1, linestyle=&#34;dotted&#34;)  # Lower left CCD
+    self.ax.plot([-ZEROPOINT[0] / PIXEL_SIZE + NUM_COLUMNS / 2, -ZEROPOINT[0] / PIXEL_SIZE + NUM_COLUMNS / 2],
+                 [-ZEROPOINT[1] / PIXEL_SIZE, ZEROPOINT[0] / PIXEL_SIZE],
+                 color=&#34;k&#34;, linewidth=1, linestyle=&#34;dotted&#34;)  # Lower right CCD
+    self.ax.plot([-ZEROPOINT[0] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE],
+                 [-ZEROPOINT[0] / PIXEL_SIZE + NUM_COLUMNS / 2, -ZEROPOINT[0] / PIXEL_SIZE + NUM_COLUMNS / 2],
+                 color=&#34;k&#34;, linewidth=1, linestyle=&#34;dotted&#34;)  # Upper right CCD
 
     # CCD codes
 
-    self.ax.text(-80 / PIXEL_SIZE, 70 / PIXEL_SIZE, &#34;CCD #1&#34;)     # CCD 1
-    self.ax.text(-80 / PIXEL_SIZE, -75 / PIXEL_SIZE, &#34;CCD #2&#34;)    # CCD 2
-    self.ax.text(60 / PIXEL_SIZE, -75 / PIXEL_SIZE, &#34;CCD #3&#34;)     # CCD 3
-    self.ax.text(60 / PIXEL_SIZE, 70 / PIXEL_SIZE, &#34;CCD #4&#34;)      # CCD 4
+    self.ax.text(-80 / PIXEL_SIZE, 70 / PIXEL_SIZE, self.ccd_id[2])     # Upper left CCD
+    self.ax.text(-80 / PIXEL_SIZE, -75 / PIXEL_SIZE, self.ccd_id[3])    # Lower left CCD
+    self.ax.text(60 / PIXEL_SIZE, -75 / PIXEL_SIZE, self.ccd_id[0])     # Lower right CCD
+    self.ax.text(60 / PIXEL_SIZE, 70 / PIXEL_SIZE, self.ccd_id[1])      # Upper right CCD
 
-    self.ax.text(-30 / PIXEL_SIZE, 10 / PIXEL_SIZE, &#34;E&#34;, rotation=180)      # CCD 1, side E
-    self.ax.text(-75 / PIXEL_SIZE, 10 / PIXEL_SIZE, &#34;F&#34;, rotation=180)      # CCD 1, side F
-    self.ax.text(-20 / PIXEL_SIZE, -15 / PIXEL_SIZE, &#34;E&#34;, rotation=-90)     # CCD 2, side E
-    self.ax.text(-20 / PIXEL_SIZE, -75 / PIXEL_SIZE, &#34;F&#34;, rotation=-90)     # CCD 2, side F
-    self.ax.text(10 / PIXEL_SIZE, -15 / PIXEL_SIZE, &#34;E&#34;)                    # CCD 3, side E
-    self.ax.text(50 / PIXEL_SIZE, -15 / PIXEL_SIZE, &#34;F&#34;)                    # CCD 3, side F
-    self.ax.text(10 / PIXEL_SIZE, 10 / PIXEL_SIZE, &#34;E&#34;, rotation=90)        # CCD 4, side E
-    self.ax.text(10 / PIXEL_SIZE, 50 / PIXEL_SIZE, &#34;F&#34;, rotation=90)        # CCD 4, side F
+    self.ax.text(-30 / PIXEL_SIZE, 10 / PIXEL_SIZE, self.fee_side.LEFT_SIDE.name, rotation=180)     # Upper left CCD, left side
+    self.ax.text(-75 / PIXEL_SIZE, 10 / PIXEL_SIZE, self.fee_side.RIGHT_SIDE.name, rotation=180)    # Upper left CCD, right side
+    self.ax.text(-20 / PIXEL_SIZE, -15 / PIXEL_SIZE, self.fee_side.LEFT_SIDE.name, rotation=-90)    # Lower left CCD, left side
+    self.ax.text(-20 / PIXEL_SIZE, -75 / PIXEL_SIZE, self.fee_side.RIGHT_SIDE.name, rotation=-90)   # Lower left CCD, right side
+    self.ax.text(10 / PIXEL_SIZE, -15 / PIXEL_SIZE, self.fee_side.LEFT_SIDE.name)   # Lower right CCD, left side
+    self.ax.text(50 / PIXEL_SIZE, -15 / PIXEL_SIZE, self.fee_side.RIGHT_SIDE.name)  # Lower right CCD, right side
+    self.ax.text(10 / PIXEL_SIZE, 10 / PIXEL_SIZE, self.fee_side.LEFT_SIDE.name, rotation=90)   # Upper right CCD, left side
+    self.ax.text(10 / PIXEL_SIZE, 50 / PIXEL_SIZE, self.fee_side.RIGHT_SIDE.name, rotation=90)  # Upper right CCD, right side
 
-    self.ax.plot([-ZEROPOINT[0] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE, -ZEROPOINT[0] / PIXEL_SIZE, -ZEROPOINT[0] / PIXEL_SIZE], [ZEROPOINT[0] /
-                                                                                                                                                              PIXEL_SIZE, ZEROPOINT[0] / PIXEL_SIZE, -ZEROPOINT[1] / PIXEL_SIZE, -ZEROPOINT[1] / PIXEL_SIZE, ZEROPOINT[0] / PIXEL_SIZE], color=&#34;k&#34;, linewidth=1)  # CCD 1
-    self.ax.plot([-ZEROPOINT[0] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE, -ZEROPOINT[0] / PIXEL_SIZE, -ZEROPOINT[0] / PIXEL_SIZE], [-ZEROPOINT[0] /
-                                                                                                                                                              PIXEL_SIZE, -ZEROPOINT[0] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE, -ZEROPOINT[0] / PIXEL_SIZE], color=&#34;k&#34;, linewidth=1)  # CCD 2
-    self.ax.plot([-ZEROPOINT[1] / PIXEL_SIZE, ZEROPOINT[0] / PIXEL_SIZE, ZEROPOINT[0] / PIXEL_SIZE, -ZEROPOINT[1] / PIXEL_SIZE, -ZEROPOINT[1] / PIXEL_SIZE], [-ZEROPOINT[0] /
-                                                                                                                                                              PIXEL_SIZE, -ZEROPOINT[0] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE, -ZEROPOINT[0] / PIXEL_SIZE], color=&#34;k&#34;, linewidth=1)  # CCD 3
-    self.ax.plot([-ZEROPOINT[1] / PIXEL_SIZE, ZEROPOINT[0] / PIXEL_SIZE, ZEROPOINT[0] / PIXEL_SIZE, -ZEROPOINT[1] / PIXEL_SIZE, -ZEROPOINT[1] / PIXEL_SIZE], [ZEROPOINT[0] /
-                                                                                                                                                              PIXEL_SIZE, ZEROPOINT[0] / PIXEL_SIZE, -ZEROPOINT[1] / PIXEL_SIZE, -ZEROPOINT[1] / PIXEL_SIZE, ZEROPOINT[0] / PIXEL_SIZE], color=&#34;k&#34;, linewidth=1)  # CCD 4
+    self.ax.plot([-ZEROPOINT[0] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE, -ZEROPOINT[0] / PIXEL_SIZE, -ZEROPOINT[0] / PIXEL_SIZE],
+                 [ZEROPOINT[0] / PIXEL_SIZE, ZEROPOINT[0] / PIXEL_SIZE, -ZEROPOINT[1] / PIXEL_SIZE, -ZEROPOINT[1] / PIXEL_SIZE, ZEROPOINT[0] / PIXEL_SIZE],
+                 color=&#34;k&#34;, linewidth=1)  # Upper left CCD
+    self.ax.plot([-ZEROPOINT[0] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE, -ZEROPOINT[0] / PIXEL_SIZE, -ZEROPOINT[0] / PIXEL_SIZE],
+                 [-ZEROPOINT[0] / PIXEL_SIZE, -ZEROPOINT[0] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE, -ZEROPOINT[0] / PIXEL_SIZE],
+                 color=&#34;k&#34;, linewidth=1)  # Lower left CCD
+    self.ax.plot([-ZEROPOINT[1] / PIXEL_SIZE, ZEROPOINT[0] / PIXEL_SIZE, ZEROPOINT[0] / PIXEL_SIZE, -ZEROPOINT[1] / PIXEL_SIZE, -ZEROPOINT[1] / PIXEL_SIZE],
+                 [-ZEROPOINT[0] / PIXEL_SIZE, -ZEROPOINT[0] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE, ZEROPOINT[1] / PIXEL_SIZE, -ZEROPOINT[0] / PIXEL_SIZE],
+                 color=&#34;k&#34;, linewidth=1)  # Lower right CCD
+    self.ax.plot([-ZEROPOINT[1] / PIXEL_SIZE, ZEROPOINT[0] / PIXEL_SIZE, ZEROPOINT[0] / PIXEL_SIZE, -ZEROPOINT[1] / PIXEL_SIZE, -ZEROPOINT[1] / PIXEL_SIZE],
+                 [ZEROPOINT[0] / PIXEL_SIZE, ZEROPOINT[0] / PIXEL_SIZE, -ZEROPOINT[1] / PIXEL_SIZE, -ZEROPOINT[1] / PIXEL_SIZE, ZEROPOINT[0] / PIXEL_SIZE],
+                 color=&#34;k&#34;, linewidth=1)  # Upper right CCD
 
     # Grid lines
 
@@ -3416,10 +3501,14 @@ field-of-view.</p></div>
 
         # Draw the sub-field
 
-        (x_fp_1, y_fp_1) = ccd_to_focal_plane_coordinates(self.zeropoint_row, self.zeropoint_column, self.ccd_code)
-        (x_fp_2, y_fp_2) = ccd_to_focal_plane_coordinates(self.zeropoint_row + self.num_rows, self.zeropoint_column, self.ccd_code)
-        (x_fp_3, y_fp_3) = ccd_to_focal_plane_coordinates(self.zeropoint_row + self.num_rows, self.zeropoint_column + self.num_columns, self.ccd_code)
-        (x_fp_4, y_fp_4) = ccd_to_focal_plane_coordinates(self.zeropoint_row, self.zeropoint_column + self.num_columns, self.ccd_code)
+        (x_fp_1, y_fp_1) = ccd_to_focal_plane_coordinates(
+            self.zeropoint_row, self.zeropoint_column, self.ccd_code)
+        (x_fp_2, y_fp_2) = ccd_to_focal_plane_coordinates(
+            self.zeropoint_row + self.num_rows, self.zeropoint_column, self.ccd_code)
+        (x_fp_3, y_fp_3) = ccd_to_focal_plane_coordinates(
+            self.zeropoint_row + self.num_rows, self.zeropoint_column + self.num_columns, self.ccd_code)
+        (x_fp_4, y_fp_4) = ccd_to_focal_plane_coordinates(
+            self.zeropoint_row, self.zeropoint_column + self.num_columns, self.ccd_code)
 
         if self.coordinate_system == COORDINATE_SYSTEMS[&#34;Focal plane&#34;]:
 
@@ -3660,10 +3749,14 @@ of the given CCD [pixels].</p>
 
     # Draw the sub-field
 
-    (x_fp_1, y_fp_1) = ccd_to_focal_plane_coordinates(self.zeropoint_row, self.zeropoint_column, self.ccd_code)
-    (x_fp_2, y_fp_2) = ccd_to_focal_plane_coordinates(self.zeropoint_row + self.num_rows, self.zeropoint_column, self.ccd_code)
-    (x_fp_3, y_fp_3) = ccd_to_focal_plane_coordinates(self.zeropoint_row + self.num_rows, self.zeropoint_column + self.num_columns, self.ccd_code)
-    (x_fp_4, y_fp_4) = ccd_to_focal_plane_coordinates(self.zeropoint_row, self.zeropoint_column + self.num_columns, self.ccd_code)
+    (x_fp_1, y_fp_1) = ccd_to_focal_plane_coordinates(
+        self.zeropoint_row, self.zeropoint_column, self.ccd_code)
+    (x_fp_2, y_fp_2) = ccd_to_focal_plane_coordinates(
+        self.zeropoint_row + self.num_rows, self.zeropoint_column, self.ccd_code)
+    (x_fp_3, y_fp_3) = ccd_to_focal_plane_coordinates(
+        self.zeropoint_row + self.num_rows, self.zeropoint_column + self.num_columns, self.ccd_code)
+    (x_fp_4, y_fp_4) = ccd_to_focal_plane_coordinates(
+        self.zeropoint_row, self.zeropoint_column + self.num_columns, self.ccd_code)
 
     if self.coordinate_system == COORDINATE_SYSTEMS[&#34;Focal plane&#34;]:
 

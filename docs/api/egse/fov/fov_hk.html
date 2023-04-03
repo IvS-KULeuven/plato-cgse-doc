@@ -36,7 +36,7 @@ import invoke
 import rich
 import sys
 import zmq
-from math import sin, cos, tan, acos, asin, atan, radians, degrees, pi, sqrt
+from math import sin, cos, tan, acos, asin, atan, atan2, radians, degrees, pi, sqrt
 from numpy import sign
 from prometheus_client import start_http_server
 
@@ -109,8 +109,8 @@ def start():
 
     sitehash = {
         &#34;CSL&#34;: _csl_start,
-        &#34;CSL1&#34;: _csl_start,
-        &#34;CSL2&#34;: _csl_start,
+        &#34;CSL1&#34;: _csl1_start,
+        &#34;CSL2&#34;: _csl2_start,
         &#34;IAS&#34;: _ias_start,
         &#34;INTA&#34;: _inta_start,
         &#34;SRON&#34;: _sron_start,
@@ -182,6 +182,92 @@ class CslFovHk(FovHk):
 
         super(CslFovHk, self).__init__()
 
+        setup = GlobalState.setup
+        self.height_collimated_beam = setup.gse.stages.calibration.height_collimated_beam
+        self.offset_delta_x = setup.gse.stages.calibration.offset_delta_x
+        self.offset_phi = setup.gse.stages.calibration.offset_phi
+
+        # Create a socket and connect to the monitoring port
+
+        settings = Settings.load(&#34;Huber Control Server&#34;)
+        self.cmd_endpoint = connect_address(settings.PROTOCOL, settings.HOSTNAME, settings.COMMANDING_PORT)
+
+        monitoring_address = connect_address(settings.PROTOCOL, settings.HOSTNAME, settings.MONITORING_PORT)
+        self.monitoring_socket = zmq.Context().socket(zmq.SUB)
+        self.monitoring_socket.connect(monitoring_address)
+        self.monitoring_socket.setsockopt_string(zmq.SUBSCRIBE, &#34;&#34;)
+        self.monitoring_timeout = 1.0
+
+        self.start_fov_hk_acquisition()
+
+    def acquire_fov_hk(self):
+
+        while self.keep_acquiring_fov_hk:
+
+            try:
+
+                socket_list, _, _ = zmq.select([self.monitoring_socket], [], [], timeout=self.monitoring_timeout)
+
+                # Monitoring information was received (before timeout)
+
+                if self.monitoring_socket in socket_list:
+
+                    pickle_string = self.monitoring_socket.recv()
+                    monitoring_info = pickle.loads(pickle_string)
+
+                    # Retrieve the position of the small and the big rotation stage
+
+                    position_big_rotation_stage = monitoring_info[&#34;big_rotation_stage_position&#34;]
+                    position_translation_stage = monitoring_info[&#34;translation_stage_position&#34;]
+
+                    # Gnomonic distance to optical axis and in-field angle [degrees]
+
+                    phi = self.offset_phi - position_big_rotation_stage
+                    tan_theta = (self.offset_delta_x - position_translation_stage) / self.height_collimated_beam
+                    theta = degrees(atan(tan_theta))
+
+                    store_actual_fov_position(theta, phi)
+
+                elif is_control_server_active(self.cmd_endpoint):
+                    self.monitoring_timeout += 0.5
+
+            except zmq.ZMQError:
+                pass
+
+    def close_sockets(self):
+
+        self.monitoring_socket.close()
+
+
+def _csl_start(commander, poller):
+    &#34;&#34;&#34; Start the generation of FOV position HK for CSL.
+
+    This process will only store the actual FOV position (in field angles, expressed in degrees).  The commanded
+    position needs to be stored from the MGSE commanding in plato-test-scripts.
+
+    This function should never be called.  Instead, call the generic function start().
+
+    Args:
+        - commander: Commanding socket for the FOV HK generation.
+        - poller: Poller for the FOV HK generation.
+    &#34;&#34;&#34;
+
+    csl_fov_hk = CslFovHk()
+    csl_fov_hk.run(commander, poller)
+
+
+class Csl1FovHk(FovHk):
+
+    def __init__(self):
+
+        super(Csl1FovHk, self).__init__()
+
+        setup = GlobalState.setup
+        self.offset_alpha = setup.gse.stages.calibration.offset_alpha
+        self.alpha_correction_coefficients = setup.gse.stages.calibration.alpha_correction_coefficients
+        self.offset_phi = setup.gse.stages.calibration.offset_phi
+        self.phi_correction_coefficients = setup.gse.stages.calibration.phi_correction_coefficients
+
         # Create a socket and connect to the monitoring port
 
         settings = Settings.load(&#34;Huber Control Server&#34;)
@@ -217,8 +303,11 @@ class CslFovHk(FovHk):
 
                     # Gnomonic distance to optical axis and in-field angle [degrees]
 
-                    theta = 2 * (position_small_rotation_stage + self.setup.gse.stages.calibration.offset_alpha)
-                    phi = self.setup.gse.stages.calibration.offset_phi - position_big_rotation_stage
+                    theta = (position_small_rotation_stage + self.offset_alpha - self.alpha_correction_coefficients[0])\
+                        / self.alpha_correction_coefficients[1]
+
+                    phi_correction = self.phi_correction_coefficients[1] * theta + self.phi_correction_coefficients[0]
+                    phi = -position_big_rotation_stage - self.offset_phi - phi_correction
 
                     store_actual_fov_position(theta, phi)
 
@@ -233,8 +322,8 @@ class CslFovHk(FovHk):
         self.monitoring_socket.close()
 
 
-def _csl_start(commander, poller):
-    &#34;&#34;&#34; Start the generation of FOV position HK for CSL.
+def _csl1_start(commander, poller):
+    &#34;&#34;&#34; Start the generation of FOV position HK for CSL1.
 
     This process will only store the actual FOV position (in field angles, expressed in degrees).  The commanded
     position needs to be stored from the MGSE commanding in plato-test-scripts.
@@ -246,8 +335,26 @@ def _csl_start(commander, poller):
         - poller: Poller for the FOV HK generation.
     &#34;&#34;&#34;
 
-    csl_fov_hk = CslFovHk()
-    csl_fov_hk.run(commander, poller)
+    csl1_fov_hk = Csl1FovHk()
+    csl1_fov_hk.run(commander, poller)
+
+
+def _csl2_start(commander, poller):
+    &#34;&#34;&#34; Start the generation of FOV position HK for CSL2.
+
+    This process will only store the actual FOV position (in field angles, expressed in degrees).  The commanded
+    position needs to be stored from the MGSE commanding in plato-test-scripts.
+
+    This function should never be called.  Instead, call the generic function start().
+
+    Args:
+        - commander: Commanding socket for the FOV HK generation.
+        - poller: Poller for the FOV HK generation.
+    &#34;&#34;&#34;
+    # At this point, the relation between the configuration of the Huber Stages and the source position is considered
+    # the same for CSL2 as for CSL1 (only the calibration of the Huber Stages is potentially different in the setup)
+    csl2_fov_hk = Csl1FovHk()
+    csl2_fov_hk.run(commander, poller)
 
 
 class SronFovHk(FovHk):
@@ -430,7 +537,14 @@ class IntaFovHk(FovHk):
 
         # Create a socket and connect to the monitoring port
 
-        # TODO Read the settings of the CS you need + connect socket
+        settings = Settings.load(&#34;Gimbal Control Server&#34;)
+        self.cmd_endpoint = connect_address(settings.PROTOCOL, settings.HOSTNAME, settings.COMMANDING_PORT)
+
+        monitoring_address = connect_address(settings.PROTOCOL, settings.HOSTNAME, settings.MONITORING_PORT)
+        self.monitoring_socket = zmq.Context().socket(zmq.SUB)
+        self.monitoring_socket.connect(monitoring_address)
+        self.monitoring_socket.setsockopt_string(zmq.SUBSCRIBE, &#34;&#34;)
+        self.monitoring_timeout = 1.0
 
         self.start_fov_hk_acquisition()
 
@@ -438,13 +552,45 @@ class IntaFovHk(FovHk):
 
         while self.keep_acquiring_fov_hk:
 
-            # TODO  Listen to the necessary monitoring ports + convert the info to field angles
-            pass
+            try:
+
+                socket_list, _, _ = zmq.select([self.monitoring_socket], [], [], timeout=self.monitoring_timeout)
+
+                # Monitoring information was received (before timeout)
+
+                if self.monitoring_socket in socket_list:
+
+                    # Retrieve the rotation angles around the y- and z-axis [degrees]
+                    # (the rotation angle around the x-axis and the translation are not needed here)
+
+                    pickle_string = self.monitoring_socket.recv()
+                    monitoring_info = pickle.loads(pickle_string)
+
+                    # Retrieve the rotation angles around the x- and y-axis [degrees]
+                    # See GimbalProtocol.get_status for details
+                    grx, gry = monitoring_info[&#34;user&#34;]
+
+                    #
+                    # According to inta_point_source_to_fov:
+                    #   grx = theta * np.cos(np.deg2rad(phi))
+                    #   gry = theta * np.sin(np.deg2rad(phi))
+                    #
+                    # grx and gry are already in degrees, therefore:
+                    #
+                    theta = sqrt(grx ** 2 + gry ** 2)
+                    phi   = degrees(atan2(gry, grx))
+                    
+                    store_actual_fov_position(theta, phi)
+
+                elif is_control_server_active(self.cmd_endpoint):
+                    self.monitoring_timeout += 0.5
+
+            except zmq.ZMQError:
+                pass
 
     def close_sockets(self):
-
-        # TODO Close all monitoring sockets
-        pass
+        self.cmd_endpoint.close()
+        self.monitoring_socket.close()
 
 
 def _inta_start(commander, poller):
@@ -463,10 +609,8 @@ def _inta_start(commander, poller):
     # Calculate the field angles (theta, phi), based on the current configuration of the relevant mechanisms
     # Call store_actual_fov_position to save them to the appropriate HK file
 
-    raise NotImplementedError(&#34;fov_hk start not implemented for INTA&#34;)
-
-    # inta_fov_hk = IntaFovHk()
-    # inta_fov_hk.run(commander, poller)
+    inta_fov_hk = IntaFovHk()
+    inta_fov_hk.run(commander, poller)
 
 
 @cli.command()
@@ -637,8 +781,8 @@ Returns: Response to the request.</li>
 <section>
 <h2 class="section-title" id="header-classes">Classes</h2>
 <dl>
-<dt id="egse.fov.fov_hk.CslFovHk"><code class="flex name class">
-<span>class <span class="ident">CslFovHk</span></span>
+<dt id="egse.fov.fov_hk.Csl1FovHk"><code class="flex name class">
+<span>class <span class="ident">Csl1FovHk</span></span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -646,11 +790,17 @@ Returns: Response to the request.</li>
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">class CslFovHk(FovHk):
+<pre><code class="python">class Csl1FovHk(FovHk):
 
     def __init__(self):
 
-        super(CslFovHk, self).__init__()
+        super(Csl1FovHk, self).__init__()
+
+        setup = GlobalState.setup
+        self.offset_alpha = setup.gse.stages.calibration.offset_alpha
+        self.alpha_correction_coefficients = setup.gse.stages.calibration.alpha_correction_coefficients
+        self.offset_phi = setup.gse.stages.calibration.offset_phi
+        self.phi_correction_coefficients = setup.gse.stages.calibration.phi_correction_coefficients
 
         # Create a socket and connect to the monitoring port
 
@@ -687,8 +837,150 @@ Returns: Response to the request.</li>
 
                     # Gnomonic distance to optical axis and in-field angle [degrees]
 
-                    theta = 2 * (position_small_rotation_stage + self.setup.gse.stages.calibration.offset_alpha)
-                    phi = self.setup.gse.stages.calibration.offset_phi - position_big_rotation_stage
+                    theta = (position_small_rotation_stage + self.offset_alpha - self.alpha_correction_coefficients[0])\
+                        / self.alpha_correction_coefficients[1]
+
+                    phi_correction = self.phi_correction_coefficients[1] * theta + self.phi_correction_coefficients[0]
+                    phi = -position_big_rotation_stage - self.offset_phi - phi_correction
+
+                    store_actual_fov_position(theta, phi)
+
+                elif is_control_server_active(self.cmd_endpoint):
+                    self.monitoring_timeout += 0.5
+
+            except zmq.ZMQError:
+                pass
+
+    def close_sockets(self):
+
+        self.monitoring_socket.close()</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="egse.fov.fov_hk.FovHk" href="#egse.fov.fov_hk.FovHk">FovHk</a></li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="egse.fov.fov_hk.Csl1FovHk.acquire_fov_hk"><code class="name flex">
+<span>def <span class="ident">acquire_fov_hk</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def acquire_fov_hk(self):
+
+    while self.keep_acquiring_fov_hk:
+
+        try:
+
+            socket_list, _, _ = zmq.select([self.monitoring_socket], [], [], timeout=self.monitoring_timeout)
+
+            # Monitoring information was received (before timeout)
+
+            if self.monitoring_socket in socket_list:
+
+                pickle_string = self.monitoring_socket.recv()
+                monitoring_info = pickle.loads(pickle_string)
+
+                # Retrieve the position of the small and the big rotation stage
+
+                position_big_rotation_stage = monitoring_info[&#34;big_rotation_stage_position&#34;]
+                position_small_rotation_stage = monitoring_info[&#34;small_rotation_stage_position&#34;]
+
+                # Gnomonic distance to optical axis and in-field angle [degrees]
+
+                theta = (position_small_rotation_stage + self.offset_alpha - self.alpha_correction_coefficients[0])\
+                    / self.alpha_correction_coefficients[1]
+
+                phi_correction = self.phi_correction_coefficients[1] * theta + self.phi_correction_coefficients[0]
+                phi = -position_big_rotation_stage - self.offset_phi - phi_correction
+
+                store_actual_fov_position(theta, phi)
+
+            elif is_control_server_active(self.cmd_endpoint):
+                self.monitoring_timeout += 0.5
+
+        except zmq.ZMQError:
+            pass</code></pre>
+</details>
+</dd>
+<dt id="egse.fov.fov_hk.Csl1FovHk.close_sockets"><code class="name flex">
+<span>def <span class="ident">close_sockets</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def close_sockets(self):
+
+    self.monitoring_socket.close()</code></pre>
+</details>
+</dd>
+</dl>
+</dd>
+<dt id="egse.fov.fov_hk.CslFovHk"><code class="flex name class">
+<span>class <span class="ident">CslFovHk</span></span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class CslFovHk(FovHk):
+
+    def __init__(self):
+
+        super(CslFovHk, self).__init__()
+
+        setup = GlobalState.setup
+        self.height_collimated_beam = setup.gse.stages.calibration.height_collimated_beam
+        self.offset_delta_x = setup.gse.stages.calibration.offset_delta_x
+        self.offset_phi = setup.gse.stages.calibration.offset_phi
+
+        # Create a socket and connect to the monitoring port
+
+        settings = Settings.load(&#34;Huber Control Server&#34;)
+        self.cmd_endpoint = connect_address(settings.PROTOCOL, settings.HOSTNAME, settings.COMMANDING_PORT)
+
+        monitoring_address = connect_address(settings.PROTOCOL, settings.HOSTNAME, settings.MONITORING_PORT)
+        self.monitoring_socket = zmq.Context().socket(zmq.SUB)
+        self.monitoring_socket.connect(monitoring_address)
+        self.monitoring_socket.setsockopt_string(zmq.SUBSCRIBE, &#34;&#34;)
+        self.monitoring_timeout = 1.0
+
+        self.start_fov_hk_acquisition()
+
+    def acquire_fov_hk(self):
+
+        while self.keep_acquiring_fov_hk:
+
+            try:
+
+                socket_list, _, _ = zmq.select([self.monitoring_socket], [], [], timeout=self.monitoring_timeout)
+
+                # Monitoring information was received (before timeout)
+
+                if self.monitoring_socket in socket_list:
+
+                    pickle_string = self.monitoring_socket.recv()
+                    monitoring_info = pickle.loads(pickle_string)
+
+                    # Retrieve the position of the small and the big rotation stage
+
+                    position_big_rotation_stage = monitoring_info[&#34;big_rotation_stage_position&#34;]
+                    position_translation_stage = monitoring_info[&#34;translation_stage_position&#34;]
+
+                    # Gnomonic distance to optical axis and in-field angle [degrees]
+
+                    phi = self.offset_phi - position_big_rotation_stage
+                    tan_theta = (self.offset_delta_x - position_translation_stage) / self.height_collimated_beam
+                    theta = degrees(atan(tan_theta))
 
                     store_actual_fov_position(theta, phi)
 
@@ -735,12 +1027,13 @@ Returns: Response to the request.</li>
                 # Retrieve the position of the small and the big rotation stage
 
                 position_big_rotation_stage = monitoring_info[&#34;big_rotation_stage_position&#34;]
-                position_small_rotation_stage = monitoring_info[&#34;small_rotation_stage_position&#34;]
+                position_translation_stage = monitoring_info[&#34;translation_stage_position&#34;]
 
                 # Gnomonic distance to optical axis and in-field angle [degrees]
 
-                theta = 2 * (position_small_rotation_stage + self.setup.gse.stages.calibration.offset_alpha)
-                phi = self.setup.gse.stages.calibration.offset_phi - position_big_rotation_stage
+                phi = self.offset_phi - position_big_rotation_stage
+                tan_theta = (self.offset_delta_x - position_translation_stage) / self.height_collimated_beam
+                theta = degrees(atan(tan_theta))
 
                 store_actual_fov_position(theta, phi)
 
@@ -820,6 +1113,7 @@ Returns: Response to the request.</li>
 </details>
 <h3>Subclasses</h3>
 <ul class="hlist">
+<li><a title="egse.fov.fov_hk.Csl1FovHk" href="#egse.fov.fov_hk.Csl1FovHk">Csl1FovHk</a></li>
 <li><a title="egse.fov.fov_hk.CslFovHk" href="#egse.fov.fov_hk.CslFovHk">CslFovHk</a></li>
 <li><a title="egse.fov.fov_hk.IasFovHk" href="#egse.fov.fov_hk.IasFovHk">IasFovHk</a></li>
 <li><a title="egse.fov.fov_hk.IntaFovHk" href="#egse.fov.fov_hk.IntaFovHk">IntaFovHk</a></li>
@@ -1053,7 +1347,14 @@ Returns: Response to the request.</li>
 
         # Create a socket and connect to the monitoring port
 
-        # TODO Read the settings of the CS you need + connect socket
+        settings = Settings.load(&#34;Gimbal Control Server&#34;)
+        self.cmd_endpoint = connect_address(settings.PROTOCOL, settings.HOSTNAME, settings.COMMANDING_PORT)
+
+        monitoring_address = connect_address(settings.PROTOCOL, settings.HOSTNAME, settings.MONITORING_PORT)
+        self.monitoring_socket = zmq.Context().socket(zmq.SUB)
+        self.monitoring_socket.connect(monitoring_address)
+        self.monitoring_socket.setsockopt_string(zmq.SUBSCRIBE, &#34;&#34;)
+        self.monitoring_timeout = 1.0
 
         self.start_fov_hk_acquisition()
 
@@ -1061,13 +1362,45 @@ Returns: Response to the request.</li>
 
         while self.keep_acquiring_fov_hk:
 
-            # TODO  Listen to the necessary monitoring ports + convert the info to field angles
-            pass
+            try:
+
+                socket_list, _, _ = zmq.select([self.monitoring_socket], [], [], timeout=self.monitoring_timeout)
+
+                # Monitoring information was received (before timeout)
+
+                if self.monitoring_socket in socket_list:
+
+                    # Retrieve the rotation angles around the y- and z-axis [degrees]
+                    # (the rotation angle around the x-axis and the translation are not needed here)
+
+                    pickle_string = self.monitoring_socket.recv()
+                    monitoring_info = pickle.loads(pickle_string)
+
+                    # Retrieve the rotation angles around the x- and y-axis [degrees]
+                    # See GimbalProtocol.get_status for details
+                    grx, gry = monitoring_info[&#34;user&#34;]
+
+                    #
+                    # According to inta_point_source_to_fov:
+                    #   grx = theta * np.cos(np.deg2rad(phi))
+                    #   gry = theta * np.sin(np.deg2rad(phi))
+                    #
+                    # grx and gry are already in degrees, therefore:
+                    #
+                    theta = sqrt(grx ** 2 + gry ** 2)
+                    phi   = degrees(atan2(gry, grx))
+                    
+                    store_actual_fov_position(theta, phi)
+
+                elif is_control_server_active(self.cmd_endpoint):
+                    self.monitoring_timeout += 0.5
+
+            except zmq.ZMQError:
+                pass
 
     def close_sockets(self):
-
-        # TODO Close all monitoring sockets
-        pass</code></pre>
+        self.cmd_endpoint.close()
+        self.monitoring_socket.close()</code></pre>
 </details>
 <h3>Ancestors</h3>
 <ul class="hlist">
@@ -1088,8 +1421,41 @@ Returns: Response to the request.</li>
 
     while self.keep_acquiring_fov_hk:
 
-        # TODO  Listen to the necessary monitoring ports + convert the info to field angles
-        pass</code></pre>
+        try:
+
+            socket_list, _, _ = zmq.select([self.monitoring_socket], [], [], timeout=self.monitoring_timeout)
+
+            # Monitoring information was received (before timeout)
+
+            if self.monitoring_socket in socket_list:
+
+                # Retrieve the rotation angles around the y- and z-axis [degrees]
+                # (the rotation angle around the x-axis and the translation are not needed here)
+
+                pickle_string = self.monitoring_socket.recv()
+                monitoring_info = pickle.loads(pickle_string)
+
+                # Retrieve the rotation angles around the x- and y-axis [degrees]
+                # See GimbalProtocol.get_status for details
+                grx, gry = monitoring_info[&#34;user&#34;]
+
+                #
+                # According to inta_point_source_to_fov:
+                #   grx = theta * np.cos(np.deg2rad(phi))
+                #   gry = theta * np.sin(np.deg2rad(phi))
+                #
+                # grx and gry are already in degrees, therefore:
+                #
+                theta = sqrt(grx ** 2 + gry ** 2)
+                phi   = degrees(atan2(gry, grx))
+                
+                store_actual_fov_position(theta, phi)
+
+            elif is_control_server_active(self.cmd_endpoint):
+                self.monitoring_timeout += 0.5
+
+        except zmq.ZMQError:
+            pass</code></pre>
 </details>
 </dd>
 <dt id="egse.fov.fov_hk.IntaFovHk.close_sockets"><code class="name flex">
@@ -1102,9 +1468,8 @@ Returns: Response to the request.</li>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def close_sockets(self):
-
-    # TODO Close all monitoring sockets
-    pass</code></pre>
+    self.cmd_endpoint.close()
+    self.monitoring_socket.close()</code></pre>
 </details>
 </dd>
 </dl>
@@ -1300,6 +1665,13 @@ Returns: Response to the request.</li>
 </li>
 <li><h3><a href="#header-classes">Classes</a></h3>
 <ul>
+<li>
+<h4><code><a title="egse.fov.fov_hk.Csl1FovHk" href="#egse.fov.fov_hk.Csl1FovHk">Csl1FovHk</a></code></h4>
+<ul class="">
+<li><code><a title="egse.fov.fov_hk.Csl1FovHk.acquire_fov_hk" href="#egse.fov.fov_hk.Csl1FovHk.acquire_fov_hk">acquire_fov_hk</a></code></li>
+<li><code><a title="egse.fov.fov_hk.Csl1FovHk.close_sockets" href="#egse.fov.fov_hk.Csl1FovHk.close_sockets">close_sockets</a></code></li>
+</ul>
+</li>
 <li>
 <h4><code><a title="egse.fov.fov_hk.CslFovHk" href="#egse.fov.fov_hk.CslFovHk">CslFovHk</a></code></h4>
 <ul class="">

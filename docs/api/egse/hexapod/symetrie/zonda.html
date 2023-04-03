@@ -35,6 +35,8 @@ Symétrie.
 
 &#34;&#34;&#34;
 import logging
+import math
+import time
 from typing import Dict
 
 from egse.device import DeviceInterface
@@ -46,6 +48,8 @@ from egse.hexapod.symetrie.zonda_devif import ZondaTelnetInterface
 from egse.hexapod.symetrie.zonda_devif import decode_command
 from egse.proxy import Proxy
 from egse.settings import Settings
+from egse.system import Timer
+from egse.system import wait_until
 from egse.zmq_ser import connect_address
 from numpy import loadtxt
 from time import sleep
@@ -58,6 +62,7 @@ DEVICE_SETTINGS = Settings.load(filename=&#34;zonda.yaml&#34;)
 
 HOME_COMPLETE = 6
 IN_POSITION = 3
+IN_MOTION = 4
 
 GENERAL_STATE = [
     &#34;Error&#34;,
@@ -344,11 +349,12 @@ class ZondaController(ZondaInterface):
     def is_in_position(self):
         try:
             sc = self.get_general_state()
-            position = sc[1][IN_POSITION]
+            in_position = sc[1][IN_POSITION]
+            in_motion = sc[1][IN_MOTION]
 
         except ZondaError as exc:
             raise HexapodError(&#34;Couldn&#39;t Execute command on Hexapod.&#34;) from exc
-        return position
+        return in_position and not in_motion
 
     def activate_control_loop(self):
         try:
@@ -815,33 +821,87 @@ if __name__ == &#34;__main__&#34;:
 
     zonda = ZondaController()
     zonda.connect()
-    rp(zonda.info())
-    rp(zonda.activate_control_loop())
-    rp(zonda.get_general_state())
-    rp(zonda.get_actuator_state())
-    rp(zonda.deactivate_control_loop())
-    rp(zonda.get_general_state())
-    rp(zonda.get_actuator_state())
-    rp(zonda.stop())
-    rp(zonda.get_limits_value(0))
-    rp(zonda.get_limits_value(1))
-    rp(zonda.check_absolute_movement(1, 1, 1, 1, 1, 1))
-    rp(zonda.check_absolute_movement(51, 51, 51, 1, 1, 1))
-    rp(zonda.get_speed())
-    rp(zonda.set_speed(2.0, 1.0))
-    rp(zonda.machine_limit_enable(0))
-    rp(zonda.machine_limit_enable(1))
-    rp(zonda.get_limits_state())
-    rp(zonda.get_coordinates_systems())
-    rp(zonda.validate_position(1, 0, 0, 0, 0, 0, 0, 0))
-    rp(zonda.validate_position(1, 0, 0, 0, 50, 0, 0, 0))
-    # zonda.reset()
-    zonda.disconnect()
 
-    rp(0, decode_validation_error(0))
-    rp(11, decode_validation_error(11))
-    rp(8, decode_validation_error(8))
-    rp(24, decode_validation_error(24))</code></pre>
+    with Timer(&#34;ZondaController&#34;):
+
+        rp(zonda.info())
+        rp(zonda.is_homing_done())
+        rp(zonda.is_in_position())
+        rp(zonda.activate_control_loop())
+        rp(zonda.get_general_state())
+        rp(zonda.get_actuator_state())
+        rp(zonda.deactivate_control_loop())
+        rp(zonda.get_general_state())
+        rp(zonda.get_actuator_state())
+        rp(zonda.stop())
+        rp(zonda.get_limits_value(0))
+        rp(zonda.get_limits_value(1))
+        rp(zonda.check_absolute_movement(1, 1, 1, 1, 1, 1))
+        rp(zonda.check_absolute_movement(51, 51, 51, 1, 1, 1))
+        rp(zonda.get_speed())
+        rp(zonda.set_speed(2.0, 1.0))
+        time.sleep(0.5)  # if we do not sleep, the get_speed() will get the old values
+        speed = zonda.get_speed()
+
+        if not math.isclose(speed[&#39;vt&#39;], 2.0):
+            rp(f&#34;[red]{speed[&#39;vt&#39;]} != 2.0[/red]&#34;)
+        if not math.isclose(speed[&#39;vr&#39;], 1.0):
+            rp(f&#34;[red]{speed[&#39;vr&#39;]} != 1.0[/red]&#34;)
+
+        rp(zonda.get_actuator_length())
+
+        # rp(zonda.machine_limit_enable(0))
+        # rp(zonda.machine_limit_enable(1))
+        # rp(zonda.get_limits_state())
+        rp(zonda.get_coordinates_systems())
+        rp(zonda.configure_coordinates_systems(
+            0.033000, -0.238000, 230.205000, 0.003282, 0.005671, 0.013930,
+            0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000))
+        rp(zonda.get_coordinates_systems())
+        rp(zonda.get_machine_positions())
+        rp(zonda.get_user_positions())
+        rp(zonda.configure_coordinates_systems(
+            0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000,
+            0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000))
+        rp(zonda.validate_position(1, 0, 0, 0, 0, 0, 0, 0))
+        rp(zonda.validate_position(1, 0, 0, 0, 50, 0, 0, 0))
+
+        rp(zonda.goto_zero_position())
+        rp(zonda.is_in_position())
+        if wait_until(zonda.is_in_position, interval=1, timeout=300):
+            rp(&#34;[red]Task zonda.is_in_position() timed out after 30s.[/red]&#34;)
+        rp(zonda.is_in_position())
+
+        rp(zonda.get_machine_positions())
+        rp(zonda.get_user_positions())
+
+        rp(zonda.move_absolute(0, 0, 12, 0, 0, 10))
+
+        rp(zonda.is_in_position())
+        if wait_until(zonda.is_in_position, interval=1, timeout=300):
+            rp(&#34;[red]Task zonda.is_in_position() timed out after 30s.[/red]&#34;)
+        rp(zonda.is_in_position())
+
+        rp(zonda.get_machine_positions())
+        rp(zonda.get_user_positions())
+
+        rp(zonda.move_absolute(0, 0, 0, 0, 0, 0))
+
+        rp(zonda.is_in_position())
+        if wait_until(zonda.is_in_position, interval=1, timeout=300):
+            rp(&#34;[red]Task zonda.is_in_position() timed out after 30s.[/red]&#34;)
+        rp(zonda.is_in_position())
+
+        rp(zonda.get_machine_positions())
+        rp(zonda.get_user_positions())
+
+        # zonda.reset()
+        zonda.disconnect()
+
+        # rp(0, decode_validation_error(0))
+        # rp(11, decode_validation_error(11))
+        # rp(8, decode_validation_error(8))
+        # rp(24, decode_validation_error(24))</code></pre>
 </details>
 </section>
 <section>
@@ -1123,11 +1183,12 @@ Several errors can be combined into the given variable.</p>
     def is_in_position(self):
         try:
             sc = self.get_general_state()
-            position = sc[1][IN_POSITION]
+            in_position = sc[1][IN_POSITION]
+            in_motion = sc[1][IN_MOTION]
 
         except ZondaError as exc:
             raise HexapodError(&#34;Couldn&#39;t Execute command on Hexapod.&#34;) from exc
-        return position
+        return in_position and not in_motion
 
     def activate_control_loop(self):
         try:

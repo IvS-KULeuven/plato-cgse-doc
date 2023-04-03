@@ -521,7 +521,7 @@ class ProcessManagerController(ProcessManagerInterface):
 
                     # Check to see the CS actually started
 
-                    time.sleep(3)
+                    time.sleep(5)
                     try:
                         with find_class(proxy_type)(*device_args):
                             pass
@@ -636,19 +636,12 @@ class ProcessManagerController(ProcessManagerInterface):
                 cs.execute(detach_from_parent=True)
 
                 if process_name == &#34;DAQ6510&#34;:
-
-                    setup = GlobalState.setup
-                    das_delay = setup.gse.DAQ6510.route.delay
-                    das_count = setup.gse.DAQ6510.route.scan.COUNT.SCAN
-                    das_interval = setup.gse.DAQ6510.route.scan.INTERVAL
-
-                    das = SubProcess(&#34;MyApp&#34;, [sys.executable, &#34;-m&#34;, &#34;egse.das&#34;, &#34;daq6510&#34;, &#34;--count&#34;, str(das_count),
-                                               &#34;--interval&#34;, str(das_interval), &#34;--delay&#34;, str(das_delay)])
+                    das = SubProcess(&#34;MyApp&#34;, [sys.executable, &#34;-m&#34;, &#34;egse.das&#34;, &#34;daq6510&#34;])
                     das.execute(detach_from_parent=&#34;True&#34;)
 
                 # Check to see the CS actually started
 
-                time.sleep(3)
+                time.sleep(5)
                 try:
                     with find_class(proxy_type)(*device_args):
                         return Success(f&#34;{process_name} successfully started&#34;)
@@ -758,6 +751,7 @@ class ProcessManagerController(ProcessManagerInterface):
         fg = SubProcess(&#34;MyApp&#34;, [sys.executable, &#34;-m&#34;, &#34;egse.dpu.fitsgen&#34;, &#34;start&#34;])
         fg.execute(detach_from_parent=True)
 
+        time.sleep(5)
         if fitsgen.send_request(&#34;status&#34;).get(&#34;status&#34;) != &#34;ACK&#34;:
             return Failure(&#34;FITS generation could not be started for some unknown reason.&#34;)
 
@@ -779,6 +773,7 @@ class ProcessManagerController(ProcessManagerInterface):
         fg = SubProcess(&#34;MyApp&#34;, [sys.executable, &#34;-m&#34;, &#34;egse.fov.fov_hk&#34;, &#34;start&#34;])
         fg.execute(detach_from_parent=True)
 
+        time.sleep(5)
         if fov_hk.send_request(&#34;status&#34;).get(&#34;status&#34;) != &#34;ACK&#34;:
             return Failure(&#34;FOV HK generation could not be started for some unknown reason.&#34;)
 
@@ -800,6 +795,7 @@ class ProcessManagerController(ProcessManagerInterface):
         fg = SubProcess(&#34;MyApp&#34;, [sys.executable, &#34;-m&#34;, &#34;egse.fee.n_fee_hk&#34;, &#34;start&#34;])
         fg.execute(detach_from_parent=True)
 
+        time.sleep(5)
         if n_fee_hk.send_request(&#34;status&#34;).get(&#34;status&#34;) != &#34;ACK&#34;:
             return Failure(&#34;N-FEE HK generation could not be started for some unknown reason.&#34;)
 
@@ -1160,7 +1156,7 @@ inactive (and False will be returned).</p>
 
                     # Check to see the CS actually started
 
-                    time.sleep(3)
+                    time.sleep(5)
                     try:
                         with find_class(proxy_type)(*device_args):
                             pass
@@ -1275,19 +1271,12 @@ inactive (and False will be returned).</p>
                 cs.execute(detach_from_parent=True)
 
                 if process_name == &#34;DAQ6510&#34;:
-
-                    setup = GlobalState.setup
-                    das_delay = setup.gse.DAQ6510.route.delay
-                    das_count = setup.gse.DAQ6510.route.scan.COUNT.SCAN
-                    das_interval = setup.gse.DAQ6510.route.scan.INTERVAL
-
-                    das = SubProcess(&#34;MyApp&#34;, [sys.executable, &#34;-m&#34;, &#34;egse.das&#34;, &#34;daq6510&#34;, &#34;--count&#34;, str(das_count),
-                                               &#34;--interval&#34;, str(das_interval), &#34;--delay&#34;, str(das_delay)])
+                    das = SubProcess(&#34;MyApp&#34;, [sys.executable, &#34;-m&#34;, &#34;egse.das&#34;, &#34;daq6510&#34;])
                     das.execute(detach_from_parent=&#34;True&#34;)
 
                 # Check to see the CS actually started
 
-                time.sleep(3)
+                time.sleep(5)
                 try:
                     with find_class(proxy_type)(*device_args):
                         return Success(f&#34;{process_name} successfully started&#34;)
@@ -1397,6 +1386,7 @@ inactive (and False will be returned).</p>
         fg = SubProcess(&#34;MyApp&#34;, [sys.executable, &#34;-m&#34;, &#34;egse.dpu.fitsgen&#34;, &#34;start&#34;])
         fg.execute(detach_from_parent=True)
 
+        time.sleep(5)
         if fitsgen.send_request(&#34;status&#34;).get(&#34;status&#34;) != &#34;ACK&#34;:
             return Failure(&#34;FITS generation could not be started for some unknown reason.&#34;)
 
@@ -1418,6 +1408,7 @@ inactive (and False will be returned).</p>
         fg = SubProcess(&#34;MyApp&#34;, [sys.executable, &#34;-m&#34;, &#34;egse.fov.fov_hk&#34;, &#34;start&#34;])
         fg.execute(detach_from_parent=True)
 
+        time.sleep(5)
         if fov_hk.send_request(&#34;status&#34;).get(&#34;status&#34;) != &#34;ACK&#34;:
             return Failure(&#34;FOV HK generation could not be started for some unknown reason.&#34;)
 
@@ -1439,6 +1430,7 @@ inactive (and False will be returned).</p>
         fg = SubProcess(&#34;MyApp&#34;, [sys.executable, &#34;-m&#34;, &#34;egse.fee.n_fee_hk&#34;, &#34;start&#34;])
         fg.execute(detach_from_parent=True)
 
+        time.sleep(5)
         if n_fee_hk.send_request(&#34;status&#34;).get(&#34;status&#34;) != &#34;ACK&#34;:
             return Failure(&#34;N-FEE HK generation could not be started for some unknown reason.&#34;)
 

@@ -26,7 +26,9 @@
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">from PyQt5.QtCore import Qt
+<pre><code class="python">import os
+
+from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QGridLayout
 from PyQt5.QtWidgets import QGroupBox
 from PyQt5.QtWidgets import QHBoxLayout
@@ -41,40 +43,14 @@ from egse.gui.led import Indic
 from egse.gui.led import LED
 from egse.spw import HousekeepingPacket
 
+try:
+    _ = os.environ[&#34;PLATO_CAMERA_IS_EM&#34;]
+    PLATO_CAMERA_IS_EM = True if _.capitalize() in (&#34;1&#34;, &#34;True&#34;, &#34;Yes&#34;) else 0
+except KeyError:
+    PLATO_CAMERA_IS_EM = False
+
 
 class _CCDVoltages(QGroupBox):
-    CCD1_FIELDS_LAYOUT = {
-        &#34;VOD&#34;: [&#34;CCD1_VOD_MON&#34;, 1, 0],
-        &#34;VOG&#34;: [&#34;CCD1_VOG_MON&#34;, 2, 0],
-        &#34;VDD&#34;: [&#34;CCD1_VDD_MON&#34;, 3, 0],
-        &#34;VGD&#34;: [&#34;CCD1_VGD_MON&#34;, 4, 0],
-        &#34;VRD_E&#34;: [&#34;CCD1_VRD_MON_E&#34;, 5, 0],
-        &#34;VRD_F&#34;: [&#34;CCD1_VRD_MON_F&#34;, 6, 0],
-    }
-    CCD2_FIELDS_LAYOUT = {
-        &#34;VOD&#34;: [&#34;CCD2_VOD_MON&#34;, 1, 2],
-        &#34;VOG&#34;: [&#34;CCD2_VOG_MON&#34;, 2, 2],
-        &#34;VDD&#34;: [&#34;CCD2_VDD_MON&#34;, 3, 2],
-        &#34;VGD&#34;: [&#34;CCD2_VGD_MON&#34;, 4, 2],
-        &#34;VRD_E&#34;: [&#34;CCD2_VRD_MON_E&#34;, 5, 2],
-        &#34;VRD_F&#34;: [&#34;CCD2_VRD_MON_F&#34;, 6, 2],
-    }
-    CCD3_FIELDS_LAYOUT = {
-        &#34;VOD&#34;: [&#34;CCD3_VOD_MON&#34;, 1, 4],
-        &#34;VOG&#34;: [&#34;CCD3_VOG_MON&#34;, 2, 4],
-        &#34;VDD&#34;: [&#34;CCD3_VDD_MON&#34;, 3, 4],
-        &#34;VGD&#34;: [&#34;CCD3_VGD_MON&#34;, 4, 4],
-        &#34;VRD_E&#34;: [&#34;CCD3_VRD_MON_E&#34;, 5, 4],
-        &#34;VRD_F&#34;: [&#34;CCD3_VRD_MON_F&#34;, 6, 4],
-    }
-    CCD4_FIELDS_LAYOUT = {
-        &#34;VOD&#34;: [&#34;CCD4_VOD_MON&#34;, 1, 6],
-        &#34;VOG&#34;: [&#34;CCD4_VOG_MON&#34;, 2, 6],
-        &#34;VDD&#34;: [&#34;CCD4_VDD_MON&#34;, 3, 6],
-        &#34;VGD&#34;: [&#34;CCD4_VGD_MON&#34;, 4, 6],
-        &#34;VRD_E&#34;: [&#34;CCD4_VRD_MON_E&#34;, 5, 6],
-        &#34;VRD_F&#34;: [&#34;CCD4_VRD_MON_F&#34;, 6, 6],
-    }
 
     def __init__(self, *args, **kwargs):
         super().__init__(&#34;CCD Voltages&#34;, *args, **kwargs)
@@ -90,11 +66,28 @@ class _CCDVoltages(QGroupBox):
             label.setAlignment(Qt.AlignHCenter)
             layout.addWidget(label, 0, col * 2 + 1)
 
-        for fields in (self.CCD1_FIELDS_LAYOUT,
-                       self.CCD2_FIELDS_LAYOUT,
-                       self.CCD3_FIELDS_LAYOUT,
-                       self.CCD4_FIELDS_LAYOUT,
-                       ):
+        self.ccd_fields_layout = [{}, {}, {}, {}]
+
+        for ccd_number in range(1, 5):
+            if PLATO_CAMERA_IS_EM:
+                self.ccd_fields_layout[ccd_number - 1][&#34;VOD&#34;] = [f&#34;CCD{ccd_number}_VOD_MON&#34;, 1, 2 * (ccd_number - 1)]
+                index = 2
+            else:
+                self.ccd_fields_layout[ccd_number - 1][&#34;VOD_E&#34;] = [f&#34;CCD{ccd_number}_VOD_MON_E&#34;, 1, 2 * (ccd_number - 1)]
+                self.ccd_fields_layout[ccd_number - 1][&#34;VOD_F&#34;] = [f&#34;CCD{ccd_number}_VOD_MON_F&#34;, 2, 2 * (ccd_number - 1)]
+                index = 3
+
+            self.ccd_fields_layout[ccd_number - 1][&#34;VOG&#34;] = [f&#34;CCD{ccd_number}_VOG_MON&#34;, index, 2 * (ccd_number - 1)]
+            index += 1
+            self.ccd_fields_layout[ccd_number - 1][&#34;VDD&#34;] = [f&#34;CCD{ccd_number}_VDD_MON&#34;, index, 2 * (ccd_number - 1)]
+            index += 1
+            self.ccd_fields_layout[ccd_number - 1][&#34;VGD&#34;] = [f&#34;CCD{ccd_number}_VGD_MON&#34;, index, 2 * (ccd_number - 1)]
+            index += 1
+            self.ccd_fields_layout[ccd_number - 1][&#34;VRD_E&#34;] = [f&#34;CCD{ccd_number}_VRD_MON_E&#34;, index, 2 * (ccd_number - 1)]
+            index += 1
+            self.ccd_fields_layout[ccd_number - 1][&#34;VRD_F&#34;] = [f&#34;CCD{ccd_number}_VRD_MON_F&#34;, index, 2 * (ccd_number - 1)]
+
+        for fields in (self.ccd_fields_layout):
             for par, x in fields.items():
                 self._fields[x[0]] = field = QLineEdit()
                 field.setMinimumWidth(60)
@@ -228,36 +221,40 @@ class _TOUSensors(QGroupBox):
 
 
 class _NFEEVoltages(QGroupBox):
-    N_FEE_FIELDS_LAYOUT = {
-        &#34;3V3D&#34;: [&#34;3V3D_MON&#34;, 0, 0],
-        &#34;2V5D&#34;: [&#34;2V5D_MON&#34;, 1, 0],
-        &#34;1V5D&#34;: [&#34;1V5D_MON&#34;, 2, 0],
-        &#34;5VREF&#34;: [&#34;5VREF_MON&#34;, 3, 0],
-
-        &#34;+5VB&#34;: [&#34;5VB_POS_MON&#34;, 0, 2],
-        &#34;-5VB&#34;: [&#34;5VB_NEG_MON&#34;, 1, 2],
-        &#34;3V3B&#34;: [&#34;3V3B_MON&#34;, 2, 2],
-        &#34;2V5A&#34;: [&#34;2V5A_MON&#34;, 3, 2],
-
-        &#34;VICLK&#34;: [&#34;VICLK&#34;, 0, 4],
-        &#34;VICLK_LOW&#34;: [&#34;VICLK_LOW&#34;, 1, 4],
-        &#34;VRCLK_MON&#34;: [&#34;VRCLK_MON&#34;, 2, 4],
-        &#34;VRCLK_LOW&#34;: [&#34;VRCLK_LOW&#34;, 3, 4],
-        &#34;VCCD&#34;: [&#34;VCCD&#34;, 4, 4],
-
-        &#34;VDIG_RAW&#34;: [&#34;VDIG_RAW&#34;, 0, 6],
-        &#34;VDIG_RAW_2&#34;: [&#34;VDIG_RAW_2&#34;, 1, 6],
-        &#34;VCCD_RAW&#34;: [&#34;VCCD_POS_RAW&#34;, 2, 6],
-        &#34;VCLK_RAW&#34;: [&#34;VCLK_POS_RAW&#34;, 3, 6],
-        &#34;ZERO_DIFF_AMP&#34;: [&#34;ZERO_DIFF_AMP&#34;, 4, 6],
-
-        &#34;VAN1_RAW&#34;: [&#34;VAN1_POS_RAW&#34;, 0, 8],
-        &#34;VAN2_RAW&#34;: [&#34;VAN2_POS_RAW&#34;, 1, 8],
-        &#34;−VAN3_MON&#34;: [&#34;VAN3_NEG_MON&#34;, 2, 8],
-    }
 
     def __init__(self, *args, **kwargs):
         super().__init__(&#34;N-FEE Voltages&#34;, *args, **kwargs)
+
+        self.voltage_fields_layout = {
+            &#34;3V3D&#34;: [&#34;3V3D_MON&#34;, 0, 0],
+            &#34;2V5D&#34;: [&#34;2V5D_MON&#34;, 1, 0],
+            &#34;1V5D&#34;: [&#34;1V5D_MON&#34;, 2, 0],
+            &#34;5VREF&#34;: [&#34;5VREF_MON&#34;, 3, 0],
+
+            &#34;-5VB&#34;: [&#34;5VB_NEG_MON&#34;, 1, 2],
+            &#34;3V3B&#34;: [&#34;3V3B_MON&#34;, 0, 2],
+            &#34;2V5A&#34;: [&#34;2V5A_MON&#34;, 3, 2],
+
+            &#34;VICLK&#34;: [&#34;VICLK&#34;, 0, 4],
+            &#34;VRCLK_MON&#34;: [&#34;VRCLK_MON&#34;, 1, 4],
+            &#34;VCCD&#34;: [&#34;VCCD&#34;, 2, 4],
+
+            &#34;VCCD_RAW&#34;: [&#34;VCCD_POS_RAW&#34;, 2-2, 6],
+            &#34;VCLK_RAW&#34;: [&#34;VCLK_POS_RAW&#34;, 3-2, 6],
+            &#34;ZERO_DIFF_AMP&#34;: [&#34;ZERO_DIFF_AMP&#34;, 4-2, 6],
+            &#34;VAN1_RAW&#34;: [&#34;VAN1_POS_RAW&#34;, 0, 8],
+            &#34;VAN2_RAW&#34;: [&#34;VAN2_POS_RAW&#34;, 1, 8],
+            &#34;−VAN3_MON&#34;: [&#34;VAN3_NEG_MON&#34;, 2, 8],
+            &#34;VDIG_RAW&#34;: [&#34;VDIG_RAW&#34;, 3, 8],
+        }
+
+        if PLATO_CAMERA_IS_EM:
+            self.voltage_fields_layout[&#34;+5VB&#34;] = [&#34;5VB_POS_MON&#34;, 0, 2]
+            self.voltage_fields_layout[&#34;VICLK_LOW&#34;] = [&#34;VICLK_LOW&#34;, 3, 4]
+            self.voltage_fields_layout[&#34;VRCLK_LOW&#34;] = [&#34;VRCLK_LOW&#34;, 4, 4]
+            self.voltage_fields_layout[&#34;VDIG_RAW_2&#34;] = [&#34;VDIG_RAW_2&#34;, 4, 8]
+        else:
+            self.voltage_fields_layout[&#34;1V8D&#34;] = [&#34;1V8D_MON&#34;, 4, 2]
 
         self._fields = {}
 
@@ -265,7 +262,7 @@ class _NFEEVoltages(QGroupBox):
         layout.setContentsMargins(5, 5, 5, 5)
         layout.setSpacing(5)
 
-        for par, x in self.N_FEE_FIELDS_LAYOUT.items():
+        for par, x in self.voltage_fields_layout.items():
             self._fields[x[0]] = field = QLineEdit()
             field.setMinimumWidth(60)
             field.setAlignment(Qt.AlignRight)

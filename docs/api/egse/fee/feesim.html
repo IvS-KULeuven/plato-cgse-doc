@@ -67,7 +67,9 @@ import logging
 import multiprocessing
 
 import click
+import numpy as np
 
+from egse.hk import TmDictionaryColumns
 from egse.setup import SetupError
 from egse.state import GlobalState
 
@@ -80,9 +82,7 @@ from typing import NamedTuple, List
 import sshtunnel
 
 from egse.dsi.spw import SpaceWireOverDSI
-from egse.fee import sensor_sel
 from egse.fee import n_fee_mode
-from egse.fee import n_fee_side
 from egse.fee import convert_ccd_order_value
 from egse.fee.fee import create_pattern_data
 from egse.fee.fee import generate_data_packets
@@ -99,6 +99,7 @@ from egse.spw import WriteRequest
 from egse.spw import create_rmap_read_request_reply_packet
 from egse.spw import create_rmap_write_request_reply_packet
 from egse.zmq.spw import SpaceWireOverZeroMQ
+from egse.fee.n_fee_hk import ORIGIN
 
 logging.basicConfig(level=logging.DEBUG, format=Settings.LOG_FORMAT_FULL)
 
@@ -289,6 +290,17 @@ class FEESimulator:
 
     def initialise_hk_data(self):
         &#34;&#34;&#34;Initialises the housekeeping data to fake or simulated values.&#34;&#34;&#34;
+
+        try:
+            hk_info_table = GlobalState.setup.telemetry.dictionary
+        except AttributeError:
+            raise SetupError(&#34;Version of the telemetry dictionary not specified in the current setup&#34;)
+
+        storage_mnemonic_col = hk_info_table[TmDictionaryColumns.STORAGE_MNEMONIC].values
+        original_name_col = hk_info_table[TmDictionaryColumns.ORIGINAL_EGSE_HK_NAMES].values
+        selection = np.where(storage_mnemonic_col == ORIGIN)
+        original_names = original_name_col[selection]
+
         self._hk_data[&#34;TOU_SENSE_1&#34;] = 0x8000
         self._hk_data[&#34;TOU_SENSE_2&#34;] = 0x8000
         self._hk_data[&#34;TOU_SENSE_3&#34;] = 0x8000
@@ -309,25 +321,54 @@ class FEESimulator:
 
         self._hk_data[&#34;ZERO_DIFF_AMP&#34;] = 0x8015
 
-        self._hk_data[&#34;CCD1_VOD_MON&#34;] = 0x8055
+        if &#34;CCD1_VOD_MON&#34; in original_names:
+            self._hk_data[&#34;CCD1_VOD_MON&#34;] = 0x8055
+        else:
+            if &#34;CCD1_VOD_MON_E&#34; in original_names:
+                self._hk_data[&#34;CCD1_VOD_MON_E&#34;] = 0x8055
+            if &#34;CCD1_VOD_MON_F&#34; in original_names:
+                self._hk_data[&#34;CCD1_VOD_MON_F&#34;] = 0x8055
         self._hk_data[&#34;CCD1_VOG_MON&#34;] = 0x8056
         self._hk_data[&#34;CCD1_VRD_MON_E&#34;] = 0x8056
-        self._hk_data[&#34;CCD2_VOD_MON&#34;] = 0x8057
+
+        if &#34;CCD2_VOD_MON&#34; in original_names:
+            self._hk_data[&#34;CCD2_VOD_MON&#34;] = 0x8057
+        else:
+            if &#34;CCD2_VOD_MON_E&#34; in original_names:
+                self._hk_data[&#34;CCD2_VOD_MON_E&#34;] = 0x8057
+            if &#34;CCD2_VOD_MON_E&#34; in original_names:
+                self._hk_data[&#34;CCD2_VOD_MON_E&#34;] = 0x8057
         self._hk_data[&#34;CCD2_VOG_MON&#34;] = 0x8058
         self._hk_data[&#34;CCD2_VRD_MON_E&#34;] = 0x8057
-        self._hk_data[&#34;CCD3_VOD_MON&#34;] = 0x8058
+
+        if &#34;CCD3_VOD_MON&#34; in original_names:
+            self._hk_data[&#34;CCD3_VOD_MON&#34;] = 0x8058
+        else:
+            if &#34;CCD3_VOD_MON_E&#34; in original_names:
+                self._hk_data[&#34;CCD3_VOD_MON_E&#34;] = 0x8058
+            if &#34;CCD3_VOD_MON_F&#34; in original_names:
+                self._hk_data[&#34;CCD3_VOD_MON_F&#34;] = 0x8058
         self._hk_data[&#34;CCD3_VOG_MON&#34;] = 0x8058
         self._hk_data[&#34;CCD3_VRD_MON_E&#34;] = 0x8058
-        self._hk_data[&#34;CCD4_VOD_MON&#34;] = 0x8057
+
+        if &#34;CCD4_VOD_MON&#34; in original_names:
+            self._hk_data[&#34;CCD4_VOD_MON&#34;] = 0x8057
+        else:
+            if &#34;CCD4_VOD_MON_E&#34; in original_names:
+                self._hk_data[&#34;CCD4_VOD_MON_E&#34;] = 0x8057
+            if &#34;CCD4_VOD_MON_F&#34; in original_names:
+                self._hk_data[&#34;CCD4_VOD_MON_F&#34;] = 0x8057
         self._hk_data[&#34;CCD4_VOG_MON&#34;] = 0x8058
         self._hk_data[&#34;CCD4_VRD_MON_E&#34;] = 0x8058
 
         self._hk_data[&#34;VCCD&#34;] = 0x39BF
         self._hk_data[&#34;VRCLK_MON&#34;] = 0xFC8A
         self._hk_data[&#34;VICLK&#34;] = 0xFAE9
-        self._hk_data[&#34;VRCLK_LOW&#34;] = 0x821A
+        if &#34;VRCLK_LOW&#34; in original_names:
+            self._hk_data[&#34;VRCLK_LOW&#34;] = 0x821A
 
-        self._hk_data[&#34;5VB_POS_MON&#34;] = 0x1E6A
+        if &#34;5VB_POS_MON&#34; in original_names:
+            self._hk_data[&#34;5VB_POS_MON&#34;] = 0x1E6A
         self._hk_data[&#34;5VB_NEG_MON&#34;] = 0x1A9F
         self._hk_data[&#34;3V3B_MON&#34;] = 0xE75D
         self._hk_data[&#34;2V5A_MON&#34;] = 0x1979
@@ -342,8 +383,10 @@ class FEESimulator:
         self._hk_data[&#34;VAN3_NEG_MON&#34;] = 0xFB7C
         self._hk_data[&#34;VAN2_POS_RAW&#34;] = 0x3AEC
         self._hk_data[&#34;VDIG_RAW&#34;] = 0x0AB5
-        self._hk_data[&#34;VDIG_RAW_2&#34;] = 0x0A32
-        self._hk_data[&#34;VICLK_LOW&#34;] = 0x8277
+        if &#34;5VB_POS_MON&#34; in original_names:
+            self._hk_data[&#34;VDIG_RAW_2&#34;] = 0x0A32
+        if &#34;VICLK_LOW&#34; in original_names:
+            self._hk_data[&#34;VICLK_LOW&#34;] = 0x8277
 
         self._hk_data[&#34;CCD1_VRD_MON_F&#34;] = 0x8059
         self._hk_data[&#34;CCD1_VDD_MON&#34;] = 0x94CA
@@ -359,7 +402,8 @@ class FEESimulator:
         self._hk_data[&#34;CCD4_VGD_MON&#34;] = 0x8056
 
         self._hk_data[&#34;IG_HI_MON&#34;] = 0x8057
-        self._hk_data[&#34;IG_LO_MON&#34;] = 0x8059
+        if &#34;IG_LO_MON&#34; in original_names:
+            self._hk_data[&#34;IG_LO_MON&#34;] = 0x8059
         self._hk_data[&#34;TSENSE_A&#34;] = 0x8059
         self._hk_data[&#34;TSENSE_B&#34;] = 0x805A
 
@@ -445,6 +489,8 @@ class FEESimulator:
     def run(self):
 
         LOGGER.info(f&#34;FEE Simulator Current State: {self.decode_current_state()}&#34;)
+        n_fee_side = GlobalState.setup.camera.fee.ccd_sides.enum
+        sensor_sel_enum = GlobalState.setup.camera.fee.sensor_sel.enum
 
         with self._transport:
 
@@ -506,9 +552,9 @@ class FEESimulator:
                         raise SetupError(&#34;No entry in the setup for camera.fee.ccd_numbering.CCD_ID_TO_BIN&#34;)
 
                     ccd_number = ccd_id_to_bin[self.get_current_ccd_number()]  # N-FEE CCD number [0-3]
-                    if self.sensor_sel &amp; sensor_sel.E_SIDE:
+                    if self.sensor_sel &amp; sensor_sel_enum.E_SIDE:
                         self.send_data_packets(timecode, ccd_id=ccd_number, ccd_side=n_fee_side.E_SIDE)
-                    if self.sensor_sel &amp; sensor_sel.F_SIDE:
+                    if self.sensor_sel &amp; sensor_sel_enum.F_SIDE:
                         self.send_data_packets(timecode, ccd_id=ccd_number, ccd_side=n_fee_side.F_SIDE)
 
                 # Process any RMAP commands that were sent -----------------------------------------
@@ -904,6 +950,17 @@ if __name__ == &#34;__main__&#34;:
 
     def initialise_hk_data(self):
         &#34;&#34;&#34;Initialises the housekeeping data to fake or simulated values.&#34;&#34;&#34;
+
+        try:
+            hk_info_table = GlobalState.setup.telemetry.dictionary
+        except AttributeError:
+            raise SetupError(&#34;Version of the telemetry dictionary not specified in the current setup&#34;)
+
+        storage_mnemonic_col = hk_info_table[TmDictionaryColumns.STORAGE_MNEMONIC].values
+        original_name_col = hk_info_table[TmDictionaryColumns.ORIGINAL_EGSE_HK_NAMES].values
+        selection = np.where(storage_mnemonic_col == ORIGIN)
+        original_names = original_name_col[selection]
+
         self._hk_data[&#34;TOU_SENSE_1&#34;] = 0x8000
         self._hk_data[&#34;TOU_SENSE_2&#34;] = 0x8000
         self._hk_data[&#34;TOU_SENSE_3&#34;] = 0x8000
@@ -924,25 +981,54 @@ if __name__ == &#34;__main__&#34;:
 
         self._hk_data[&#34;ZERO_DIFF_AMP&#34;] = 0x8015
 
-        self._hk_data[&#34;CCD1_VOD_MON&#34;] = 0x8055
+        if &#34;CCD1_VOD_MON&#34; in original_names:
+            self._hk_data[&#34;CCD1_VOD_MON&#34;] = 0x8055
+        else:
+            if &#34;CCD1_VOD_MON_E&#34; in original_names:
+                self._hk_data[&#34;CCD1_VOD_MON_E&#34;] = 0x8055
+            if &#34;CCD1_VOD_MON_F&#34; in original_names:
+                self._hk_data[&#34;CCD1_VOD_MON_F&#34;] = 0x8055
         self._hk_data[&#34;CCD1_VOG_MON&#34;] = 0x8056
         self._hk_data[&#34;CCD1_VRD_MON_E&#34;] = 0x8056
-        self._hk_data[&#34;CCD2_VOD_MON&#34;] = 0x8057
+
+        if &#34;CCD2_VOD_MON&#34; in original_names:
+            self._hk_data[&#34;CCD2_VOD_MON&#34;] = 0x8057
+        else:
+            if &#34;CCD2_VOD_MON_E&#34; in original_names:
+                self._hk_data[&#34;CCD2_VOD_MON_E&#34;] = 0x8057
+            if &#34;CCD2_VOD_MON_E&#34; in original_names:
+                self._hk_data[&#34;CCD2_VOD_MON_E&#34;] = 0x8057
         self._hk_data[&#34;CCD2_VOG_MON&#34;] = 0x8058
         self._hk_data[&#34;CCD2_VRD_MON_E&#34;] = 0x8057
-        self._hk_data[&#34;CCD3_VOD_MON&#34;] = 0x8058
+
+        if &#34;CCD3_VOD_MON&#34; in original_names:
+            self._hk_data[&#34;CCD3_VOD_MON&#34;] = 0x8058
+        else:
+            if &#34;CCD3_VOD_MON_E&#34; in original_names:
+                self._hk_data[&#34;CCD3_VOD_MON_E&#34;] = 0x8058
+            if &#34;CCD3_VOD_MON_F&#34; in original_names:
+                self._hk_data[&#34;CCD3_VOD_MON_F&#34;] = 0x8058
         self._hk_data[&#34;CCD3_VOG_MON&#34;] = 0x8058
         self._hk_data[&#34;CCD3_VRD_MON_E&#34;] = 0x8058
-        self._hk_data[&#34;CCD4_VOD_MON&#34;] = 0x8057
+
+        if &#34;CCD4_VOD_MON&#34; in original_names:
+            self._hk_data[&#34;CCD4_VOD_MON&#34;] = 0x8057
+        else:
+            if &#34;CCD4_VOD_MON_E&#34; in original_names:
+                self._hk_data[&#34;CCD4_VOD_MON_E&#34;] = 0x8057
+            if &#34;CCD4_VOD_MON_F&#34; in original_names:
+                self._hk_data[&#34;CCD4_VOD_MON_F&#34;] = 0x8057
         self._hk_data[&#34;CCD4_VOG_MON&#34;] = 0x8058
         self._hk_data[&#34;CCD4_VRD_MON_E&#34;] = 0x8058
 
         self._hk_data[&#34;VCCD&#34;] = 0x39BF
         self._hk_data[&#34;VRCLK_MON&#34;] = 0xFC8A
         self._hk_data[&#34;VICLK&#34;] = 0xFAE9
-        self._hk_data[&#34;VRCLK_LOW&#34;] = 0x821A
+        if &#34;VRCLK_LOW&#34; in original_names:
+            self._hk_data[&#34;VRCLK_LOW&#34;] = 0x821A
 
-        self._hk_data[&#34;5VB_POS_MON&#34;] = 0x1E6A
+        if &#34;5VB_POS_MON&#34; in original_names:
+            self._hk_data[&#34;5VB_POS_MON&#34;] = 0x1E6A
         self._hk_data[&#34;5VB_NEG_MON&#34;] = 0x1A9F
         self._hk_data[&#34;3V3B_MON&#34;] = 0xE75D
         self._hk_data[&#34;2V5A_MON&#34;] = 0x1979
@@ -957,8 +1043,10 @@ if __name__ == &#34;__main__&#34;:
         self._hk_data[&#34;VAN3_NEG_MON&#34;] = 0xFB7C
         self._hk_data[&#34;VAN2_POS_RAW&#34;] = 0x3AEC
         self._hk_data[&#34;VDIG_RAW&#34;] = 0x0AB5
-        self._hk_data[&#34;VDIG_RAW_2&#34;] = 0x0A32
-        self._hk_data[&#34;VICLK_LOW&#34;] = 0x8277
+        if &#34;5VB_POS_MON&#34; in original_names:
+            self._hk_data[&#34;VDIG_RAW_2&#34;] = 0x0A32
+        if &#34;VICLK_LOW&#34; in original_names:
+            self._hk_data[&#34;VICLK_LOW&#34;] = 0x8277
 
         self._hk_data[&#34;CCD1_VRD_MON_F&#34;] = 0x8059
         self._hk_data[&#34;CCD1_VDD_MON&#34;] = 0x94CA
@@ -974,7 +1062,8 @@ if __name__ == &#34;__main__&#34;:
         self._hk_data[&#34;CCD4_VGD_MON&#34;] = 0x8056
 
         self._hk_data[&#34;IG_HI_MON&#34;] = 0x8057
-        self._hk_data[&#34;IG_LO_MON&#34;] = 0x8059
+        if &#34;IG_LO_MON&#34; in original_names:
+            self._hk_data[&#34;IG_LO_MON&#34;] = 0x8059
         self._hk_data[&#34;TSENSE_A&#34;] = 0x8059
         self._hk_data[&#34;TSENSE_B&#34;] = 0x805A
 
@@ -1060,6 +1149,8 @@ if __name__ == &#34;__main__&#34;:
     def run(self):
 
         LOGGER.info(f&#34;FEE Simulator Current State: {self.decode_current_state()}&#34;)
+        n_fee_side = GlobalState.setup.camera.fee.ccd_sides.enum
+        sensor_sel_enum = GlobalState.setup.camera.fee.sensor_sel.enum
 
         with self._transport:
 
@@ -1121,9 +1212,9 @@ if __name__ == &#34;__main__&#34;:
                         raise SetupError(&#34;No entry in the setup for camera.fee.ccd_numbering.CCD_ID_TO_BIN&#34;)
 
                     ccd_number = ccd_id_to_bin[self.get_current_ccd_number()]  # N-FEE CCD number [0-3]
-                    if self.sensor_sel &amp; sensor_sel.E_SIDE:
+                    if self.sensor_sel &amp; sensor_sel_enum.E_SIDE:
                         self.send_data_packets(timecode, ccd_id=ccd_number, ccd_side=n_fee_side.E_SIDE)
-                    if self.sensor_sel &amp; sensor_sel.F_SIDE:
+                    if self.sensor_sel &amp; sensor_sel_enum.F_SIDE:
                         self.send_data_packets(timecode, ccd_id=ccd_number, ccd_side=n_fee_side.F_SIDE)
 
                 # Process any RMAP commands that were sent -----------------------------------------
@@ -1297,6 +1388,17 @@ def v_start(self) -&gt; int:
 </summary>
 <pre><code class="python">def initialise_hk_data(self):
     &#34;&#34;&#34;Initialises the housekeeping data to fake or simulated values.&#34;&#34;&#34;
+
+    try:
+        hk_info_table = GlobalState.setup.telemetry.dictionary
+    except AttributeError:
+        raise SetupError(&#34;Version of the telemetry dictionary not specified in the current setup&#34;)
+
+    storage_mnemonic_col = hk_info_table[TmDictionaryColumns.STORAGE_MNEMONIC].values
+    original_name_col = hk_info_table[TmDictionaryColumns.ORIGINAL_EGSE_HK_NAMES].values
+    selection = np.where(storage_mnemonic_col == ORIGIN)
+    original_names = original_name_col[selection]
+
     self._hk_data[&#34;TOU_SENSE_1&#34;] = 0x8000
     self._hk_data[&#34;TOU_SENSE_2&#34;] = 0x8000
     self._hk_data[&#34;TOU_SENSE_3&#34;] = 0x8000
@@ -1317,25 +1419,54 @@ def v_start(self) -&gt; int:
 
     self._hk_data[&#34;ZERO_DIFF_AMP&#34;] = 0x8015
 
-    self._hk_data[&#34;CCD1_VOD_MON&#34;] = 0x8055
+    if &#34;CCD1_VOD_MON&#34; in original_names:
+        self._hk_data[&#34;CCD1_VOD_MON&#34;] = 0x8055
+    else:
+        if &#34;CCD1_VOD_MON_E&#34; in original_names:
+            self._hk_data[&#34;CCD1_VOD_MON_E&#34;] = 0x8055
+        if &#34;CCD1_VOD_MON_F&#34; in original_names:
+            self._hk_data[&#34;CCD1_VOD_MON_F&#34;] = 0x8055
     self._hk_data[&#34;CCD1_VOG_MON&#34;] = 0x8056
     self._hk_data[&#34;CCD1_VRD_MON_E&#34;] = 0x8056
-    self._hk_data[&#34;CCD2_VOD_MON&#34;] = 0x8057
+
+    if &#34;CCD2_VOD_MON&#34; in original_names:
+        self._hk_data[&#34;CCD2_VOD_MON&#34;] = 0x8057
+    else:
+        if &#34;CCD2_VOD_MON_E&#34; in original_names:
+            self._hk_data[&#34;CCD2_VOD_MON_E&#34;] = 0x8057
+        if &#34;CCD2_VOD_MON_E&#34; in original_names:
+            self._hk_data[&#34;CCD2_VOD_MON_E&#34;] = 0x8057
     self._hk_data[&#34;CCD2_VOG_MON&#34;] = 0x8058
     self._hk_data[&#34;CCD2_VRD_MON_E&#34;] = 0x8057
-    self._hk_data[&#34;CCD3_VOD_MON&#34;] = 0x8058
+
+    if &#34;CCD3_VOD_MON&#34; in original_names:
+        self._hk_data[&#34;CCD3_VOD_MON&#34;] = 0x8058
+    else:
+        if &#34;CCD3_VOD_MON_E&#34; in original_names:
+            self._hk_data[&#34;CCD3_VOD_MON_E&#34;] = 0x8058
+        if &#34;CCD3_VOD_MON_F&#34; in original_names:
+            self._hk_data[&#34;CCD3_VOD_MON_F&#34;] = 0x8058
     self._hk_data[&#34;CCD3_VOG_MON&#34;] = 0x8058
     self._hk_data[&#34;CCD3_VRD_MON_E&#34;] = 0x8058
-    self._hk_data[&#34;CCD4_VOD_MON&#34;] = 0x8057
+
+    if &#34;CCD4_VOD_MON&#34; in original_names:
+        self._hk_data[&#34;CCD4_VOD_MON&#34;] = 0x8057
+    else:
+        if &#34;CCD4_VOD_MON_E&#34; in original_names:
+            self._hk_data[&#34;CCD4_VOD_MON_E&#34;] = 0x8057
+        if &#34;CCD4_VOD_MON_F&#34; in original_names:
+            self._hk_data[&#34;CCD4_VOD_MON_F&#34;] = 0x8057
     self._hk_data[&#34;CCD4_VOG_MON&#34;] = 0x8058
     self._hk_data[&#34;CCD4_VRD_MON_E&#34;] = 0x8058
 
     self._hk_data[&#34;VCCD&#34;] = 0x39BF
     self._hk_data[&#34;VRCLK_MON&#34;] = 0xFC8A
     self._hk_data[&#34;VICLK&#34;] = 0xFAE9
-    self._hk_data[&#34;VRCLK_LOW&#34;] = 0x821A
+    if &#34;VRCLK_LOW&#34; in original_names:
+        self._hk_data[&#34;VRCLK_LOW&#34;] = 0x821A
 
-    self._hk_data[&#34;5VB_POS_MON&#34;] = 0x1E6A
+    if &#34;5VB_POS_MON&#34; in original_names:
+        self._hk_data[&#34;5VB_POS_MON&#34;] = 0x1E6A
     self._hk_data[&#34;5VB_NEG_MON&#34;] = 0x1A9F
     self._hk_data[&#34;3V3B_MON&#34;] = 0xE75D
     self._hk_data[&#34;2V5A_MON&#34;] = 0x1979
@@ -1350,8 +1481,10 @@ def v_start(self) -&gt; int:
     self._hk_data[&#34;VAN3_NEG_MON&#34;] = 0xFB7C
     self._hk_data[&#34;VAN2_POS_RAW&#34;] = 0x3AEC
     self._hk_data[&#34;VDIG_RAW&#34;] = 0x0AB5
-    self._hk_data[&#34;VDIG_RAW_2&#34;] = 0x0A32
-    self._hk_data[&#34;VICLK_LOW&#34;] = 0x8277
+    if &#34;5VB_POS_MON&#34; in original_names:
+        self._hk_data[&#34;VDIG_RAW_2&#34;] = 0x0A32
+    if &#34;VICLK_LOW&#34; in original_names:
+        self._hk_data[&#34;VICLK_LOW&#34;] = 0x8277
 
     self._hk_data[&#34;CCD1_VRD_MON_F&#34;] = 0x8059
     self._hk_data[&#34;CCD1_VDD_MON&#34;] = 0x94CA
@@ -1367,7 +1500,8 @@ def v_start(self) -&gt; int:
     self._hk_data[&#34;CCD4_VGD_MON&#34;] = 0x8056
 
     self._hk_data[&#34;IG_HI_MON&#34;] = 0x8057
-    self._hk_data[&#34;IG_LO_MON&#34;] = 0x8059
+    if &#34;IG_LO_MON&#34; in original_names:
+        self._hk_data[&#34;IG_LO_MON&#34;] = 0x8059
     self._hk_data[&#34;TSENSE_A&#34;] = 0x8059
     self._hk_data[&#34;TSENSE_B&#34;] = 0x805A
 
@@ -1425,6 +1559,8 @@ has been initialised.</p></div>
 <pre><code class="python">def run(self):
 
     LOGGER.info(f&#34;FEE Simulator Current State: {self.decode_current_state()}&#34;)
+    n_fee_side = GlobalState.setup.camera.fee.ccd_sides.enum
+    sensor_sel_enum = GlobalState.setup.camera.fee.sensor_sel.enum
 
     with self._transport:
 
@@ -1486,9 +1622,9 @@ has been initialised.</p></div>
                     raise SetupError(&#34;No entry in the setup for camera.fee.ccd_numbering.CCD_ID_TO_BIN&#34;)
 
                 ccd_number = ccd_id_to_bin[self.get_current_ccd_number()]  # N-FEE CCD number [0-3]
-                if self.sensor_sel &amp; sensor_sel.E_SIDE:
+                if self.sensor_sel &amp; sensor_sel_enum.E_SIDE:
                     self.send_data_packets(timecode, ccd_id=ccd_number, ccd_side=n_fee_side.E_SIDE)
-                if self.sensor_sel &amp; sensor_sel.F_SIDE:
+                if self.sensor_sel &amp; sensor_sel_enum.F_SIDE:
                     self.send_data_packets(timecode, ccd_id=ccd_number, ccd_side=n_fee_side.F_SIDE)
 
             # Process any RMAP commands that were sent -----------------------------------------

@@ -51,18 +51,6 @@ DEVICE_SETTINGS = Settings.load(filename=&#34;smd3.yaml&#34;)
 CTRL_SETTINGS = Settings.load(&#34;Arun SMD3 Control Server&#34;)
 SITE_ID = Settings.load(&#34;SITE&#34;).ID
 
-gauge_absolute_position_steps   = Gauge(&#39;GSRON_SMD3_ABS_POS_STEPS&#39;, &#39;&#39;)
-gauge_absolute_position_mm      = Gauge(&#39;GSRON_SMD3_ABS_POS_MM&#39;, &#39;&#39;)
-gauge_motor_temperature         = Gauge(&#39;GSRON_SMD3_MOTOR_TEMP&#39;, &#39;&#39;)
-gauge_status = []
-gauge_errors = []
-
-for _, x in enumerate(EFLAGS):
-    gauge_errors.append(Gauge(f&#39;GSRON_SMD3_E_{EFLAGS[x]}&#39;, &#39;&#39;))
-
-for _, x in enumerate(SFLAGS):
-    gauge_status.append(Gauge(f&#39;GSRON_SMD3_S_{SFLAGS[x]}&#39;, &#39;&#39;))
-
 
 class Smd3Command(ClientServerCommand):
     pass
@@ -80,6 +68,20 @@ class Smd3Protocol(CommandProtocol):
         else:
             self.dev = Smd3Controller()
 
+        self.gauge_absolute_position_steps   = Gauge(&#39;GSRON_SMD3_ABS_POS_STEPS&#39;, &#39;&#39;)
+        self.gauge_absolute_position_mm      = Gauge(&#39;GSRON_SMD3_ABS_POS_MM&#39;, &#39;&#39;)
+        self.gauge_motor_temperature         = Gauge(&#39;GSRON_SMD3_MOTOR_TEMP&#39;, &#39;&#39;)
+        self.gauge_mask_in_fov               = Gauge(&#34;GSRON_SMD3_MASK_IN_FOV&#34;, &#39;&#39;)
+        self.gauge_status = []
+        self.gauge_errors = []
+
+        for _, x in enumerate(EFLAGS):
+            self.gauge_errors.append(Gauge(f&#39;GSRON_SMD3_E_{EFLAGS[x]}&#39;, &#39;&#39;))
+
+        for _, x in enumerate(SFLAGS):
+            self.gauge_status.append(Gauge(f&#39;GSRON_SMD3_S_{SFLAGS[x]}&#39;, &#39;&#39;))
+                
+        
         self.load_commands(DEVICE_SETTINGS.Commands, Smd3Command, Smd3Interface)
         self.build_device_method_lookup_table(self.dev)
 
@@ -104,23 +106,27 @@ class Smd3Protocol(CommandProtocol):
 
         # get values from device
         try:
-            _, _, result[&#34;GSRON_SMD3_ABS_POS_STEPS&#34;] = self.dev.actual_position()
-            result[&#34;GSRON_SMD3_ABS_POS_MM&#34;] = self.dev.actual_position_mm()
-            result[&#34;GSRON_SMD3_STATUS&#34;], result[&#34;GSRON_SMD3_ERRORS&#34;], result[&#34;GSRON_SMD3_MOTOR_TEMP&#34;] = self.dev.get_temperature()
+            _, _, result[&#34;GSRON_SMD3_ABS_POS_STEPS&#34;]    = self.dev.actual_position()
+            result[&#34;GSRON_SMD3_ABS_POS_MM&#34;]             = self.dev.actual_position_mm()
+            result[&#34;GSRON_SMD3_STATUS&#34;], \
+            result[&#34;GSRON_SMD3_ERRORS&#34;], \
+            result[&#34;GSRON_SMD3_MOTOR_TEMP&#34;]             = self.dev.get_temperature()
+            result[&#39;GSRON_SMD3_MASK_IN_FOV&#39;]            = self.dev.mask_in_fov()
         except Exception as exc:
             logger.warning(f&#39;failed to get HK ({exc})&#39;)
             return result
 
         for y, x in enumerate(EFLAGS):
-            gauge_errors[y].set((int(result[&#34;GSRON_SMD3_ERRORS&#34;], 0) &gt;&gt; x) &amp; 0b1)
+            self.gauge_errors[y].set((int(result[&#34;GSRON_SMD3_ERRORS&#34;], 0) &gt;&gt; x) &amp; 0b1)
 
         for y, x in enumerate(SFLAGS):
-            gauge_status[y].set((int(result[&#34;GSRON_SMD3_STATUS&#34;], 0) &gt;&gt; x) &amp; 0b1)
+            self.gauge_status[y].set((int(result[&#34;GSRON_SMD3_STATUS&#34;], 0) &gt;&gt; x) &amp; 0b1)
 
         # update prometheus
-        gauge_absolute_position_steps.set(result[&#34;GSRON_SMD3_ABS_POS_STEPS&#34;])
-        gauge_absolute_position_mm.set(result[&#34;GSRON_SMD3_ABS_POS_MM&#34;])
-        gauge_motor_temperature.set(result[&#34;GSRON_SMD3_MOTOR_TEMP&#34;])
+        self.gauge_absolute_position_steps.set(result[&#34;GSRON_SMD3_ABS_POS_STEPS&#34;])
+        self.gauge_absolute_position_mm.set(result[&#34;GSRON_SMD3_ABS_POS_MM&#34;])
+        self.gauge_motor_temperature.set(result[&#34;GSRON_SMD3_MOTOR_TEMP&#34;])
+        self.gauge_mask_in_fov.set(result[&#39;GSRON_SMD3_MASK_IN_FOV&#39;])
 
         return result
 
@@ -204,6 +210,20 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
         else:
             self.dev = Smd3Controller()
 
+        self.gauge_absolute_position_steps   = Gauge(&#39;GSRON_SMD3_ABS_POS_STEPS&#39;, &#39;&#39;)
+        self.gauge_absolute_position_mm      = Gauge(&#39;GSRON_SMD3_ABS_POS_MM&#39;, &#39;&#39;)
+        self.gauge_motor_temperature         = Gauge(&#39;GSRON_SMD3_MOTOR_TEMP&#39;, &#39;&#39;)
+        self.gauge_mask_in_fov               = Gauge(&#34;GSRON_SMD3_MASK_IN_FOV&#34;, &#39;&#39;)
+        self.gauge_status = []
+        self.gauge_errors = []
+
+        for _, x in enumerate(EFLAGS):
+            self.gauge_errors.append(Gauge(f&#39;GSRON_SMD3_E_{EFLAGS[x]}&#39;, &#39;&#39;))
+
+        for _, x in enumerate(SFLAGS):
+            self.gauge_status.append(Gauge(f&#39;GSRON_SMD3_S_{SFLAGS[x]}&#39;, &#39;&#39;))
+                
+        
         self.load_commands(DEVICE_SETTINGS.Commands, Smd3Command, Smd3Interface)
         self.build_device_method_lookup_table(self.dev)
 
@@ -228,23 +248,27 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
 
         # get values from device
         try:
-            _, _, result[&#34;GSRON_SMD3_ABS_POS_STEPS&#34;] = self.dev.actual_position()
-            result[&#34;GSRON_SMD3_ABS_POS_MM&#34;] = self.dev.actual_position_mm()
-            result[&#34;GSRON_SMD3_STATUS&#34;], result[&#34;GSRON_SMD3_ERRORS&#34;], result[&#34;GSRON_SMD3_MOTOR_TEMP&#34;] = self.dev.get_temperature()
+            _, _, result[&#34;GSRON_SMD3_ABS_POS_STEPS&#34;]    = self.dev.actual_position()
+            result[&#34;GSRON_SMD3_ABS_POS_MM&#34;]             = self.dev.actual_position_mm()
+            result[&#34;GSRON_SMD3_STATUS&#34;], \
+            result[&#34;GSRON_SMD3_ERRORS&#34;], \
+            result[&#34;GSRON_SMD3_MOTOR_TEMP&#34;]             = self.dev.get_temperature()
+            result[&#39;GSRON_SMD3_MASK_IN_FOV&#39;]            = self.dev.mask_in_fov()
         except Exception as exc:
             logger.warning(f&#39;failed to get HK ({exc})&#39;)
             return result
 
         for y, x in enumerate(EFLAGS):
-            gauge_errors[y].set((int(result[&#34;GSRON_SMD3_ERRORS&#34;], 0) &gt;&gt; x) &amp; 0b1)
+            self.gauge_errors[y].set((int(result[&#34;GSRON_SMD3_ERRORS&#34;], 0) &gt;&gt; x) &amp; 0b1)
 
         for y, x in enumerate(SFLAGS):
-            gauge_status[y].set((int(result[&#34;GSRON_SMD3_STATUS&#34;], 0) &gt;&gt; x) &amp; 0b1)
+            self.gauge_status[y].set((int(result[&#34;GSRON_SMD3_STATUS&#34;], 0) &gt;&gt; x) &amp; 0b1)
 
         # update prometheus
-        gauge_absolute_position_steps.set(result[&#34;GSRON_SMD3_ABS_POS_STEPS&#34;])
-        gauge_absolute_position_mm.set(result[&#34;GSRON_SMD3_ABS_POS_MM&#34;])
-        gauge_motor_temperature.set(result[&#34;GSRON_SMD3_MOTOR_TEMP&#34;])
+        self.gauge_absolute_position_steps.set(result[&#34;GSRON_SMD3_ABS_POS_STEPS&#34;])
+        self.gauge_absolute_position_mm.set(result[&#34;GSRON_SMD3_ABS_POS_MM&#34;])
+        self.gauge_motor_temperature.set(result[&#34;GSRON_SMD3_MOTOR_TEMP&#34;])
+        self.gauge_mask_in_fov.set(result[&#39;GSRON_SMD3_MASK_IN_FOV&#39;])
 
         return result</code></pre>
 </details>

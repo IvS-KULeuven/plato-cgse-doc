@@ -33,6 +33,7 @@ Now move the HTML files for each of the manuals to the `docs/asciidocs` folder s
 The site also provides the API documentation of the Common-EGSE. This documentation shall be generated in the `plato-common-egse` repository. Go into the `MKDOCS` folder and run the following command:
 ```
 $ pdoc3 --html --output-dir api egse --force
+$ pdoc3 --html --output-dir ~/Documents/PyCharmProjects/plato-cgse-doc/docs/api egse --force
 ```
 The move the `api` folder from the `plato-common-egse` repo into the `docs` folder of this repo.
 

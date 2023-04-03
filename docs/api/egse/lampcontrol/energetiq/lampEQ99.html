@@ -6,7 +6,7 @@
 <meta name="generator" content="pdoc 0.10.0" />
 <title>egse.lampcontrol.energetiq.lampEQ99 API documentation</title>
 <meta name="description" content="This module defines the basic classes to access the Hamamatsu lamp connected to the
-EQ99 Manager controller that will be used in the IAS TVAC setup." />
+EQ99 Manager controller that will be used in the IAS and INTA TVAC …" />
 <link rel="preload stylesheet" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/11.0.1/sanitize.min.css" integrity="sha256-PK9q560IAAa6WVRRh76LtCaI8pjTJ2z11v0miyNNjrs=" crossorigin>
 <link rel="preload stylesheet" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/11.0.1/typography.min.css" integrity="sha256-7l/o7C8jubJiy74VsKTidCy1yBkRtiUGbVkYBylBqUg=" crossorigin>
 <link rel="stylesheet preload" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/10.1.1/styles/github.min.css" crossorigin>
@@ -24,14 +24,14 @@ EQ99 Manager controller that will be used in the IAS TVAC setup." />
 </header>
 <section id="section-intro">
 <p>This module defines the basic classes to access the Hamamatsu lamp connected to the
-EQ99 Manager controller that will be used in the IAS TVAC setup.</p>
+EQ99 Manager controller that will be used in the IAS and INTA TVAC setup.</p>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">&#34;&#34;&#34;
 This module defines the basic classes to access the Hamamatsu lamp connected to the
-EQ99 Manager controller that will be used in the IAS TVAC setup.
+EQ99 Manager controller that will be used in the IAS and INTA TVAC setup.
 &#34;&#34;&#34;
 import logging
 
@@ -163,6 +163,7 @@ class LampEQ99Simulator(LampEQ99Interface):
     def __init__(self):
         self._connected = True
         self.lamp_operation = False
+        self.lamp_time = 36
         self.error_message = &#39;0&#39; # &#39;0&#39; means no error (lampEQ99 user manual p.21). Error message example (from lampEQ99 user manual p.22) : self.error_message = &#39;201,&#34;Out of range&#34;,124,&#34;Data mismatch&#34;&#39;
 
     def is_connected(self):
@@ -186,9 +187,12 @@ class LampEQ99Simulator(LampEQ99Interface):
     def ldls_reset(self):
         pass
 
+    def get_lamp_time(self):
+        return self.lamp_time
+
     def lamp_errors(self):
         return f&#34;Error Message: {self.error_message}&#34;
-
+        
     def set_lamp(self, _enable):
         self.lamp_operation = _enable
 
@@ -258,7 +262,7 @@ class LampEQ99Controller(LampEQ99Interface):
     def get_lamp_status(self):
         &#34;Query LDLS condition register&#34;
         self.lamp.write_message(&#34;LDLS:COND?&#34;)
-        _lamp = self.lamp.read_message()
+        _lamp = self.lamp.read_message()[:-1]
         return(_lamp)
 
     def set_lamp(self, _enable):
@@ -281,7 +285,7 @@ class LampEQ99Controller(LampEQ99Interface):
     def get_lamp_time(self):
         &#34;Query the lamp runtime (in hours).&#34;
         self.lamp.write_message(&#34;LDLS:LAMPTIME?&#34;)
-        _lamp = self.lamp.read_message()
+        _lamp = self.lamp.read_message()[:-1]
         return(_lamp)
 
     def _beep(self):
@@ -391,7 +395,7 @@ class LampEQ99Proxy(Proxy, LampEQ99Interface):
     def get_lamp_status(self):
         &#34;Query LDLS condition register&#34;
         self.lamp.write_message(&#34;LDLS:COND?&#34;)
-        _lamp = self.lamp.read_message()
+        _lamp = self.lamp.read_message()[:-1]
         return(_lamp)
 
     def set_lamp(self, _enable):
@@ -414,7 +418,7 @@ class LampEQ99Proxy(Proxy, LampEQ99Interface):
     def get_lamp_time(self):
         &#34;Query the lamp runtime (in hours).&#34;
         self.lamp.write_message(&#34;LDLS:LAMPTIME?&#34;)
-        _lamp = self.lamp.read_message()
+        _lamp = self.lamp.read_message()[:-1]
         return(_lamp)
 
     def _beep(self):
@@ -490,7 +494,7 @@ To determine the lamp and laser state, use get_lamp_status function</p></div>
 <pre><code class="python">def get_lamp_status(self):
     &#34;Query LDLS condition register&#34;
     self.lamp.write_message(&#34;LDLS:COND?&#34;)
-    _lamp = self.lamp.read_message()
+    _lamp = self.lamp.read_message()[:-1]
     return(_lamp)</code></pre>
 </details>
 </dd>
@@ -506,7 +510,7 @@ To determine the lamp and laser state, use get_lamp_status function</p></div>
 <pre><code class="python">def get_lamp_time(self):
     &#34;Query the lamp runtime (in hours).&#34;
     self.lamp.write_message(&#34;LDLS:LAMPTIME?&#34;)
-    _lamp = self.lamp.read_message()
+    _lamp = self.lamp.read_message()[:-1]
     return(_lamp)</code></pre>
 </details>
 </dd>
@@ -1071,6 +1075,7 @@ the Lamp device remotely.</p>
     def __init__(self):
         self._connected = True
         self.lamp_operation = False
+        self.lamp_time = 36
         self.error_message = &#39;0&#39; # &#39;0&#39; means no error (lampEQ99 user manual p.21). Error message example (from lampEQ99 user manual p.22) : self.error_message = &#39;201,&#34;Out of range&#34;,124,&#34;Data mismatch&#34;&#39;
 
     def is_connected(self):
@@ -1094,9 +1099,12 @@ the Lamp device remotely.</p>
     def ldls_reset(self):
         pass
 
+    def get_lamp_time(self):
+        return self.lamp_time
+
     def lamp_errors(self):
         return f&#34;Error Message: {self.error_message}&#34;
-
+        
     def set_lamp(self, _enable):
         self.lamp_operation = _enable
 

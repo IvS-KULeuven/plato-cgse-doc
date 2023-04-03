@@ -110,6 +110,21 @@ class DAQ6510Interface(DeviceInterface):
         raise NotImplementedError
 
     @dynamic_interface
+    def set_time(self, year: int, month: int, day: int, hour: int, minute: int, second: int):
+        &#34;&#34;&#34;Set the absolute date and time for the device.&#34;&#34;&#34;
+        raise NotImplementedError
+
+    @dynamic_interface
+    def get_time(self):
+        &#34;&#34;&#34;
+        Get the date and time from the device in UTC. The returned string is of the format:
+
+            &lt;weekday&gt; &lt;month&gt; &lt;day&gt; &lt;hour&gt;:&lt;minute&gt;:&lt;second&gt; &lt;year&gt;
+
+        &#34;&#34;&#34;
+        raise NotImplementedError
+
+    @dynamic_interface
     def read_buffer(self, start: int, end: int, buffer_name: str, elements: List[str]):
         raise NotImplementedError
 
@@ -199,10 +214,14 @@ class DAQ6510Controller(DAQ6510Interface, DynamicCommandMixin):
         return self.daq.is_connected()
 
     def send_command(self, command: str, response: bool):
-        if response:
-            return self.daq.trans(command)
-        else:
-            return self.daq.write(command)
+        return self.daq.trans(command) if response else self.daq.write(command)
+
+    def set_time(self, year: int, month: int, day: int, hour: int, minute: int, second: int):
+        command = f&#34;:SYST:TIME {year}, {month}, {day}, {hour}, {minute}, {second}&#34;
+        self.daq.write(command)
+
+    def get_time(self) -&gt; str:
+        return self.daq.trans(&#34;:SYST:TIME? 1&#34;)
 
     def read_buffer(
         self, start: int, end: int, buffer_name: str = DEFAULT_BUFFER_1, elements: List[str] = None
@@ -944,10 +963,14 @@ configuration file.</dd>
         return self.daq.is_connected()
 
     def send_command(self, command: str, response: bool):
-        if response:
-            return self.daq.trans(command)
-        else:
-            return self.daq.write(command)
+        return self.daq.trans(command) if response else self.daq.write(command)
+
+    def set_time(self, year: int, month: int, day: int, hour: int, minute: int, second: int):
+        command = f&#34;:SYST:TIME {year}, {month}, {day}, {hour}, {minute}, {second}&#34;
+        self.daq.write(command)
+
+    def get_time(self) -&gt; str:
+        return self.daq.trans(&#34;:SYST:TIME? 1&#34;)
 
     def read_buffer(
         self, start: int, end: int, buffer_name: str = DEFAULT_BUFFER_1, elements: List[str] = None
@@ -1622,6 +1645,7 @@ into the number of seconds that you will have to wait for the response.</p>
 <li><code><a title="egse.tempcontrol.keithley.daq6510.DAQ6510Interface.add_observer" href="../../device.html#egse.device.DeviceConnectionObservable.add_observer">add_observer</a></code></li>
 <li><code><a title="egse.tempcontrol.keithley.daq6510.DAQ6510Interface.connect" href="../../device.html#egse.device.DeviceConnectionInterface.connect">connect</a></code></li>
 <li><code><a title="egse.tempcontrol.keithley.daq6510.DAQ6510Interface.disconnect" href="../../device.html#egse.device.DeviceConnectionInterface.disconnect">disconnect</a></code></li>
+<li><code><a title="egse.tempcontrol.keithley.daq6510.DAQ6510Interface.get_time" href="#egse.tempcontrol.keithley.daq6510.DAQ6510Interface.get_time">get_time</a></code></li>
 <li><code><a title="egse.tempcontrol.keithley.daq6510.DAQ6510Interface.info" href="#egse.tempcontrol.keithley.daq6510.DAQ6510Interface.info">info</a></code></li>
 <li><code><a title="egse.tempcontrol.keithley.daq6510.DAQ6510Interface.is_connected" href="../../device.html#egse.device.DeviceConnectionInterface.is_connected">is_connected</a></code></li>
 <li><code><a title="egse.tempcontrol.keithley.daq6510.DAQ6510Interface.is_simulator" href="../../device.html#egse.device.DeviceInterface.is_simulator">is_simulator</a></code></li>
@@ -1629,6 +1653,7 @@ into the number of seconds that you will have to wait for the response.</p>
 <li><code><a title="egse.tempcontrol.keithley.daq6510.DAQ6510Interface.reconnect" href="../../device.html#egse.device.DeviceConnectionInterface.reconnect">reconnect</a></code></li>
 <li><code><a title="egse.tempcontrol.keithley.daq6510.DAQ6510Interface.reset" href="#egse.tempcontrol.keithley.daq6510.DAQ6510Interface.reset">reset</a></code></li>
 <li><code><a title="egse.tempcontrol.keithley.daq6510.DAQ6510Interface.send_command" href="#egse.tempcontrol.keithley.daq6510.DAQ6510Interface.send_command">send_command</a></code></li>
+<li><code><a title="egse.tempcontrol.keithley.daq6510.DAQ6510Interface.set_time" href="#egse.tempcontrol.keithley.daq6510.DAQ6510Interface.set_time">set_time</a></code></li>
 </ul>
 </li>
 <li><code><b><a title="egse.mixin.DynamicCommandMixin" href="../../mixin.html#egse.mixin.DynamicCommandMixin">DynamicCommandMixin</a></b></code>:
@@ -1699,6 +1724,21 @@ into the number of seconds that you will have to wait for the response.</p>
         .. Note::
             The `reset()` method also deletes all the user-defined buffers. The two default
             buffers are cleared.
+
+        &#34;&#34;&#34;
+        raise NotImplementedError
+
+    @dynamic_interface
+    def set_time(self, year: int, month: int, day: int, hour: int, minute: int, second: int):
+        &#34;&#34;&#34;Set the absolute date and time for the device.&#34;&#34;&#34;
+        raise NotImplementedError
+
+    @dynamic_interface
+    def get_time(self):
+        &#34;&#34;&#34;
+        Get the date and time from the device in UTC. The returned string is of the format:
+
+            &lt;weekday&gt; &lt;month&gt; &lt;day&gt; &lt;hour&gt;:&lt;minute&gt;:&lt;second&gt; &lt;year&gt;
 
         &#34;&#34;&#34;
         raise NotImplementedError
@@ -1839,6 +1879,28 @@ def get_buffer_count(self, buffer_name: str):
     raise NotImplementedError</code></pre>
 </details>
 </dd>
+<dt id="egse.tempcontrol.keithley.daq6510.DAQ6510Interface.get_time"><code class="name flex">
+<span>def <span class="ident">get_time</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Get the date and time from the device in UTC. The returned string is of the format:</p>
+<pre><code>&lt;weekday&gt; &lt;month&gt; &lt;day&gt; &lt;hour&gt;:&lt;minute&gt;:&lt;second&gt; &lt;year&gt;
+</code></pre></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@dynamic_interface
+def get_time(self):
+    &#34;&#34;&#34;
+    Get the date and time from the device in UTC. The returned string is of the format:
+
+        &lt;weekday&gt; &lt;month&gt; &lt;day&gt; &lt;hour&gt;:&lt;minute&gt;:&lt;second&gt; &lt;year&gt;
+
+    &#34;&#34;&#34;
+    raise NotImplementedError</code></pre>
+</details>
+</dd>
 <dt id="egse.tempcontrol.keithley.daq6510.DAQ6510Interface.info"><code class="name flex">
 <span>def <span class="ident">info</span></span>(<span>self) ‑> str</span>
 </code></dt>
@@ -1970,6 +2032,21 @@ def send_command(self, command: str, response: bool):
     raise NotImplementedError</code></pre>
 </details>
 </dd>
+<dt id="egse.tempcontrol.keithley.daq6510.DAQ6510Interface.set_time"><code class="name flex">
+<span>def <span class="ident">set_time</span></span>(<span>self, year: int, month: int, day: int, hour: int, minute: int, second: int)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Set the absolute date and time for the device.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@dynamic_interface
+def set_time(self, year: int, month: int, day: int, hour: int, minute: int, second: int):
+    &#34;&#34;&#34;Set the absolute date and time for the device.&#34;&#34;&#34;
+    raise NotImplementedError</code></pre>
+</details>
+</dd>
 <dt id="egse.tempcontrol.keithley.daq6510.DAQ6510Interface.setup_measurements"><code class="name flex">
 <span>def <span class="ident">setup_measurements</span></span>(<span>self, *, buffer_name: str, channel_list: str)</span>
 </code></dt>
@@ -2081,6 +2158,7 @@ to the LakeShore Hardware Controller remotely.</p>
 <li><code><a title="egse.tempcontrol.keithley.daq6510.DAQ6510Interface.add_observer" href="../../device.html#egse.device.DeviceConnectionObservable.add_observer">add_observer</a></code></li>
 <li><code><a title="egse.tempcontrol.keithley.daq6510.DAQ6510Interface.connect" href="../../device.html#egse.device.DeviceConnectionInterface.connect">connect</a></code></li>
 <li><code><a title="egse.tempcontrol.keithley.daq6510.DAQ6510Interface.disconnect" href="../../device.html#egse.device.DeviceConnectionInterface.disconnect">disconnect</a></code></li>
+<li><code><a title="egse.tempcontrol.keithley.daq6510.DAQ6510Interface.get_time" href="#egse.tempcontrol.keithley.daq6510.DAQ6510Interface.get_time">get_time</a></code></li>
 <li><code><a title="egse.tempcontrol.keithley.daq6510.DAQ6510Interface.info" href="#egse.tempcontrol.keithley.daq6510.DAQ6510Interface.info">info</a></code></li>
 <li><code><a title="egse.tempcontrol.keithley.daq6510.DAQ6510Interface.is_connected" href="../../device.html#egse.device.DeviceConnectionInterface.is_connected">is_connected</a></code></li>
 <li><code><a title="egse.tempcontrol.keithley.daq6510.DAQ6510Interface.is_simulator" href="../../device.html#egse.device.DeviceInterface.is_simulator">is_simulator</a></code></li>
@@ -2088,6 +2166,7 @@ to the LakeShore Hardware Controller remotely.</p>
 <li><code><a title="egse.tempcontrol.keithley.daq6510.DAQ6510Interface.reconnect" href="../../device.html#egse.device.DeviceConnectionInterface.reconnect">reconnect</a></code></li>
 <li><code><a title="egse.tempcontrol.keithley.daq6510.DAQ6510Interface.reset" href="#egse.tempcontrol.keithley.daq6510.DAQ6510Interface.reset">reset</a></code></li>
 <li><code><a title="egse.tempcontrol.keithley.daq6510.DAQ6510Interface.send_command" href="#egse.tempcontrol.keithley.daq6510.DAQ6510Interface.send_command">send_command</a></code></li>
+<li><code><a title="egse.tempcontrol.keithley.daq6510.DAQ6510Interface.set_time" href="#egse.tempcontrol.keithley.daq6510.DAQ6510Interface.set_time">set_time</a></code></li>
 </ul>
 </li>
 </ul>
@@ -2291,6 +2370,7 @@ to the LakeShore Hardware Controller remotely.</p>
 <li><code><a title="egse.tempcontrol.keithley.daq6510.DAQ6510Interface.add_observer" href="../../device.html#egse.device.DeviceConnectionObservable.add_observer">add_observer</a></code></li>
 <li><code><a title="egse.tempcontrol.keithley.daq6510.DAQ6510Interface.connect" href="../../device.html#egse.device.DeviceConnectionInterface.connect">connect</a></code></li>
 <li><code><a title="egse.tempcontrol.keithley.daq6510.DAQ6510Interface.disconnect" href="../../device.html#egse.device.DeviceConnectionInterface.disconnect">disconnect</a></code></li>
+<li><code><a title="egse.tempcontrol.keithley.daq6510.DAQ6510Interface.get_time" href="#egse.tempcontrol.keithley.daq6510.DAQ6510Interface.get_time">get_time</a></code></li>
 <li><code><a title="egse.tempcontrol.keithley.daq6510.DAQ6510Interface.info" href="#egse.tempcontrol.keithley.daq6510.DAQ6510Interface.info">info</a></code></li>
 <li><code><a title="egse.tempcontrol.keithley.daq6510.DAQ6510Interface.is_connected" href="../../device.html#egse.device.DeviceConnectionInterface.is_connected">is_connected</a></code></li>
 <li><code><a title="egse.tempcontrol.keithley.daq6510.DAQ6510Interface.is_simulator" href="../../device.html#egse.device.DeviceInterface.is_simulator">is_simulator</a></code></li>
@@ -2298,6 +2378,7 @@ to the LakeShore Hardware Controller remotely.</p>
 <li><code><a title="egse.tempcontrol.keithley.daq6510.DAQ6510Interface.reconnect" href="../../device.html#egse.device.DeviceConnectionInterface.reconnect">reconnect</a></code></li>
 <li><code><a title="egse.tempcontrol.keithley.daq6510.DAQ6510Interface.reset" href="#egse.tempcontrol.keithley.daq6510.DAQ6510Interface.reset">reset</a></code></li>
 <li><code><a title="egse.tempcontrol.keithley.daq6510.DAQ6510Interface.send_command" href="#egse.tempcontrol.keithley.daq6510.DAQ6510Interface.send_command">send_command</a></code></li>
+<li><code><a title="egse.tempcontrol.keithley.daq6510.DAQ6510Interface.set_time" href="#egse.tempcontrol.keithley.daq6510.DAQ6510Interface.set_time">set_time</a></code></li>
 </ul>
 </li>
 </ul>
@@ -2348,11 +2429,13 @@ to the LakeShore Hardware Controller remotely.</p>
 <li><code><a title="egse.tempcontrol.keithley.daq6510.DAQ6510Interface.delete_buffer" href="#egse.tempcontrol.keithley.daq6510.DAQ6510Interface.delete_buffer">delete_buffer</a></code></li>
 <li><code><a title="egse.tempcontrol.keithley.daq6510.DAQ6510Interface.get_buffer_capacity" href="#egse.tempcontrol.keithley.daq6510.DAQ6510Interface.get_buffer_capacity">get_buffer_capacity</a></code></li>
 <li><code><a title="egse.tempcontrol.keithley.daq6510.DAQ6510Interface.get_buffer_count" href="#egse.tempcontrol.keithley.daq6510.DAQ6510Interface.get_buffer_count">get_buffer_count</a></code></li>
+<li><code><a title="egse.tempcontrol.keithley.daq6510.DAQ6510Interface.get_time" href="#egse.tempcontrol.keithley.daq6510.DAQ6510Interface.get_time">get_time</a></code></li>
 <li><code><a title="egse.tempcontrol.keithley.daq6510.DAQ6510Interface.info" href="#egse.tempcontrol.keithley.daq6510.DAQ6510Interface.info">info</a></code></li>
 <li><code><a title="egse.tempcontrol.keithley.daq6510.DAQ6510Interface.perform_measurement" href="#egse.tempcontrol.keithley.daq6510.DAQ6510Interface.perform_measurement">perform_measurement</a></code></li>
 <li><code><a title="egse.tempcontrol.keithley.daq6510.DAQ6510Interface.read_buffer" href="#egse.tempcontrol.keithley.daq6510.DAQ6510Interface.read_buffer">read_buffer</a></code></li>
 <li><code><a title="egse.tempcontrol.keithley.daq6510.DAQ6510Interface.reset" href="#egse.tempcontrol.keithley.daq6510.DAQ6510Interface.reset">reset</a></code></li>
 <li><code><a title="egse.tempcontrol.keithley.daq6510.DAQ6510Interface.send_command" href="#egse.tempcontrol.keithley.daq6510.DAQ6510Interface.send_command">send_command</a></code></li>
+<li><code><a title="egse.tempcontrol.keithley.daq6510.DAQ6510Interface.set_time" href="#egse.tempcontrol.keithley.daq6510.DAQ6510Interface.set_time">set_time</a></code></li>
 <li><code><a title="egse.tempcontrol.keithley.daq6510.DAQ6510Interface.setup_measurements" href="#egse.tempcontrol.keithley.daq6510.DAQ6510Interface.setup_measurements">setup_measurements</a></code></li>
 </ul>
 </li>

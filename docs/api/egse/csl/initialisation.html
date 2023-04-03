@@ -52,11 +52,35 @@ from gui_executor.utils import write_id
 from egse.csl import HexapodID
 from egse.csl import ID_FILE
 from egse.csl import get_endpoint_hexapod
+from egse.hexapod import HexapodError
 from egse.hexapod.symetrie.puna import PunaController
 
 UI_MODULE_DISPLAY_NAME = &#34;1 - Initialisation&#34;
 
 HERE = Path(__file__).parent.resolve()
+
+
+@exec_recurring_task(status_type=StatusType.NORMAL)
+def show_hexapod_status():
+
+    hexapod = None
+    hexapod_name, hexapod_id, hostname, port = get_endpoint_hexapod()
+    try:
+        from egse.hexapod.symetrie import ControllerFactory
+        factory = ControllerFactory()
+        hexapod = factory.create(hexapod_name, device_id=hexapod_id)
+        hexapod.connect()
+        in_position = hexapod.is_in_position()
+        homing_done = hexapod.is_homing_done()
+
+        return f&#34;{&#39;&#39; if homing_done else &#39;NOT &#39;}HOMED — {&#39;IN POSITION&#39; if in_position else &#39;MOVING...&#39;}&#34;
+
+    except (ConnectionError, HexapodError) as exc:
+        print(exc)
+        return &#34;Connection Error&#34;
+    finally:
+        if hexapod is not None:
+            hexapod.disconnect()
 
 
 @exec_recurring_task(status_type=StatusType.PERMANENT)
@@ -77,9 +101,11 @@ def check_connection():
     &#34;&#34;&#34;Check the connection to the hexapod.&#34;&#34;&#34;
 
     hexapod = None
-    hostname, port = get_endpoint_hexapod()
+    hexapod_name, hexapod_id, hostname, port = get_endpoint_hexapod()
     try:
-        hexapod = PunaController(hostname=hostname, port=port)
+        from egse.hexapod.symetrie import ControllerFactory
+        factory = ControllerFactory()
+        hexapod = factory.create(hexapod_name, device_id=hexapod_id)
         hexapod.connect()
         print(f&#34;[green]Successfully connected to Hexapod with ID = {read_id(ID_FILE)}.[/]&#34;)
     except ConnectionError as exc:
@@ -94,14 +120,20 @@ def check_connection():
 def goto_home_position():
     &#34;&#34;&#34; Move the hexapod to the home position.&#34;&#34;&#34;
 
-    hostname, port = get_endpoint_hexapod()
+    hexapod = None
+    hexapod_name, hexapod_id, hostname, port = get_endpoint_hexapod()
     try:
-        hexapod = PunaController(hostname=hostname, port=port)
+        from egse.hexapod.symetrie import ControllerFactory
+        factory = ControllerFactory()
+        hexapod = factory.create(hexapod_name, device_id=hexapod_id)
         hexapod.connect()
         hexapod.homing()
     except ConnectionError as exc:
         print(&#34;[red]Couldn&#39;t connect to the Hexapod Controller. &#34;
-              &#34;Check if the Controller is switched on and no error is reported on the front panel of the controller.[/]&#34;)</code></pre>
+              &#34;Check if the Controller is switched on and no error is reported on the front panel of the controller.[/]&#34;)
+    finally:
+        if hexapod is not None:
+            hexapod.disconnect()</code></pre>
 </details>
 </section>
 <section>
@@ -126,9 +158,11 @@ def check_connection():
     &#34;&#34;&#34;Check the connection to the hexapod.&#34;&#34;&#34;
 
     hexapod = None
-    hostname, port = get_endpoint_hexapod()
+    hexapod_name, hexapod_id, hostname, port = get_endpoint_hexapod()
     try:
-        hexapod = PunaController(hostname=hostname, port=port)
+        from egse.hexapod.symetrie import ControllerFactory
+        factory = ControllerFactory()
+        hexapod = factory.create(hexapod_name, device_id=hexapod_id)
         hexapod.connect()
         print(f&#34;[green]Successfully connected to Hexapod with ID = {read_id(ID_FILE)}.[/]&#34;)
     except ConnectionError as exc:
@@ -152,14 +186,20 @@ def check_connection():
 def goto_home_position():
     &#34;&#34;&#34; Move the hexapod to the home position.&#34;&#34;&#34;
 
-    hostname, port = get_endpoint_hexapod()
+    hexapod = None
+    hexapod_name, hexapod_id, hostname, port = get_endpoint_hexapod()
     try:
-        hexapod = PunaController(hostname=hostname, port=port)
+        from egse.hexapod.symetrie import ControllerFactory
+        factory = ControllerFactory()
+        hexapod = factory.create(hexapod_name, device_id=hexapod_id)
         hexapod.connect()
         hexapod.homing()
     except ConnectionError as exc:
         print(&#34;[red]Couldn&#39;t connect to the Hexapod Controller. &#34;
-              &#34;Check if the Controller is switched on and no error is reported on the front panel of the controller.[/]&#34;)</code></pre>
+              &#34;Check if the Controller is switched on and no error is reported on the front panel of the controller.[/]&#34;)
+    finally:
+        if hexapod is not None:
+            hexapod.disconnect()</code></pre>
 </details>
 </dd>
 <dt id="egse.csl.initialisation.set_id"><code class="name flex">
@@ -192,6 +232,38 @@ def show_hexapod_id():
     return f&#34;Hexapod ID = {read_id(ID_FILE)}&#34;</code></pre>
 </details>
 </dd>
+<dt id="egse.csl.initialisation.show_hexapod_status"><code class="name flex">
+<span>def <span class="ident">show_hexapod_status</span></span>(<span>)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@exec_recurring_task(status_type=StatusType.NORMAL)
+def show_hexapod_status():
+
+    hexapod = None
+    hexapod_name, hexapod_id, hostname, port = get_endpoint_hexapod()
+    try:
+        from egse.hexapod.symetrie import ControllerFactory
+        factory = ControllerFactory()
+        hexapod = factory.create(hexapod_name, device_id=hexapod_id)
+        hexapod.connect()
+        in_position = hexapod.is_in_position()
+        homing_done = hexapod.is_homing_done()
+
+        return f&#34;{&#39;&#39; if homing_done else &#39;NOT &#39;}HOMED — {&#39;IN POSITION&#39; if in_position else &#39;MOVING...&#39;}&#34;
+
+    except (ConnectionError, HexapodError) as exc:
+        print(exc)
+        return &#34;Connection Error&#34;
+    finally:
+        if hexapod is not None:
+            hexapod.disconnect()</code></pre>
+</details>
+</dd>
 </dl>
 </section>
 <section>
@@ -214,6 +286,7 @@ def show_hexapod_id():
 <li><code><a title="egse.csl.initialisation.goto_home_position" href="#egse.csl.initialisation.goto_home_position">goto_home_position</a></code></li>
 <li><code><a title="egse.csl.initialisation.set_id" href="#egse.csl.initialisation.set_id">set_id</a></code></li>
 <li><code><a title="egse.csl.initialisation.show_hexapod_id" href="#egse.csl.initialisation.show_hexapod_id">show_hexapod_id</a></code></li>
+<li><code><a title="egse.csl.initialisation.show_hexapod_status" href="#egse.csl.initialisation.show_hexapod_status">show_hexapod_status</a></code></li>
 </ul>
 </li>
 </ul>

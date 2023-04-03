@@ -1,0 +1,40 @@
+[#services]
+== Services
+
+The control servers are the single point access to your equipment and devices. Commanding the device is handled by the Protocol and Controller classes on the server side and by the Proxy class on the client side. In addition to commanding your devices, you would also like to have some control on the behaviour of your device control servers. That is where the Service slass comes into play. The Services provide common commands that act on the control server instead of on the device. These commands are send through a Service Proxy that you can request for each of the control servers. Below is a code snippet asking for the service proxy of the hexapod PUNA and requesting the status of the control server process.
+----
+>>> from egse.hexapod.symetrie.puna import PunaProxy
+
+>>> with PunaProxy() as puna, puna.get_service_proxy() as srv:
+...     print(srv.get_process_status())
+{
+    'timestamp': '2023-03-29T08:00:31.708+0000',
+    'delay': 1000,
+    'PID': 39242,
+    'Up': 486.7373969554901,
+    'UUID': UUID('a74c0f52-ce06-11ed-a5d1-acde48001122'),
+    'RSS': 115720192,
+    'USS': 98033664,
+    'CPU User': 10.516171776,
+    'CPU System': 3.300619776,
+    'CPU count': 6,
+    'CPU%': 2.9
+}
+----
+Status information for the control servers is also sent out on the monitoring port, so if you need to monitor the process status, its better to subscribe to the monitoring protocol.
+
+There are two commands that you can use to change the frequency by which the control server is sending out information, one is for changing the housekeeping frequency, one is for changing the monitoring frequency.
+
+----
+set_hk_frequency(freq: float) -> float
+----
+
+This function sets the housekeeping frequency (in Hz) to the given freq value. This is only approximate since the frequency is converted into a delay time and the actual execution of the `get_housekeeping()` function is subject to the load on the server and the overhead of the timing. What will happen is that the delay time that will be applied is never shorter than the average execution time of the `get_housekeeping()` method increased with a 200ms overhead to allow the control server to respond to other commands.
+
+----
+set_monitoring_frequency(freq: float) -> float
+----
+
+This function works similar to the `set_hk_frequency()` but sets the delay time on the `get_status()` function of the device protocol.
+
+When you want to optimize these frequencies, make sure you have an idea of the execution time of either function. If for instance the `get_status()` function takes 500ms to complete, it will be impossible to request a monitoring update frequency of 2Hz.

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1" />
 <meta name="generator" content="pdoc 0.10.0" />
 <title>egse.dpu.dpu_ui API documentation</title>
-<meta name="description" content="" />
+<meta name="description" content="This module implements the image display for the N-FEE data and housekeeping …" />
 <link rel="preload stylesheet" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/11.0.1/sanitize.min.css" integrity="sha256-PK9q560IAAa6WVRRh76LtCaI8pjTJ2z11v0miyNNjrs=" crossorigin>
 <link rel="preload stylesheet" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/11.0.1/typography.min.css" integrity="sha256-7l/o7C8jubJiy74VsKTidCy1yBkRtiUGbVkYBylBqUg=" crossorigin>
 <link rel="stylesheet preload" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/10.1.1/styles/github.min.css" crossorigin>
@@ -22,22 +22,35 @@
 <h1 class="title">Module <code>egse.dpu.dpu_ui</code></h1>
 </header>
 <section id="section-intro">
+<p>This module implements the image display for the N-FEE data and housekeeping.</p>
+<p>The DPU GUI can be started from the command line with the <code>dpu_ui</code> command. The GUI will connect to the
+data distribution port of the DPU Processor. For this to work, you will need to have at least a DPU control server
+running.</p>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">import logging
+<pre><code class="python">&#34;&#34;&#34;
+This module implements the image display for the N-FEE data and housekeeping.
+
+The DPU GUI can be started from the command line with the `dpu_ui` command. The GUI will connect to the
+data distribution port of the DPU Processor. For this to work, you will need to have at least a DPU control server
+running.
+
+&#34;&#34;&#34;
+import contextlib
+import logging
 import multiprocessing
 import os
 import pickle
-import sys
-import tempfile
 import threading
 from pathlib import Path
 
-from PyQt5.QtCore import QLockFile
-from PyQt5.QtWidgets import QMessageBox
+import sys
+from PyQt5.QtCore import QLockFile, QModelIndex
+from PyQt5.QtWidgets import QMessageBox, QTableView
 
+from egse.dpu.hdf5_model import RegisterTableModel
 from egse.setup import SetupError
 from egse.state import GlobalState
 
@@ -66,7 +79,6 @@ from egse.dpu.ccd_ui import NFEE4CCDWidget
 from egse.dpu.hk_ui import NFEEHousekeepingWidget
 from egse.fee import convert_ccd_order_value
 from egse.fee import n_fee_mode
-from egse.fee import sensor_sel
 from egse.process import ProcessStatus
 from egse.reg import RegisterMap
 from egse.resource import get_resource
@@ -240,6 +252,11 @@ class MainWindow(QMainWindow):
         except AttributeError:
             raise SetupError(&#34;No entry in the setup for camera.fee.ccd_numbering.CCD_BIN_TO_IDX&#34;)
 
+        try:
+            self.sensor_sel = self.setup.camera.fee.sensor_sel.enum
+        except AttributeError:
+            raise SetupError(&#34;No entry in the setup for camera.fee.sensor_sel&#34;)
+
         self.threadpool = QThreadPool()
 
         self.counter = 0
@@ -251,10 +268,11 @@ class MainWindow(QMainWindow):
 
         self.hk_box = NFEEHousekeepingWidget()
         self.ccd_box = NFEE4CCDWidget()
+        self.register_box = RegisterWidget()
 
         mode_params = {
-            &#39;N-FEE Mode&#39;: QLabel(&#39;ON&#39;),
-            &#39;N-FEE Cycle Time&#39;: QLabel(&#34;25.0&#34;),
+            &#39;N-FEE Mode&#39;: QLabel(&#39;OFF&#39;),
+            &#39;N-FEE Cycle Time&#39;: QLabel(&#34;&#34;),
             &#39;DUMP Mode&#39;: QLabel(&#34;&#34;),
             &#39;Internal Sync&#39;: QLabel(&#34;&#34;),
             &#39;External Sync&#39;: QLabel(&#34;&#34;),
@@ -273,8 +291,9 @@ class MainWindow(QMainWindow):
 
         self.readout_params = ReadoutParameterWidget(readout_params)
 
-        self.tabs.addTab(self.ccd_box, &#34;CCD display&#34;)
+        self.tabs.addTab(self.ccd_box, &#34;CCD Display&#34;)
         self.tabs.addTab(self.hk_box, &#34;HK Packet&#34;)
+        self.tabs.addTab(self.register_box, &#34;Register Map&#34;)
 
         params_box = QHBoxLayout()
 
@@ -317,7 +336,9 @@ class MainWindow(QMainWindow):
             # LOGGER.info(f&#34;TIMECODE: {timecode=}, {timestamp=}&#34;)
         if sync_id == MessageIdentifier.SYNC_HK_PACKET:
             hk_packet, timestamp = data
-            self.hk_box.update_fields(hk_packet)
+            if self.tabs.currentWidget() is self.hk_box:
+                with contextlib.suppress(KeyError):
+                    self.hk_box.update_fields(hk_packet)
             # LOGGER.info(f&#34;HK_PACKET: {hk_packet.type.frame_number=}, {timestamp=}&#34;)
             if hk_packet.type.frame_number == 0:
                 pass
@@ -331,6 +352,7 @@ class MainWindow(QMainWindow):
                     v_end=self.register_map[&#34;v_end&#34;],
                     h_end=self.register_map[&#34;h_end&#34;],
                 )
+                self.register_box.update(self.register_map)
         if sync_id == MessageIdentifier.SYNC_DATA_PACKET:
             data_packet, timestamp = data
             # LOGGER.info(f&#34;DATA_PACKET: {data_packet.type.ccd_number=}, {timestamp=}&#34;)
@@ -347,10 +369,12 @@ class MainWindow(QMainWindow):
         if sync_id == MessageIdentifier.N_FEE_REGISTER_MAP:
             self.register_map = reg = RegisterMap(&#39;N-FEE&#39;, memory_map=data)
             # LOGGER.info(f&#34;REGISTER_MAP: {reg[&#39;ccd_mode_config&#39;]=}&#34;)
+            is_dump_mode = bool(not reg[&#34;digitise_en&#34;] and reg[&#34;DG_en&#34;] and reg[&#34;ccd_mode_config&#34;] == n_fee_mode.FULL_IMAGE_MODE)
+
             params = {
                 &#39;N-FEE Mode&#39;: n_fee_mode(reg[&#34;ccd_mode_config&#34;]).name,
                 &#39;N-FEE Cycle Time&#39;: &#34;25.0s&#34; if not reg[&#34;sync_sel&#34;] else f&#34;{reg[&#39;int_sync_period&#39;]/1000}s&#34;,
-                &#39;DUMP Mode&#39;: bool(not reg[&#34;digitise_en&#34;] and reg[&#34;DG_en&#34;] and reg[&#34;ccd_mode_config&#34;] == n_fee_mode.FULL_IMAGE_MODE),
+                &#39;DUMP Mode&#39;: is_dump_mode,
                 &#39;Internal Sync&#39;: &#34;True&#34; if reg[&#34;sync_sel&#34;] else &#34;False&#34;,
                 &#39;External Sync&#39;: &#34;False&#34; if reg[&#34;sync_sel&#34;] else &#34;True&#34;,
             }
@@ -362,9 +386,11 @@ class MainWindow(QMainWindow):
                 &#39;Row End&#39;: reg[&#34;v_end&#34;],
                 &#39;Num Columns&#39;: reg[&#34;h_end&#34;] + 1,
                 &#39;Readout Order&#39;: readout_order,
-                &#39;CCD Side&#39;: sensor_sel(reg[&#39;sensor_sel&#39;]).name,
+                &#39;CCD Side&#39;: self.sensor_sel(reg[&#39;sensor_sel&#39;]).name,
             }
             self.readout_params.update_params(params)
+            if is_dump_mode:
+                self.ccd_box.unmark()
         if sync_id == MessageIdentifier.NUM_CYCLES:
             # LOGGER.info(f&#34;NUMBER OF CYCLES: {data}&#34;)
             self.readout_params.update_par(&#39;Number of Cycles&#39;, max(0, data))
@@ -380,6 +406,37 @@ class MainWindow(QMainWindow):
 
     def mark_ccd_widget(self, ccd_number: int):
         self.ccd_box.mark(self.ccd_bin_to_idx[ccd_number])
+
+
+class RegisterWidget(QWidget):
+    &#34;&#34;&#34; Widget to display the FEE register map.&#34;&#34;&#34;
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.register_model = RegisterTableModel(RegisterMap())
+        self.table_view = QTableView(self)
+        self.table_view.setModel(self.register_model)
+        self.table_view.resizeColumnsToContents()
+        self.table_view.clicked.connect(self.on_cell_clicked)
+        layout = QVBoxLayout(self)
+        layout.addWidget(self.table_view)
+
+    def update(self, register_map: RegisterMap):
+        &#34;&#34;&#34; Update the register map.
+
+        Args:
+            - register_map: Register map to display.
+        &#34;&#34;&#34;
+
+        self.register_model.setRegisterMap(register_map)
+        self.register_model.layoutChanged.emit()
+
+        self.table_view.resizeColumnsToContents()
+        self.repaint()
+
+    def on_cell_clicked(self, index: QModelIndex, *args, **kwargs):
+        self.register_model.toggleDisplayRole(index)
 
 
 def main():
@@ -644,6 +701,11 @@ def run(self):
         except AttributeError:
             raise SetupError(&#34;No entry in the setup for camera.fee.ccd_numbering.CCD_BIN_TO_IDX&#34;)
 
+        try:
+            self.sensor_sel = self.setup.camera.fee.sensor_sel.enum
+        except AttributeError:
+            raise SetupError(&#34;No entry in the setup for camera.fee.sensor_sel&#34;)
+
         self.threadpool = QThreadPool()
 
         self.counter = 0
@@ -655,10 +717,11 @@ def run(self):
 
         self.hk_box = NFEEHousekeepingWidget()
         self.ccd_box = NFEE4CCDWidget()
+        self.register_box = RegisterWidget()
 
         mode_params = {
-            &#39;N-FEE Mode&#39;: QLabel(&#39;ON&#39;),
-            &#39;N-FEE Cycle Time&#39;: QLabel(&#34;25.0&#34;),
+            &#39;N-FEE Mode&#39;: QLabel(&#39;OFF&#39;),
+            &#39;N-FEE Cycle Time&#39;: QLabel(&#34;&#34;),
             &#39;DUMP Mode&#39;: QLabel(&#34;&#34;),
             &#39;Internal Sync&#39;: QLabel(&#34;&#34;),
             &#39;External Sync&#39;: QLabel(&#34;&#34;),
@@ -677,8 +740,9 @@ def run(self):
 
         self.readout_params = ReadoutParameterWidget(readout_params)
 
-        self.tabs.addTab(self.ccd_box, &#34;CCD display&#34;)
+        self.tabs.addTab(self.ccd_box, &#34;CCD Display&#34;)
         self.tabs.addTab(self.hk_box, &#34;HK Packet&#34;)
+        self.tabs.addTab(self.register_box, &#34;Register Map&#34;)
 
         params_box = QHBoxLayout()
 
@@ -721,7 +785,9 @@ def run(self):
             # LOGGER.info(f&#34;TIMECODE: {timecode=}, {timestamp=}&#34;)
         if sync_id == MessageIdentifier.SYNC_HK_PACKET:
             hk_packet, timestamp = data
-            self.hk_box.update_fields(hk_packet)
+            if self.tabs.currentWidget() is self.hk_box:
+                with contextlib.suppress(KeyError):
+                    self.hk_box.update_fields(hk_packet)
             # LOGGER.info(f&#34;HK_PACKET: {hk_packet.type.frame_number=}, {timestamp=}&#34;)
             if hk_packet.type.frame_number == 0:
                 pass
@@ -735,6 +801,7 @@ def run(self):
                     v_end=self.register_map[&#34;v_end&#34;],
                     h_end=self.register_map[&#34;h_end&#34;],
                 )
+                self.register_box.update(self.register_map)
         if sync_id == MessageIdentifier.SYNC_DATA_PACKET:
             data_packet, timestamp = data
             # LOGGER.info(f&#34;DATA_PACKET: {data_packet.type.ccd_number=}, {timestamp=}&#34;)
@@ -751,10 +818,12 @@ def run(self):
         if sync_id == MessageIdentifier.N_FEE_REGISTER_MAP:
             self.register_map = reg = RegisterMap(&#39;N-FEE&#39;, memory_map=data)
             # LOGGER.info(f&#34;REGISTER_MAP: {reg[&#39;ccd_mode_config&#39;]=}&#34;)
+            is_dump_mode = bool(not reg[&#34;digitise_en&#34;] and reg[&#34;DG_en&#34;] and reg[&#34;ccd_mode_config&#34;] == n_fee_mode.FULL_IMAGE_MODE)
+
             params = {
                 &#39;N-FEE Mode&#39;: n_fee_mode(reg[&#34;ccd_mode_config&#34;]).name,
                 &#39;N-FEE Cycle Time&#39;: &#34;25.0s&#34; if not reg[&#34;sync_sel&#34;] else f&#34;{reg[&#39;int_sync_period&#39;]/1000}s&#34;,
-                &#39;DUMP Mode&#39;: bool(not reg[&#34;digitise_en&#34;] and reg[&#34;DG_en&#34;] and reg[&#34;ccd_mode_config&#34;] == n_fee_mode.FULL_IMAGE_MODE),
+                &#39;DUMP Mode&#39;: is_dump_mode,
                 &#39;Internal Sync&#39;: &#34;True&#34; if reg[&#34;sync_sel&#34;] else &#34;False&#34;,
                 &#39;External Sync&#39;: &#34;False&#34; if reg[&#34;sync_sel&#34;] else &#34;True&#34;,
             }
@@ -766,9 +835,11 @@ def run(self):
                 &#39;Row End&#39;: reg[&#34;v_end&#34;],
                 &#39;Num Columns&#39;: reg[&#34;h_end&#34;] + 1,
                 &#39;Readout Order&#39;: readout_order,
-                &#39;CCD Side&#39;: sensor_sel(reg[&#39;sensor_sel&#39;]).name,
+                &#39;CCD Side&#39;: self.sensor_sel(reg[&#39;sensor_sel&#39;]).name,
             }
             self.readout_params.update_params(params)
+            if is_dump_mode:
+                self.ccd_box.unmark()
         if sync_id == MessageIdentifier.NUM_CYCLES:
             # LOGGER.info(f&#34;NUMBER OF CYCLES: {data}&#34;)
             self.readout_params.update_par(&#39;Number of Cycles&#39;, max(0, data))
@@ -890,7 +961,9 @@ def worker_output(self, sync_id, data):
         # LOGGER.info(f&#34;TIMECODE: {timecode=}, {timestamp=}&#34;)
     if sync_id == MessageIdentifier.SYNC_HK_PACKET:
         hk_packet, timestamp = data
-        self.hk_box.update_fields(hk_packet)
+        if self.tabs.currentWidget() is self.hk_box:
+            with contextlib.suppress(KeyError):
+                self.hk_box.update_fields(hk_packet)
         # LOGGER.info(f&#34;HK_PACKET: {hk_packet.type.frame_number=}, {timestamp=}&#34;)
         if hk_packet.type.frame_number == 0:
             pass
@@ -904,6 +977,7 @@ def worker_output(self, sync_id, data):
                 v_end=self.register_map[&#34;v_end&#34;],
                 h_end=self.register_map[&#34;h_end&#34;],
             )
+            self.register_box.update(self.register_map)
     if sync_id == MessageIdentifier.SYNC_DATA_PACKET:
         data_packet, timestamp = data
         # LOGGER.info(f&#34;DATA_PACKET: {data_packet.type.ccd_number=}, {timestamp=}&#34;)
@@ -920,10 +994,12 @@ def worker_output(self, sync_id, data):
     if sync_id == MessageIdentifier.N_FEE_REGISTER_MAP:
         self.register_map = reg = RegisterMap(&#39;N-FEE&#39;, memory_map=data)
         # LOGGER.info(f&#34;REGISTER_MAP: {reg[&#39;ccd_mode_config&#39;]=}&#34;)
+        is_dump_mode = bool(not reg[&#34;digitise_en&#34;] and reg[&#34;DG_en&#34;] and reg[&#34;ccd_mode_config&#34;] == n_fee_mode.FULL_IMAGE_MODE)
+
         params = {
             &#39;N-FEE Mode&#39;: n_fee_mode(reg[&#34;ccd_mode_config&#34;]).name,
             &#39;N-FEE Cycle Time&#39;: &#34;25.0s&#34; if not reg[&#34;sync_sel&#34;] else f&#34;{reg[&#39;int_sync_period&#39;]/1000}s&#34;,
-            &#39;DUMP Mode&#39;: bool(not reg[&#34;digitise_en&#34;] and reg[&#34;DG_en&#34;] and reg[&#34;ccd_mode_config&#34;] == n_fee_mode.FULL_IMAGE_MODE),
+            &#39;DUMP Mode&#39;: is_dump_mode,
             &#39;Internal Sync&#39;: &#34;True&#34; if reg[&#34;sync_sel&#34;] else &#34;False&#34;,
             &#39;External Sync&#39;: &#34;False&#34; if reg[&#34;sync_sel&#34;] else &#34;True&#34;,
         }
@@ -935,9 +1011,11 @@ def worker_output(self, sync_id, data):
             &#39;Row End&#39;: reg[&#34;v_end&#34;],
             &#39;Num Columns&#39;: reg[&#34;h_end&#34;] + 1,
             &#39;Readout Order&#39;: readout_order,
-            &#39;CCD Side&#39;: sensor_sel(reg[&#39;sensor_sel&#39;]).name,
+            &#39;CCD Side&#39;: self.sensor_sel(reg[&#39;sensor_sel&#39;]).name,
         }
         self.readout_params.update_params(params)
+        if is_dump_mode:
+            self.ccd_box.unmark()
     if sync_id == MessageIdentifier.NUM_CYCLES:
         # LOGGER.info(f&#34;NUMBER OF CYCLES: {data}&#34;)
         self.readout_params.update_par(&#39;Number of Cycles&#39;, max(0, data))</code></pre>
@@ -1119,6 +1197,98 @@ def worker_output(self, sync_id, data):
 </dd>
 </dl>
 </dd>
+<dt id="egse.dpu.dpu_ui.RegisterWidget"><code class="flex name class">
+<span>class <span class="ident">RegisterWidget</span></span>
+<span>(</span><span>*args, **kwargs)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Widget to display the FEE register map.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class RegisterWidget(QWidget):
+    &#34;&#34;&#34; Widget to display the FEE register map.&#34;&#34;&#34;
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.register_model = RegisterTableModel(RegisterMap())
+        self.table_view = QTableView(self)
+        self.table_view.setModel(self.register_model)
+        self.table_view.resizeColumnsToContents()
+        self.table_view.clicked.connect(self.on_cell_clicked)
+        layout = QVBoxLayout(self)
+        layout.addWidget(self.table_view)
+
+    def update(self, register_map: RegisterMap):
+        &#34;&#34;&#34; Update the register map.
+
+        Args:
+            - register_map: Register map to display.
+        &#34;&#34;&#34;
+
+        self.register_model.setRegisterMap(register_map)
+        self.register_model.layoutChanged.emit()
+
+        self.table_view.resizeColumnsToContents()
+        self.repaint()
+
+    def on_cell_clicked(self, index: QModelIndex, *args, **kwargs):
+        self.register_model.toggleDisplayRole(index)</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>PyQt5.QtWidgets.QWidget</li>
+<li>PyQt5.QtCore.QObject</li>
+<li>sip.wrapper</li>
+<li>PyQt5.QtGui.QPaintDevice</li>
+<li>sip.simplewrapper</li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="egse.dpu.dpu_ui.RegisterWidget.on_cell_clicked"><code class="name flex">
+<span>def <span class="ident">on_cell_clicked</span></span>(<span>self, index: PyQt5.QtCore.QModelIndex, *args, **kwargs)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def on_cell_clicked(self, index: QModelIndex, *args, **kwargs):
+    self.register_model.toggleDisplayRole(index)</code></pre>
+</details>
+</dd>
+<dt id="egse.dpu.dpu_ui.RegisterWidget.update"><code class="name flex">
+<span>def <span class="ident">update</span></span>(<span>self, register_map: <a title="egse.reg.RegisterMap" href="../reg.html#egse.reg.RegisterMap">RegisterMap</a>)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Update the register map.</p>
+<h2 id="args">Args</h2>
+<ul>
+<li>register_map: Register map to display.</li>
+</ul></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def update(self, register_map: RegisterMap):
+    &#34;&#34;&#34; Update the register map.
+
+    Args:
+        - register_map: Register map to display.
+    &#34;&#34;&#34;
+
+    self.register_model.setRegisterMap(register_map)
+    self.register_model.layoutChanged.emit()
+
+    self.table_view.resizeColumnsToContents()
+    self.repaint()</code></pre>
+</details>
+</dd>
+</dl>
+</dd>
 <dt id="egse.dpu.dpu_ui.WorkerSignals"><code class="flex name class">
 <span>class <span class="ident">WorkerSignals</span></span>
 <span>(</span><span>*args, **kwargs)</span>
@@ -1237,6 +1407,13 @@ No data</p>
 <li><code><a title="egse.dpu.dpu_ui.ReadoutParameterWidget.get_value" href="#egse.dpu.dpu_ui.ReadoutParameterWidget.get_value">get_value</a></code></li>
 <li><code><a title="egse.dpu.dpu_ui.ReadoutParameterWidget.update_par" href="#egse.dpu.dpu_ui.ReadoutParameterWidget.update_par">update_par</a></code></li>
 <li><code><a title="egse.dpu.dpu_ui.ReadoutParameterWidget.update_params" href="#egse.dpu.dpu_ui.ReadoutParameterWidget.update_params">update_params</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="egse.dpu.dpu_ui.RegisterWidget" href="#egse.dpu.dpu_ui.RegisterWidget">RegisterWidget</a></code></h4>
+<ul class="">
+<li><code><a title="egse.dpu.dpu_ui.RegisterWidget.on_cell_clicked" href="#egse.dpu.dpu_ui.RegisterWidget.on_cell_clicked">on_cell_clicked</a></code></li>
+<li><code><a title="egse.dpu.dpu_ui.RegisterWidget.update" href="#egse.dpu.dpu_ui.RegisterWidget.update">update</a></code></li>
 </ul>
 </li>
 <li>

@@ -102,7 +102,7 @@ def laser_tracker_to_dict(filexls, setup):
 
     # Read input file
 
-    pan = pandas.read_excel(filexls, sheet_name=&#34;Data&#34;, names=[&#34;desc&#34;,&#39;x&#39;,&#39;y&#39;,&#39;z&#39;])
+    pan = pandas.read_excel(filexls, sheet_name=&#34;Data&#34;, usecols=&#34;A:D&#34;, names=[&#34;desc&#34;, &#39;x&#39;, &#39;y&#39;, &#39;z&#39;])
 
     nrows = pan.shape[0]
 
@@ -131,7 +131,7 @@ def laser_tracker_to_dict(filexls, setup):
             try:
               name = desc[i][desc[i].find(&#34;::&#34;)+2:].lower().replace(&#34;_&#34;,&#34;&#34;)
         
-              if desc[i+2] != &#34;Translation&#34; or desc[i+3] != &#39;Rotation deg.&#39;:
+              if (desc[i+2].lower().find(&#34;translation&#34;)&lt;0) or (desc[i+3].lower().find(&#39;rotation&#39;)&lt;0):
                   raise Exception(f&#34;Unexpected File Structure after row {i} : {desc[i]}&#34;)
 
               translation = f&#34;[{float(colx[i+2]):.6f},{float(coly[i+2]):.6f},{float(colz[i+2]):.6f}&#34;
@@ -243,7 +243,7 @@ In particular it is assumed that gliso is the master!</p>
 
     # Read input file
 
-    pan = pandas.read_excel(filexls, sheet_name=&#34;Data&#34;, names=[&#34;desc&#34;,&#39;x&#39;,&#39;y&#39;,&#39;z&#39;])
+    pan = pandas.read_excel(filexls, sheet_name=&#34;Data&#34;, usecols=&#34;A:D&#34;, names=[&#34;desc&#34;, &#39;x&#39;, &#39;y&#39;, &#39;z&#39;])
 
     nrows = pan.shape[0]
 
@@ -272,7 +272,7 @@ In particular it is assumed that gliso is the master!</p>
             try:
               name = desc[i][desc[i].find(&#34;::&#34;)+2:].lower().replace(&#34;_&#34;,&#34;&#34;)
         
-              if desc[i+2] != &#34;Translation&#34; or desc[i+3] != &#39;Rotation deg.&#39;:
+              if (desc[i+2].lower().find(&#34;translation&#34;)&lt;0) or (desc[i+3].lower().find(&#39;rotation&#39;)&lt;0):
                   raise Exception(f&#34;Unexpected File Structure after row {i} : {desc[i]}&#34;)
 
               translation = f&#34;[{float(colx[i+2]):.6f},{float(coly[i+2]):.6f},{float(colz[i+2]):.6f}&#34;

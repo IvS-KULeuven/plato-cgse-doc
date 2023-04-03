@@ -156,47 +156,14 @@ class _GlobalState:
         else:
             LOGGER.warning(textwrap.dedent(
                 f&#34;&#34;&#34;\
-                    Could not reach the Configuration Manager to request the current Setup, returning None.
+                    Could not reach the Configuration Manager to request the Setup, returning the current local Setup.
                     
                     Check if the Configuration Manager is running and why it can not be consulted. When it&#39;s 
                     back on-line, do a &#39;load_setup()&#39;. 
                 &#34;&#34;&#34;
             ))
-            self._setup = None
 
         return self._setup
-
-    @deprecate(
-        reason=&#34;the Setup of the GlobalState shall only be loaded from the Configuration &#34;
-        &#34;Manager&#34;,
-        alternative=&#34;the static methods of the Setup class&#34;,
-    )
-    def load_setup_from(self, filename: Path):
-        &#34;&#34;&#34;Load a Setup from a YAML file.
-
-        Args:
-            filename (str or Path): path to the YAML file
-        &#34;&#34;&#34;
-        self._setup = Setup.from_yaml_file(filename=filename)
-        return self.setup
-
-    # How should we reload a Setup?
-    #
-    # * The default is that a Setup is loaded from the configuration manager and has an ID,
-    #   so a reload would then reload that Setup from the CM
-    # * However, a Setup can also be loaded from a YAML file in which case it should be reloaded
-    #   from that YAML file.
-    #
-
-    def reload_setup(self):
-        &#34;&#34;&#34;Reloads the Setup.&#34;&#34;&#34;
-        self._setup = Setup.from_yaml_file()  # for now, load from default `setup.yaml`
-        return self._setup
-
-    @deprecate(reason=&#34;the function is moved.&#34;, alternative=&#34;the function list_setups()&#34;)
-    def list_setups(self, query_dict: dict = None):
-        &#34;&#34;&#34;Returns a list of tuples with information about the available Setups.&#34;&#34;&#34;
-        return [(52, &#34;2020-04-21T21:09:44.100+0000&#34;), (73, &#34;2020-05-12T19:07:42.928+0000&#34;)]
 
     # FIXME:
     #  These two &#39;private&#39; methods are still called in plato-test-scripts, so until that is fixed,

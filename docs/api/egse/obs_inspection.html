@@ -28,8 +28,6 @@
 </summary>
 <pre><code class="python">import argparse
 
-import sys
-
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TimeElapsedColumn, BarColumn, TaskProgressColumn
 from rich.table import Table
@@ -60,30 +58,14 @@ def parse_arguments():
     return parser.parse_args()
 
 
-if __name__ == &#34;__main__&#34;:
-    &#34;&#34;&#34; Print table with status of the given observation.
-    
-    We loop over all HDF5 files for the given observation and extract the following information for all data groups
-    in each of them:
-        - Number of the HDF5 files (extracted from the filename);
-        - Group number;
-        - CCD number (1/2/3/4);
-        - CCD side (E/F/BOTH);
-        - Commands.
-        
-    Example: python -m egse.obs_inspection --obsid 00135_IAS --location /STER/platodata/IAS/data/IAS
-    &#34;&#34;&#34;
-
-    args = parse_arguments()
-    obsid = args.obsid
-    location = args.location
-
+def print_table(obsid: str, location: str):
     obs_hdf5_filenames = get_hdf5_filenames_for_obsid(obsid, location)
     num_hdf5_files = len(obs_hdf5_filenames)
     print(f&#34;Found {num_hdf5_files} HDF5 files for obsid {obsid}&#34;)
 
     ccd_bin_to_id = GlobalState.setup.camera.fee.ccd_numbering.CCD_BIN_TO_ID
-
+    n_fee_side = GlobalState.setup.camera.fee.ccd_sides.enum
+    
     table = Table(title=f&#34;Report for obsid {obsid}&#34;, expand=False)
     table.add_column(&#34;HDF5&#34;, justify=&#34;right&#34;)
     table.add_column(&#34;Group&#34;, no_wrap=True, justify=&#34;center&#34;)
@@ -94,13 +76,13 @@ if __name__ == &#34;__main__&#34;:
     console = Console(width=200)
 
     with Progress(
-        SpinnerColumn(),
-        BarColumn(),
-        TaskProgressColumn(),
-        # *Progress.get_default_columns(),
-        TimeElapsedColumn(),
-        console=Console(),
-        transient=False,
+            SpinnerColumn(),
+            BarColumn(),
+            TaskProgressColumn(),
+            # *Progress.get_default_columns(),
+            TimeElapsedColumn(),
+            console=Console(),
+            transient=False,
     ) as progress:
 
         hdf5_file_task = progress.add_task(&#34;[red]Opening HDF5 file&#34;, total=num_hdf5_files)
@@ -141,7 +123,7 @@ if __name__ == &#34;__main__&#34;:
                                     ccd_number = ccd_bin_to_id[packet_type.ccd_number]
 
                                     ccd_side = packet_type.ccd_side
-                                    if ccd_side == 1:
+                                    if ccd_side == n_fee_side.E:
                                         has_e_side = True
                                     else:
                                         has_f_side = True
@@ -154,7 +136,7 @@ if __name__ == &#34;__main__&#34;:
                                 if has_error_flags:
                                     ccd = f&#34;{ccd} (!)&#34;
                             except KeyError:
-                                ccd = None      # No data transmitted
+                                ccd = None  # No data transmitted
 
                             # Command
 
@@ -165,7 +147,8 @@ if __name__ == &#34;__main__&#34;:
                                     command = commands[str(command_index)][()]
 
                                     if command_index == 0:
-                                        table.add_row(str(hdf5_index), str(group_index), timestamp, ccd, f&#34;{command_index}: {command}&#34;,
+                                        table.add_row(str(hdf5_index), str(group_index), timestamp, ccd,
+                                                      f&#34;{command_index}: {command}&#34;,
                                                       end_section=end_section and len(commands) == 1)
                                     elif command_index == len(commands) - 1:
                                         table.add_row(None, None, None, None, f&#34;{command_index}: {command}&#34;,
@@ -174,9 +157,10 @@ if __name__ == &#34;__main__&#34;:
                                         table.add_row(None, None, None, None, f&#34;{command_index}: {command}&#34;,
                                                       end_section=False)
                             except KeyError:
-                                table.add_row(str(hdf5_index), str(group_index), timestamp, ccd, None, end_section=end_section)       # No commands sent
+                                table.add_row(str(hdf5_index), str(group_index), timestamp, ccd, None,
+                                              end_section=end_section)  # No commands sent
                         except KeyError:
-                            pass    # Internal sync
+                            pass  # Internal sync
             except OSError as exc:
                 print(&#34;OS error&#34;)
             except RuntimeError as exc:
@@ -185,7 +169,25 @@ if __name__ == &#34;__main__&#34;:
 
             progress_index += 1
 
-    console.print(table)</code></pre>
+    console.print(table)
+
+
+if __name__ == &#34;__main__&#34;:
+    &#34;&#34;&#34; Print table with status of the given observation.
+    
+    We loop over all HDF5 files for the given observation and extract the following information for all data groups
+    in each of them:
+        - Number of the HDF5 files (extracted from the filename);
+        - Group number;
+        - CCD number (1/2/3/4);
+        - CCD side (E/F/BOTH);
+        - Commands.
+        
+    Example: python -m egse.obs_inspection --obsid 00135_IAS --location /STER/platodata/IAS/data/IAS
+    &#34;&#34;&#34;
+
+    args = parse_arguments()
+    print_table(args.obsid, args.location)</code></pre>
 </details>
 </section>
 <section>
@@ -223,6 +225,129 @@ if __name__ == &#34;__main__&#34;:
     return parser.parse_args()</code></pre>
 </details>
 </dd>
+<dt id="egse.obs_inspection.print_table"><code class="name flex">
+<span>def <span class="ident">print_table</span></span>(<span>obsid: str, location: str)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def print_table(obsid: str, location: str):
+    obs_hdf5_filenames = get_hdf5_filenames_for_obsid(obsid, location)
+    num_hdf5_files = len(obs_hdf5_filenames)
+    print(f&#34;Found {num_hdf5_files} HDF5 files for obsid {obsid}&#34;)
+
+    ccd_bin_to_id = GlobalState.setup.camera.fee.ccd_numbering.CCD_BIN_TO_ID
+    n_fee_side = GlobalState.setup.camera.fee.ccd_sides.enum
+    
+    table = Table(title=f&#34;Report for obsid {obsid}&#34;, expand=False)
+    table.add_column(&#34;HDF5&#34;, justify=&#34;right&#34;)
+    table.add_column(&#34;Group&#34;, no_wrap=True, justify=&#34;center&#34;)
+    table.add_column(&#34;Timestamp&#34;, no_wrap=True)
+    table.add_column(&#34;CCD&#34;, no_wrap=True)
+    table.add_column(&#34;Command&#34;)
+
+    console = Console(width=200)
+
+    with Progress(
+            SpinnerColumn(),
+            BarColumn(),
+            TaskProgressColumn(),
+            # *Progress.get_default_columns(),
+            TimeElapsedColumn(),
+            console=Console(),
+            transient=False,
+    ) as progress:
+
+        hdf5_file_task = progress.add_task(&#34;[red]Opening HDF5 file&#34;, total=num_hdf5_files)
+
+        progress_index = 0
+
+        while not progress.finished:
+            progress.update(hdf5_file_task, advance=1)
+            hdf5_filename = obs_hdf5_filenames[progress_index]
+
+            try:
+                hdf5_index = int(hdf5_filename.split(&#34;_&#34;)[-1].split(&#34;.&#34;)[0])
+                with h5.get_file(hdf5_filename, mode=&#34;r&#34;, locking=False) as hdf5_file:
+
+                    for group_index in range(0, 4):
+
+                        end_section = group_index == 3 if &#34;3&#34; in hdf5_file else True
+
+                        ccd = None
+
+                        try:
+                            group = hdf5_file[str(group_index)]
+
+                            has_e_side = False
+                            has_f_side = False
+
+                            try:
+                                timestamp = group[&#34;timecode&#34;].attrs[&#34;timestamp&#34;]
+
+                                hk = HousekeepingData(HousekeepingPacket(group[&#34;hk&#34;]).data)
+                                has_error_flags = hk[&#34;error_flags&#34;] != 0
+
+                                data = group[&#34;data&#34;]
+
+                                for packet_index in [0, len(data) - 1]:
+                                    packet_type = DataPacket(data[str(packet_index)]).type
+
+                                    ccd_number = ccd_bin_to_id[packet_type.ccd_number]
+
+                                    ccd_side = packet_type.ccd_side
+                                    if ccd_side == n_fee_side.E:
+                                        has_e_side = True
+                                    else:
+                                        has_f_side = True
+                                if has_e_side and has_f_side:
+                                    ccd = f&#34;{ccd_number} BOTH&#34;
+                                elif has_e_side:
+                                    ccd = f&#34;{ccd_number}E&#34;
+                                elif has_f_side:
+                                    ccd = f&#34;{ccd_number}F&#34;
+                                if has_error_flags:
+                                    ccd = f&#34;{ccd} (!)&#34;
+                            except KeyError:
+                                ccd = None  # No data transmitted
+
+                            # Command
+
+                            try:
+                                commands = group[&#34;commands&#34;]
+
+                                for command_index in range(len(commands)):
+                                    command = commands[str(command_index)][()]
+
+                                    if command_index == 0:
+                                        table.add_row(str(hdf5_index), str(group_index), timestamp, ccd,
+                                                      f&#34;{command_index}: {command}&#34;,
+                                                      end_section=end_section and len(commands) == 1)
+                                    elif command_index == len(commands) - 1:
+                                        table.add_row(None, None, None, None, f&#34;{command_index}: {command}&#34;,
+                                                      end_section=end_section)
+                                    else:
+                                        table.add_row(None, None, None, None, f&#34;{command_index}: {command}&#34;,
+                                                      end_section=False)
+                            except KeyError:
+                                table.add_row(str(hdf5_index), str(group_index), timestamp, ccd, None,
+                                              end_section=end_section)  # No commands sent
+                        except KeyError:
+                            pass  # Internal sync
+            except OSError as exc:
+                print(&#34;OS error&#34;)
+            except RuntimeError as exc:
+                print(&#34;Runtime error&#34;)
+            # table.add_row(None, None, None, None)
+
+            progress_index += 1
+
+    console.print(table)</code></pre>
+</details>
+</dd>
 </dl>
 </section>
 <section>
@@ -242,6 +367,7 @@ if __name__ == &#34;__main__&#34;:
 <li><h3><a href="#header-functions">Functions</a></h3>
 <ul class="">
 <li><code><a title="egse.obs_inspection.parse_arguments" href="#egse.obs_inspection.parse_arguments">parse_arguments</a></code></li>
+<li><code><a title="egse.obs_inspection.print_table" href="#egse.obs_inspection.print_table">print_table</a></code></li>
 </ul>
 </li>
 </ul>

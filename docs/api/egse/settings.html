@@ -140,6 +140,7 @@ from egse.env import ENV_PLATO_LOCAL_SETTINGS
 from egse.exceptions import FileIsEmptyError
 from egse.system import AttributeDict
 from egse.system import get_caller_info
+from egse.system import ignore_m_warning
 from egse.system import recursive_dict_update
 
 logger = logging.getLogger(__name__)
@@ -402,6 +403,8 @@ class Settings:
         return cls.__simulation
 
 
+ignore_m_warning(&#39;egse.settings&#39;)
+
 if __name__ == &#34;__main__&#34;:
 
     # We provide convenience to inspect the settings by calling this module directly from Python.
@@ -441,7 +444,13 @@ if __name__ == &#34;__main__&#34;:
         print(settings)
         print(&#34;[blue]Memoized locations:&#34;)
         locations = Settings.get_memoized_locations()
-        print([str(loc) for loc in locations])</code></pre>
+        print([str(loc) for loc in locations])
+
+
+def get_site_id() -&gt; str:
+
+    site = Settings.load(&#34;SITE&#34;)
+    return site.ID</code></pre>
 </details>
 </section>
 <section>
@@ -465,6 +474,21 @@ if __name__ == &#34;__main__&#34;:
         return getattr(cls, name)
     except AttributeError:
         return default</code></pre>
+</details>
+</dd>
+<dt id="egse.settings.get_site_id"><code class="name flex">
+<span>def <span class="ident">get_site_id</span></span>(<span>) ‑> str</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_site_id() -&gt; str:
+
+    site = Settings.load(&#34;SITE&#34;)
+    return site.ID</code></pre>
 </details>
 </dd>
 <dt id="egse.settings.is_defined"><code class="name flex">
@@ -1114,6 +1138,7 @@ def to_string(cls):
 <li><h3><a href="#header-functions">Functions</a></h3>
 <ul class="">
 <li><code><a title="egse.settings.get_attr_value" href="#egse.settings.get_attr_value">get_attr_value</a></code></li>
+<li><code><a title="egse.settings.get_site_id" href="#egse.settings.get_site_id">get_site_id</a></code></li>
 <li><code><a title="egse.settings.is_defined" href="#egse.settings.is_defined">is_defined</a></code></li>
 <li><code><a title="egse.settings.set_attr_value" href="#egse.settings.set_attr_value">set_attr_value</a></code></li>
 </ul>
