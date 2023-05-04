@@ -6,7 +6,7 @@ The Tasks GUI is a collective noun for all the task GUIs that we use in our CGSE
 python3 -m pip install gui-executor
 ----
 
-This chapter explains how the `gui-executor` and therefore the Task GUIs can be used to ease your work in executing scripts and procedures. This chapter is focussed on the user of the GUI, if you are a develop and need coding information on the `gui-executor`, please refer to the _Developer Manual_ xref:../developer-manual.html#tasks-gui[tasks-gui]
+This chapter explains how the `gui-executor` and therefore the Task GUIs can be used to ease your work in executing scripts and procedures. This chapter is focussed on the user of the GUI, if you are a developer and need coding information on the `gui-executor`, please refer to the _Developer Manual_ xref:../developer-manual.html#tasks-gui[tasks-gui] or directly to https://ivs-kuleuven.github.io/gui-executor/[the on-line documentation] of the `gui-executor`.
 
 .A few examples of the Task GUI
 [cols="1,1", grid=none, frame=none]
@@ -37,3 +37,167 @@ All tasks are available in the _Button Panel_. The tasks are arranged in groups 
 When you press a task button an associated arguments panel will appear below the button panel. Before pressing the _Run_ button you can provide input for all the parameters of the task. Most of the arguments will have a simple builtin type like int, float or bool, but more complex argument types are possible and for some of those a special icon will appear on the right side to
 
 === The Output Console
+
+TBW
+
+[#execute-tasks-in-jupyter-console]
+=== Execute Tasks from the Jupyter QtConsole [aka REPL]
+
+You might want to run tasks from the Jupyter QtConsole or any other REPL that you use. Since the tasks in the GUI as just like any other function, you can import the task and run the function from the Python interpreter. The only thing you need to know is where the tasks are defined, from which module they should be imported. In our PLATO project, all tasks are defined in the `plato-test-scripts` repository and they live inside the `camtest.tasks` package. It depends on the TAB and the location in that TAB where your tasks is defined. As an illustration, we start from the CSL Operator GUI (screenshot below) and select the Camera TAB and the Camera Switch ON button. This will open the arguments panel, and we see this task takes one argument, the `hk_frequency`. We would like to execute this task in the REPL instead of pressing the 'Run' button.
+
+image::tasks-import-in-repl-01.png[width=50%,align=center]
+
+The example below shows how this is done for the Camera Switch ON and Switch OFF tasks.
+We import the tasks from `camtest.tasks.shared.camera.camera` in line [4]. In line [5] we print the documentation associated with this task and we see what the task does and what the parameters are (and their defaults).
+
+[source%nowrap]
+----
+In [4]: from camtest.tasks.shared.camera.camera import switch_on_camera, switch_off_camera
+
+In [5]: switch_on_camera?
+Signature: switch_on_camera(hk_frequency: float = 4.0)
+Docstring:
+Camera switch-on procedure.
+
+This procedure entails the following steps:
+    - Power on the N-cam + enable the sync signals, with the following parameters:
+        - image cycle time: 25s
+        - nominal heater clock: on
+        - redundant heater : off
+    - Set N-FEE FPGA defaults;
+    - Go to STAND-BY mode;
+    - Go to DUMP mode (external sync);
+    - Acquire & dump (this finishes in DUMP mode (external sync)).
+
+Prerequisites (to be included in the procedure):
+    - Core services running;
+    - DPU Control Server running;
+    - All AEU Control Servers running;
+    - N-FEE HK process running;
+    - FITS generation process running.
+
+The following values are hard-coded for the acquire & dump:
+    - num_cycles (5): Number images to acquire. If zero, images will continue to be acquired until the FEE is set to
+                      STANDBY or DUMP mode again
+    - row_start (0) : First row to read out
+    - row_end (4509) : Last row to read out (inclusive)
+    - rows_final_dump (0): Number of rows for the clear-out after the readout
+    - ccd_order ([1, 2, 3, 4]): Array of four integers, indicating in which order the CCDs should be read
+    - ccd_side (BOTH): CCD side for which to acquire data
+
+After each step, the user is prompted to check whether the system is in the correct state, so he/she
+can decide to continue with the camera start-up procedure or to interrupt it.
+
+Args:
+    - hk_frequency: Frequency at which to acquire AEU (cRIO + PSUs) during the acquire & dump.
+File:      ~/git/plato-test-scripts/src/camtest/tasks/shared/camera/camera.py
+Type:      function
+----
+
+Running the tasks is as simple as executing the function. While this specific task would open dialogs asking for confirmation when the task is run from the button, in this case, the input is requested in the REPL and you type your answer at the prompt.
+
+[source%nowrap]
+----
+In [6]: switch_on_camera()
+2023-04-27 08:53:47,031:             IPython:    INFO:  358:camtest.core.exec   :Observation started with obsid=CSL1_00067_00066
+Setting the N-FEE FPGA defaults
+                    N-FEE FPGA defaults
+┏━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━┓
+┃ Register      ┃ Sub-register     ┃ Old value ┃ New value ┃
+┡━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━━┩
+│ reg_5_config  │ sensor_sel       │         3 │         1 │
+│ reg_18_config │ ccd1_vrd_config  │      3685 │      3709 │
+│ reg_18_config │ ccd2_vrd_config  │       101 │       127 │
+│ reg_18_config │ ccd_vod_config   │      3823 │      3860 │
+│ reg_19_config │ ccd3_vrd_config  │      3685 │      3711 │
+│ reg_19_config │ ccd4_vrd_config  │      3685 │      3709 │
+│ reg_19_config │ ccd_vgd_config   │        14 │         2 │
+│ reg_20_config │ ccd_vgd_config   │       207 │       206 │
+│ reg_20_config │ ccd_vog_config   │       410 │       412 │
+│ reg_21_config │ clear_error_flag │         1 │         0 │
+│ reg_21_config │ cont_cdsclp_on   │         0 │         1 │
+│ reg_21_config │ trk_hld_hi       │         4 │         5 │
+│ reg_21_config │ trk_hld_lo       │        14 │        15 │
+│ reg_22_config │ cdsclp_hi        │         0 │         4 │
+│ reg_22_config │ cdsclp_lo        │         9 │        10 │
+│ reg_22_config │ r_cfg1           │         7 │         9 │
+│ reg_22_config │ r_cfg2           │        11 │        14 │
+│ reg_22_config │ rowclp_hi        │         0 │         2 │
+│ reg_22_config │ rowclp_lo        │         2 │         4 │
+└───────────────┴──────────────────┴───────────┴───────────┘
+
+The changes in N-FEE FPGA parameters were applied correctly.
+Check the printed changes in the N-FEE FPGA parameters in the table in the Python Console.
+Continue with the camera switch-on procedure [Y/n] ?
+ In the next step, we will go to STAND-BY mode.Y
+Going to STAND-BY mode
+Check in the DPU UI that you are in STAND-BY mode.
+Continue with the camera switch-on procedure [Y/n] ?
+ In the next step, we will go to DUMP mode.Y
+Going to DUMP mode
+Check in the DPU UI that you are in DUMP mode.
+Continue with the camera switch-on procedure [Y/n] ?
+ In the next step, we will execute an acquire-and-dump observation.Y
+Resetting the AEU HK frequency (cRIO + PSU)
+
+In [7]:
+----
+
+Switching OFF the camera is equally simple:
+
+[source%nowrap]
+----
+In [7]: switch_off_camera()
+2023-04-27 09:03:16,800:             IPython:    INFO:  358:camtest.core.exec   :Observation started with obsid=CSL1_00067_00067
+Going to STAND-BY mode
+Check in the DPU UI that you are in STAND-BY mode.
+Continue with the camera switch-off procedure [Y/n] ?
+ In the next step, we will go to ON mode.Y
+Going to ON mode
+Check in the DPU UI that you are in ON mode.
+Continue with the camera switch-off procedure [Y/n] ?
+ In the next step, we will switch off the N-AEU.Y
+2023-04-27 09:04:01,984:             IPython:    INFO: 1513:camtest.commanding.aeu:Disable the N-CAM sync pulses
+2023-04-27 09:04:02,031:             IPython:    INFO:  178:camtest.commanding.aeu:Confirming the N-CAM status
+2023-04-27 09:04:02,063:             IPython:    INFO:  194:camtest.commanding.aeu:Operating mode: 3
+2023-04-27 09:04:02,065:             IPython:    INFO:  198:camtest.commanding.aeu:Output status of PSU1: 1
+2023-04-27 09:04:02,066:             IPython:    INFO:  202:camtest.commanding.aeu:Output status of PSU2: 1
+2023-04-27 09:04:02,067:             IPython:    INFO:  206:camtest.commanding.aeu:Output status of PSU3: 1
+2023-04-27 09:04:02,069:             IPython:    INFO:  210:camtest.commanding.aeu:Output status of PSU4: 1
+2023-04-27 09:04:02,070:             IPython:    INFO:  214:camtest.commanding.aeu:Output status of PSU5: 1
+2023-04-27 09:04:02,071:             IPython:    INFO:  218:camtest.commanding.aeu:Output status of PSU6: 1
+2023-04-27 09:04:02,072:             IPython:    INFO:  222:camtest.commanding.aeu:Secondary power lines of N-CAM: 1
+2023-04-27 09:04:02,073:             IPython:    INFO:  226:camtest.commanding.aeu:Measured voltages in N-CAM: (34.7, 16.05, 6.65, 6.65, -6.65, 4.55)
+2023-04-27 09:04:02,074:             IPython:    INFO:  230:camtest.commanding.aeu:Measured currents in N-CAM: (0.105, 0.208, 0.19, 0.058, -0.224, 0.553)
+2023-04-27 09:04:02,075:             IPython:    INFO:  234:camtest.commanding.aeu:Status of the N-CAM clocks: (<IntSwitch.OFF: 0>, <IntSwitch.OFF: 0>)
+2023-04-27 09:04:02,077:             IPython:    INFO:  238:camtest.commanding.aeu:Status of the SVM clocks: (<IntSwitch.OFF: 0>, <IntSwitch.OFF: 0>, <IntSwitch.OFF: 0>, <IntSwitch.OFF: 0>)
+2023-04-27 09:04:02,078:             IPython:    INFO: 1542:camtest.commanding.aeu:Output status for N-CAM clocks: (<IntSwitch.OFF: 0>, <IntSwitch.OFF: 0>)
+2023-04-27 09:04:02,081:             IPython:    INFO: 1556:camtest.commanding.aeu:Output status for SVM clocks: (<IntSwitch.OFF: 0>, <IntSwitch.OFF: 0>, <IntSwitch.OFF: 0>, <IntSwitch.OFF: 0>)
+2023-04-27 09:04:02,087:             IPython:    INFO:  813:camtest.commanding.aeu:Switch off the N-CAM
+2023-04-27 09:04:02,098:             IPython:    INFO:  178:camtest.commanding.aeu:Confirming the N-CAM status
+2023-04-27 09:04:02,129:             IPython:    INFO:  194:camtest.commanding.aeu:Operating mode: 3
+2023-04-27 09:04:02,130:             IPython:    INFO:  198:camtest.commanding.aeu:Output status of PSU1: 1
+2023-04-27 09:04:02,131:             IPython:    INFO:  202:camtest.commanding.aeu:Output status of PSU2: 1
+2023-04-27 09:04:02,132:             IPython:    INFO:  206:camtest.commanding.aeu:Output status of PSU3: 1
+2023-04-27 09:04:02,133:             IPython:    INFO:  210:camtest.commanding.aeu:Output status of PSU4: 1
+2023-04-27 09:04:02,134:             IPython:    INFO:  214:camtest.commanding.aeu:Output status of PSU5: 1
+2023-04-27 09:04:02,135:             IPython:    INFO:  218:camtest.commanding.aeu:Output status of PSU6: 1
+2023-04-27 09:04:02,136:             IPython:    INFO:  222:camtest.commanding.aeu:Secondary power lines of N-CAM: 1
+2023-04-27 09:04:02,137:             IPython:    INFO:  226:camtest.commanding.aeu:Measured voltages in N-CAM: (34.7, 16.05, 6.65, 6.65, -6.65, 4.55)
+2023-04-27 09:04:02,138:             IPython:    INFO:  230:camtest.commanding.aeu:Measured currents in N-CAM: (0.105, 0.208, 0.19, 0.058, -0.224, 0.553)
+2023-04-27 09:04:02,139:             IPython:    INFO:  234:camtest.commanding.aeu:Status of the N-CAM clocks: (<IntSwitch.OFF: 0>, <IntSwitch.OFF: 0>)
+2023-04-27 09:04:02,141:             IPython:    INFO:  238:camtest.commanding.aeu:Status of the SVM clocks: (<IntSwitch.OFF: 0>, <IntSwitch.OFF: 0>, <IntSwitch.OFF: 0>, <IntSwitch.OFF: 0>)
+2023-04-27 09:04:02,143:             IPython:    INFO:  845:camtest.commanding.aeu:Secondary power lines of N-CAM: 0
+2023-04-27 09:04:02,145:             IPython:    INFO:  853:camtest.commanding.aeu:Measured voltages in N-CAM: (0, 0, 0, 0, 0, 0)
+2023-04-27 09:04:02,146:             IPython:    INFO:  857:camtest.commanding.aeu:Measured currents in N-CAM: (0, 0, 0, 0, 0, 0)
+2023-04-27 09:04:02,150:             IPython:    INFO:  871:camtest.commanding.aeu:Output status for V_CCD (PSU1): 0
+2023-04-27 09:04:02,154:             IPython:    INFO:  871:camtest.commanding.aeu:Output status for V_CLK (PSU2): 0
+2023-04-27 09:04:02,158:             IPython:    INFO:  871:camtest.commanding.aeu:Output status for V_AN1 (PSU3): 0
+2023-04-27 09:04:02,163:             IPython:    INFO:  871:camtest.commanding.aeu:Output status for V_AN2 (PSU4): 0
+2023-04-27 09:04:02,168:             IPython:    INFO:  871:camtest.commanding.aeu:Output status for V_AN3 (PSU5): 0
+2023-04-27 09:04:02,173:             IPython:    INFO:  871:camtest.commanding.aeu:Output status for V_DIG (PSU6): 0
+2023-04-27 09:04:02,175:             IPython:    INFO:  881:camtest.commanding.aeu:Operating mode: 0 (STANDBY)
+Switching off the N-AEU
+
+In [8]:
+----

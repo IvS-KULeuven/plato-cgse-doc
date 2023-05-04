@@ -1,15 +1,11 @@
 [#_dynamic_commanding]
 == Dynamic Commanding
 
-=== What should this section contain?
-
-- [ ] what does dynamic commanding mean in the context of the CGSE
-- [ ] what is the difference between `dynamic_interface` and `dynamic_command`?
-
-
-'''
-
 Two of the requirements that were formulated when we started the analysis and design of the CGSE was that (1) it shouldn't be too difficult to implement device controllers and (2) the definition of the commands shall be done at one place only. So we started out with a design where the commands were defined in a YAML file (called the _command yaml file_) and the code would use this information to build the API for the device. That would make it —from the device developer point of view— rather easy to create the commanding interface for a new device. Unfortunately, the implementation was not that easy or straightforward. We are working in a client-server or even microservices environment which means the device commanding should be available on both the server side (what we call the Controller) and on the client side (what we call the Proxy).
+
+Both the Controller and the Proxy will have to implement the same interface, but we didn't want to bother the developer with having to implement the interface twice. The Proxy (client) side should be easy, because it doesn't need any processing or device control, it only needs to forward the command and its arguments to the server to be executed and then wait for the response. On the server it is slightly more complicated since there we have to interact with a device that can be connected by Ethernet, USB, serial,... with many different commanding protocols.
+
+We have currently two designs and implementations that handle dynamic commanding. The first implementation we came up with is the `@dynamic_interface` which is a decorator that is used on the methods in the device interface class. How this works is explained in the section below on <<_dynamic_interface_decorator>>. The latest implementation is the `@dynamic_command` which also decorates the interface methods, but does a lot more work with respect to command string generation and response processing. How this work is explained in <<_dynamic_command_decorator>>. We have also written up a section on the transition from the old implementation into the new dynamic command implementation. See <<_move_to_dynamic_command>>.
 
 [#_dynamic_interface_decorator]
 === The Dynamic Interface Decorator
@@ -20,8 +16,8 @@ The static variable is used by the Proxy class to check if a method is meant to 
 
 When a Proxy subclass that implements an interface with methods decorated by the `@dynamic_interface` does overwrite one or more of the decorated methods statically, these methods will not be dynamically overwritten when loading the interface from the control server. A warning will be logged instead.
 
-// XXXXX: This paragraph shall be rewritten, clarified, ....
-The methods of the Proxy sub-class are added by the base class method `load_commands()`. This method asks the control server to send all device command definitions. The control server replies with a dictionary of user-defined methods and their names as keys. The commands are attributed to the Proxy class as methods with the key as their method names, unless the attribute name already exists in the Proxy and is not decorated as a dynamic interface.
+The methods of the Proxy sub-class are added by the base class method `load_commands()`. This method asks the control server to send all device command definitions. The control server replies with a dictionary of user-defined methods and their names as keys. The commands are attributed to the Proxy class as methods with the key as their method names, unless the attribute name already exists in the Proxy and is not decorated as a dynamic interface. The following code snippet demonstrates how the command methods are dynamic added/attributed to the Proxy class.
+
 [source,python]
 ----
 def _add_commands(self):
@@ -51,17 +47,58 @@ The `setattr(self, key, new_method)` can not be replaced by a plain assignment b
 
 So, during the creation of the Proxy object, the command list is requested from the control server, and when the command is not already an attribute of the Proxy sub-class, its `client_call()` method is connected as a new method to the Proxy sub-class.
 
-- [ ] describe how the `client_call()` method then works.
+The `ClientServerCommand` class is defined in the module `egse.command` and the `client_call()` method does something like in the code snippet below. The arguments that are passed into the function are first validated. This validation is done against the input given in the _command yaml file_. Then a command execution object is created which is sent to the control server. The response from the server is returned.
+
+[source,python]
+----
+def client_call(self, other, *args, **kwargs):
+    try:
+        self.validate_arguments(*args, **kwargs)
+    except CommandError as e_ce:
+        logger.error(str(e_ce))
+        return None
+
+    ce = CommandExecution(self, *args, **kwargs)
+    return other.send(ce)
+----
+
+At the control server, the command execution is received by the Protocol class and the command and the given arguments are extracted. The Protocol then calls the `server_call()` method of the command with the arguments. The (simplified) code snippet below illustrates what happens in the `execute()` method of the Protocol class at the server. The `self` variable is the instance of the device protocol class.
+
+[source,python]
+----
+def execute(self):
+    ...
+    ce = self.receive()
+    cmd = ce.get_cmd()
+    args = ce.get_args()
+    kwargs = ce.get_kwargs()
+    ...
+    cmd.server_call(self, *args, **kwargs)
+----
+
+The `server_call()` now calls the method from the Controller class that was associated with the `ClientServerCommand` while parsing and processing the _command yaml file_. That method is called with the arguments passed into the command execution.
+
+- [] make a graph illustrating the round-trip of the commanding chain.
 
 [#_dynamic_command_decorator]
 === The Dynamic Command Decorator
 
-One of the problems of the dynamic interface decorator is that during construction of the Proxy class, the control server must be contacted to request the list of commands, when this fails and the control server is not available, the Proxy is not functional.
+One of the problems of the dynamic interface decorator is that during construction of the Proxy class, the control server must be contacted to request the list of commands, when this fails and the control server is not available, the Proxy is not functional. You will first get a warning log message of the following type:
 
-TBW: add more description of what the decorator is, what happens behind the scenes, how it is perceived on the client and on the server side etc...
+[source%nowrap]
+----
+<Device>Proxy could not connect to its control server at tcp://localhost:6700. No commands have been loaded.
+----
+
+When you then try to execute a command, e.g. `puna_proxy.get_speed()`, it will result in a `NotImplementedError`. The reason is that the commands have not been loaded from the control server and therefore the default interface method is executed resulting in this error.
+
+Mainly for this reason we have enhanced the dynamic commanding protocol with the `@dynamic_command` decorator. This decorator behaves differently on the client side (the Proxy) and the server side (the Controller). There is no need anymore to load the available commands from the control server, so, proxies for devices can be started when the control server is not yet running and will gracefully (re-)connect to the device when the control server becomes available.
+
+NOTE:: add more description of what the decorator is, what happens behind the scenes, how it is perceived on the client and on the server side etc...
 
 So, since the `@dynamic_command` is the successor of the `@dynamic_interface`, how do we refactor our code for this new commanding scheme. That will be explained in the next section.
 
+[#_move_to_dynamic_command]
 === Update your code to use the @dynamic_command decorator
 
 * Each method in the interface needs to be changed from a `@dynamic_interface` to a `@dynamic_command`. Remember the `@dynamic_interface` only marked the method with the `__dynamic_interface` attribute. The `@dynamic_command` defines the type of command, how the command string is contructed and how the response needs to be decoded. As an example, consider the `get_current_position()` method in the `HuberSMC9300Interface` class.
@@ -151,9 +188,9 @@ The same `cmd_string` as a format option:
     cmd_string="CREATE:SENS:TEMP {name} {type} default={default:0.4f}"
     use_format=True
 
-* `process_response` is a pure functionfootnote:[A pure function is a function that has no side effects and always returns the same output for the same input.] to process the response from the device before it is returned
+* `process_response` is a pure functionfootnote:[A pure function is a function that has no side effects and always returns the same output for the same input.] to process the response from the device before it is returned. This function shall take at least one keyword argument `response=` which is the response from the device as a byte array. The value that is returned by the function is eventually also the response of the command that was executed. This return value is device implementation specific and part of the interface definition.
 
-* `process_cmd_string` is a pure function to process the given command string to make it ready for sending to the device.
+* `process_cmd_string` is a pure function to process the given command string to make it ready for sending to the device. This function is called after the arguments to the command have been filled into the template string given by `cmd_string`. The function shall take a string as the only positional argument and return a string that will be sent to the device.
 
 Then, there are these additional arguments that can be used with `@dynamic_command` to tune the command string and pre- and post-processing.
 

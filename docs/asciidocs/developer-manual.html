@@ -515,8 +515,8 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <h1>Common–EGSE : Developer Manual</h1>
 <div class="details">
 <span id="author" class="author">Rik Huygen, Sara Regibo</span><br>
-<span id="revnumber">version 1.5,</span>
-<span id="revdate">03/04/2023</span>
+<span id="revnumber">version 1.6,</span>
+<span id="revdate">04/05/2023</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -626,7 +626,7 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <li><a href="#_the_device_interface_classes">12.1. The Device Interface Classes</a></li>
 </ul>
 </li>
-<li><a href="#_the_system_under_test_sut">13. The System Under Test (SUT)</a>
+<li><a href="#sut">13. The System Under Test (SUT)</a>
 <ul class="sectlevel2">
 <li><a href="#_dpu_control_server_and_dpu_processor">13.1. DPU Control Server and DPU Processor</a></li>
 <li><a href="#_the_n_fee_simulator">13.2. The N-FEE Simulator</a></li>
@@ -721,12 +721,28 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <div class="sectionbody">
 <div class="dlist">
 <dl>
+<dt class="hdlist1">04/05/2023 — v1.6</dt>
+<dd>
+<div class="ulist">
+<ul>
+<li>
+<p>Added explanation about data distribution and monitoring message queues used by the DPU Processor to publish information and data, see <a href="#sut">Chapter 13</a>.</p>
+</li>
+<li>
+<p>Added some more meat into the description of the arguments for the <code>@dynamic_command</code> decorator, see <a href="#_dynamic_command_decorator">Section 6.6.2</a>.</p>
+</li>
+<li>
+<p>Added an explanation of the communication with and commanding of the N-FEE in the inner loop of the DPUProcessor, see <a href="#inner-loop">Section 13.1.1</a>.</p>
+</li>
+</ul>
+</div>
+</dd>
 <dt class="hdlist1">03/04/2023 — v1.5</dt>
 <dd>
 <div class="ulist">
 <ul>
 <li>
-<p>Added a section 'Services' in the Commanding Concepts section, see <a href="#services">Section 6.4</a></p>
+<p>Added a section 'Services' in the Commanding Concepts section, see <a href="#services">Section 6.4</a>.</p>
 </li>
 </ul>
 </div>
@@ -736,7 +752,7 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <div class="ulist">
 <ul>
 <li>
-<p>Added description of the arguments that can be used with the <code>@dynamic_command</code> decorator, see <a href="#_dynamic_command_decorator">Section 6.6.3</a></p>
+<p>Added description of the arguments that can be used with the <code>@dynamic_command</code> decorator, see <a href="#_dynamic_command_decorator">Section 6.6.2</a>.</p>
 </li>
 <li>
 <p>Added a section on creating multiple control servers for identical devices, see <a href="#multiple-idential-devices">Section 6.1.1</a>.</p>
@@ -749,10 +765,10 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <div class="ulist">
 <ul>
 <li>
-<p>Updated section on version and release numbers, see <a href="#version-numbers">Chapter 2</a></p>
+<p>Updated section on version and release numbers, see <a href="#version-numbers">Chapter 2</a>.</p>
 </li>
 <li>
-<p>fixed some formatting issues in the CCD numbering section</p>
+<p>Fixed some formatting issues in the CCD numbering section.</p>
 </li>
 </ul>
 </div>
@@ -2655,25 +2671,17 @@ class ControllerFactory(DeviceFactoryInterface):
 </div>
 <div class="sect2">
 <h3 id="_dynamic_commanding">6.6. Dynamic Commanding</h3>
-<div class="sect3">
-<h4 id="_what_should_this_section_contain">6.6.1. What should this section contain?</h4>
-<div class="ulist checklist">
-<ul class="checklist">
-<li>
-<p><i class="fa fa-square-o"></i> what does dynamic commanding mean in the context of the CGSE</p>
-</li>
-<li>
-<p><i class="fa fa-square-o"></i> what is the difference between <code>dynamic_interface</code> and <code>dynamic_command</code>?</p>
-</li>
-</ul>
-</div>
-<hr>
 <div class="paragraph">
 <p>Two of the requirements that were formulated when we started the analysis and design of the CGSE was that (1) it shouldn&#8217;t be too difficult to implement device controllers and (2) the definition of the commands shall be done at one place only. So we started out with a design where the commands were defined in a YAML file (called the <em>command yaml file</em>) and the code would use this information to build the API for the device. That would make it —from the device developer point of view— rather easy to create the commanding interface for a new device. Unfortunately, the implementation was not that easy or straightforward. We are working in a client-server or even microservices environment which means the device commanding should be available on both the server side (what we call the Controller) and on the client side (what we call the Proxy).</p>
 </div>
+<div class="paragraph">
+<p>Both the Controller and the Proxy will have to implement the same interface, but we didn&#8217;t want to bother the developer with having to implement the interface twice. The Proxy (client) side should be easy, because it doesn&#8217;t need any processing or device control, it only needs to forward the command and its arguments to the server to be executed and then wait for the response. On the server it is slightly more complicated since there we have to interact with a device that can be connected by Ethernet, USB, serial,&#8230;&#8203; with many different commanding protocols.</p>
+</div>
+<div class="paragraph">
+<p>We have currently two designs and implementations that handle dynamic commanding. The first implementation we came up with is the <code>@dynamic_interface</code> which is a decorator that is used on the methods in the device interface class. How this works is explained in the section below on <a href="#_dynamic_interface_decorator">Section 6.6.1</a>. The latest implementation is the <code>@dynamic_command</code> which also decorates the interface methods, but does a lot more work with respect to command string generation and response processing. How this work is explained in <a href="#_dynamic_command_decorator">Section 6.6.2</a>. We have also written up a section on the transition from the old implementation into the new dynamic command implementation. See <a href="#_move_to_dynamic_command">Section 6.6.3</a>.</p>
 </div>
 <div class="sect3">
-<h4 id="_dynamic_interface_decorator">6.6.2. The Dynamic Interface Decorator</h4>
+<h4 id="_dynamic_interface_decorator">6.6.1. The Dynamic Interface Decorator</h4>
 <div class="paragraph">
 <p>A <code>@dynamic_interface</code> decorator adds a private static variable to a function or method. The variable name that is attributed is <code>__dynamic_interface</code> and it is used as a marker on the function.</p>
 </div>
@@ -2684,7 +2692,7 @@ class ControllerFactory(DeviceFactoryInterface):
 <p>When a Proxy subclass that implements an interface with methods decorated by the <code>@dynamic_interface</code> does overwrite one or more of the decorated methods statically, these methods will not be dynamically overwritten when loading the interface from the control server. A warning will be logged instead.</p>
 </div>
 <div class="paragraph">
-<p>The methods of the Proxy sub-class are added by the base class method <code>load_commands()</code>. This method asks the control server to send all device command definitions. The control server replies with a dictionary of user-defined methods and their names as keys. The commands are attributed to the Proxy class as methods with the key as their method names, unless the attribute name already exists in the Proxy and is not decorated as a dynamic interface.</p>
+<p>The methods of the Proxy sub-class are added by the base class method <code>load_commands()</code>. This method asks the control server to send all device command definitions. The control server replies with a dictionary of user-defined methods and their names as keys. The commands are attributed to the Proxy class as methods with the key as their method names, unless the attribute name already exists in the Proxy and is not decorated as a dynamic interface. The following code snippet demonstrates how the command methods are dynamic added/attributed to the Proxy class.</p>
 </div>
 <div class="listingblock">
 <div class="content">
@@ -2718,28 +2726,78 @@ class ControllerFactory(DeviceFactoryInterface):
 <div class="paragraph">
 <p>So, during the creation of the Proxy object, the command list is requested from the control server, and when the command is not already an attribute of the Proxy sub-class, its <code>client_call()</code> method is connected as a new method to the Proxy sub-class.</p>
 </div>
-<div class="ulist checklist">
-<ul class="checklist">
+<div class="paragraph">
+<p>The <code>ClientServerCommand</code> class is defined in the module <code>egse.command</code> and the <code>client_call()</code> method does something like in the code snippet below. The arguments that are passed into the function are first validated. This validation is done against the input given in the <em>command yaml file</em>. Then a command execution object is created which is sent to the control server. The response from the server is returned.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-python" data-lang="python">def client_call(self, other, *args, **kwargs):
+    try:
+        self.validate_arguments(*args, **kwargs)
+    except CommandError as e_ce:
+        logger.error(str(e_ce))
+        return None
+
+    ce = CommandExecution(self, *args, **kwargs)
+    return other.send(ce)</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>At the control server, the command execution is received by the Protocol class and the command and the given arguments are extracted. The Protocol then calls the <code>server_call()</code> method of the command with the arguments. The (simplified) code snippet below illustrates what happens in the <code>execute()</code> method of the Protocol class at the server. The <code>self</code> variable is the instance of the device protocol class.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-python" data-lang="python">def execute(self):
+    ...
+    ce = self.receive()
+    cmd = ce.get_cmd()
+    args = ce.get_args()
+    kwargs = ce.get_kwargs()
+    ...
+    cmd.server_call(self, *args, **kwargs)</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>The <code>server_call()</code> now calls the method from the Controller class that was associated with the <code>ClientServerCommand</code> while parsing and processing the <em>command yaml file</em>. That method is called with the arguments passed into the command execution.</p>
+</div>
+<div class="ulist">
+<ul>
 <li>
-<p><i class="fa fa-square-o"></i> describe how the <code>client_call()</code> method then works.</p>
+<p>[] make a graph illustrating the round-trip of the commanding chain.</p>
 </li>
 </ul>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_dynamic_command_decorator">6.6.3. The Dynamic Command Decorator</h4>
+<h4 id="_dynamic_command_decorator">6.6.2. The Dynamic Command Decorator</h4>
 <div class="paragraph">
-<p>One of the problems of the dynamic interface decorator is that during construction of the Proxy class, the control server must be contacted to request the list of commands, when this fails and the control server is not available, the Proxy is not functional.</p>
+<p>One of the problems of the dynamic interface decorator is that during construction of the Proxy class, the control server must be contacted to request the list of commands, when this fails and the control server is not available, the Proxy is not functional. You will first get a warning log message of the following type:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight nowrap"><code>&lt;Device&gt;Proxy could not connect to its control server at tcp://localhost:6700. No commands have been loaded.</code></pre>
+</div>
 </div>
 <div class="paragraph">
-<p>TBW: add more description of what the decorator is, what happens behind the scenes, how it is perceived on the client and on the server side etc&#8230;&#8203;</p>
+<p>When you then try to execute a command, e.g. <code>puna_proxy.get_speed()</code>, it will result in a <code>NotImplementedError</code>. The reason is that the commands have not been loaded from the control server and therefore the default interface method is executed resulting in this error.</p>
+</div>
+<div class="paragraph">
+<p>Mainly for this reason we have enhanced the dynamic commanding protocol with the <code>@dynamic_command</code> decorator. This decorator behaves differently on the client side (the Proxy) and the server side (the Controller). There is no need anymore to load the available commands from the control server, so, proxies for devices can be started when the control server is not yet running and will gracefully (re-)connect to the device when the control server becomes available.</p>
+</div>
+<div class="dlist">
+<dl>
+<dt class="hdlist1">NOTE</dt>
+<dd>
+<p>add more description of what the decorator is, what happens behind the scenes, how it is perceived on the client and on the server side etc&#8230;&#8203;</p>
+</dd>
+</dl>
 </div>
 <div class="paragraph">
 <p>So, since the <code>@dynamic_command</code> is the successor of the <code>@dynamic_interface</code>, how do we refactor our code for this new commanding scheme. That will be explained in the next section.</p>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_update_your_code_to_use_the_dynamic_command_decorator">6.6.4. Update your code to use the @dynamic_command decorator</h4>
+<h4 id="_move_to_dynamic_command">6.6.3. Update your code to use the @dynamic_command decorator</h4>
 <div class="ulist">
 <ul>
 <li>
@@ -2866,10 +2924,10 @@ use_format=True</pre>
 </div>
 </li>
 <li>
-<p><code>process_response</code> is a pure function<sup class="footnote">[<a id="_footnoteref_2" class="footnote" href="#_footnotedef_2" title="View footnote.">2</a>]</sup> to process the response from the device before it is returned</p>
+<p><code>process_response</code> is a pure function<sup class="footnote">[<a id="_footnoteref_2" class="footnote" href="#_footnotedef_2" title="View footnote.">2</a>]</sup> to process the response from the device before it is returned. This function shall take at least one keyword argument <code>response=</code> which is the response from the device as a byte array. The value that is returned by the function is eventually also the response of the command that was executed. This return value is device implementation specific and part of the interface definition.</p>
 </li>
 <li>
-<p><code>process_cmd_string</code> is a pure function to process the given command string to make it ready for sending to the device.</p>
+<p><code>process_cmd_string</code> is a pure function to process the given command string to make it ready for sending to the device. This function is called after the arguments to the command have been filled into the template string given by <code>cmd_string</code>. The function shall take a string as the only positional argument and return a string that will be sent to the device.</p>
 </li>
 </ul>
 </div>
@@ -3609,7 +3667,7 @@ with PunaProxy() as puna:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_the_system_under_test_sut">13. The System Under Test (SUT)</h2>
+<h2 id="sut">13. The System Under Test (SUT)</h2>
 <div class="sectionbody">
 <div class="ulist checklist">
 <ul class="checklist">
@@ -3639,7 +3697,7 @@ with PunaProxy() as puna:
 <p>The DPU Control Server (used to be called the DPU Simulator in older documents) acts like any other control server. It&#8217;s Protocol class (<code>DPUProtocol</code>) starts a <code>DPUController</code> which implements the commands that are defined in the <code>DPUInterface</code> class. Specific DPU commands are sent to the control server using the <code>DPUProxy</code> class. The <code>DPUProxy</code> class also implements the <code>DPUInterface</code>.</p>
 </div>
 <div class="paragraph">
-<p>The difference with normal device control servers lies in the additional sub-process which handles the communication with the N-FEE. This separate process, the <code>DPUProcessor</code>, is also started by the <code>DPUProtocol</code> and both the <code>DPUProcessor</code> and the <code>DPUController</code> communicate via three multiprocessing Queues, the command queue, the response queue, and a priority queue. The main task of the <code>DPUProcessor</code> is to communicate with the N-FEE, i.e. command it via SpaceWire RMAP Requests and retrieve housekeeping and data packets that are sent to the Storage manager. The command are passed by the <code>DPUController</code> through the command queue. Every readout cycle the <code>DPUProcessor</code> checks the command queue and passes any available command to the N-FEE as RMAP Requests.</p>
+<p>The difference with normal device control servers lies in the additional sub-process which handles the communication with the N-FEE. This separate process, the <code>DPUProcessor</code>, is also started by the <code>DPUProtocol</code> and both the <code>DPUProcessor</code> and the <code>DPUController</code> communicate via three multiprocessing Queues, the command queue, the response queue, and a priority command queue. The main task of the <code>DPUProcessor</code> is to communicate with the N-FEE, i.e. command it via SpaceWire RMAP Requests and retrieve housekeeping and data packets that are sent to the Storage manager. The commands that the <code>DPUProcessor</code> must execute are passed through the command queue by the <code>DPUController</code>. Every readout cycle the <code>DPUProcessor</code> checks the command queue and passes any available command to the N-FEE as an RMAP Request.</p>
 </div>
 <div class="paragraph">
 <p>Commands that are given on the Python prompt are by definition synchronous meaning when you call a function or execute a building block, the function or building block will wait for its return value before finishing. This is usually not a problem, because we most of the time have a pretty good idea how long a calculation or action will take. Most functions return within a few hundred milliseconds or less, which is practically immediate. When commanding the N-FEE however, things are more complicated. The N-FEE has strict timing when it comes to commanding. During the sync period (usually 6.25s unless commanded different) there is a slot of at least 2s at the end of the period, which is reserved for commanding. The sync period starts with a timecode packet followed by the N-FEE housekeeping packet. That takes just a few milliseconds. Depending on the N-FEE mode, we can then expect data packets filling up until 4s after the time code. There can be less or no data packets, leaving more time for commanding. Commanding the N-FEE is done by sending SpaceWire RMAP requests to the N-FEE in that 2s+ timeslot. When we send a command from the Python prompt to the N-FEE, it arrives in the command queue at the <code>DPUProcessor</code> and will be sent to the N-FEE in the next 2s+ command timeslot. When the Command enters the Queue at the beginning of the readout period, i.e. right after the timecode, maximum 4s will pass before the command is actually send to and executed on the N-FEE. All this time, the Python prompt will be blocked while waiting for the response. The next command can only be sent on return of the previous. So, we have two issues to solve, (1) the duration and blocking of all the steps in the commanding chain, and (2) sending more than just one command to the N-FEE in the same timeslot.</p>
@@ -3649,6 +3707,179 @@ with PunaProxy() as puna:
 </div>
 <div class="paragraph">
 <p>The priority queue is also a command queue, but the commands are not sent to the N-FEE. Instead, the commands are executed in the <code>DPUProcessor</code> and are used to either get information about the state of the N-FEE or set/get the internal state of the <code>DPUProcessor</code>.  The state of the N-FEE is mirrored and kept up-to-date by the <code>DPUProcessor</code> during the readout cycle. Priority commands are typically to request e.g. the N-FEE mode, or to set an internal DPU parameter. While the command queue is checked only during the allowed RMAP communication period, the priority queue is checked and executed several times during the readout cycle.</p>
+</div>
+<div class="paragraph">
+<p>The DPU Processor has two ZeroMQ message queues on which it publishes specific information. One message queue is the data distribution queue on which the following information is published. All messages published on this queue are multipart messages with the following IDs to which you can subscribe.</p>
+</div>
+<div class="dlist">
+<dl>
+<dt class="hdlist1">SYNC_TIMECODE</dt>
+<dd>
+<p>Whenever the N-FEE sends a timecode to the DPU, the timecode is published on the message queue as a tuple with (timecode, timestamp). The timecode is an integer number cycled on the sequence from 0 to 63 and incremented on every sync pulse, both 200ms and 400ms pulses. Since the N-FEE does not have an internal clock that keeps the time, we associate a timestamp with the time of reception of the timecode by the DPU Processor. The timecode itself is created and send by the N-FEE to the DPU over the SpaceWire interface within 1μs after receiving the sync pulse from the AEU. Reception at the DPU Processor, creating the timestamp etc. results in a delay of approximate 15ms.</p>
+</dd>
+<dt class="hdlist1">SYNC_HK_PACKET</dt>
+<dd>
+<p>Right after the timecode, the N-FEE sends out a housekeeping packet. When this packet is received at the DPU Processor, it is published on the data distribution message queue as a tuple with (HousekeepingPacket, timestamp). Again, the timestamp is the time of reception at the DPU Processor.</p>
+</dd>
+<dt class="hdlist1">SYNC_DATA_PACKET</dt>
+<dd>
+<p>When the N-FEE is in FULL_IMAGE mode with <code>digitise_en=1</code> it will send out data packets containing the image data from the readout. Depending on the number of rows that are digitised the N-FEE will send out a variable number of data packets. Each of these packets are published on the data distribution queue as a tuple with (DataPacket, timestamp). The DataPackets can be of type DataDataPackets or OverscanDataPackets.</p>
+</dd>
+<dt class="hdlist1">N_FEE_REGISTER_MAP</dt>
+<dd>
+<p>At the start of every readout cycle, the DPU Processor puts a Numpy array of type UINT8 on the message queue. This Numpy array is the memory map that contains and defines the Register Map. Note, that the data from this memory map is a copy, a mirror, of the memory map in the N-FEE.</p>
+</dd>
+<dt class="hdlist1">NUM_CYCLES</dt>
+<dd>
+<p>The internal DPU Processor counter <code>num_cycles</code> is used to allow the user to command a number of readout cycles in full image mode. This counter is needed because the N-FEE has no concept of '<em>number-of-images</em>', i.e. you can not ash the N-FEE to take 10 images.Nevertheless, we wanted this functionality in our test scripts, and that is what <code>num_cycles</code> is. If you command <code>num_cycles=10</code> the N-FEE will be put into full image mode, generate image data for 10 readout cycles, and after that instructed to go to DUMP mode (see <a href="#dump-mode">[dump-mode]</a>).</p>
+</dd>
+</dl>
+</div>
+<div class="paragraph">
+<p>The data distribution message queue is used by processes that need to handle image data like the DPU GUI. There is a second message queue used by the DPU Processor to publish monitoring information. In addition to SYNC_TIMECODE, SYNC_HK_PACKET, NUM_CYCLES, the following information is published on this message queue:</p>
+</div>
+<div class="dlist">
+<dl>
+<dt class="hdlist1">HDF5_FILENAMES</dt>
+<dd>
+<p>A list of HDF5 path names that are ready and available for processing.</p>
+</dd>
+<dt class="hdlist1">SYNC_ERROR_FLAGS</dt>
+<dd>
+<p>On each readout (every 200ms and 400ms pulse), after all housekeeping and data packets have been received from the N-FEE, the DPU Processor reads out the housekeeping memory area from the N-FEE. This memory area is at that time just updated by the N-FEE and therefore can contain new information with respect to the beginning of the readout. Especially the error flags –which are in the housekeeping information– are of interest because they can indicate errors that happened during the readout while the original HK packet might not yet contain any errors. The error flags are sent as a tuple with (error flags, frame counter, timestamp). The error flags is an integer that represents a bitfield of (currently) 16 flags.</p>
+</dd>
+</dl>
+</div>
+<div class="paragraph">
+<p>Any process can subscribe to the monitoring queue easily by using the DPUMonitoring class. For example, the following code snippet connects to the DPU Processor monitoring queue, waits until the next timecode is received, then executes some code and waits for the next timecode.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-python" data-lang="python">from egse.dpu import DPUMonitoring
+
+with DPUMonitoring() as moni:
+    while moni.wait_for_timecode():
+        ...</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>If you need more control over the monitoring and the actions, you can subscribe to the DPU Processor monitoring queue directly. The following code snippet waits for an error flag and raises an alert message on Slack whenever the error flag is not 0:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-python" data-lang="python">import zmq
+import pickle
+from egse.zmq import MessageIdentifier
+from egse.slack import send_alert
+
+
+hostname = "localhost"
+port = 30102
+sub_id = MessageIdentifier.SYNC_ERROR_FLAGS.to_bytes(1, byteorder='big')
+context = zmq.Context()
+
+receiver = context.socket(zmq.SUB)
+receiver.connect(f"tcp://{hostname}:{port}")
+receiver.subscribe(sub_id)
+
+while True:
+    try:
+        sync_id, message = receiver.recv_multipart()
+        sync_id = int.from_bytes(sync_id, byteorder='big')
+        error_flags, frame_counter, timestamp = pickle.loads(message)
+        msg = f"{MessageIdentifier(sync_id).name}, {error_flags = } for {frame_counter = }"
+        print(msg)
+        if error_flags:
+           send_alert(msg)
+    except KeyboardInterrupt:
+        print("KeyboardInterrupt caught!")
+        break
+
+receiver.close(linger=0)</code></pre>
+</div>
+</div>
+<div class="sect3">
+<h4 id="inner-loop">13.1.1. The Inner Loop</h4>
+<div class="paragraph">
+<p>The inner loop is the workhorse of the DPUProcessor, it has three main functions (1) reading information and data that is provided by the N-FEE, (2) sending that data to the storage manager, and (3) send commands to the N-FEE. In pseudo language, the inner loop performs the following functions:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code>while True:
+    try:
+        timecode = read_timecode()  <i class="conum" data-value="1"></i><b>(1)</b>
+        save_timecode(timecode)
+
+        hk_packet = read_housekeeping_packet()  <i class="conum" data-value="2"></i><b>(2)</b>
+        save_housekeeping(hk_packet)
+
+        update_internals()  <i class="conum" data-value="3"></i><b>(3)</b>
+        process_high_priority_commands()  <i class="conum" data-value="4"></i><b>(4)</b>
+
+        if FULL_IMAGE_MODE:  <i class="conum" data-value="5"></i><b>(5)</b>
+            until last_data_packet:
+                data_packet = read_data_packet()
+                save_data_packet(data_packet)
+
+        hk_data = read_hk_data()  <i class="conum" data-value="6"></i><b>(6)</b>
+        save_hk_data(hk_data)
+
+        for each cycle:  <i class="conum" data-value="7"></i><b>(7)</b>
+            save_attributes(obsid, num_cycles, register_map)
+            publish_data_and_monitoring_info()
+    except:
+        report error but do not abort <i class="conum" data-value="8"></i><b>(8)</b>
+
+    process_high_priority_commands()  <i class="conum" data-value="9"></i><b>(9)</b>
+
+    if commands_on_queue:
+        send_commands_to_nfee()  <i class="conum" data-value="10"></i><b>(10)</b></code></pre>
+</div>
+</div>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>The first information that the N-FEE sends out is the timecode. The timecode is an integer that cycles through the values from 0 to 63 (a six bit number). The timecode is sent within 2μs from the sync pulse that the N-FEE receives from the N-AEU, but it is not associated with a timestamp. Since the N-FEE has no concept of on-board time, the DPUProcessor will have to associate a timestamp with the timecode. That timestamp is the time of reception of the timecode and it will be typically a few ms delayed. This timestamp is saved in the HDF5 file as an attribute of the timecode.</p>
+</li>
+<li>
+<p>The next thing the N-FEE sends out over the SpaceWire interface is a housekeeping packet. It is sent immediately after the timecode. Also here, the DPUProcessor generates a timestamp at reception and saves this timestamp together with the complete housekeeping packet.</p>
+</li>
+<li>
+<p>The DPUProcessor keeps internal information and bookkeeping parameters in order to mimic the state of the N-FEE FPGA. This information is updated from the register map and is dependent on where we are in the readout cycle, e.g. start of the cycle, long-or-short pulse, etc.</p>
+</li>
+<li>
+<p>Since the DPUProcessor keeps itself in sync with the state of the N-FEE, there is no need to consult the N-FEE about its state over an expensive SpaceWire RMAP request. So, if a user wants to know the operating mode of the N-FEE or other state information like e.g. the current frame number or the synchronisation mode,
+this information comes directly from the DPUProcessor internal state instead of passing the request through to the N-FEE. That is what high priority commands do, they do not wait for the safe time range where we can send RMAP commands, but return immediately with the answer loaded from the internal state of the DPUProcessor.</p>
+</li>
+<li>
+<p>When the N-FEE is in full image mode, the CCDs are read out and image data is sent out over the SpaceWire. Depending on the amount of data this can take up to about 4 seconds (a little bit more is possible). The amount of image data depends on a few register parameters, namely, <code>v_start</code> and <code>v_end</code> define the number of rows that are read out, <code>h_end</code> defines the number of columns to read out per CCD side, <code>sensor_sel</code> specifies which CCD side has to be readout (or both). So, we can read out only part of the CCDs and this will result in less data being transferred and less time to spent in this loop. Reading out only part of the CCD is called <em>partial readout mode</em>.</p>
+</li>
+<li>
+<p>When the N-FEE has finished reading out the CCDs and sending out the image data, the housekeeping area in the N-FEE memory map will be updated with the current state of the HK parameters. This updated housekeeping will be important especially for status information and error flags. The error flags can contain information about transmission buffers that overflow, EDAC<sup class="footnote">[<a id="_footnoteref_4" class="footnote" href="#_footnotedef_4" title="View footnote.">4</a>]</sup>, link errors etc. So, at this point we read out the updated housekeeping data and stores that next to the original HK packet.</p>
+</li>
+<li>
+<p>For each readout cycle we have some additional things to do before we will send RMAP commands to the N-FEE. This pseudo statement might be a little misleading, it&#8217;s not a <code>foreach</code> loop, but a condition that we need to execute the two enclosing statements for every readout cycle (aka frame). So, for each frame we will save important attributes that are used by the data processing, and we will also publish the data we have and any required additional information on the message queue. Other processes can subscribe to the message queue to be informed about the state of the N-FEE or to receive data for visualisation or processing (e.g. the DPU GUI or the FITS generation).</p>
+</li>
+<li>
+<p>In principle, the pseudo commands that we have described upto now define one complete cycle of N-FEE information, i.e. timecode, housekeeping, and data. If we would never have to change the state of the N-FEE and would not send commands over the SpaceWire, the loop would repeat here. Of course, we want to do other things and communicate with the N-FEE and that will be described in the following paragraphs 8-10, but also important is to understand that things can go wrong and exceptions can be raised because of SpaceWire hick-ups, timeouts, disk full errors from the storage, and many more. That is why we put all the previous commands in a <code>try</code> clause (the statements between the <code>try</code> and <code>except</code> keywords). Whenever something goes wrong and an exception is raised, the <code>except</code> clause is executed and the error is logged with possibly extra debugging information. At this point we <strong>do not</strong> (as is usually done elsewhere) abort and exit the inner loop, but we continue with the execution of the remaining statements.</p>
+<div class="paragraph">
+<p>We do not want to abort because the DPUProcessor should never stop running. The idea is that, whenever an error occurs, the remaining statements from the <code>try</code> clause are skipped, the error is reported, we have the opportunity for high priority commands or to send commands to the N-FEE, and then cycle through until the next timecode. In case of a link corruption or when the DPU to N-FEE communication is out of sync, it might take a few loops to recover on the next timecode. But, eventually, a next timecode will be detected and the DPUProcessor can recover its communication and its state.</p>
+</div>
+<div class="paragraph">
+<p>If we do not receive information from the N-FEE on the SpaceWire, this is handled as an exception and a <code>NoBytesReceivedError</code> will be raised, also, waiting for the next timecode can raise a <code>TimecodeTimeoutError</code>. In these two cases, we will fall into the <code>except</code> clause, but no error will be logged and the execution will continue as normal after the <code>except</code> clause. This scenario will happen very frequently while waiting for SpaceWire packets or for the next timecode.</p>
+</div>
+</li>
+<li>
+<p>After receiving the image data and updated housekeeping its time again to process any high priority commands from the queue.</p>
+</li>
+<li>
+<p>The last thing to do before repeating the inner loop is to send any RMAP commands that are waiting on the command queue. One of the first commands that will be sent by default is to clear any error flags, after that a command will be read from the queue, processed and send to the N-FEE as an RMAP request. All commands that are sent to the N-FEE are also saved in the HDF5 file.</p>
+</li>
+</ol>
+</div>
+<div class="paragraph">
+<p>That concludes our inner loop for the DPUProcessor. Please keep in mind that this description is a simplification of the real inner loop and you will need to carefully study the code before making any changes.</p>
+</div>
 </div>
 </div>
 <div class="sect2">
@@ -4566,7 +4797,7 @@ end_observation()</code></pre>
 <p>Let&#8217;s build our own simple Task GUI and start with the most stated and useless function, <em>Hello, World!</em>. We will eventually build a Task GUI with tasks of increasing complexity and guide you through the different steps.</p>
 </div>
 <div class="paragraph">
-<p>Create a folder <code>yakka<sup class="footnote">[<a id="_footnoteref_4" class="footnote" href="#_footnotedef_4" title="View footnote.">4</a>]</sup></code> that will be our Task GUI package. In the folder create an empty file <code>__init__.py</code> and a file named <code>hello.py</code>.</p>
+<p>Create a folder <code>yakka<sup class="footnote">[<a id="_footnoteref_5" class="footnote" href="#_footnotedef_5" title="View footnote.">5</a>]</sup></code> that will be our Task GUI package. In the folder create an empty file <code>__init__.py</code> and a file named <code>hello.py</code>.</p>
 </div>
 <div class="listingblock">
 <div class="content">
@@ -5523,13 +5754,16 @@ Below this point we have miscellaneous topics that still need their place in the
 <a href="#_footnoteref_3">3</a>. Both <em>Setup</em> and <em>configuration</em> are overloaded words, if not clear from the context, I&#8217;ll try to explain them when used.
 </div>
 <div class="footnote" id="_footnotedef_4">
-<a href="#_footnoteref_4">4</a>. 'yakka' means 'work' in informal Australian English
+<a href="#_footnoteref_4">4</a>. EDAC stands for Error Detection And Correction
+</div>
+<div class="footnote" id="_footnotedef_5">
+<a href="#_footnoteref_5">5</a>. 'yakka' means 'work' in informal Australian English
 </div>
 </div>
 <div id="footer">
 <div id="footer-text">
-Version 1.5<br>
-Last updated 2023-04-03 13:57:31 +0200
+Version 1.6<br>
+Last updated 2023-05-04 22:33:33 +0200
 </div>
 </div>
 <script type="text/x-mathjax-config">

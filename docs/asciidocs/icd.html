@@ -515,8 +515,8 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <h1>Common-EGSE : Interface Control Document</h1>
 <div class="details">
 <span id="author" class="author">Rik Huygen</span><br>
-<span id="revnumber">version 0.1,</span>
-<span id="revdate">21/02/2023</span>
+<span id="revnumber">version 0.2,</span>
+<span id="revdate">04/05/2023</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -548,6 +548,16 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <div class="sectionbody">
 <div class="dlist">
 <dl>
+<dt class="hdlist1">04/05/2023 — v0.2</dt>
+<dd>
+<div class="ulist">
+<ul>
+<li>
+<p>Updated the HDF5 format version information, see <a href="#format-version">[format-version]</a>.</p>
+</li>
+</ul>
+</div>
+</dd>
 <dt class="hdlist1">21/02/2023 — v0.1</dt>
 <dd>
 <div class="ulist">
@@ -1251,8 +1261,8 @@ Total size of attributes: 64 bytes</pre>
 </div>
 </div>
 </div>
-<div class="paragraph">
-<p>Up to now, the format versions have changed from 2.0 to 2.4 as follows:</p>
+<div id="format-version" class="paragraph">
+<p>Up to now, the format versions have changed from 2.0 to 2.5<sup class="footnote">[<a id="_footnoteref_1" class="footnote" href="#_footnotedef_1" title="View footnote.">1</a>]</sup> as follows:</p>
 </div>
 <div class="listingblock">
 <div class="content">
@@ -1260,7 +1270,8 @@ Total size of attributes: 64 bytes</pre>
 2.1 - Added obsid as a dataset to the HDF5 file
 2.2 - Multiple commands can now be saved under the same frame number
 2.3 - introduced /dpu/num_cycles attribute
-2.4 - introduced /dpu/slicing_num_cycles attribute</pre>
+2.4 - introduced /dpu/slicing_num_cycles attribute
+2.5 - introduced /{frame number}/hk_data dataset</pre>
 </div>
 </div>
 <div class="paragraph">
@@ -1566,7 +1577,7 @@ array([ 17, 187,   0, ...,   0,   0,   0], dtype=uint8)</pre>
 </tbody>
 </table>
 <div class="paragraph">
-<p><strong>Screenshot 1</strong> shows the Register Map for this cycle. There is only one Register Map per HDF5 file. The register map is the status at the time the timecode is sent for the first readout frame. Commanding is possible at the end of any readout, but the changes are only activated in the FPGA on a long pulse of 400ms. That is when also the register map is stored in the HDF5 file. There are two register parameters<sup class="footnote">[<a id="_footnoteref_1" class="footnote" href="#_footnotedef_1" title="View footnote.">1</a>]</sup> that are updated on every pulse, long and short pulse. Those parameters are <code>sensor_sel</code> and <code>ccd_readout_order</code> and because of this more regular update possibility these parameters are also available as attributes in each of the <code>data</code> groups. So, in principle, the CCD side can be changed at every readout, and this will be recorded in the <code>sensor_sel</code> attribute to the <code>data</code> group. Above the register map table, you can see an empty text field. In this field you can type a string pattern to filter the parameters shown in the table. The string pattern shall be a simple string or a regular expression and it will match either the register name or the parameter name. For example, to list only parameters for register '3' enter 'reg_3_config' in this search field, to see all windowing size parameters you can enter something like <code>win.*size</code>.</p>
+<p><strong>Screenshot 1</strong> shows the Register Map for this cycle. There is only one Register Map per HDF5 file. The register map is the status at the time the timecode is sent for the first readout frame. Commanding is possible at the end of any readout, but the changes are only activated in the FPGA on a long pulse of 400ms. That is when also the register map is stored in the HDF5 file. There are two register parameters<sup class="footnote">[<a id="_footnoteref_2" class="footnote" href="#_footnotedef_2" title="View footnote.">2</a>]</sup> that are updated on every pulse, long and short pulse. Those parameters are <code>sensor_sel</code> and <code>ccd_readout_order</code> and because of this more regular update possibility these parameters are also available as attributes in each of the <code>data</code> groups. So, in principle, the CCD side can be changed at every readout, and this will be recorded in the <code>sensor_sel</code> attribute to the <code>data</code> group. Above the register map table, you can see an empty text field. In this field you can type a string pattern to filter the parameters shown in the table. The string pattern shall be a simple string or a regular expression and it will match either the register name or the parameter name. For example, to list only parameters for register '3' enter 'reg_3_config' in this search field, to see all windowing size parameters you can enter something like <code>win.*size</code>.</p>
 </div>
 <div class="paragraph">
 <p><strong>Screenshot 2</strong> shows the view of the housekeeping packet for that readout frame. The housekeeping packet is sent for each sync pulse (long and short) right after the timecode. So, you will find a <code>hk</code> dataset for each of the readout frames. The housekeeping view currently only shows the data as raw values, no conversion to engineering values like voltages or temperatures is done at this stage.</p>
@@ -1947,13 +1958,16 @@ array([ 17, 187,   0, ...,   0,   0,   0], dtype=uint8)</pre>
 <div id="footnotes">
 <hr>
 <div class="footnote" id="_footnotedef_1">
-<a href="#_footnoteref_1">1</a>. There are actually more register parameters that are updated on every sync pulse, but those are all windowing parameters that are not used in camera testing.
+<a href="#_footnoteref_1">1</a>. Format version 2.5 was introduced on 24/04/2023, so the HDF5 examples are not yet updated for this format version.
+</div>
+<div class="footnote" id="_footnotedef_2">
+<a href="#_footnoteref_2">2</a>. There are actually more register parameters that are updated on every sync pulse, but those are all windowing parameters that are not used in camera testing.
 </div>
 </div>
 <div id="footer">
 <div id="footer-text">
-Version 0.1<br>
-Last updated 2023-02-21 19:58:27 +0100
+Version 0.2<br>
+Last updated 2023-05-04 22:34:03 +0200
 </div>
 </div>
 <script>
