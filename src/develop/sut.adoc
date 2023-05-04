@@ -1,3 +1,4 @@
+[#sut]
 ==	The System Under Test (SUT)
 
 - [x] Commanding is the same as all other devices, DPU Control Server and Controller, Proxy, etc
@@ -11,13 +12,142 @@
 
 The DPU Control Server (used to be called the DPU Simulator in older documents) acts like any other control server. It's Protocol class (`DPUProtocol`) starts a `DPUController` which implements the commands that are defined in the `DPUInterface` class. Specific DPU commands are sent to the control server using the `DPUProxy` class. The `DPUProxy` class also implements the `DPUInterface`.
 
-The difference with normal device control servers lies in the additional sub-process which handles the communication with the N-FEE. This separate process, the `DPUProcessor`, is also started by the `DPUProtocol` and both the `DPUProcessor` and the `DPUController` communicate via three multiprocessing Queues, the command queue, the response queue, and a priority queue. The main task of the `DPUProcessor` is to communicate with the N-FEE, i.e. command it via SpaceWire RMAP Requests and retrieve housekeeping and data packets that are sent to the Storage manager. The command are passed by the `DPUController` through the command queue. Every readout cycle the `DPUProcessor` checks the command queue and passes any available command to the N-FEE as RMAP Requests.
+The difference with normal device control servers lies in the additional sub-process which handles the communication with the N-FEE. This separate process, the `DPUProcessor`, is also started by the `DPUProtocol` and both the `DPUProcessor` and the `DPUController` communicate via three multiprocessing Queues, the command queue, the response queue, and a priority command queue. The main task of the `DPUProcessor` is to communicate with the N-FEE, i.e. command it via SpaceWire RMAP Requests and retrieve housekeeping and data packets that are sent to the Storage manager. The commands that the `DPUProcessor` must execute are passed through the command queue by the `DPUController`. Every readout cycle the `DPUProcessor` checks the command queue and passes any available command to the N-FEE as an RMAP Request.
 
 Commands that are given on the Python prompt are by definition synchronous meaning when you call a function or execute a building block, the function or building block will wait for its return value before finishing. This is usually not a problem, because we most of the time have a pretty good idea how long a calculation or action will take. Most functions return within a few hundred milliseconds or less, which is practically immediate. When commanding the N-FEE however, things are more complicated. The N-FEE has strict timing when it comes to commanding. During the sync period (usually 6.25s unless commanded different) there is a slot of at least 2s at the end of the period, which is reserved for commanding. The sync period starts with a timecode packet followed by the N-FEE housekeeping packet. That takes just a few milliseconds. Depending on the N-FEE mode, we can then expect data packets filling up until 4s after the time code. There can be less or no data packets, leaving more time for commanding. Commanding the N-FEE is done by sending SpaceWire RMAP requests to the N-FEE in that 2s+ timeslot. When we send a command from the Python prompt to the N-FEE, it arrives in the command queue at the `DPUProcessor` and will be sent to the N-FEE in the next 2s+ command timeslot. When the Command enters the Queue at the beginning of the readout period, i.e. right after the timecode, maximum 4s will pass before the command is actually send to and executed on the N-FEE. All this time, the Python prompt will be blocked while waiting for the response. The next command can only be sent on return of the previous. So, we have two issues to solve, (1) the duration and blocking of all the steps in the commanding chain, and (2) sending more than just one command to the N-FEE in the same timeslot.
 
 XXXXX: add here how we solved this!
 
 The priority queue is also a command queue, but the commands are not sent to the N-FEE. Instead, the commands are executed in the `DPUProcessor` and are used to either get information about the state of the N-FEE or set/get the internal state of the `DPUProcessor`.  The state of the N-FEE is mirrored and kept up-to-date by the `DPUProcessor` during the readout cycle. Priority commands are typically to request e.g. the N-FEE mode, or to set an internal DPU parameter. While the command queue is checked only during the allowed RMAP communication period, the priority queue is checked and executed several times during the readout cycle.
+
+The DPU Processor has two ZeroMQ message queues on which it publishes specific information. One message queue is the data distribution queue on which the following information is published. All messages published on this queue are multipart messages with the following IDs to which you can subscribe.
+
+SYNC_TIMECODE:: Whenever the N-FEE sends a timecode to the DPU, the timecode is published on the message queue as a tuple with (timecode, timestamp). The timecode is an integer number cycled on the sequence from 0 to 63 and incremented on every sync pulse, both 200ms and 400ms pulses. Since the N-FEE does not have an internal clock that keeps the time, we associate a timestamp with the time of reception of the timecode by the DPU Processor. The timecode itself is created and send by the N-FEE to the DPU over the SpaceWire interface within 1μs after receiving the sync pulse from the AEU. Reception at the DPU Processor, creating the timestamp etc. results in a delay of approximate 15ms.
+
+SYNC_HK_PACKET:: Right after the timecode, the N-FEE sends out a housekeeping packet. When this packet is received at the DPU Processor, it is published on the data distribution message queue as a tuple with (HousekeepingPacket, timestamp). Again, the timestamp is the time of reception at the DPU Processor.
+
+SYNC_DATA_PACKET:: When the N-FEE is in FULL_IMAGE mode with `digitise_en=1` it will send out data packets containing the image data from the readout. Depending on the number of rows that are digitised the N-FEE will send out a variable number of data packets. Each of these packets are published on the data distribution queue as a tuple with (DataPacket, timestamp). The DataPackets can be of type DataDataPackets or OverscanDataPackets.
+
+N_FEE_REGISTER_MAP:: At the start of every readout cycle, the DPU Processor puts a Numpy array of type UINT8 on the message queue. This Numpy array is the memory map that contains and defines the Register Map. Note, that the data from this memory map is a copy, a mirror, of the memory map in the N-FEE.
+
+NUM_CYCLES:: The internal DPU Processor counter `num_cycles` is used to allow the user to command a number of readout cycles in full image mode. This counter is needed because the N-FEE has no concept of '_number-of-images_', i.e. you can not ash the N-FEE to take 10 images.Nevertheless, we wanted this functionality in our test scripts, and that is what `num_cycles` is. If you command `num_cycles=10` the N-FEE will be put into full image mode, generate image data for 10 readout cycles, and after that instructed to go to DUMP mode (see <<dump-mode>>).
+
+The data distribution message queue is used by processes that need to handle image data like the DPU GUI. There is a second message queue used by the DPU Processor to publish monitoring information. In addition to SYNC_TIMECODE, SYNC_HK_PACKET, NUM_CYCLES, the following information is published on this message queue:
+
+HDF5_FILENAMES:: A list of HDF5 path names that are ready and available for processing.
+
+SYNC_ERROR_FLAGS:: On each readout (every 200ms and 400ms pulse), after all housekeeping and data packets have been received from the N-FEE, the DPU Processor reads out the housekeeping memory area from the N-FEE. This memory area is at that time just updated by the N-FEE and therefore can contain new information with respect to the beginning of the readout. Especially the error flags –which are in the housekeeping information– are of interest because they can indicate errors that happened during the readout while the original HK packet might not yet contain any errors. The error flags are sent as a tuple with (error flags, frame counter, timestamp). The error flags is an integer that represents a bitfield of (currently) 16 flags.
+
+Any process can subscribe to the monitoring queue easily by using the DPUMonitoring class. For example, the following code snippet connects to the DPU Processor monitoring queue, waits until the next timecode is received, then executes some code and waits for the next timecode.
+
+[source,python]
+----
+from egse.dpu import DPUMonitoring
+
+with DPUMonitoring() as moni:
+    while moni.wait_for_timecode():
+        ...
+----
+
+If you need more control over the monitoring and the actions, you can subscribe to the DPU Processor monitoring queue directly. The following code snippet waits for an error flag and raises an alert message on Slack whenever the error flag is not 0:
+[source,python]
+----
+import zmq
+import pickle
+from egse.zmq import MessageIdentifier
+from egse.slack import send_alert
+
+
+hostname = "localhost"
+port = 30102
+sub_id = MessageIdentifier.SYNC_ERROR_FLAGS.to_bytes(1, byteorder='big')
+context = zmq.Context()
+
+receiver = context.socket(zmq.SUB)
+receiver.connect(f"tcp://{hostname}:{port}")
+receiver.subscribe(sub_id)
+
+while True:
+    try:
+        sync_id, message = receiver.recv_multipart()
+        sync_id = int.from_bytes(sync_id, byteorder='big')
+        error_flags, frame_counter, timestamp = pickle.loads(message)
+        msg = f"{MessageIdentifier(sync_id).name}, {error_flags = } for {frame_counter = }"
+        print(msg)
+        if error_flags:
+           send_alert(msg)
+    except KeyboardInterrupt:
+        print("KeyboardInterrupt caught!")
+        break
+
+receiver.close(linger=0)
+----
+
+[#inner-loop]
+==== The Inner Loop
+
+The inner loop is the workhorse of the DPUProcessor, it has three main functions (1) reading information and data that is provided by the N-FEE, (2) sending that data to the storage manager, and (3) send commands to the N-FEE. In pseudo language, the inner loop performs the following functions:
+
+[source]
+----
+while True:
+    try:
+        timecode = read_timecode()  <1>
+        save_timecode(timecode)
+
+        hk_packet = read_housekeeping_packet()  <2>
+        save_housekeeping(hk_packet)
+
+        update_internals()  <3>
+        process_high_priority_commands()  <4>
+
+        if FULL_IMAGE_MODE:  <5>
+            until last_data_packet:
+                data_packet = read_data_packet()
+                save_data_packet(data_packet)
+
+        hk_data = read_hk_data()  <6>
+        save_hk_data(hk_data)
+
+        for each cycle:  <7>
+            save_attributes(obsid, num_cycles, register_map)
+            publish_data_and_monitoring_info()
+    except:
+        report error but do not abort <8>
+
+    process_high_priority_commands()  <9>
+
+    if commands_on_queue:
+        send_commands_to_nfee()  <10>
+
+----
+1. The first information that the N-FEE sends out is the timecode. The timecode is an integer that cycles through the values from 0 to 63 (a six bit number). The timecode is sent within 2μs from the sync pulse that the N-FEE receives from the N-AEU, but it is not associated with a timestamp. Since the N-FEE has no concept of on-board time, the DPUProcessor will have to associate a timestamp with the timecode. That timestamp is the time of reception of the timecode and it will be typically a few ms delayed. This timestamp is saved in the HDF5 file as an attribute of the timecode.
+
+2. The next thing the N-FEE sends out over the SpaceWire interface is a housekeeping packet. It is sent immediately after the timecode. Also here, the DPUProcessor generates a timestamp at reception and saves this timestamp together with the complete housekeeping packet.
+
+3. The DPUProcessor keeps internal information and bookkeeping parameters in order to mimic the state of the N-FEE FPGA. This information is updated from the register map and is dependent on where we are in the readout cycle, e.g. start of the cycle, long-or-short pulse, etc.
+
+4. Since the DPUProcessor keeps itself in sync with the state of the N-FEE, there is no need to consult the N-FEE about its state over an expensive SpaceWire RMAP request. So, if a user wants to know the operating mode of the N-FEE or other state information like e.g. the current frame number or the synchronisation mode,
+this information comes directly from the DPUProcessor internal state instead of passing the request through to the N-FEE. That is what high priority commands do, they do not wait for the safe time range where we can send RMAP commands, but return immediately with the answer loaded from the internal state of the DPUProcessor.
+
+5. When the N-FEE is in full image mode, the CCDs are read out and image data is sent out over the SpaceWire. Depending on the amount of data this can take up to about 4 seconds (a little bit more is possible). The amount of image data depends on a few register parameters, namely, `v_start` and `v_end` define the number of rows that are read out, `h_end` defines the number of columns to read out per CCD side, `sensor_sel` specifies which CCD side has to be readout (or both). So, we can read out only part of the CCDs and this will result in less data being transferred and less time to spent in this loop. Reading out only part of the CCD is called _partial readout mode_.
+
+6. When the N-FEE has finished reading out the CCDs and sending out the image data, the housekeeping area in the N-FEE memory map will be updated with the current state of the HK parameters. This updated housekeeping will be important especially for status information and error flags. The error flags can contain information about transmission buffers that overflow, EDACfootnote:[EDAC stands for Error Detection And Correction], link errors etc. So, at this point we read out the updated housekeeping data and stores that next to the original HK packet.
+
+7. For each readout cycle we have some additional things to do before we will send RMAP commands to the N-FEE. This pseudo statement might be a little misleading, it's not a `foreach` loop, but a condition that we need to execute the two enclosing statements for every readout cycle (aka frame). So, for each frame we will save important attributes that are used by the data processing, and we will also publish the data we have and any required additional information on the message queue. Other processes can subscribe to the message queue to be informed about the state of the N-FEE or to receive data for visualisation or processing (e.g. the DPU GUI or the FITS generation).
+
+8. In principle, the pseudo commands that we have described upto now define one complete cycle of N-FEE information, i.e. timecode, housekeeping, and data. If we would never have to change the state of the N-FEE and would not send commands over the SpaceWire, the loop would repeat here. Of course, we want to do other things and communicate with the N-FEE and that will be described in the following paragraphs 8-10, but also important is to understand that things can go wrong and exceptions can be raised because of SpaceWire hick-ups, timeouts, disk full errors from the storage, and many more. That is why we put all the previous commands in a `try` clause (the statements between the `try` and `except` keywords). Whenever something goes wrong and an exception is raised, the `except` clause is executed and the error is logged with possibly extra debugging information. At this point we *do not* (as is usually done elsewhere) abort and exit the inner loop, but we continue with the execution of the remaining statements.
++
+We do not want to abort because the DPUProcessor should never stop running. The idea is that, whenever an error occurs, the remaining statements from the `try` clause are skipped, the error is reported, we have the opportunity for high priority commands or to send commands to the N-FEE, and then cycle through until the next timecode. In case of a link corruption or when the DPU to N-FEE communication is out of sync, it might take a few loops to recover on the next timecode. But, eventually, a next timecode will be detected and the DPUProcessor can recover its communication and its state.
++
+If we do not receive information from the N-FEE on the SpaceWire, this is handled as an exception and a `NoBytesReceivedError` will be raised, also, waiting for the next timecode can raise a `TimecodeTimeoutError`. In these two cases, we will fall into the `except` clause, but no error will be logged and the execution will continue as normal after the `except` clause. This scenario will happen very frequently while waiting for SpaceWire packets or for the next timecode.
+
+9. After receiving the image data and updated housekeeping its time again to process any high priority commands from the queue.
+
+10. The last thing to do before repeating the inner loop is to send any RMAP commands that are waiting on the command queue. One of the first commands that will be sent by default is to clear any error flags, after that a command will be read from the queue, processed and send to the N-FEE as an RMAP request. All commands that are sent to the N-FEE are also saved in the HDF5 file.
+
+That concludes our inner loop for the DPUProcessor. Please keep in mind that this description is a simplification of the real inner loop and you will need to carefully study the code before making any changes.
+
 
 === The N-FEE Simulator
 
