@@ -1,0 +1,98 @@
+== Software Overview
+
+The PLATO commanding during ground-based testing resides upon three GitHub repositories:
+
+* https://github.com/IvS-KULeuven/plato-common-egse[plato-common-egse] (https://ivs-kuleuven.github.io/plato-cgse-doc/[link to documentation])
+* https://github.com/IvS-KULeuven/plato-test-scripts[plato-test-scripts] (https://ivs-kuleuven.github.io/plato-cgse-doc/[link to documentation])
+* https://github.com/IvS-KULeuven/plato-cgse-conf[plato-cgse-conf]
+
+Amongst others, the documentation will point you to the installation guides, list the low-level commands that are available in the Common-EGSE, list the low-level building blocks implemented in the test scripts etc.
+
+=== The plato-common-egse GitHub repository
+
+This repository contains the background infrastructure to interface with the actual hardware in the test housess. The complete documentation can be found in the link above, and in RD-02, see <<reference-documents>>.
+
+In a nutshell, it provides access to all the necessary functions to
+
+* Operate the camera under test
+* Operate all devices in the test-environment (in or out of the TVAC chamber)
+* Record all telemetry
+    - From the camera (image data & HK)
+    - From the test-environment (HK)
+* Maintain the setup and calibration file information under configuration control (see ‘setup’ below).
+* Command the camera and the test-environment devices from Python scripts (see plato-test-scripts)
+
+The THs are expected to contribute to this repository, to implement the interfaces to their own environment and devices, so they should fork this repository in order to be able to create pull requests.
+
+The test-operators are not expected to contribute to this repository, so they should clone the repository.
+
+=== The plato-test-scripts GitHub repository
+
+This repository contains the Python scripts
+
+* for commanding the tests as defined in the test specification,
+* for analysing the data
+
+The commanders and the THs are expected to contribute to this repository, so everyone should fork it.
+
+=== The plato-cgse-conf GitHub repo
+
+This repository holds the setups saved during the tests under configuration control. The concept of setup is explained in section <<conf-setup>>.
+
+No one is expected to contribute directly to this repository as it is maintained by the Common-EGSE. The repository can be cloned for inspection.
+
+=== Software installation
+
+Operators use the software installation at the test house on the operational machine. The installation is read only and under configuration control. Only official releases shall be installed on the operational machines. The installation is maintained by the site-operator. Please refer to the https://ivs-kuleuven.github.io/plato-cgse-doc/docs/installation-manual/[on-line documentation of the Common-EGSE] for full installation details.
+----
+$ git clone https://github.com/IvS-KULeuven/plato-common-egse.git
+$ git checkout tags/<release-tag> -b <release-tag>-branch
+$ python3.8 setup.py install --home=/cgse
+----
+The test-developer uses an installation that is more suited for development of scripts and can be changed. The test-developer has forked the repo on the GitHub website to her personal GitHub account and clones the repo from that account. She works in a virtual environment. Please refer to the https://ivs-kuleuven.github.io/plato-cgse-doc/docs/installation-manual/[Common-EGSE on-line docs] for full details.
+----
+$ git clone https://github.com/<github-username>/plato-common-egse.git
+$ source venv/bin/activate
+$ python3.8 setup.py develop
+----
+Please note that the installation examples above are simplified and serve as a reminder. The full installation process is detailed in the on-line Common-EGSE documentation.
+
+
+=== Naming Convention
+
+The table below summarises the coding style that we have adopted for this project.  More detailed information can be found in the on-line documentation at github.io: https://ivs-kuleuven.github.io/plato-cgse-doc/asciidocs/developer-manual.html#_part_i_development_notions[Development notions: Style Guide]
+
+[cols="2,1,3"]
+.Summary of the adopted code style.
+|===
+|Type	|Style	|Examples
+
+|Variables, building_block parameters, Entries in setup files
+|lowercase with underscores
+|key, last_value, model, index, user_info
+
+|Methods, functions, building_blocks
+|lowercase with underscores
+|get_value, set_mask, create_image
+
+|Classes
+|CapWords (no underscores)
+|ProcessManager, ImageViewer, CommandList, Observation, MetaData
+
+|Constants
+|UPPERCASE with underscores
+|MAX_LINES, BLACK, COMMANDING_PORT
+
+|Modules & Packages
+|lowercase without underscores
+|dataset, commanding, multiprocessing
+|===
+
+Top-level scripts::
+Top-level scripts start with the test identifier from the test specification, followed by a descriptive name in lowercase, words separated by underscores, e.g., `cam_tvpt_010_best_focus_determination.py`.
+
+Building blocks::
+Building blocks are normal function definitions that are decorated with @building_block to identify them as separated by one underscore, i.e., snake_case.
+
+User utility functions::
+User functions are normal Python functions and follow normal Python function naming conventions, i.e., all lower case and words separated by underscores, i.e., snake_case.
