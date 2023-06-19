@@ -1,0 +1,32 @@
+[#obsid-table]
+== The OBSID Table file
+
+The `obsid-table.txt` file contains an ordered list of all observations that are started. I say _started_ and not _run_ because the list also contains observations that were interrupted due to an exception or for whatever reason.
+
+Each line in the file describes one observation with the following fields: test_id, site_id, setup_id, timestamp, function, and description. The fields are separated by a space, but a simple split will not workfootnote:[Because of this we are rethinking the format and content of the `obsid-table.txt` file, see e.g. https://github.com/IvS-KULeuven/plato-test-scripts/issues/1002[TS issue #1002].] because of (1) the 'function' field that also contains spaces between the arguments and (2) the 'description' field.
+
+[cols="1,3"]
+|===
+| Field name | Description
+
+| test_id
+| The test_id is a successive number that is assigned to each test and is unique for each site.
+
+| site_id
+| The name of the site, or test house where this observation ran. For CSL the site_id represents the cleanroom and has a number attached to identify the room, i.e. CSL1 and CSL2.
+
+| setup_id
+| The identifier of the Setup that was active during the observation. The Setup can not be changed when an observation is running, so each observation has one Setup ID only.
+
+| timestamp
+| The timestamp of the start of an observation. This timestamp has the format `YYYY-mm-ddTHH:MM:SS.μs+0000` and is a UTC time.
+
+| function
+| The function that was executed including a stringification of the arguments. When the observation is started and ended with the `start__observation()` and `end_observation()` functions, no function is identified since any python code between the two marker functions is part of the observation. In this case, the field contains `unknown_function()`.
+
+| description
+| This last field is optional and contains a description for the observation. The description is provided by either the developer of a building block, or the user. The `description` parameter is a keyword argument for both the `start_observation()` and the `execute()` functions. The description field is always enclosed within square brackets, i.e. '[description]'.
+
+|===
+
+The fields `test_id`, `site_id`, and `setup_id` together form the observation identifier, i.e. `OBSID`.

@@ -13,21 +13,22 @@ We also define the following “system states”:
 * INITITALIZED: all subsystems in the test environment and test article
 (hereafter the ‘system’) are switched on, set to predefined conditions
 and ready to accept commands.
-** FEEs in “ON_STANDBY” (CCDs powered).
+** FEEs in “STANDBY” (CCDs powered).
 ** OGSE shutter closed
 ** No requirement on the OGSE filters (attenuation level unknown).
-** AEU : switched on and synching
+** AEU : switched on and syncing
 ** TCS: powered on, no task running, configured in remote operational
 mode, i.e. accepting commands.
 ** MGSE mechanisms: controllers on, mechanisms homed if relevant, ready
 to accept commands
 
++
 This is the initial state at the start of a test-phase.
 
 * IDLE: All subsystems are in nominal conditions, as for INITIALIZED,
 but the FEEs are in “DUMP_MODE” (full_image mode, nominal clocking, dump
 gate high), preventing the accumulation of charges between tests.
-
++
 This state is indeed aimed to serve an “inter-test-known-condition”.
 
 * SAFE: as INITIALIZED, with the FEEs in “ON_MODE” (CCDs not powered)
@@ -42,7 +43,7 @@ INITIALIZED. It mainly consists in three blocks
 (software switch on)
 * Bring the system to the INITIALIZED state.
 
-A dedicated commanding script will be provided to operate this latter
+A dedicated commanding script is provided to operate this latter
 step:
 ----
 >>> system_to_initialized()
@@ -52,11 +53,11 @@ You can test if the system is in this state with
 >>> system_test_if_initialized()
 ----
 This function will abort if the system is not in INITIALIZED state, and
-do nothing otherwise
+do nothing otherwise.
 
 As said above, by convention, every test script should be able to assume
 that the system is in IDLE state before it starts, and it should return
-it to that state before ending. A dedicated commanding script will be
+into that state before ending. A dedicated commanding script is
 provided to this aim as well:
 ----
 >>> system_to_idle()
@@ -67,10 +68,10 @@ IDLE mode. The command therefore is
 >>> system_test_if_idle()
 ----
 This function will abort if the system is not in IDLE state, and do
-nothing otherwise
+nothing otherwise.
 
 The test procedure should explicitly bring back the system to IDLE after
 every test, but whenever possible, it is nevertheless recommended to
-start every test with a check via system_test_if_idle, and call
-system_to_idle as a last command, to return the system to that known
+start every test with a check via `system_test_if_idle`, and call
+`system_to_idle` as a last command, to return the system to that known
 state.

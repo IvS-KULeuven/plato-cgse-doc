@@ -1,8 +1,8 @@
 
 == Operating the TCS EGSE
 
-TCS EGSE is providing monitoring and control of some temperatures on the
-camera (TOU and FEE).
+TCS EGSE is providing monitoring and control of the TRP1 and TRP22
+temperatures on the camera (TOU and FEE).
 
 TRP (Thermal Reference Points) that are monitored:
 
@@ -83,7 +83,7 @@ mode, which allows all parameters to be configurable.
 ==== Decontamination
 
 The Decontamination heating is performed by turning ON the TRP1 heaters
-at full power
+at full power.
 
 ==== Replay
 
@@ -95,7 +95,7 @@ Control_ mode, i.e., when the button shows orange in the MMI. We can
 categorise these commands as follows:
 
 *Change the operating mode*: as seen above, the command for changing the
-operating mode is tcs.set_operating_mode( … ) which takes one parameters
+operating mode is `tcs.set_operating_mode(...)` which takes one parameters
 that defines the mode.
 
 [source]
@@ -104,7 +104,7 @@ that defines the mode.
 ----
 
 *Set configuration parameter*: to change configuration parameters, use
-the command tcs.set_parameter( … ) which takes two arguments, the
+the command `tcs.set_parameter(...)` which takes two arguments, the
 parameter name and its value. The following command changes the
 temperature set point for the PI controller on channel 1 to -40ºC.
 
@@ -114,7 +114,7 @@ temperature set point for the PI controller on channel 1 to -40ºC.
 ----
 
 A full list of parameters that can be configured is available in table
-6.8 on page 61-68 of RD-09.
+6.8 on page 61-68 of <<reference-documents,RD-09>>.
 
 Please note that several parameters can form a group, e.g., to configure
 the PI controller for a certain channel. In this case the best approach
@@ -129,8 +129,10 @@ to run the task. This is needed to drive the controllers for the heaters
 and to execute the PID controller to reach and maintain the intended
 temperatures.
 
-A task is run with the tcs.run_task() command and stopped with
-tcs.stop_task(). Only when a task is running, the housekeeping
+A task is run with the `tcs.run_task()` command and stopped with
+`tcs.stop_task()`.
+
+WARNING: Only when a task is running, the housekeeping
 parameters will be updated continuously.
 
 *Retrieve Information*: several commands are available to retrieve
@@ -141,7 +143,7 @@ mode. It retrieves telemetry from the TCS EGSE. When a task is running,
 the full housekeeping is available through this command, if no task is
 running, only load time and system resources are available.
 * `get_housekeeping_value(<parameter name>)`: a list of all housekeeping
-parameters is available in table 6.6 on page 50-58 of RD-09.
+parameters is available in table 6.6 on page 50-58 of <<reference-documents,RD-09>>.
 * `get_all_housekeeping()`: this command only work in remote-control mode
 and retrieves all the housekeeping values from the TCS EGSE. Note
 however, that, when no task is running, the housekeeping will be
@@ -179,14 +181,12 @@ $ das tcs --interval 10
 ----
 The above command will retrieve TCS housekeeping telemetry every 10
 seconds. The data is sent to the Storage Manager that saves the
-telemetry in a CSV file on the egse-server. The das also makes the
+telemetry in a CSV file on the egse-server. The `das` also makes the
 temperatures of the TOU, FEE, and the ambient and internal temperatures
 available for Prometheus to be monitored by Grafana.
 
 Please note that this command should preferably run on the egse-server
-and be started by the site-operator (see ‎2.3 above). The test-operator
-can inspect the metrics from the TCS EGSE data acquisition in the
-Grafana display.
+and be started by the site-operator (see <<user-profiles>>). The test-operator can inspect the metrics from the TCS EGSE data acquisition in the Grafana display.
 
 === Setting the temperature setpoints
 

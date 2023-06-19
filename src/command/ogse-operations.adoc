@@ -25,10 +25,10 @@ meter channel 2)
 The OGSE can be switched on with one simple command:
 
 ----
->>> execute(ogse.swon)
+>>> execute(ogse.ogse_swon)
 ----
 
-or the command `ogse.swon()` can be used in a test script.
+or the command `ogse.ogse_swon()` can be used in a test script.
 
 *Effect*
 
@@ -46,7 +46,7 @@ NOTE: the light source needs warming up and stabilisation; the OGSE start up scr
 *Utility building block*
 
 ----
->>> execute(ogse.swoff)
+>>> execute(ogse.ogse_swoff)
 ----
 
 *Effect*
@@ -56,56 +56,37 @@ NOTE: the light source needs warming up and stabilisation; the OGSE start up scr
 * Switches off the OGSE controllers
 * OGSE telemetry is recording.
 
-=== Light source on/off/status check
-
-The light source can be switched on/off and status checked:
-
-----
->>> ogse.source_swon()
-----
-
-NOTE: the light source needs warming up and stabilisation; the utility building block does not wait for that.
-
-----
->>> ogse.source_swoff()
->>> status = ogse.source_status()
-----
 
 === Attenuation with Neutral density filters
 
-----
->>> ogse.shutter_close()
-----
-
-Effect: puts one filter wheel in blank (closed) position to avoid light being injected into the fiber
-
+The attenuation is set by a double filter wheel where specific combinations of the wheel positions define a predefined attenuation. The following commands can be used to set the attenuation:
 ----
 >>> ogse.att_level_up()
 ----
-Effect: changes filter wheel combination one attenuation step higher
+Effect: changes filter wheel combination one attenuation step higher.
 ----
 >>> ogse.att_level_down()
 ----
-Effect: changes filter wheel combination one attenuation step higher
+Effect: changes filter wheel combination one attenuation step lower.
 ----
->>> ogse.set_attenuation(<attenuation factor>)
+>>> ogse.set_fwc_fraction(<attenuation factor>)
 ----
 Effect: will choose combination of ND filters that matches commanded
-factor as close as possible.
+factor of the full-well capacity as close as possible.
 
-Example: attenuation factor 1.00 : both filter wheels are in the
-position with no Neutral density filter, no attenuation. Attenuation
-factor 0.01: filter wheels are in a combination of Neutral density
-filters delivering approximately 99% attenuation - the signal will be
-100 times smaller than with no attenuation. Attenuation factor 0 will
-put a filter wheel in the opaque plate position.
+[NOTE]
+.Attenuation examples
+====
+* Attenuation factor 1.00 : both filter wheels are in the position with no Neutral density filter, no attenuation.
+* Attenuation factor 0.01: filter wheels are in a combination of Neutral density filters delivering approximately 99% attenuation - the signal will be 100 times smaller than with no attenuation.
+* Attenuation factor 0 will put a filter wheel in the opaque plate position.
+====
+
 ----
->>> ogse.att_set_level_position (<wheel_a_pos>, <wheel_b_pos>)
+>>> ogse.set_fw_position((<wheel_a_pos>, <wheel_b_pos>))
 ----
-Effect: choose manual ND filters in the two wheels
-----
->>> factor = ogse.att_get_level_factor()
-----
+Effect: choose manual ND filters in the two wheels, note the argument is a tuple.
+
 You can also read this back through the housekeeping:
 ----
 >>> get_housekeeping("GOGSE_ATT_LVL")
@@ -114,8 +95,7 @@ Returns the actual attenuation factor realised with the ND filter combination
 
 The CSL ambient alignment collimator provides the following attenuation factors:
 
-Table ‎13‑1 CSL ambient alignment collimator attenuation factors (from )
-
+.CSL ambient alignment collimator attenuation factors (from )
 image::../images/attenuation-factors.png[width=60%,align=center]
 
 === Attenuation specifying the full well fraction
@@ -124,12 +104,12 @@ For every facility, a calibration will be done to relate the attenuation
 factor (0...1) to the fraction of the full well that will be filled in a
 nominal (25sec) integration near the center of the field.
 ----
->>> ogse.att_set_level_fullwell(0.5)
+>>> ogse.set_fwc_fraction(0.5)
 ----
 
 Will set the OGSE attenuation factor that results in the brightest pixel
 in the PSF near the center of the field to be about 50% of the full well
-(which is roughly 1E6 for PLATO CCDs)
+(which is roughly `1E6` for PLATO CCDs)
 
 === Switching on/off light intensity stabilisation loop
 

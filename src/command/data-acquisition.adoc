@@ -1,8 +1,9 @@
+[#data-acquisition-and-storage]
 == Data acquisition and storage
 
 All device housekeeping data and all camera telemetry data (image data and FEE HK) are automatically stored by the Storage Manager. You don’t need to collect and save data from within your scripts. Data is stored in a location on the egse-server and accessible from the desktop client machines running the tests and analysis scripts. This location is defined in the environment variable `PLATO_DATA_STORAGE_LOCATION`, which points to a `/data` directory.
 
-NOTE: Since release 2023.6.0+CGSE, the environment variable will not include the SITE ID anymore.
+NOTE: Since release 2023.6.0+CGSE, the environment variable `PLATO_DATA_STORAGE_LOCATION` will not include the SITE ID anymore.
 
 Several types of data are generated during a test campaign
 
@@ -28,13 +29,13 @@ The housekeeping telemetry is structured this way
 
 The csv filenames have the following structure:
 ----
-YYYYMMDD_SITE_DEVICE-MNEMONIC.csv
+YYYYMMDD_SITE_DEVICE.csv
 ----
 Where:
 
 * `YYYYMMDD` is the day the telemetry was taken
 * `SITE` is the identifier for the test facility: CSL, IAS, INTA, SRON, KUL, ESA, …
-* `DEVICE-MNEMONIC` is a mnemonic referring to the device controller issuing these data
+* `DEVICE` is a mnemonic referring to the device controller issuing these data
 
 For example, the daily file at CSL for the Hexapod PUNA housekeeping on June 8th, 2023 is 20230608_CSL_PUNA.csv. The header of the CSV files contains explicit column-names. The complete information on the content and format of the telemetry files is contained in the ICD (RD-04, see <<reference-documents>>).
 
@@ -62,17 +63,17 @@ An observation corresponds to a single execution of a given test, i.e. a single 
 
 A unique obsid is automatically attributed to every observation. The filenames of housekeeping files are constructed from the unique obsid and a limited set of useful metadata about the test execution, with the following structure:
 ----
-TEST-ID_SITE-ID_SETUP-ID_DEVICE-MNEMONIC_YYYYMMDD_HHMMSS.csv
+TEST_SITE_SETUP_DEVICE_YYYYMMDD_HHMMSS.csv
 ----
 where:
 
-* `TEST-ID` is a unique test identifier, this is the first part of a full OBSID,
-* `SITE-ID` is the identifier for the test facility: CSL, IAS, INTA, SRON, KUL, ESA, …
-* `SETUP-ID` is the unique setup_id (section below)
-* `DEVICE-MNEMONIC` is a mnemonic referring to the source of the data, e.g. the device controller issuing these data, the TCS EGSE, the N-FEE, etc.
+* `TEST` is a unique test identifier, this is the first part of a full OBSID,
+* `SITE` is the identifier for the test facility: CSL, IAS, INTA, SRON, KUL, ESA, …
+* `SETUP` is the unique setup_id (section below)
+* `DEVICE` is a mnemonic referring to the source of the data, e.g. the device controller issuing these data, the TCS EGSE, the N-FEE, etc.
 * `YYYYMMDD_HHMMSS` points to the start of the test execution (UTC)
 
-The first three items in the above list form the full OBSID. The OBSID can be abbreviated to the TEST-ID and the SITE-ID thereby omitting the SETUP-ID which can be automatically recovered frm the meta data.
+The first three items in the above list form the full OBSID. The OBSID can be abbreviated to the TEST-ID and the SITE-ID thereby omitting the SETUP-ID which can be automatically recovered from the meta data.
 
 For instance, CSV files for observation 00757 performed at CSL could be:
 
@@ -81,10 +82,12 @@ For instance, CSV files for observation 00757 performed at CSL could be:
 
 (PUNA points to a hexapod controller and CM refers to the Configuration Manager of the Common-EGSE).
 
-For fits files with the camera image data, the naming convention is similar, with a sequencing number in the end when the data volume justifies splitting.
+For FITS files with the camera image data, the naming convention is similar (though we leave out the timestamp), with a sequencing number when the data volume justifies splitting of the data over multiple files.
 
-* `00757_CSL_00009_DPU_20201013_162037_0001.fits`
-* `00757_CSL_00009_DPU_20201013_162037_0002.fits`
+* `00757_CSL_00009_N-FEE_CCD_00001_20201013_cube.fits`
+* `00757_CSL_00009_N-FEE_CCD_00002_20201013_cube.fits`
+
+Note that we used to have two types of FITS files: FITS files in which the data is organised in a flat structure, and FITS files in which the data is organised in cubes (with filenames as described above).  The former will have "image" in their names (rather than "cube") but will be removed once the corresponding cube-structure FITS file has been created.
 
 All data corresponding to the obsid are gathered in a dedicated directory named ‘obs’. That means that the fraction of the regular housekeeping data acquired during the execution of the observation is duplicated in that directory, keeping the same format as in the “daily” directory.
 
@@ -98,28 +101,57 @@ image::../images/obs-vs-daily-storage.png[]
 
 === Image data
 
-Image data are saved for each test execution as FITS files, with the corresponding housekeeping in CSV files (see above).
+Image data are saved for each test execution as FITS files, with the
+corresponding housekeeping in csv files (see above).
 
-Images are saved in FITS format, as UNSIGNED integers. You will have to cast them to float explicitly in python to avoid negative numbers to be wrongly interpreted.
+Images are saved in FITS format, as UNSIGNED integers. You will have to
+cast them to float explicitly in python to avoid negative numbers to be
+wrongly interpreted.
 
-*Splitting*: currently all images are saved as subsequent extensions of a single FITS file. The number of exposures obtained within a test is tracked via the EXPOSURE_COUNTER. A maximum number of extensions is specified in the configuration (TBD). When that number is achieved, the image data are split, i.e. a new FITS file is opened to store the next block of image data.
+*Splitting:* The DPU monitors a set of "crucial parameters" (see
+further) and each time at least one of these changes, a new FITS file
+will be created, provided the FEE is in full-image mode (or full-image
+pattern mode). Additionally, a maximum number of extensions is specified
+in the configuration (TBD). When that number is achieved, the image data
+are split, i.e. a new FITS file is opened to store the next block of
+image data.
 
-*Slicing*: Since June 2022, it is possible to insert the command `set_slicing(<# of slices>)` in the test scripts in order to force the creation of a new FITS file. This allows for a more flexible slicing of the data, i.e. enforce a clearer structure of the data, matching the commanding logic, and facilitates the data analysis and interpretation.
+*Slicing:* In a future version of the software, it will be possible to
+insert a given command in the test scripts in order to force the
+creation of a new FITS file. This will allow for a more flexible slicing
+of the data, i.e. enforce a clearer structure of the data, matching the
+commanding logic, and will facilitate the data analysis and
+interpretation.
+
+*Crucial parameters:* As mentioned before, the DPU monitors (for changes
+in) crucial parameters. These are:
+
+* the first and last row that will be transmitted (`v_start` and `v_end`),
+* the last column that will be transmitted (`h_end`),
+* the number of rows that will be dumped after the requested number of
+rows have been transmitted (`rows_final_dump`),
+* the readout order of the CCDs (`ccd_readout_order`),
+* and the FEE mode (`ccd_mode_config`), which should become/stay
+full-image mode or full-image pattern mode.
 
 ==== Data products
 
 During the camera tests, the DPU will be configured such that a specific part of the E- and/or F-side of the selected CCDs will be transmitted (in the form of SpW packets) for a specified number of cycles (as explained in <<standard-building-block-parameters>>).  The following information will be reconstructed from these SpW packets and stored in FITS files:
 
-* the transmitted image data from the selected CCDs, for all cycles,
+* the transmitted image data from the selected side(s) of the selected CCDs, for all cycles,
 * the transmitted serial pre-scan data of the selected side(s) of the selected CCDs, for all cycles,
 * the transmitted serial over-scan data of the selected side(s) of the selected CCDs, for all cycles,
-* the transmitted parallel over-scan data of the selected CCDs, for all cycles.
+* the transmitted parallel over-scan data of the selected side(s) of the selected CCDs, for all cycles.
+
+While the SpW packets come in, the individual exposures are stored in individual extensions in FITS files that carry "images" in their name.  This type of data arrangement is called a "flat structure".  When there's a change in crucial parameters, a new FITS file will be constructed (with "cube" in its name), based on the flat-structure FITS file, in which the exposures are aggregated into cubes.  The original, flat-structure file will be removed from the system.
+
+For analysis, only the FITS files with the cubes will be available, and therefore only the structure of these will be discussed in the section below.
 
 In case both sides of a CCD are selected, the image data of both sides will be stitched together before storing it in the FITS file.  This will also be done for the parallel over-scan data (if present).  For the serial pre-scan and the serial over-scan, the information is stored per CCD side.
 
 ==== Internal structure
 
-Within a FITS file, the data are arranged in a flat structure, in so-called extensions.  The name of an extension will reflect what type of data product it comprises (e.g. image data of CCD2, serial pre-scan data of the E-side of CCD3, etc.).  Each of the extensions (apart from the PRIMARY extension, see further) will occur as many times as that type of data was acquired and transmitted (e.g. if CCD2 was read out and transmitted 10 times, the extension for the image data of CCD2 will occur 10 times in the FITS file), and comprise a 2D data array and a header with the metadata that is specific to that extension.
+Each of the extensions (apart from the PRIMARY extension) will occur only once and comprise a 3D data array and a header with the metadata that is specific to that extension.   The name of an extension will reflect what type of data product it comprises (e.g. image data of the F-side of CCD2, serial pre-scan data of the E-side of CCD3, etc.).
 
 Although we have provided a set of convenience functions (see below) to extract information from a FITS file without being exposed to the internal details, we want to explain the internal structure in more detail.
 
@@ -129,44 +161,32 @@ The following extensions can be included in the FITS files:
 |===
 | Extension name | Content
 
-|PRIMARY
-|Contains only header information, with metadata that pertains to the whole data product (site name, etc.).  This extension always be present.
-|SPRE_1_E
-|Serial pre-scan data for the E-side of CCD1.  This extension will occur as many times as there are readouts of CCD1.
-|SPRE_1_F
-|Serial pre-scan data for the F-side of CCD1.  This extension will occur as many times as there are readouts of CCD1.
-|SOVER_1_E
-|Serial over-scan data for the E-side of CCD1.  If this information is transmitted, this extension will occur as many times as there are readouts of CCD1.
-|SOVER_1_F
-|Serial over-scan data for the E-side of CCD1.  If this information is transmitted, this extension will occur as many times as there are readouts of CCD1.
-|POVER_1
-|Parallel over-scan data for CCD1.  If this information is transmitted, this extension will occur as many times as there are readouts of CCD1.  In case both sides of CCD1 are transmitted, the parallel over-scan data of both CCD sides are stitched together.
-|IMAGE_1
-|Image data for CCD1.  This extension will occur as many times as there are readouts of CCD1.  In case both sides of CCD1 are transmitted, the image data of both CCD sides are stitched together.
-|SPRE_2_E
-|Serial pre-scan data for the E-side of CCD2.  This extension will occur as many times as there are readouts of CCD2.
-|SPRE_2_F
-|Serial pre-scan data for the F-side of CCD2.  This extension will occur as many times as there are readouts of CCD2.
-|SOVER_2_E
-|Serial over-scan data for the E-side of CCD2.  If this information is transmitted, this extension will occur as many times as there are readouts of CCD2.
-|SOVER_2_F
-|Serial over-scan data for the E-side of CCD2.  If this information is transmitted, this extension will occur as many times as there are readouts of CCD2.
-|POVER_2
-|Parallel over-scan data for CCD2.  If this information is transmitted, this extension will occur as many times as there are readouts of CCD2.  In case both sides of CCD2 are transmitted, the parallel over-scan data of both CCD sides are stitched together.
-|IMAGE_2
-|Image data for CCD2.  This extension will occur as many times as there are readouts of CCD2.  In case both sides of CCD2 are transmitted, the image data of both CCD sides are stitched together.
-|SPRE_4_E
-|Serial pre-scan data for the E-side of CCD4.  This extension will occur as many times as there are readouts of CCD4.
-|SPRE_4_F
-|Serial pre-scan data for the F-side of CCD4.  This extension will occur as many times as there are readouts of CCD4.
-|SOVER_4_E
-|Serial over-scan data for the E-side of CCD4.  If this information is transmitted, this extension will occur as many times as there are readouts of CCD4.
-|SOVER_4_F
-|Serial over-scan data for the E-side of CCD4.  If this information is transmitted, this extension will occur as many times as there are readouts of CCD4.
-|POVER_4
-|Parallel over-scan data for CCD4.  If this information is transmitted, this extension will occur as many times as there are readouts of CCD4.  In case both sides of CCD4 are transmitted, the parallel over-scan data of both CCD sides are stitched together.
-|IMAGE_4
-|Image data for CCD4.  This extension will occur as many times as there are readouts of CCD4.  In case both sides of CCD4 are transmitted, the image data of both CCD sides are stitched together.
+|PRIMARY |Contains only header information, with metadata that pertains
+to the whole data product (site name, etc.). This extension always be
+present.
+
+|SPRE_<1/2/3/4>_<E/F> a|
+Serial pre-scan data for the E-/F-side of CCD1/2/3/4. This extension
+will occur once (with all exposures included), if that side of that CCD
+was transmitted.
+
+|SOVER_<1/2/3/4>_<E/F> a|
+Serial over-scan data for the E-/F-side of CCD1/2/3/4. I f this
+information is transmitted, this extension will occur once.
+
+|POVER_<1/2/3/4>_<E/F> a|
+Parallel over-scan data for the E-/F-side of CCD1/2/3/4. If this
+information is transmitted, this extension will occur once.
+
+|IMAGE_<1/2/3/4>_<E/F> a|
+Image data for the E-/F-side of CCD1/2/3/4. This extension will occur
+once (with all exposures included), if that-side of that CCD was
+transmitted.
+
+|WCS-TAB_<1/2/3/4>_<E/F> |Table with a single column (with the name
+TIME) in which the relative time (in seconds) w.r.t. the first exposure
+(of any CCD (side)) in the file is listed.
+
 |===
 
 *Example 1*: 4CCDs, full frame, 10 cycles
@@ -181,78 +201,80 @@ Relevant FEE parameters (see xref:standard-building-block-parameters[xrefstyle=s
 
 Structure/extensions of the FITS file:
 
-* PRIMARY: The primary extension (PrimaryHDU object).  This does not contain any transmitted data.
+* `PRIMARY`: The primary extension (PrimaryHDU object). This does not
+contain any transmitted data.
 
 * For CCD1:
-** 10x extension SPRE_1_E: The serial pre-scan for the E-side of CCD1 (10 frames)
-+
-→ dimensions: 25 columns x (4510 + 30) rows
-** 10x extension SPRE_1_F: The serial pre-scan for the F-side of CCD1 (10 frames)
-+
-→ dimensions: 25 columns x (4510 + 30) rows
-** 10x extension SOVER_1_E: The serial over-scan for the E-side of CCD1 (10 frames)
-+
-→ dimensions: 15 columns x (4510 + 30) rows
-** 10x in extension SOVER_1_F: The serial over-scan for the F-side of CCD1 (10 frames)
-+
-→ dimensions: 15 columns x (4510 + 30) rows
-** 10x extension POVER_1: The parallel over-scan for the E-side of CCD1 (10 frames)
-+
-→ dimensions: 4510 columns x 30 rows
-** 10x extension IMAGE_1: The image data of CCD1 (10 frames)
-+
-→ dimensions: 4510 columns x 4510 rows
+** 1 extension `SPRE_1_E`: The serial pre-scan for the E-side of CCD1 (10 frames) +
+→ dimensions: 25 columns x (4510 + 30) rows x 10 layers
+** 1 extension `SPRE_1_F`: The serial pre-scan for the F-side of CCD1 (10 frames) +
+→ dimensions: 25 columns x (4510 + 30) rows x 10 layers
+** 1 extension `SOVER_1_E`: The serial over-scan for the E-side of CCD1 (10 frames) +
+→ dimensions: 15 columns x (4510 + 30) rows x 10 layers
+** 1 in extension `SOVER_1_F`: The serial over-scan for the F-side of CCD1 (10 frames) +
+→ dimensions: 15 columns x (4510 + 30) rows x 10 layers
+** 1 extension `POVER_1_E`: The parallel over-scan for the E-side of CCD1 (10 frames) +
+→ dimensions: 2255 columns x 30 rows x 10 layers
+** 1 extension `POVER_1_F`: The parallel over-scan for the F-side of CCD1 (10 frames) +
+→ dimensions: 2255 columns x 30 rows x 10 layers
+** 1 extension `IMAGE_1_E`: The image data for the E-side of CCD1 (10 frames) +
+→ dimensions: 2255 columns x 4510 rows x 10 layers
+** 1 extension `IMAGE_1_E`: The image data of CCD1 (10 frames) +
+→ dimensions: 2255 columns x 4510 rows x 10 layers
 
 * For CCD2:
-** 10x extension SPRE_2_E: The serial pre-scan for the E-side of CCD2 (10 frames)
-+
-→ dimensions: 25 columns x (4510 + 30) rows
-** 10x extension SPRE_2_F: The serial pre-scan for the F-side of CCD2 (10 frames)
-+
-→ dimensions: 25 columns x (4510 + 30) rows
-** 10x extension SOVER_2_E: The serial over-scan for the E-side of CCD2 (10 frames)
-+
-→ dimensions: 15 columns x (4510 + 30) rows
-** 10x extension SOVER_2_F: The serial over-scan for the F-side of CCD2 (10 frames)
-+
-→ dimensions: 15 columns x (4510 + 30) rows
-** 10x extension IMAGE_2: The image data of CCD2 (10 frames)
-+
-→ dimensions: 4510 columns x 4510 rows
+** 1 extension `SPRE_2_E`: The serial pre-scan for the E-side of CCD2 (10 frames) +
+→ dimensions: 25 columns x (4510 + 30) rows x 10 layers
+** 1 extension `SPRE_2_F`: The serial pre-scan for the F-side of CCD2 (10 frames) +
+→ dimensions: 25 columns x (4510 + 30) rows x 10 layers
+** 1 extension `SOVER_2_E`: The serial over-scan for the E-side of CCD2 (10 frames) +
+→ dimensions: 15 columns x (4510 + 30) rows x 10 layers
+** 1 in extension `SOVER_2_F`: The serial over-scan for the F-side of CCD2 (10 frames) +
+→ dimensions: 15 columns x (4510 + 30) rows x 10 layers
+** 1 extension `POVER_2_E`: The parallel over-scan for the E-side of CCD2 (10 frames) +
+→ dimensions: 2255 columns x 30 rows x 10 layers
+** 1 extension `POVER_2_F`: The parallel over-scan for the F-side of CCD2 (10 frames) +
+→ dimensions: 2255 columns x 30 rows x 10 layers
+** 1 extension `IMAGE_2_E`: The image data for the E-side of CCD2 (10 frames) +
+→ dimensions: 2255 columns x 4510 rows x 10 layers
+** 1 extension `IMAGE_2_E`: The image data of CCD2 (10 frames) +
+→ dimensions: 2255 columns x 4510 rows x 10 layers
 
 * For CCD3:
-** 10x extension SPRE_3_E: The serial pre-scan for the E-side of CCD3 (10 frames)
-+
-→ dimensions: 25 columns x (4510 + 30) rows
-** 10x extension SPRE_3_F: The serial pre-scan for the F-side of CCD3 (10 frames)
-+
-→ dimensions: 25 columns x (4510 + 30) rows
-** 10x extension SOVER_3_E: The serial over-scan for the E-side of CCD3 (10 frames)
-+
-→ dimensions: 15 columns x (4510 + 30) rows
-** 10x extension SOVER_3_F: The serial over-scan for the F-side of CCD3 (10 frames)
-+
-→ dimensions: 15 columns x (4510 + 30) rows
-** 10x extension IMAGE_3: The image data of CCD3 (10 frames)
-+
-→ dimensions: 4510 columns x 4510 rows
+** 1 extension `SPRE_3_E`: The serial pre-scan for the E-side of CCD3 (10 frames) +
+→ dimensions: 25 columns x (4510 + 30) rows x 10 layers
+** 1 extension `SPRE_3_F`: The serial pre-scan for the F-side of CCD3 (10 frames) +
+→ dimensions: 25 columns x (4510 + 30) rows x 10 layers
+** 1 extension `SOVER_3_E`: The serial over-scan for the E-side of CCD3 (10 frames) +
+→ dimensions: 15 columns x (4510 + 30) rows x 10 layers
+** 1 in extension `SOVER_3_F`: The serial over-scan for the F-side of CCD3 (10 frames) +
+→ dimensions: 15 columns x (4510 + 30) rows x 10 layers
+** 1 extension `POVER_3_E`: The parallel over-scan for the E-side of CCD3 (10 frames) +
+→ dimensions: 2255 columns x 30 rows x 10 layers
+** 1 extension `POVER_3_F`: The parallel over-scan for the F-side of CCD3 (10 frames) +
+→ dimensions: 2255 columns x 30 rows x 10 layers
+** 1 extension `IMAGE_3_E`: The image data for the E-side of CCD3 (10 frames) +
+→ dimensions: 2255 columns x 4510 rows x 10 layers
+** 1 extension `IMAGE_3_E`: The image data of CCD3 (10 frames) +
+→ dimensions: 2255 columns x 4510 rows x 10 layers
 
 * For CCD4:
-** 10x extension SPRE_4_E: The serial pre-scan for the E-side of CCD4 (10 frames)
-+
-→ dimensions: 25 columns x (4510 + 30) rows
-** 10x extension SPRE_4_F: The serial pre-scan for the F-side of CCD4 (10 frames)
-+
-→ dimensions: 25 columns x (4510 + 30) rows
-** 10x extension SOVER_4_E: The serial over-scan for the E-side of CCD4 (10 frames)
-+
-→ dimensions: 15 columns x (4510 + 30) rows
-** 10x extension SOVER_4_F: The serial over-scan for the F-side of CCD4 (10 frames)
-+
-→ dimensions: 15 columns x (4510 + 30) rows
-** 10x extension IMAGE_4: The image data of CCD4 (10 frames)
-+
-→ dimensions: 4510 columns x 4510 rows
+** 1 extension `SPRE_4_E`: The serial pre-scan for the E-side of CCD4 (10 frames) +
+→ dimensions: 25 columns x (4510 + 30) rows x 10 layers
+** 1 extension `SPRE_4_F`: The serial pre-scan for the F-side of CCD4 (10 frames) +
+→ dimensions: 25 columns x (4510 + 30) rows x 10 layers
+** 1 extension `SOVER_4_E`: The serial over-scan for the E-side of CCD4 (10 frames) +
+→ dimensions: 15 columns x (4510 + 30) rows x 10 layers
+** 1 in extension `SOVER_4_F`: The serial over-scan for the F-side of CCD4 (10 frames) +
+→ dimensions: 15 columns x (4510 + 30) rows x 10 layers
+** 1 extension `POVER_4_E`: The parallel over-scan for the E-side of CCD4 (10 frames) +
+→ dimensions: 2255 columns x 30 rows x 10 layers
+** 1 extension `POVER_4_F`: The parallel over-scan for the F-side of CCD4 (10 frames) +
+→ dimensions: 2255 columns x 30 rows x 10 layers
+** 1 extension `IMAGE_4_E`: The image data for the E-side of CCD4 (10 frames) +
+→ dimensions: 2255 columns x 4510 rows x 10 layers
+** 1 extension `IMAGE_4_E`: The image data of CCD4 (10 frames) +
+→ dimensions: 2255 columns x 4510 rows x 10 layers
 
 *Example 2*: E-side of CCD2, 100 lines in partial-readout mode, 25 cycles
 
@@ -267,21 +289,17 @@ Note that this means that the E-side of CCD2 will be transmitted 4x25 times.
 
 Structure/extensions of the FITS file:
 
-* PRIMARY: The primary extension (PrimaryHDU object).  This does not contain any transmitted data.
+* `PRIMARY`: The primary extension (PrimaryHDU object).  This does not contain any transmitted data.
 
 * For CCD2:
-** 100x extension SPRE_2_E: The serial pre-scan for the E-side of CCD2 (4x25 frames)
-+
-→ dimensions: 25 columns x (4510 + 30) rows
-** 100x extension SOVER_2_E: The serial over-scan for the E-side of CCD2 (4x25 frames)
-+
-→ dimensions: 15 columns x (4510 + 30) rows
-** 100x extension POVER_2: The parallel over-scan for the E-side of CCD2 (4x25 frames)
-+
-→ dimensions: 4510 columns x 30 rows
-** 100x extension IMAGE_2: The image data of CCD2 (4x25 frames)
-+
-→ dimensions: 4510 columns x 4510 rows
+** 1 extension `SPRE_2_E`: The serial pre-scan for the E-side of CCD2 (4x25 frames) +
+→ dimensions: 25 columns x (4510 + 30) rows x 100 layers
+** 1 extension `SOVER_2_E`: The serial over-scan for the E-side of CCD2 (4x25 frames) +
+→ dimensions: 15 columns x (4510 + 30) rows x 100 layers
+** 1 extension `POVER_2`: The parallel over-scan for the E-side of CCD2 (4x25 frames) +
+→ dimensions: 4510 columns x 30 rows x 100 layers
+** 1 extension `IMAGE_2`: The image data of CCD2 (4x25 frames) +
+→ dimensions: 4510 columns x 4510 rows x 100 layers
 
 ==== Inspecting the content
 
@@ -290,11 +308,8 @@ In the test scripts analysis package, i.e. the `fitsfiles.py` in `camtest.analys
 ===== Overview
 
 The structure of the FITS files can be inspected with the following commands:
-[source]
 ----
->>> from astropy.io import fits
->>> with fits.open(filename) as hdul:
-	hdul.info()
+>>> get_overview(filename)
 ----
 The output looks like to this (here only the E-side of CCD1 has been transmitted, without parallel over-scan):
 ----
@@ -314,19 +329,85 @@ No.    Name      Ver    Type      Cards   Dimensions   Format
 12  IMAGE_1       0 ImageHDU        28   (2255, 100)   float64
 ----
 
+Alternatively, you can get hold of a list with the extension names with
+----
+>>> get_ext_names(filename)
+----
+
+===== Primary header
+
+The primary header can be retrieved as
+----
+>>> primary_header = get_primary_header(filename)
+----
+
+Note that all headers (for the primary header as well as for the other datasets) are returned as `astropy.io.fits.header.Header` objects. To get hold of the value of a specific header key, use:
+----
+>>> header[key]
+----
+
+The relevant keywords in the primary header are:
+
+[cols="1,3",options="header",]
+|===
+|Keyword |Description
+
+|LEVEL
+|This is present for historical reason and is fixed at 2, which indicates that it is a FITS file in which the data has been arranged into cubes.
+
+|V_START
+|The index of the first row that is transmitted.
+
+|V_END
+|The index of the last row that is transmitted.
+
+|H_END
+|The index of the last column that is transmitted.
+
+|ROWS_FINAL_DUMP
+|The number of rows that are dumped after the requested number of rows is transmitted.
+
+|TELESCOP
+|Set to "PLATO".
+
+|INSTRUME
+|The camera ID (as taken from the setup).
+
+|SITENAME
+|The name of the test site at which the data was acquired.
+
+|SETUP
+|The setup ID.
+
+|CCD_READOUT_ORDER
+|String representation of an array with the order inwhich the CCDs will be read out.
+
+|CYCLETIME
+|The image cycle time [s].
+
+|READTIME
+|The time needed to read out the requested part for a single CCD side [s].
+
+|OBSID
+|The observation identifier.
+
+|DATE-OBS
+|The timestamp of the first exposure (of any side of any CCD in the file).
+
+|CGSE
+|Version of the Common EGSE with which the FITS file was produced.
+|===
+
 ===== Images
 
-The image data of a specific exposure (counting starts at zero) of a specific CCD can be retrieved as a numpy array, as follows:
+The image data of a specific exposure (counting starts at zero) of a specific side of a specific CCD can be retrieved as a numpy array, as follows:
 ----
->>> image_data = get_image_data(filename, ccd_number, exposure_number)
+>>> image_data = get_image_data(filename, ccd_number, ccd_side, exposure_number)
 ----
-The corresponding header can be retrieved as:
+You can retrieve the image cubes and header for a specific side of a specific CCD as follows:
 ----
->>> image_header = get_image_header(filename, ccd_number, exposure_number)
-----
-Note that all headers (of the images as well as of the scan maps (see further)) are returned as `astropy.io.fits.header.Header` objects.  To get hold of the value of a specific header key, use:
-----
->>> image_header[key]
+>>> image_cube_data = get_image_cube_data(filename, ccd_number, ccd_side)
+>>> image_cube_header = get_image_cube_header(filename, ccd_number, ccd_side)
 ----
 The relevant keywords in the image header are:
 
@@ -336,63 +417,94 @@ The relevant keywords in the image header are:
 
 |NAXIS1
 |The number of columns in the image area of the CCD, that are transmitted (max 2255).
+
 |NAXIS2
 |The number of rows in the image area of the CCD, that are transmitted (max 4510).
+
+|NAXIS3
+|The number of exposures.
+
 |FOCALLEN
 |The focal length of the telescope [mm].
+
 |CTYPE1/CTYPE2
 |Set to "LINEAR" to indicate that a linear coordinate transformation is used (between pixels and mm), both in the column and row direction.
+
+|CTYPE3
+|Set to "TIMETAB" to indicate that the 3rd axis will be characterised by tabulated (time) values. In the older FITS files, this was set to "TIME-TAB" (consistent with the Greisen & Calabretta papers), but the C code underlying astropy and the traditional FITS viewer need it to be "TIMETAB" instead.
+
 |CUNIT1/CUNIT2
 |Set to "MM" to indicate that the focal-plane coordinates are expressed in mm, both in the column and row direction.
+
+|CUNIT3
+|Set to "s" to indicate that the time is expressed in s.
+
 |CDELT1/CDELT2
 |The pixels size [mm], both in the column and row direction.
+
+|PS3_0
+|Set to "WCS-TAB_<1/2/3/4>_<E/F>" to indicate the the 3rd axis is characterised by the values in in the table, that is stored in a extension with that name.
+
+|PS3_1
+|Set to "TIME" to indicate that the 3rd axis is characterised by the values in the table (see PS3_0) in the column with that name.
+
 |SITENAME
 |The name of the test site at which the data was acquired.
 
 |EXTNAME
 a|The extension name, following the convention:
 
-[source]
-----
-IMAGE_<CCD number (1/2/3/4)>
-----
-
-|EXTVER
-|The exposure number (counting starts at 0).
+  IMAGE_<CCD number (1/2/3/4)>_<CCD side (E/F)>
 
 |CCD_ID
 |The CCD number (1/2/3/4).
+
 |CROTA2
-|The orientation angle of the CCD [degrees].  This indicates over which angle the CCD reference frame is rotated w.r.t. the focal-plane reference plane, in counter-clockwise direction.
+|The orientation angle of the CCD [degrees]. This indicates over which angle the CCD reference frame is rotated w.r.t. the focal-plane reference plane, in counter-clockwise direction.
+
 |CD1_1
 |The product of the pixel size and the cosine of the CCD orientation angle.
+
 |CD1_2
 |The negative product of the pixel size and the sine of the CCD orientation angle.
+
 |CD2_1
 |The product of the pixel size and the sine of the CCD orientation angle.
+
 |CD2_2
 |The product of the pixel size and the cosine of the CCD orientation angle.
+
 |CRVAL1
 |The focal-plane x-coordinate of the CCD origin [mm].
+
 |CRVAL2
 |The focal-plane y-coordinate of the CCD origin [mm].
+
 |CRPIX1
 |The column coordinate of the CCD origin w.r.t. the first transmitted column of the image area.
+
 |CRPIX2
 |The row coordinate of the CCD origin w.r.t. the first transmitted row of the image area.
+
+|OBSID
+|The observation identifier.
+
 |DATE-OBS
-|The timestamp of the start of the data acquisition of this exposure.
+|The timestamp of the start of the data acquisition of the first exposure.
 |===
 
 ===== Parallel over-scan
 
-To get hold of the data (as a numpy array) of a parallel over-scan (if present) for a specific exposure (counting starts at 0) of a specific CCD, execute the following command:
+To get hold of the data (as a numpy array) of a parallel over-scan (if present) for a specific exposure (counting starts at 0) of a specific side of a specific CCD, execute the following command:
+[%nowrap]
 ----
->>> parallel_overscan_data = get_parallel_overscan_data(filename, ccd_number, exposure_number)
+>>> parallel_overscan_data = get_parallel_overscan_data(filename, ccd_number, ccd_SIDE, exposure_number)
 ----
-The corresponding header can be retrieved as:
+You can retrieve the parallel over-scan data and header for a specific side of a specific CCD as follows:
+[%nowrap]
 ----
->>> parallel_overscan_header = get_parallel_overscan_header(filename, ccd_number, exposure_number)
+>>> parallel_overscan_cube_data = get_ parallel_overscan_cube_data(filename, ccd_number, ccd_side)
+>>> parallel_overscan _cube_header = get_ parallel_overscan_cube_header(filename, ccd_number, ccd_side)
 ----
 The relevant keywords in the parallel over-scan header are:
 
@@ -402,23 +514,45 @@ The relevant keywords in the parallel over-scan header are:
 
 |NAXIS1
 |The number of columns in the parallel over-scan, that are transmitted.
+
 |NAXIS2
 |The number of rows in the parallel over-scan of the CCD, that are transmitted.
+
+|NAXIS3
+|The number of exposures.
+
+|CTYPE3
+|Set to "TIMETAB" to indicate that the 3rd axis will be characterised by tabulated (time) values. In the older FITS files, this was set to "TIME-TAB" (consistent with the Greisen & Calabretta papers), but the C code underlying astropy and the traditional FITS viewer need it to be "TIMETAB" instead.
+
+|CUNIT3
+|Set to "s" to indicate that the time is expressed in s.
+
+|PS3_0
+|Set to "WCS-TAB_<1/2/3/4>_<E/F>" to indicate the the 3rd axis is characterised by the values in in the table, that is stored in a extension with that name.
+
+|PS3_1
+|Set to "TIME" to indicate that the 3rd axis is characterised by the values in the table (see PS3_0) in the column with that name.
+
 |FOCALLEN
 |The focal length of the telescope [mm].
+
 |SITENAME
 |The name of the test site at which the data was acquired.
+
 |EXTNAME
 a|The extension name, following the convention:
-----
-IMAGE_<CCD number (1/2/3/4)>
-----
-|EXTVER
-|The exposure number (counting starts at 0).
+
+    IMAGE_<CCD number (1/2/3/4)>_<CCD side (E/F)>
+
 |CCD_ID
 |The CCD number (1/2/3/4).
+
+|OBSID
+|The observation identifier.
+
 |DATE-OBS
-|The timestamp of the start of the data acquisition of this exposure.
+|The timestamp of the start of the data acquisition of the first exposure.
+
 |===
 
 ===== Serial pre-scan
@@ -427,10 +561,12 @@ To get hold of the data (as a numpy array) of a serial pre-scan for a specific e
 ----
 >>> serial_prescan_data = get_serial_prescan_data(filename, ccd_number, ccd_side, exposure_number)
 ----
-The corresponding header can be retrieved as:
+You can retrieve the serial pre-scan data and header for a specific side of a specific CCD as follows:
 ----
->>> header = serial_prescan.header
+>>> serial_prescan_cube_data = get_ serial_prescan _cube_data(filename, ccd_number, ccd_side)
+>>> serial_prescan _cube_header = get_ serial_prescan_cube_header(filename, ccd_number, ccd_side)
 ----
+
 The relevant keywords in the serial pre-scan header are:
 
 [cols="1,5"]
@@ -439,20 +575,42 @@ The relevant keywords in the serial pre-scan header are:
 
 |NAXIS1
 |The number of columns in the serial pre-scan (fixed at 25).
+
 |NAXIS2
 |The number of rows in the serial pre-scan, that are transmitted.
+
+|NAXIS3
+|The number of exposures.
+
+|CTYPE3
+|Set to "TIMETAB" to indicate that the 3rd axis will be characterised by tabulated (time) values. In the older FITS files, this was set to "TIME-TAB" (consistent with the Greisen & Calabretta papers), but the C code underlying astropy and the traditional FITS viewer need it to be "TIMETAB" instead.
+
+|CUNIT3
+|Set to "s" to indicate that the time is expressed in s.
+
+|PS3_0
+|Set to "WCS-TAB_<1/2/3/4>_<E/F>" to indicate the the 3rd axis is characterised by the values in in the table, that is stored in a extension with that name.
+
+|PS3_1
+|Set to "TIME" to indicate that the 3rd axis is characterised by the values in the table (see PS3_0) in the column with that name.
+
 |SITENAME
 |The name of the test site at which the data was acquired.
+
 |EXTNAME
 a|The extension name, following the convention:
-----
-SPRE_<CCD number (1/2/3/4)>_<CCD side (E/F)>
-----
-|EXTVER
-|The exposure number (counting starts at 0).
-CCD_ID	The CCD number (1/2/3/4).
+
+   SPRE_<CCD number (1/2/3/4)>_<CCD side (E/F)>
+
+|CCD_ID
+|The CCD number (1/2/3/4).
+
+|OBSID
+|The observation identifier.
+
 |DATE-OBS
-|The timestamp of the start of the data acquisition of this exposure.
+|The timestamp of the start of the data acquisition of the first exposure.
+
 |===
 
 ===== Serial over-scan
@@ -461,34 +619,100 @@ To get hold of the data (as a numpy array) of a serial over-scan for a specific 
 ----
 >>> serial_overscan_data = get_serial_overscan_data(filename, ccd_number, ccd_side, exposure_number)
 ----
-The corresponding header can be retrieved as:
+You can retrieve the serial over-scan data and header for a specific side of a specific CCD as follows:
 ----
->>> serial_overscan_header = get_serial_overscan_header(filename, ccd_number, ccd_side, exposure_number)
+>>> serial_overscan_cube_data = get_ serial_overscan_cube_data(filename, ccd_number, ccd_side)
+>>> serial_overscan _cube_header = get_ serial_overscan_cube_header(filename, ccd_number, ccd_side)
 ----
 The relevant keywords in the serial over-scan header are:
 
-[cols="1,5"]
+[cols="1,3"]
 |===
-|Keyword	|Description
+|Keyword |Description
 
 |NAXIS1
 |The number of columns in the serial over-scan.
+
 |NAXIS2
 |The number of rows in the serial over-scan, that are transmitted.
+
+|NAXIS3
+|The number of exposures.
+
+|CTYPE3
+|Set to "TIMETAB" to indicate that the 3rd axis will be characterised by tabulated (time) values. In the older FITS files, this was set to "TIME-TAB" (consistent with the Greisen & Calabretta papers), but the C code underlying astropy and the traditional FITS viewer need it to be "TIMETAB" instead.
+
+|CUNIT3
+|Set to "s" to indicate that the time is expressed in s.
+
+|PS3_0
+|Set to "WCS-TAB_<1/2/3/4>_<E/F>" to indicate the the 3rd axis is characterised by the values in in the table, that is stored in an extension with that name.
+
+|PS3_1
+|Set to "TIME" to indicate that the 3rd axis is characterised by the values in the table (see PS3_0) in the column with that name.
+
 |SITENAME
 |The name of the test site at which the data was acquired.
+
 |EXTNAME
 a|The extension name, following the convention:
-----
-SOVER_<CCD number (1/2/3/4)>_<CCD side (E/F)>
-----
-|EXTVER
-|The exposure number (counting starts at 0).
+
+   SOVER_<CCD number (1/2/3/4)>_<CCD side (E/F)>
+
 |CCD_ID
 |The CCD number (1/2/3/4).
+
+|OBSID
+|The observation identifier.
+
 |DATE-OBS
-|The timestamp of the start of the data acquisition of this exposure.
+|The timestamp of the start of the data acquisition of the first exposure.
+
 |===
+
+===== Time
+
+To get hold of the *relative* time (as a numpy array) in seconds w.r.t. the first exposure (of any side of any CCD in the file) for the exposures for a specific side of a specific CCD, execute the following command:
+----
+>>> from camtest.analysis.functions.fitsfiles import get_relative_time
+>>> relative_time = get_relative_time(filename, ccd_number, ccd_side)
+>>> relative_time = get_relative_time(hdu_list_object, ccd_number, ccd_side)
+----
+The *absolute* time (as a numpy array) in seconds since epoch 1958, for the exposures for a specific side of a specific CCD, can be retrieved as follows:
+----
+>>> from camtest.analysis.functions.fitsfiles import get_absolute_time
+>>> absolute_time = get_absolute_time(filename, ccd_number, ccd_side)
+>>> absolute_time = get_absolute_time(hdu_list_object, ccd_number, ccd_side)
+----
+
+===== Focal-plane coordinates
+
+To convert image pixel coordinates (row, column) for a given side of a given CCD to focal-plane coorinates (x, y), in mm, execute:
+----
+>>> from camtest.analysis.functions.fitsfiles import get_fp_coordinates
+>>> x, y = get_fp_coordinates(filename, ccd_number, ccd_side, row, column)
+>>> x, y = get_fp_coordinates(hdu_list_object, ccd_number, ccd_side, row, column)
+----
+
+===== Astropy WCS objects
+
+It is possible to load the headers into an astropy WCS object, which can be used for coordinate conversions:
+----
+>>> from astropy.io import fits
+>>> from astropy.wcs import WCS
+>>> with fits.open(<filename>) as hdul:
+...     header = hdul[<extension name>].header
+>>> wcs = WCS(header)
+----
+For the older FITS files, you may get this error message (see #1714):
+----
+ERROR: ValueError: ERROR 5 in wcsset() at line 2352 of file cextern/wcslib/C/wcs.c: Invalid parameter value.
+ERROR 3 in tabset() at line 747 of file cextern/wcslib/C/tab.c: Invalid tabular parameters: Each element of K must be positive, got 0.
+----
+This can be circumvented by correcting the value for the CTYPE3 keyword (before creating the WCS object):
+----
+>>> header["CTYPE3"] = "TIMETAB"
+----
 
 === Telecommand history
 

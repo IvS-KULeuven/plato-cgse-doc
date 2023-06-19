@@ -515,8 +515,8 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <h1>Common-EGSE : Interface Control Document</h1>
 <div class="details">
 <span id="author" class="author">Rik Huygen</span><br>
-<span id="revnumber">version 0.2,</span>
-<span id="revdate">04/05/2023</span>
+<span id="revnumber">version 0.3,</span>
+<span id="revdate">XX/06/2023</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -537,17 +537,48 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <li><a href="#hdf5-format">4.2. The format of the HDF5 files</a></li>
 <li><a href="#hdf5-inspection">4.3. Inspecting HDF5 files with the toolset from the CGSE</a></li>
 <li><a href="#_the_telemetry_tm_dictionary">4.4. The Telemetry (TM) Dictionary</a></li>
+<li><a href="#csv-data-files">4.5. The format of the CSV data files</a></li>
 </ul>
 </li>
+<li><a href="#obsid-table">5. The OBSID Table file</a></li>
+<li><a href="#list-of-files">6. List of Files</a></li>
 </ul>
 </div>
 </div>
 <div id="content">
+<div id="preamble">
+<div class="sectionbody">
+<div class="sidebarblock">
+<div class="content">
+Backlink &#8594; <a href="https://ivs-kuleuven.github.io/plato-cgse-doc/">CGSE Documentation web site</a>
+</div>
+</div>
+</div>
+</div>
 <div class="sect1">
 <h2 id="_changelog">Changelog</h2>
 <div class="sectionbody">
 <div class="dlist">
 <dl>
+<dt class="hdlist1">18/06/2023 — v0.3</dt>
+<dd>
+<div class="ulist">
+<ul>
+<li>
+<p>Added description of the N-FEE-HK CSV file, see <a href="#n-fee-hk">Section 4.5.2</a></p>
+</li>
+<li>
+<p>Added a table with a description of all files that are used by the CGSE and test scripts, see <a href="#list-of-files">Chapter 6</a></p>
+</li>
+<li>
+<p>Added a description of the <code>obsid-table.txt</code>, see <a href="#obsid-table">Chapter 5</a></p>
+</li>
+<li>
+<p>added a backlink to the CGSE Documentation web site for your convenience. It&#8217;s at the top of the HTML page.</p>
+</li>
+</ul>
+</div>
+</dd>
 <dt class="hdlist1">04/05/2023 — v0.2</dt>
 <dd>
 <div class="ulist">
@@ -625,6 +656,17 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 </div>
 <div class="paragraph">
 <p>When you see a <code>$ &#8230;&#8203;</code> in code listings, this is a command you need to execute in a terminal (omitting the dollar sign itself). When you see <code>&gt;&gt;&gt; &#8230;&#8203;</code> in code listings, that is a Python expression that you need to execute in a Python REPL (here omitting the three brackets).</p>
+</div>
+<div class="dlist">
+<dl>
+<dt class="hdlist1">Setup versus setup</dt>
+<dd>
+<p>I make a distinction between Setup (with a capital C) and setup (with a small c). The Setup is used when I talk about the object as defined in a Python environment, i.e. the entity itself that contains all the definitions, configuration and calibration parameters of the equipment that make up the complete test setup (notice the small letter 'c' here).</p>
+<div class="paragraph">
+<p>(sometimes you may find setup in the document which really should be 'set up')</p>
+</div>
+</dd>
+</dl>
 </div>
 </div>
 </div>
@@ -1952,6 +1994,195 @@ array([ 17, 187,   0, ...,   0,   0,   0], dtype=uint8)</pre>
 </div>
 </div>
 </div>
+<div class="sect2">
+<h3 id="csv-data-files">4.5. The format of the CSV data files</h3>
+<div class="paragraph">
+<p>All regular housekeeping is stored in CSV files by the storage manager. This section will describe the general format of the CSV files and more detailed information on the content for a number of specific files. For an in-depth description of where, when and how the CSV files are created, have a look into the developer manual, section XXXXX.</p>
+</div>
+<div class="paragraph">
+<p>The CSV files are comma (',') separated and have a one-line header that contains the column names. All CSV files have at least one mandatory column, which is the 'timestamp' column. This column holds the timestamp of the data in that row and has the following format <code>YYYY-mm-ddTHH:MM:SS.μs+0000</code>. Note that the order of the columns is undetermined and the timestamp column is therefore not always the first column. When reading and processing the CSV files, use the column name instead of the column index.</p>
+</div>
+<div class="paragraph">
+<p>The CVS file can be read with the Pandas <code>read_csv()</code> function. That will read all the housekeeping data into a Pandas DataFrame.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>import pandas as pd
+df = pd.read_csv(filename)</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>The timestamp string can be parsed into a datetime object with the format <code>%Y-%m-%dT%H:%M:%S.%f%z</code> (see <a href="https://docs.python.org/3/library/datetime.html#strftime-and-strptime-format-codes">format-codes</a> for an explanation of the format).</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>import datetime
+TIME_FORMAT = '%Y-%m-%dT%H:%M:%S.%f%z'
+dt = datetime.datetime.strptime(dt_string, TIME_FORMAT)</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>The CGSE has a function defined in the <code>egse.system</code> module that does this for you consistently. Note that the <code>format_datetime()</code> is the function used to create the timestamp string for the CSV file.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>from egse.system import format_datetime, str_to_datetime
+dt = str_to_datetime(format_datetime())</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>The time resolution of the timestamps is 1μs and the timezone is UTC.</p>
+</div>
+<div class="paragraph">
+<p>If you need to convert the timestamp into a unix timestamp, use the following code:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>ts = str_to_datetime(format_datetime()).timestamp()</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>This will return a float similar to that returned by <a href="https://docs.python.org/3/library/time.html#time.time"><code>time.time()</code></a>.</p>
+</div>
+<div class="sect3">
+<h4 id="_the_device_housekeeping">4.5.1. The Device Housekeeping</h4>
+<div class="paragraph">
+<p>TBW</p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="n-fee-hk">4.5.2. The N-FEE Housekeeping</h4>
+<div class="paragraph">
+<p>The N-FEE sends out a housekeeping packet on every sync pulse, right after it sends the timecode. This housekeeping packet contains temperature sensor values, voltages, currents, some status parameters and error codes. Sensor values, voltages and currents are raw measures and are converted into calibrated values by the <code>n_fee_hk</code> process. The conversion is defined in the Setup for that camera (in the <code>setup.camera.fee.calibration</code> entry).</p>
+</div>
+<div class="paragraph">
+<p>All raw and calibrated housekeeping values are stored in the N-FEE-HK CSV file. There are currently about 154 columns in that file. The timestamp of each row is the reception time of the HK packet by the DPU Processor.</p>
+</div>
+<div class="paragraph">
+<p>Actually, since release 2023.20.0+CGSE of the Common-EGSE, there are two rows of HK values per timecode. The DPU Processor requests all HK data from the N-FEE immediately after receiving the image data from the N-FEE and before sending any RMAP requests. Even if no image data is generated, e.g. in STANDBY or DUMP mode, the additional updated housekeeping is requested. This additional information is needed because the housekeeping contains information, especially error codes, on the readout and data transfer. Also interesting to know is that the first housekeeping packet sent by the N-FEE contains information about the previous readout, while the updated HK data that was requested from the N-FEE contains information about the current readout.</p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_the_synoptics_housekeeping">4.5.3. The Synoptics Housekeeping</h4>
+<div class="paragraph">
+<p>TBW</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="obsid-table">5. The OBSID Table file</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>The <code>obsid-table.txt</code> file contains an ordered list of all observations that are started. I say <em>started</em> and not <em>run</em> because the list also contains observations that were interrupted due to an exception or for whatever reason.</p>
+</div>
+<div class="paragraph">
+<p>Each line in the file describes one observation with the following fields: test_id, site_id, setup_id, timestamp, function, and description. The fields are separated by a space, but a simple split will not work<sup class="footnote">[<a id="_footnoteref_3" class="footnote" href="#_footnotedef_3" title="View footnote.">3</a>]</sup> because of (1) the 'function' field that also contains spaces between the arguments and (2) the 'description' field.</p>
+</div>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Field name</th>
+<th class="tableblock halign-left valign-top">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">test_id</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">The test_id is a successive number that is assigned to each test and is unique for each site.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">site_id</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">The name of the site, or test house where this observation ran. For CSL the site_id represents the cleanroom and has a number attached to identify the room, i.e. CSL1 and CSL2.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">setup_id</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">The identifier of the Setup that was active during the observation. The Setup can not be changed when an observation is running, so each observation has one Setup ID only.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">timestamp</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">The timestamp of the start of an observation. This timestamp has the format <code>YYYY-mm-ddTHH:MM:SS.μs+0000</code> and is a UTC time.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">function</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">The function that was executed including a stringification of the arguments. When the observation is started and ended with the <code>start__observation()</code> and <code>end_observation()</code> functions, no function is identified since any python code between the two marker functions is part of the observation. In this case, the field contains <code>unknown_function()</code>.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">description</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">This last field is optional and contains a description for the observation. The description is provided by either the developer of a building block, or the user. The <code>description</code> parameter is a keyword argument for both the <code>start_observation()</code> and the <code>execute()</code> functions. The description field is always enclosed within square brackets, i.e. '[description]'.</p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p>The fields <code>test_id</code>, <code>site_id</code>, and <code>setup_id</code> together form the observation identifier, i.e. <code>OBSID</code>.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="list-of-files">6. List of Files</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>This section will list all files that are relevant for the proper working of the Common-egse (CGSE) and test scripts (TS).</p>
+</div>
+<div class="paragraph">
+<p>The configuration files are described in <a href="#XXXXX">[XXXXX]</a>. The data files are described in the previous sections.</p>
+</div>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 16.6666%;">
+<col style="width: 50%;">
+<col style="width: 33.3334%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Filename</th>
+<th class="tableblock halign-left valign-top">Description</th>
+<th class="tableblock halign-left valign-top">Location</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>obsid-table.txt</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">a sorted list of  all observations that have been started with <code>start_observation</code> or the <code>execute</code> command.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">data storage location, inside &lt;site&gt; folder</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>last_setup_id.</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">contains just one integer, i.e. the last Setup ID that was/is loaded in the configuration control manager. The file is used by the <code>cm_cs</code> when restarted.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">data storage location, inside &lt;site&gt; folder</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>hdf5_queue</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">a directory containing an SQLite database with processed and to-be-processed HDF5 files, used by the FITS generation.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">data storage location, inside &lt;site&gt; folder</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>startup.py</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">a Python startup file loaded when a Python session is started or when the Jupyter kernel is started from the Operator Task GUI. There is such a file for the CGSE and for the test scripts. This requires the PYTHONSTARTUP environment variable to be defined.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">installation folder of the project, usually <code>~/git/plato-common-egse</code> or <code>~/git/plato-test-scripts</code>.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>env.txt</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">contains the definitions of all environment variables that are required by the core services when they are started by Systemd.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">the location is set by the <code>EnvironmentFile</code> variable in the service file, default location is <code>/cgse</code>.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>local_settings.yaml</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">contains the local site-specific settings that overwrite</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">set by the <code>PLATO_LOCAL_SETTINGS</code> environment variable, usually <code>/cgse</code>.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>bbid.yaml</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">contains the MD5 sums for all the building blocks. This file is dynamically updated, but not used yet. The idea was to have a unique identifier for all building block regardless where they are crated/defined.</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">in the folder where the <code>camtest.core</code> is located, usually <code>~/git/plato-test-scripts/src/camtest/core</code>.</p></td>
+</tr>
+</tbody>
+</table>
 </div>
 </div>
 </div>
@@ -1963,11 +2194,14 @@ array([ 17, 187,   0, ...,   0,   0,   0], dtype=uint8)</pre>
 <div class="footnote" id="_footnotedef_2">
 <a href="#_footnoteref_2">2</a>. There are actually more register parameters that are updated on every sync pulse, but those are all windowing parameters that are not used in camera testing.
 </div>
+<div class="footnote" id="_footnotedef_3">
+<a href="#_footnoteref_3">3</a>. Because of this we are rethinking the format and content of the <code>obsid-table.txt</code> file, see e.g. <a href="https://github.com/IvS-KULeuven/plato-test-scripts/issues/1002">TS issue #1002</a>.
+</div>
 </div>
 <div id="footer">
 <div id="footer-text">
-Version 0.2<br>
-Last updated 2023-05-04 22:34:03 +0200
+Version 0.3<br>
+Last updated 2023-06-15 14:05:04 +0200
 </div>
 </div>
 <script>

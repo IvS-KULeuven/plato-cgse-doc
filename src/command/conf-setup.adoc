@@ -2,7 +2,7 @@
 == Configuration and Setups
 :image-dir: ../images
 
-The complete documentation on the EGSE configuration and on the concept of Setup can be found in the https://ivs-kuleuven.github.io/plato-cgse-doc/asciidocs/developer-manual.html#_the_setup[on-line Common-EGSE documentation.]
+The complete documentation on the EGSE configuration and on the concept of Setup can be found in the https://ivs-kuleuven.github.io/plato-cgse-doc/asciidocs/developer-manual.html#_the_setup[developer manual.]
 
 Setup is the concept we attach to the entity encapsulating the entire set of
 
@@ -19,6 +19,8 @@ Necessary to
 A snippet of a setup file is shown below. It shows the tree structure of the YAML file. At the top level are the main components: gse (devices), camera (fpa, tou, fee), telemetry, etc. The snippet only shows part of the Setup. Under the *gse* branch we have *hexapod* and *stages* and many more that are not shown. All ground equipment that is part of the test setup shall have an entry under the *gse* branch. The information that shall go into these entries is device identification, calibration information, specific device settings, etc.
 
 Everything that is connected to the Camera, i.e. SUT, shall go under the *camera* branch. This is e.g. identifiers for the TOU, FEE, FPA, DPU, CCD, ..., calibration information, defaults, numbering, avoidance information, etc.
+
+NOTE: The gse branch is also used by the process manager to determine which devices are part of the Setup and for which devices it should present a status LED and a start/stop button.
 
 The users are allowed to modify or add items and branches to the setup and save a new version of it. As an example, the stages branch in this example contains calibration values defining metrology of the rotation and translation stages used to position the light beam at CSL.
 
@@ -95,11 +97,15 @@ NavigableDict
 
 === Available Setups
 
-Setups will be available in the form of YAML files, that are either stored in the folder that is mentioned in the settings.yaml file in the Configuration Manager Control Server block, under `FILE_STORAGE_LOCATION` (or in the root directory of plato-common-egse if that has not been included).
+Setups will be available in the form of YAML files that are stored in the `plato-cgse-conf` repository and are located (probably) at `~/git` where the repos are kept.
+
+WARNING: Do never edit these YAML files directly since they are maintained through changes on the operational machine. The configuration manager on the egse-server machine manages these Setups and brings them under configuration control in GitHub automatically upon submitting a new Setup.
 
 Browsing through the available setups can either be done in Python or via a GUI.
 
+[#list-setups]
 ==== Browsing the Setups in Python
+
 
 To get a list of the setups that are available in the system, execute the following command (to be imported from `camtest`):
 ----
@@ -120,9 +126,9 @@ This will return a list of (setup identifier, site identifier) pairs, e.g.
 ----
 The list_setups() command also allows you to filter the results, by using any of the keywords inside the setups. For instance, to list all the setups related to the STM version of the TOU, tested with the hexapod No 1 at CSL, you would type
 ----
->>> list_setups(camera__ID="achel")
+>>> list_setups(camera__ID="achel")  <1>
 ----
-Note that the double underscore “__” is used to navigate the Setup. All parameters passed will be joined with a logical AND.
+<1> Note that the double underscore “__” is used to navigate the Setup. All parameters passed will be joined with a logical AND.
 [source%nowrap]
 ----
 list_setups(camera__ID="achel")
@@ -150,21 +156,22 @@ To open the GUI to inspect all available setups, type the following command:
 ----
 $ setup_ui
 ----
-This will fire up a window as shown in Figure ‎7‑2. The directory that is mentioned in the window title, is the one where the available setups are located.
+This will fire up a window as shown in xref:fig-setup-ui[xrefstyle=short]. The directory that is mentioned in the window title, is the one where the available setups are located.
 
-A text field on the left-hand side allows you to filter the setups, similar to the arguments of the list_setups command from Sect. ‎7.2.1. You can navigate through the tree both with the __ and the dot notation. For the available setups that pass the filtering, the site and setup identifier will appear in the drop-down menu, after either hitting the return key in the filter text field or by pressing the search button next to it.
+A text field on the left-hand side allows you to filter the setups, similar to the arguments of the `list_setups` command from xref:list-setups[xrefstyle=short]. You can navigate through the tree both with the '__' and the dot notation. For the available setups that pass the filtering, the site and setup identifier will appear in the drop-down menu, after either hitting the return key in the filter text field or by pressing the search button next to it.
 
 .Screenshot of the GUI to inspect all available setups.
+[#fig-setup-ui]
 image::../images/setup-ui.png[width=80%,align=center]
 
-
+[#sec-loading-a-setup]
 === Loading a Setup
 
 After inspection of the available setups, a specific setup can be loaded, based on the identifier.
 
-IMPORTANT: _loading_ a setup means to load it in the system such that it then becomes the reference for the system configuration. This means *it impacts the GlobalState and the ConfigurationManager*! It is different from getting a copy of a setup as a variable in a python script (see below).
+IMPORTANT: _loading_ a Setup means to load it in the system such that it then becomes the reference for the system configuration. This means *it impacts the GlobalState and the ConfigurationManager*! It is different from getting a copy of a Setup as a variable in a python script (see below).
 
-Ideally, the setup will be loaded *one single time* at the start of a test phase, with a setup reflecting the HW present in the test environment. *The preferred way to do so is via the setup GUI*. That can be launched via
+Ideally, the Setup will be loaded *one single time* at the start of a test phase, with a setup reflecting the HW present in the test environment. *The preferred way to do so is via the setup GUI*. That can be launched via
 ----
 $ setup_ui
 ----
@@ -176,14 +183,14 @@ In python:
 
 === Inspecting, accessing, and modifying a Setup
 
-First, make sure a setup is already loaded in the system, and that you have a variable attached to a setup in your Python session. Here we call it `setup`.
+First, make sure a Setup is already loaded in the system, and that you have a variable attached to a setup in your Python session. Here we call it `setup`.
 
-You can get a setup with the following command
+You can get a Setup with the following command
 ----
 >>> from camtest import get_setup
 >>> setup = get_setup(7)
 ----
-This will read the content of setup "00007" for the site you are currently at and assign it to a variable called `setup`.
+This will read the content of Setup "00007" for the site you are currently at and assign it to a variable called `setup`.
 
 NOTE: This has no effect on the system configuration (the ConfigurationManager will not know about it, and the GlobalState won’t be affected).
 
@@ -228,7 +235,7 @@ For instance:
 
 When you want to replace a complete sub-branch in the Setup, use a dictionary.
 ----
->>> setup.branch.subbranch = \{} +
+>>> setup.branch.subbranch = {}
 >>> setup.branch.subbranch.leaf = object
 ----
 for instance, to introduce the fpa subbranch in the example file above, one would write:
@@ -256,7 +263,6 @@ The setups are stored under configuration control in the plato-cgse-conf reposit
 ----
 The new setup receives a unique setup_id, and a new entry is created in the list of setups. The new Setup is then loaded and made active in the configuration manager. When the Setup is processed by the system, brought under configuration control and no errors occurred, the new Setup is returned and will be assigned to the `setup` variable. In case of a error, the response contains information on the cause of the Failure and is printed.
 
-NOTE: Do not directly catch the returned setup in the `setup` variable, because you will loose your modified setup in case of an error.
+NOTE: Do not directly catch the returned Setup in the `setup` variable, because you will lose your modified Setup in case of an error.
 
-NOTE: the description is mandatory. Setups keep track of their history, so we strongly encourage to provide concise but accurate
-descriptions each time this command is used.
+NOTE: the description is mandatory. Setups keep track of their history, so we strongly encourage to provide concise but accurate descriptions each time this command is used.
