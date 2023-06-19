@@ -1,0 +1,49 @@
+[#csv-data-files]
+== The format of the CSV data files
+
+All regular housekeeping is stored in CSV files by the storage manager. This section will describe the general format of the CSV files and more detailed information on the content for a number of specific files. For an in-depth description of where, when and how the CSV files are created, have a look into the developer manual, section XXXXX.
+
+The CSV files are comma (',') separated and have a one-line header that contains the column names. All CSV files have at least one mandatory column, which is the 'timestamp' column. This column holds the timestamp of the data in that row and has the following format `YYYY-mm-ddTHH:MM:SS.μs+0000`. Note that the order of the columns is undetermined and the timestamp column is therefore not always the first column. When reading and processing the CSV files, use the column name instead of the column index.
+
+The CVS file can be read with the Pandas `read_csv()` function. That will read all the housekeeping data into a Pandas DataFrame.
+----
+import pandas as pd
+df = pd.read_csv(filename)
+----
+The timestamp string can be parsed into a datetime object with the format `%Y-%m-%dT%H:%M:%S.%f%z` (see https://docs.python.org/3/library/datetime.html#strftime-and-strptime-format-codes[format-codes] for an explanation of the format).
+----
+import datetime
+TIME_FORMAT = '%Y-%m-%dT%H:%M:%S.%f%z'
+dt = datetime.datetime.strptime(dt_string, TIME_FORMAT)
+----
+
+The CGSE has a function defined in the `egse.system` module that does this for you consistently. Note that the `format_datetime()` is the function used to create the timestamp string for the CSV file.
+----
+from egse.system import format_datetime, str_to_datetime
+dt = str_to_datetime(format_datetime())
+----
+The time resolution of the timestamps is 1μs and the timezone is UTC.
+
+If you need to convert the timestamp into a unix timestamp, use the following code:
+
+----
+ts = str_to_datetime(format_datetime()).timestamp()
+----
+This will return a float similar to that returned by https://docs.python.org/3/library/time.html#time.time[`time.time()`].
+
+=== The Device Housekeeping
+
+TBW
+
+[#n-fee-hk]
+=== The N-FEE Housekeeping
+
+The N-FEE sends out a housekeeping packet on every sync pulse, right after it sends the timecode. This housekeeping packet contains temperature sensor values, voltages, currents, some status parameters and error codes. Sensor values, voltages and currents are raw measures and are converted into calibrated values by the `n_fee_hk` process. The conversion is defined in the Setup for that camera (in the `setup.camera.fee.calibration` entry).
+
+All raw and calibrated housekeeping values are stored in the N-FEE-HK CSV file. There are currently about 154 columns in that file. The timestamp of each row is the reception time of the HK packet by the DPU Processor.
+
+Actually, since release 2023.20.0+CGSE of the Common-EGSE, there are two rows of HK values per timecode. The DPU Processor requests all HK data from the N-FEE immediately after receiving the image data from the N-FEE and before sending any RMAP requests. Even if no image data is generated, e.g. in STANDBY or DUMP mode, the additional updated housekeeping is requested. This additional information is needed because the housekeeping contains information, especially error codes, on the readout and data transfer. Also interesting to know is that the first housekeeping packet sent by the N-FEE contains information about the previous readout, while the updated HK data that was requested from the N-FEE contains information about the current readout.
+
+=== The Synoptics Housekeeping
+
+TBW

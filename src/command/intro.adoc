@@ -1,0 +1,40 @@
+== Introduction
+:imagesdir: ../images
+
+=== Contents
+This document describes the usage of the PLATO Common-EGSE to command the PLATO camera (SUT) and the ground support equipment (GSE) during the PLATO camera ground testing.
+
+Throughout this document, we use the following notation:
+
+* a command to be executed in a terminal on either the egse-server or on the client machine.
++
+----
+$ command
+----
+* a command to be executed in a Python session. This Python session will always be running on the client machine.
++
+----
+>>> command
+----
+
+=== EGSE commanding software environment
+The user interface to the PLATO camera EGSE is a software application developed at KU Leuven in collaboration with the test houses for site specific components. It provides graphical user interfaces to control the software processes in the system, monitor telemetry parameters, provide the operator with quick-look analysis images of the camera detectors, etc.  It also features a commanding interface in Python.  The commanding logic is entirely defined in Python.  The hardware interfaces have been implemented in Python (possibly accessing a library written in the C programming language), and the user is accessing these by executing higher-level Python functions in a Python interpreter.
+
+[#user-profiles]
+=== How different user profiles use the software
+
+* *test-operator*: running a test, launching scripts and inspecting results of quick look analysis script at the test house. The test operator is knowledgeable of the Common-EGSE, Test Scripts, all GSE and basic operation of the PLATO Camera (SUT).
+* *test-developer*: translating test specification into commanding scripts, writing quick-look analysis scripts.
+* *offline-analyst*: loads the test data from the archive and process this data for validation and feedback.
+* *site-operator*: manages the test-infrastructure, i.e. the test-environment in the TH, administration of egse-server and client machines.
+* *site-developer*: implements test house specific software for test equipment used at test houses. This includes but is not limited to device drivers, GUI applications, local setups.
+
+Typical flow of events and responsibilities:
+
+* Long before the tests are executed, the site-developer implements the interfaces to the test-equipment in the Common-EGSE.
+* Months before the test, the test-developer turns the test-specification into a commanding script.
+* Minutes before the test, the site-operator starts up the system, activates all connections, launches GUIs, loads the proper system configuration into the system, and gives a go-ahead to the test-operator.
+* At t0, the test-operator launches the execution of the commanding script and follows it in real-time.
+* At the end of the execution, the analyst gets hold of the data and starts the analysis.
+
+This commanding manual is mainly targeted at the test developers, the test operators and the analysts. The site-operators and site-developers will find most of the information they need in the Common-EGSE https://ivs-kuleuven.github.io/plato-cgse-doc/docs/installation-manual/[installation manual] and https://ivs-kuleuven.github.io/plato-cgse-doc/docs/user-manual/[user manual].

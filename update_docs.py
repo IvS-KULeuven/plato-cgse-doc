@@ -22,6 +22,7 @@ for folder, name in [
     ("develop", "developer-manual"),
     ("user", "user-manual"),
     ("icd", "icd"),
+    ("command", "commanding-manual"),
 ]:
 
     rich.print(f"Processing {name}: html.", end="", flush=True)

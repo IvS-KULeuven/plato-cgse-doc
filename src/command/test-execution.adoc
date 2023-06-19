@@ -1,0 +1,54 @@
+== Test execution
+
+[#test-execution]
+=== Test execution: execute
+
+The execution of a test is triggered by the Python function `execute()`. Like `@building_block`, it is a core functionality implemented by plato-test-scripts. It can be used with the following syntax:
+[source]
+----
+>>> execute(building_block_name, param1=value1, param2=value2)
+----
+All parameters must be specified by their name. No positional argument is allowed; hence the order of the parameters is not important. Note that the building block name does not have the paranthesis `'()'`, only the name of the building block is given.
+
+The execute command will start an observation and end the observation when the building block returns. Starting and ending an observation is an expensive operation in the sense that it notifies underlying mechanisms like the configuration and storage manager of the observation so they can take action. Therefore, although any building block can be executed using the `execute(..)` command, this should really only be used for higher level building blocks and from the Python prompt. Never use the `execute(..)` function inside a building block.
+
+=== Preview the command sequence
+
+WARNING: This functionality will be removed in the future as it has only limited applicability and doesn't give a full consistent view of the command sequence.
+
+It is possible to perform a dry-run of a building-block by running `generate_command_sequence()` instead of `execute()`, with the same syntax. Be aware that the duration of the dry run may be as long as the execution itself!
+[source]
+----
+>>> generate_command_sequence(building_block_name, param1=value1, param2=value2)
+----
+This feature will execute all building blocks and functions without actually sending command strings to the test equipment. The current implementation does not take return values from device queries into account which makes it less suited for test scripts that need this feedback for conditional processing, e.g., waiting until a temperature is reached.
+
+Note that `execute` and `generate_command_sequence` will only work under a set of restrictive conditions
+
+* Disposing of software simulators for every piece of equipment addressed by the test. Simulators exist in the EGSE for the N-FEEs and most of the equipment to be used in CSL.
+* Emulating an operational environment on your machine. We refer you to the EGSE documentation for the details of what this entails
+
+=== Executing short building blocks individually
+
+The execute command will trigger the creation of an obsid and an associated data stream. In the case were the operator (e.g. while setting up and testing the TH environment) want to execute short commands or building blocks outside of the scope of a test-script, this is an overkill and will make the analysis of the resulting data very cumbersome, because the data will be distributed over many very very short obsids.
+
+To work around this, it is possible to manually start and stop an observation
+[source]
+----
+>>> start_observation("Running a few examples")
+----
+Will start an observation, attribute it an obsid and the associated data stream, just like what happens at the start of an `execute`.
+
+After that any command passed (individually or within a function/building block) and any data generated will be recorded as part of the running obsid:
+[source]
+----
+>>> command(args)
+>>> func(args)
+>>> building_block(args)
+----
+Finally
+[source]
+----
+>>> end_observation()
+----
+Will close the observation (or do nothing if none is running).
