@@ -8,6 +8,7 @@
 - [x] Timing: timecode packet, HK packet, [Data packets], Commanding through RMAP requests
 - [ ] Describe the transport
 
+[#dpu-cs-and-processor]
 === DPU Control Server and DPU Processor
 
 The DPU Control Server (used to be called the DPU Simulator in older documents) acts like any other control server. It's Protocol class (`DPUProtocol`) starts a `DPUController` which implements the commands that are defined in the `DPUInterface` class. Specific DPU commands are sent to the control server using the `DPUProxy` class. The `DPUProxy` class also implements the `DPUInterface`.
@@ -30,7 +31,7 @@ SYNC_DATA_PACKET:: When the N-FEE is in FULL_IMAGE mode with `digitise_en=1` it 
 
 N_FEE_REGISTER_MAP:: At the start of every readout cycle, the DPU Processor puts a Numpy array of type UINT8 on the message queue. This Numpy array is the memory map that contains and defines the Register Map. Note, that the data from this memory map is a copy, a mirror, of the memory map in the N-FEE.
 
-NUM_CYCLES:: The internal DPU Processor counter `num_cycles` is used to allow the user to command a number of readout cycles in full image mode. This counter is needed because the N-FEE has no concept of '_number-of-images_', i.e. you can not ash the N-FEE to take 10 images.Nevertheless, we wanted this functionality in our test scripts, and that is what `num_cycles` is. If you command `num_cycles=10` the N-FEE will be put into full image mode, generate image data for 10 readout cycles, and after that instructed to go to DUMP mode (see <<dump-mode>>).
+NUM_CYCLES:: The internal DPU Processor counter `num_cycles` is used to allow the user to command a number of readout cycles in full image mode. This counter is needed because the N-FEE has no concept of '_number-of-images_', i.e. you can not ask the N-FEE to take 10 images. Nevertheless, we wanted this functionality in our test scripts, and that is what `num_cycles` is. If you command `num_cycles=10` the N-FEE will be put into full image mode, generate image data for 10 readout cycles, and is after that instructed to go to DUMP mode (see <<dump-mode>>).
 
 The data distribution message queue is used by processes that need to handle image data like the DPU GUI. There is a second message queue used by the DPU Processor to publish monitoring information. In addition to SYNC_TIMECODE, SYNC_HK_PACKET, NUM_CYCLES, the following information is published on this message queue:
 

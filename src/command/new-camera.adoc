@@ -1,0 +1,457 @@
+:pdf-theme: cgse-light
+:pdf-themesdir: ../themes/
+
+[#sec-new-camera]
+== When a new camera arrives
+
+This chapter describes the different actions to be taken when a new camera arrives at either CSL or one of the test houses. The actions are different for CSL with respect to the test houses, so this will be described in separated sections.
+
+=== Setup
+
+The setup file is a configuration file, part of the CGSE, describing all components and calibrations of the actual test article, test equipment, and test environment. In addition to holding some information like the ensemble of reference frame definitions (in CSL) or the history, it consists of two main components: a first describing the GSE and gathering the information over the test environment (devices control and calibration, temperature sensors, …), and a second describing the camera, i.e. gathering all the information over the description and calibration of the test articles (TOU, FPA, FEE…).
+
+The setup is a YAML file, i.e. a hierarchical “dictionary” (in the python sense of the word). Items can be referred to by a [key, value] pair, where the key refers to their location in the hierarchy and consists of the full path to that location, e.g. `setup.gse.stages.calibration.phi_correction_coefficients`: [-0.0014, -0.003].
+The value can be a built-in type (int, float, str, …), a serialized object, a list, or the path to another calibration file. A more detailed explanation of the Setup is in <<conf-setup>>.
+
+The setup is under configuration control in the GitHub repository `plato-cgse-conf` and new setup versions are created exclusively on the server or client machine of the cleanroom for which the setup is intended.
+
+=== Purpose
+
+This chapter describes the values susceptible to change when the components of a new camera are integrated on a test setup in CSL. The goal of this chapter is to provide a step-by-step procedure for the creation of the new setup, including the source of information for every item to update.
+
+At the time of writing, several setups do already exist that include the calibration of the GSE components on both test setups in CSL (“CSL1” and “CSL2”). So this document assumes their pre-existence rather than creating them from scratch every time again.
+
+Setups exist and are maintained in different configuration directories (and in GitHub) for every test environment, so every test chamber has its own numbering for the setups `SETUP_<SITE>_<NUMBER>_<date>_<time>`, e.g. `SETUP_CSL1_00065_230407_091711.yaml` (the date and time are automatically included at creation time). The `<NUMBER>` is sequentially incremented for each new version of a setup and is not reset for each new camera.
+
+NOTE: In this chapter, the `*setup.components.to_update*` will be marked in bold, the `_setup.components_` that should not need any update are written in italics.
+
+=== Useful Information
+
+* Test status of each of the cameras and/or its components: https://s2e2.cosmos.esa.int/confluence/display/PCOT/Test+Status
+* CAM Configuration connects the camera id with the identifiers of its components: https://s2e2.cosmos.esa.int/confluence/pages/viewpage.action?pageId=171639593
+* CAM Logistics Control keeps track of the shipments from CSL to the THs: https://s2e2.cosmos.esa.int/confluence/pages/viewpage.action?spaceKey=SCIPLM&title=CAM+Logistics+Control
+* TOU Logistics Control keeps track of the shipments from TAS to LDO: https://s2e2.cosmos.esa.int/confluence/pages/viewpage.action?spaceKey=SCIPLM&title=TOU+Logistics+Control
+
+
+=== A new camera arrives at CSL
+
+==== Necessary Inputs
+
+This is a list of the input data and files necessary anytime during the process described below, so maybe first check all of them are at hand:
+
+* The latest version of AD01, freshly pulled from Eclipse
+* The metrology excel file from the FPA
+* The metrology excel file from the TOU
+* The raw data from the TOU
+* The laser tracker with the input `CSLReferenceFrameModel` from CSL
+* The default FPGA parameters file (`FPGA_Configuration file.ini`)
+* The sensor calibration parameters file (`HK_Calibrations_File.ini`)
+* The FEE register map calibration file (the same for all (P)FM cameras, but different for EM)
+* The HK map calibration file (the same for all (P)FM cameras, but different for EM)
+* Telemetry dictionary file (CSV file in plato-cgse-conf)
+* The acceptable limits for the CCD offsets & readout noise (`analog_chain_limits_tvac` and ``_ambient.yaml``)
+* The acceptable limits for the FEE currents and powers (`sft_limits_fee_hk_<camera>.xlsx`)
+
+The references for some of those documents can be found in <<sec-new-camera-ref>> or in the latest weekly minutes from CSL.
+
+==== Baseline
+
+[red]#I don't understand what you mean here with baseline? I think this should be more elaborate like what information goes into the GitHub ticket, the ticket basically describes the steps to take, and how to do that by providing the Python code that needs to be executed to ingest the proper information into the Setup. There is also a lot of other information that needs to go in, like N-FEE sensor calibration, the new Register Map definition, the HK packet definition, etc.#
+
+.	Open a GitHub ticket on the plato-cgse-conf repository, using the "Configuration for new camera template".
+.	Create a new setup, starting from the last setup on the given test-chamber (e.g. CSL1).
+.	Create a GitHub ticket for the inclusion of the CSL metrology (xls) file on the CSL server (cgse-conf)
+.	Reduce the raw data from LDO
+.	Create a GitHub ticket for the inclusion of the LDO-data-reduction (fits) file on the CSL server (data/reduced)
+
+
+==== Updating the GSE section
+
+There are only a few items to update in this section, as the information doesn't change with the camera.
+
+[cols="1,8",frame=topbot,grid=none,stripes=odd]
+|===
+
+2+|`*setup.gse.hexapod*`
+
+|
+a|There are 2 hexapods per test room in CSL -> check the proper hexapod ID & information with CSL (source TBD).
+
+There are 4 hexapods : 1A, 1B, 2A, 2B, with 1, 2 referring to the test room CSL1 or CSL2.
+
+The `setup.gse.hexapod.ID`, `CID` and `label` are updated together (TBC).
+
+2+|`_setup.gse.stages_`
+
+|
+a|Bound to the room. Should not need any update.
+
+The section `setup.gse.stages.calibration` comes from
+
+* CSL1 : PLATO-PL-CSL-RP-0031_3.0_R1_CalibrationReport
+* CSL2 : PLATO-PL-CSL-RP-0032_2.1_R2_CalibrationReport
+
+The offsets are simple scalar values describing the value at field angles [boresight, azimuth] = [0,0]
+
+The correction coefficients are polymonials, expressed as [order_0_par, order_1_par, …]. The parameters are expressed in the equations presented for each of the stages:
+
+.The origin of the values
+****
+Correction of the azimuth &#x03c6;
+
+`setup.gse.stages.phi_correction_coefficients = [order0, order1]`
+&#x2192; from equation 4-4 in section "calculation of correction angle &#x03c6; versus FOV &#x03b8;"
+
+Mirror orientation &#x03b1;
+
+`setup.gse.stages.alpha_correction_coefficients = [order0, order1]`
+&#x2192; from equation 4-1 in section “Definition of Mirror orientation”
+
+`setup.gse.stages.calibration.offset_alpha = value`
+&#x2192; this value is 0. = the difference between the “calculated mirror orientation” for FoV &#x03b8; in Table 4-8 and alpha_correction_coefficients[0]
+
+Mirror position _x_
+
+`setup.gse.stages.delta_x_correction_coefficients = [order0, order1, order2]`
+&#x2192; from equation 4-3 in section “Definition of Mirror position”
+
+`setup.gse.stages.calibration.offset_delta_x = value`
+&#x2192; This value is listed under equation 4-3
+****
+
+
+2+|`*setup.gse.stages.calibration.offset_phi*`
+
+|
+|This must be updated from the z-component of the rotation vector expressing TOU_MEC in GL_ISO.
+
+This is only made available to us after alignment of the camera on the CSL setup.
+
+It can then be found in the xls sheet gathering the laser-tracker metrology from CSL, provided as input to define the CSLReferenceFrame (see <<sec-csl-ref-frames>>).
+
+
+2+|`_setup.gse.aeu_`
+
+|
+a|Bound to the room. Should not need any update
+
+Original info from TBD
+
+2+|`_setup.gse.ogse_`
+
+|
+a|Bound to the room. Should not need any update
+
+Original info from TBD
+
+2+|`_setup.gse.DAQ6510_`
+
+|
+a|Bound to the room. Should not need any update (TBC)
+
+Original info from TBD
+
+This still needs to be checked as the sensors need to be connected in the same way for all cameras. Check the sensor / channel connection.
+
+|===
+
+
+==== Updating the Camera section
+
+*Camera identifiers*
+
+CSL UI → "Configuration" tab → [red]#Sect. "2 - Include information in setup" → "Camera identifiers"#
+--
+* Set the camera_id  (choose from drop-down menu)
+* Set the camera_serial_number (from AD01)
+* Set the tou_id (from AD01; e.g. TOU-11100000-FM-01)
+* Set the fee_id (from AD01)
+* Set the fpa_id (from AD01; e.g. FPA-11200000-FM-SN103)
+* Complete the description (should contain camera name + issue number)
+* Press "run"
+* Check the proposed changes → [red]#Agree to submit setup#
+--
+
+[cols="1,8",frame=topbot,grid=none,stripes=odd]
+|===
+
+2+|`*setup.camera.TOU.ID*`
+
+|
+|See "Camera identifiers" above
+
+2+|`_setup.camera.fpa_`
+
+|
+a|
+* `setup.fpa.ID`: See "Camera identifiers" above
+* `setup.fpa.avoidance` parameters don’t need any update
+
+2+|`_setup.camera.dpu_`
+
+|
+|No update needed.
+
+2+|`*setup.camera.fee*`
+
+|
+a|
+`setup.camera.fee.type`: N-FEE or F-FEE
+
+`setup.camera.fee.ID`: See "Camera identifiers" above
+
+`setup.camera.fee.calibration`:
+
+.	Pull the “*HK_Calibrations_File.ini” from the FEE / Analogue chain EIDP
+.	CSL UI: "Configuration" tab → Sect. "1 - Create configuration / calibration files" → "N-FEE sensor calibration":
+..	Set the camera_id (choose from drop-down menu)
+..	Load the HK calibration file from step 1
+..	Fill out the handling jigs (taken from AD01)
+..	Press "run"
+.	Submit the file to the plato-cgse-conf GitHub repository (in common/n-fee)
+.	CSL UI: "Configuration" tab → Sect. "2 - Include information in setup" → "N-FEE sensor calibration":
+..	Set the camera_id (choose from drop-down menu)
+..	Load the N-FEE calibration file created in steps 2 - 3
+..	Complete the description (should contain camera name + issue number)
+..	Press "run"
+..	Check the proposed changes → Agree to submit setup
+
+
+2+|`*setup.camera.fee.register_map*` & `*setup.camera.fee.hk_map*`
+
+|
+a|
+.	Make a copy of the register map and HK map YAML files (in common/n-fee) of a previous (P)FM
+.	Replace the beer name in the filenames
+.	Submit the files to the plato-cgse-conf GitHub repository (in common/n-fee)
+.	CSL UI: "Configuration" tab → Sect. "2 - Include information in setup" → "N-FEE register & HK map":
+..	Set the camera_id (choose from drop-down menu)
+..	Load the register and HK maps from steps 1 - 3
+..	Complete the description (should contain camera name + issue number)
+..	Press "run"
+..	Check the proposed changes → Agree to submit setup
+
+
+2+|`*setup.camera.fee.fpga_defaults*`
+
+|
+a|
+.	Pull the “*FPGA_Configuration file.ini” from the FEE / Analogue chain EIDP
+.	CSL UI: "Configuration" tab → Sect. "1 - Create configuration / calibration files" → "N-FEE FPGA defaults":
+..	Set the camera_id (choose from drop-down menu)
+..	Load the FPGA defaults file from step 1
+..	Press "run"
+.	Submit the file to the plato-cgse-conf GitHub repository (in common/n-fee)
+.	CSL UI: "Configuration" tab → Sect. "2 - Include information in setup" → "FEE FPGA defaults":
+..	Set the camera_id (choose from drop-down menu)
+..	Load the FPGA defaults file created in steps 2 - 3
+..	Complete the description (should contain camera name + issue number)
+..	Press "run"
+..	Check the proposed changes → Agree to submit setup
+
+
+2+|`_setup.camera.fee.ccd_numbering_`, `_ccd_sides_`, `_sensor_sel_`
+
+|
+|no update
+
+
+2+|`*setup.camera.fee.power_consumption*`
+
+|
+a|
+[upperalpha]
+.	 Prepare the calibration file
+[arabic]
+..	Identify the appropriate versions of the MSSL-0058 short functional test reports for both the ambient and tvac cases. For instance, the ambient case might be labelled “before shipping”. Many versions of MSSL-0058 exist for every camera, so have your selection validated by ESA before anything else.
+..	Find an existing calibration file in the cgse-conf repo, in common/n-fee. For instance sft_limits_fee_hk_duvel_v01.xlsx
+..	Copy it to a new file bearing the name of the new camera, to make sure to respect its format in the new version
+..	(Manually) edit the cover page and the values in the ‘ambient’ and ‘tvac’ sheets according to the MSSL-0058 reports (table numbers are indicative; in case of deviation, apply common-sense; powers are computed from voltages and currents)
+[lowerroman]
+...	Voltages (table 14-8). The tolerances on the voltages are set to 100%.
+...	Currents ON mode (table 14-9)
+...	Currents STANDBY mode (table 14-14)
+...	Currents in FULL_IMAGE mode READOUT (table 14-16)
+...	Currents in FULL_IMAGE mode INTEGRATION (table 14-17)
+
+.	Update the setup accordingly
+[arabic]
+..	CSL UI: “Configuration” tab → Sect. 2 (SFT) I and P limits”
+..	version (mandaroty) : the version of your calibration file (integer)
+..	confdir (optional) : can be left blank : the directory where the calibration files will be found. The default is taken from the env. variable PLAT0_CONF_DATA_LOCATION
+..	description (optional) : if left blank,  replaced with “Incl. power consumption limits for <camera>. Ref. file version <version>”
+
+The calibration file is selected based on the camera.ID, which is determined from the current setup (`setup.camera.ID`), so prior to this, make sure to start after loading a preliminary setup for the new camera.
+
+2+|`*setup.camera.ccd.limits*`
+
+|
+a|
+[upperalpha]
+.	Calibration file received by email from Sami Niemi, and placed on ``$PLAT0_CONF_DATA_LOCATION/common/ccd``. Two independent files exist for ambient and tvac. Both have the same format and contain the information for all cameras at once. The filenames are “analogue_chain_limits_<temp>_<version>.yaml”, where <temp> is either ‘ambient’ or ‘tvac’ and <version> is ‘v??’ with ?? = the version number, e.g. 04.
++
+Verify that the file received from Sami has the right version number (= the ‘next one’) and that the temperatures are well formulated as “ambient” and “tvac” (e.g. not “cold”)
+.	Update the setup accordingly:
+[arabic]
+..	CSL UI: “Configuration” tab → Sect. 2 (SFT) CCD offsets and readout noise”
+..	version (mandaroty) : the version of your calibration file (integer)
+..	temp (mandatory) : either ‘ambient’ or ‘tvac’
+..	confdir (optional) : can be left blank : the directory where the calibration files will be found. The default is taken from the env. variable PLAT0_CONF_DATA_LOCATION
+..	description (optional) : if left blank,  replaced with “Incl. power consumption limits for <camera>. Ref. file version <version>”
+
+The calibration file is selected based on the camera.ID, which is determined from the current setup (`setup.camera.ID`), so prior to this, make sure to start after loading a preliminary setup for the new camera.
+
+2+|`*setup.camera.ID*`, `*setup.camera.serial_number*`
+
+|
+|See "Camera identifiers" above
+
+2+|`*setup.camera.ccd*`
+
+|
+a|`setup.camera.orgin_offset_x`, `origin_offset_y` and `orientation`: must be updated from the FPA metrology excel sheet.
+
+To compute the new values from plato-test-scripts, run the ipython notebook `scripts/ccd_info.ipynb`.
+
+Alternative:
+
+.	Input data: FPA metrology excel sheet. PL-ALN-CSL-0050 “coordinates of the corner pixels”)
+.	Script camtest.analysis.analysis_fpa_eidp_corners.py
+..	Ingest the coordinates according to the format existing for previous cameras
+..	Run the code snippet for the new camera.
+.	CSL UI: "Configuration" tab → Sect. "2 - Include information in setup" → "CCD positions":
+..	Set the camera_id (choose from drop-down menu)
+..	Load the  FPA metrology spreadsheet from step 1
+..	Complete the description (should contain camera name + issue number)
+..	Press "run"
+..	Check the proposed changes to the setup → Agree to submit the setup
+
+
+2+|`*setup.camera.fov*`: TOU metrology excel sheet
+
+|
+a|
+`setup.camera.fov.focal_length`: update from LDO TOU metrology excel sheet.
+
+`setup.camera.fov.distortion_coefficients`: update from LDO TOU metrology excel sheet.
+
+`setup.camera.fov.inverse_distortion_coeffcients`: computed from the distortion coefficients
+
+.	Input data: TOU metrology excel sheet
+.	To compute : from the plato-test-scripts, run the ipython notebook `scripts/field_distortion.ipynb`
+.	CSL UI: "Configuration" tab → Sect. "2 - Include information in setup" → "Field distortion & Focal length":
+..	Set the camera_id (choose from drop-down menu)
+..	Load the TOU metrology spreadsheet from step 1
+..	Complete the description (should contain camera name + issue number)
+..	Press "run"
+..	Check the proposed changes to the setup → Agree to submit the setup
+
+`setup.camera.fov.tau`: no update. If needed, it will be updated after recalibration.
+
+|===
+
+
+
+==== Remaining Setup sections
+
+[cols="1,8",frame=topbot,grid=none,stripes=odd]
+|===
+
+
+2+|`_setup.csl_model_`
+
+|
+a|is automatically updated during operations. This demands a laser-tracker metrology input file from CSL.
+
+See <<sec-reduce-raw-ldo>> for details.
+
+2+|`*setup.fov_positions.reference_full_40.x*` & `*y*`
+
+|
+a|To be updated from the LDO metrology, for use with ‘use_angles = False’ in the verification of the LDO metrology.
+
+They can be found in the columns presenting the TOU_MEC / MRF X & Y coordinates of the LDO measurements at ambient, in their metrology deliverables document (columns x and y in PL-ALN-CSL-0520 in sheet “TOU” of the TOU/LDO “RP” document; see <<sec-new-camera-ref>>).
+
+2+|`*setup.telemetry*`
+
+|
+a|
+.	Make a copy of the telemetry dictionary of the previous camera (CSV file)
+.	Replace the beer name in the filename
+.	Submit the files to the plato-cgse-conf GitHub repository (in common/telemetry)
+.	CSL UI: "Configuration" tab → Sect. "2 - Include information in setup" → "Telemetry"
+..	Set the camera_id (choose from drop-down menu)
+..	Load the file from step 1
+..	Complete the description (should contain camera name + issue number)
+..	Press "run"
+..	Check the proposed changes → Agree to submit the setup
+
+2+|`_setup.sensor_calibration_`
+
+|
+|No update needed.
+
+|===
+
+
+=== A new camera arrives at the test houses
+
+TBW
+
+
+=== Additional preparation steps
+
+[#sec-reduce-raw-ldo]
+==== Reduce the raw LDO data
+
+The raw data from LDO’s measurements at ambient must be reduced and the results formatted as if acquired in CSL to allow for easy comparisons by the CSL operators.
+
+The raw data is attached to a document, whose reference can be found in the CSL weekly meeting (updated there). See also <<sec-new-camera-ref>>.
+
+. Verify the next obsid that is free for LDO (see table in Section XXXXX).
+. Reduce the LDO data
+. Compare the results (ellipse-sizes) with those from LDO (presented in their metrology excel sheet)
+. Copy the resulting fits file on the CSL server, in the /data/reduced/ directory (TBC)
+
+So far the raw data is reduced manually, due to various issues and changes in the measurements and in the formats of the LDO deliveries.
+
+[#sec-csl-ref-frames]
+==== CSLReferenceFrame
+
+The CSL operator GUI needs a laser-tracker metrology file from CSL. That is an excel file with a “data” sheet that is read by the task in the GUI.
+
+. The file is communicated to KUL after alignment of the camera on the setup. It doesn't need any modification.
+. It must be pushed to the plato-cgse-conf repository in the 'data/CSL[12]/conf' directory and after that the repository must be pulled on both the server and client machines.
+
+NB: The name of the file will be PLATO-CSL-PL-RP_00YY_vX.3_CSL_RFModel_FMX_CAMID_ROT?_ISO??.xlsx where YY is a document number, X is the FM-TOU-number (e.g. FM2 is Chimay), and the single and double question marks point to the rotation and isostatic tables used. The filename is not critical, it is a free parameter in the arguments panel of the CSL operator GUI.
+
+[#sec-new-camera-ref]
+=== Reference Information
+
+Camera configuration & ABCL:
+
+* Most information can be found in AD01: PLATO-INAF-PL-LI-0071 : PFM_FM_FS_CAM_ABCL
+* Links between CAM ID, TOU, FPA & metrology reports are in the minutes of the CSL weekly (the table is permanent and updated in there)
+
+CAM ID : from PLATO-CSL-PL-PR-0019 version 1.1
+
+TOU is the usual reference FM#n.
+
+* The serial number can be found in AD01 or in Confluence: https://s2e2.cosmos.esa.int/confluence/pages/viewpage.action?pageId=171639593
+* It has the following structure: `+N?-CAM-1?100000-FM-##+` where `?` runs from 1 to 4 and denotes the camera-group, whereas `+##+` runs from 01 to 06 and marks the camera number within the group.
+
+DEAD : from AD01 (original reference: PTO-EST-PL-TN-1369 version 1.0)
+
+Metrology
+
+* For the TOU, metrology reports start with PLATO-INAF-PL-RP and can be found in the TOU EIDP, in Eclipse or `/STER/platodata/EIDP/{camera}/TOU/… /12-Test Reports/`
+* For the TOU, the raw data can be found in documents starting with PLATO-INAF-PL-TR, and are in the EIDP or delta_EIDP
+* For the FPA, metrology reports start with PTO-EST-PL-RP and can be found directly in Eclipse
+
+TODO: link the TOU & FPA Ref. to their EIDP in Eclipse ?
+
+To be allocated to the right camera:
+
+* PTO-EST-PL-REP-1551 - PLATO FM7 FPA Metrology Summary
+* PTO-EST-PL-REP-1552 - PLATO FM8 FPA Metrology Summary
+* PTO-EST-PL-REP-1553 - PLATO FM10 FPA Metrology Summary

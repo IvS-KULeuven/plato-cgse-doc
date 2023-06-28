@@ -3,14 +3,14 @@
 
 Before you can start any operations or tests, you will need to switch on the Camera N-CAM following a dedicated Camera Switch ON procedure. Also for switching off the Camera you will need to follow a series of steps to be executed in the correct order.
 
-The procedure for Camera Switch ON is the following:
+The steps for Camera Switch ON are the following:
 
 . Send commands to the AEU to power on the camera and enable the sync signals → Camera is now in ON mode
 . Send the FPGA defaults to the N-FEE
 . Go to STANDBY mode
 . Go to DUMP mode, external sync
 
-The procedure for the Camera Switch OFF:
+The steps for the Camera Switch OFF:
 
 . Go to STANDBY mode
 . Go to ON mode
@@ -18,6 +18,7 @@ The procedure for the Camera Switch OFF:
 
 Note that, although the individual steps all exist as tasks in the Operator GUI, the procedure to switch OFF and ON the Camera should be used from the Operator GUI:  `Camera TAB > 4 — Camera > Switch ON / Switch OFF`. These tasks step through the different steps in the procedure and perform additional checks like voltages/currents/power, N-FEE mode etc. prompting the user for confirmation at each step.
 
+[#fig-task-gui-camera-switch-on-off]
 .Screenshot of the Operator Task GUI where the Camera Switch On and Switch OFF have been framed.
 image::../images/task-gui-camera-switch-on-off.png[width=80%,align=center]
 
@@ -148,3 +149,103 @@ Switching OFF the camera is much simpler and doesn't require specific checks. Th
 ----
 
 IMPORTANT: As with the Camera Switch ON procedure, also for the switch-off, you shall use the Camera Switch OFF task from the `Task GUI > Camera TAB > 4 — Camera > Switch OFF` instead of using the individual tasks or commands.
+
+[#sft-analysis]
+=== Analysis of the Short Function Test (SFT)
+
+Every time you execute the Camera Switch ON procedure, the task will perform a short functional test using the `acquire_and_dump` command as shown below. This is a full-frame measurement of all four CCDs and both sides.
+[source]
+----
+>>> dpu.n_cam_acquire_and_dump(num_cycles=5, row_start=0, row_end=4539,
+                               rows_final_dump=0, ccd_order=[1, 2, 3, 4],
+                               ccd_side="BOTH")
+----
+
+In the Operator Task GUI, Camera TAB (see <<fig-task-gui-camera-switch-on-off>>), there is a task button to execute the SFT analysis. In the arguments panel, you should provide the `obsid` of the Camera Switch ON as an integer, i.e. only the test id, not the site id. The `data_dir` is the parent folder where the observations are stored and the `output_dir` is where the result of the analysis will be saved.
+
+.Input arguments panel that will appear when selecting the _SFT Analysis_ task button in the Operator Task GUI.
+image::../images/task-gui-sft-analysis-args.png[]
+
+
+The SFT analysis runs two different functions:
+
+* The first one verifies the currents and power limits on the N-FEE with the HK of the AEU voltages and currents.
+* The second analyses the image data and verifies that the electronic offset and readout noise are within the acceptable boundaries for the given camera.
+
+These functions produce several standard output files, consisting in
+
+* plots of the data
+* text files with the limit-checks and success-criteria.
+
+The HK checks produce the following files:
+
+* `sft_analysis_<camera>_<obsid>_HK_AEU-CRIO_VI.png`
+* `sft_analysis_<camera>_<obsid>_HK_checks.txt`
+
+where <camera> is the camera.ID, e.g. 'duvel', and <obsid> is the observation id, e.g. ‘01234’.
+
+The former is a plot of the HK, looking like this for an SFT measurement on Brigand:
+
+.Standard output of the HK checks in the SFT analysis. The top panel shows the voltages, while the currents are on the bottom. The blue dashed lines mark the FEE-mode transitions (starting with OFF, then ON, STANDBY and FULL_IMAGE_MODE). The dashed gray lines mark the frame acquisition times during the execution of `n_cam_acquire_and_dump`.
+image::sft-analysis-01.png[]
+
+
+The latter file is a text file and contains the limit-checks for currents and power consumption, and nominally ends with a message formatted like this:
+----
+All V-AEU OK: True
+All V-FEE OK: True
+All I OK:     True
+All P OK:     True
+
+All values OK.
+
+IF offsets & readout noise OK, you can PROCEED.
+----
+
+If any of the checks are invalid it recommends to “STOP for analysis”.
+
+The image analysis part produces the following files:
+
+* `sft_analysis_<camera>_<obsid>_img_raw.png`
+* `sft_analysis_<camera>_<obsid>_img_offsetSubtracted.png`
+* `sft_analysis_<camera>_<obsid>_img_avg_rows_and_columns.png`
+* `sft_analysis_<camera>_<obsid>_img_checks_offsets_ron_<func>.txt`
+
+where <func> is the statistical function used to combine the results obtained from individual columns (default is ‘mean’).
+
+The ‘raw’ image displays one full-frame image of the 4 CCDs (the layer is chosen at run-time of the analysis, and is reported in the image itself).
+
+The `offsetSubtracted` image corresponds to the same data, after subtraction from the offset computed from the serial overscan columns.
+
+The `avg_rows_and_columns` presents the average row and column profiles of the image area (including parallel overscan) of the 8 half-CCDs independently.
+
+Examples of such images can be found below.
+
+The text file contains the limit-checks for electronic offsets and readout noise, and nominally ends with a message formatted like this:
+----
+Summary
+off_spre        OK
+off_sover       OK
+off_pover       OK
+off_img         OK
+noise_sover     OK
+noise_img_col   OK
+
+Checks of CCD offsets & r.o.n. OK.
+
+IF voltage checks OK, you can PROCEED.
+----
+
+Here as well, if any of the checks are invalid it recommends to “STOP for analysis”.
+
+.Standard images output by the SFT analysis.
+[cols="1,1"]
+|===
+a|.The RAW image.
+image::../images/sft-analysis-02.png[]
+a|.Image after offset-subtraction.
+image::../images/sft-analysis-03.png[]
+|===
+
+.Standard image output of the SFT analysis, presenting the average row and column profiles for the image-area in all half-CCDs.
+image::../images/sft-analysis-04.png[]
