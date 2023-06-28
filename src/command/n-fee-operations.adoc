@@ -1,5 +1,7 @@
 [#n-fee-operations]
 == Operating the N-FEE
+:xrefstyle: short
+:tabs:
 
 This section describes some basic principles on the N-FEE design and their practical impact on the N-FEE, CCD and camera operations.
 
@@ -15,9 +17,8 @@ This section describes some basic principles on the N-FEE design and their pract
 * *E and F*: the Plato CCDs dispose of 2 readout amplifiers. The left and right halves of the CCD are transferred to the corresponding amplifier (they behave almost like independent CCDs). For some reason that thy shall not ask, E and F refer to the right and left halves of a CCD (mnemonic: same order as in “FEE”) respectively.
 * *Cycle*: period between two long-synchronisation pulses (see below)
 
-=== Introduction
-
-==== N-FEE operating modes
+[#sec-n-fee-operating-modes]
+=== N-FEE operating modes
 
 A complete list of the N-FEE operating modes can be found in <<reference-documents, RD-06>>. The main modes for camera testing are:
 
@@ -36,8 +37,8 @@ A complete list of the N-FEE operating modes can be found in <<reference-documen
 [#fig-fee-operation-modes]
 image::../images/n-fee-operating-modes.png[width=60%,align=center]
 
-
-==== Cycle, Timing and Synchronisation
+[#sec-cycle-timing]
+=== Cycle, Timing and Synchronisation
 
 *Readout timing:* The AEU sends synchronization pulses to the FEE every 6.25 seconds. Every pulse triggers a CCD-readout. In nominal operations, the 4 CCDs in one camera are addressed sequentially, i.e. readout one at a time, delayed by one pulse period, i.e. 6.25 seconds.
 
@@ -84,21 +85,25 @@ by the execute command (see <<test-execution>>).
 
 ==== CCD and pixel references
 
-<<fig-ccd-numbering-coordinates>> shows the CCD numbering adopted for the commanding, as well
-as the CCD-specific coordinate systems adopted e.g. to specify the
-window coordinates. We will further refer to these coordinate systems as
-CCDn_PIX n = 1,2,3,4. Note that these
+<<fig-ccd-numbering-coordinates-fm>> (for FM) and <<fig-ccd-numbering-coordinates-em>> (for EM) show the CCD numbering adopted for the commanding. We will further refer to these coordinate systems as CCDn_PIX n = 1,2,3,4. Note that these
 
-* each cover an entire CCD, without interruption at the “border” between
-E & F (columns 2254 to 2255), and
-* differ from the CCD coordinate systems adopted in RD-10 (pix [1,1]
-close to the optical axis), as well as of those adopted at FEE-level (2
-coord. systems/CCD, with the x-axes in opposite directions on E & F).
+* each cover an entire CCD, without interruption at the “border” between E & F (columns 2254 to 2255), and
+* differ from the CCD coordinate systems adopted in RD-10 (pix [1,1] close to the optical axis), as well as of those adopted at FEE-level (2 coord. systems/CCD, with the x-axes in opposite directions on E & F).
 
-.CCD numbering and pixel coordinates on every CCD (CCD_PIXn reference frames). The areas in gray represent the readout registers.
-[#fig-ccd-numbering-coordinates]
-image::../images/ccd-numbering-coordinates.png[width=60%,align=center]
+[tabs]
+======
+FM::
++
+.CCD numbering and pixel coordinates for the FM camera on every CCD (CCD_PIXn reference frames). The thicker black border lines represent the readout registers.
+[#fig-ccd-numbering-coordinates-fm]
+image::../images/ccd-numbering-coordinates-fm.png[width=80%,align=center]
 
+EM::
++
+.CCD numbering and pixel coordinates for the EM camera on every CCD (CCD_PIXn reference frames). The thicker black border lines represent the readout registers.
+[#fig-ccd-numbering-coordinates-em]
+image::../images/ccd-numbering-coordinates-em.png[width=80%,align=center]
+======
 
 [#standard-building-block-parameters]
 ==== Standard building block parameters
@@ -154,7 +159,7 @@ full-CCD image acquisition if needed due to scheduling constraints.
 Two FEE-specific building blocks currently exist to put them into
 specific operational “modes”:
 
-*ON mode* (section ‎11.2.1).
+*ON mode* (<<sec-n-fee-operating-modes>>).
 
 [source]
 ----
@@ -164,9 +169,9 @@ specific operational “modes”:
 
 NB: ON mode is the default mode after FEE switch on, but this building
 block cannot be used to power on the FEE. That is handled by the AEU
-(section ‎10).
+(<<aeu-operations>>).
 
-*STANDBY mode* (section ‎11.2.1).
+*STANDBY mode* (<<sec-n-fee-operating-modes>>).
 
 [source]
 ----
@@ -174,17 +179,14 @@ block cannot be used to power on the FEE. That is handled by the AEU
 >>> n_fee_is_standby_mode() -- function
 ----
 
+[#dump-mode]
 ==== DUMP mode
 
-DUMP is not a genuine FEE operation mode. We defined it as a full-image
-mode in which the dump-gate is maintained high, i.e. the readout
-register is continuously reset. That is a convenient way to avoid
-saturation between tests, or building blocks of a given test.
+DUMP is not a genuine FEE operation mode. We defined it as a full-image mode in which the dump-gate is maintained high, i.e. the readout register is continuously reset. That is a convenient way to avoid saturation between tests, or building blocks of a given test. In addition, the N-FEE is configured with digitisation disabled which means the image data is not transmitted to the DPU.
 
 *External sync*
 
-The CCD operation proceeds over the 4 CCDs with a nominal cycle-time of
-25 seconds, but the data are dumped.
+The CCD operation proceeds over the 4 CCDs with a nominal cycle-time of 25 seconds, but the data are dumped. The default is to read out 0 lines, then do a full-frame clearout (rows_final_dump=4510).
 
 [source]
 ----
@@ -252,7 +254,7 @@ Identical to n_cam_partial_ccd, including the possibility to configure longer cy
 [#sec-n-cam-partial-ccd-int-sync]
 ==== N-CAM full image, with internal sync-pulses
 
-Identical to n_cam_partial_ccd, with configurable exposure time. As explained in section ‎11.2.2, the exposure time cannot be commanded directly at CCD level but results indirectly from the long-pulse period(cycle-time). In this mode, the input parameters are used to compute the duration of a CCD readout, and that in turn is used to compute the cycle time allowing for the desired exposure time.
+Identical to n_cam_partial_ccd, with configurable exposure time. As explained in <<sec-cycle-timing>>, the exposure time cannot be commanded directly at CCD level but results indirectly from the long-pulse period(cycle-time). In this mode, the input parameters are used to compute the duration of a CCD readout, and that in turn is used to compute the cycle time allowing for the desired exposure time.
 
 [source]
 ----
