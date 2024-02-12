@@ -27,20 +27,21 @@
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">import logging
+from typing import Optional
 
 import numpy as np
 from prometheus_client import Gauge
 
 from egse.hk import TmDictionaryColumns
 from egse.settings import Settings
-from egse.setup import SetupError
+from egse.setup import SetupError, load_setup, Setup
 from egse.state import GlobalState
 
-MODULE_LOGGER = logging.getLogger(__name__)
+LOGGER = logging.getLogger(__name__)
 SITE_ID = Settings.load(&#34;SITE&#34;).ID
 
 
-def define_metrics(origin: str, dashboard: str = None, use_site:bool = False) -&gt; dict:
+def define_metrics(origin: str, dashboard: str = None, use_site: bool = False, setup: Optional[Setup] = None) -&gt; dict:
     &#34;&#34;&#34;
     Create a metrics dictionary from the TM dictionary.
 
@@ -53,14 +54,16 @@ def define_metrics(origin: str, dashboard: str = None, use_site:bool = False) -&
         origin: the storage mnemonics for the requested metrics
         dashboard: restrict the metrics selection to those that are defined for the given dashboard.
             You can select all dashboards with `dashboard=&#39;*&#39;`.
-        use_site: Indicate whether or not the prefixes of the new HK names are TH-specific
+        use_site: Indicate whether the prefixes of the new HK names are TH-specific
+        setup: Setup.
     Returns:
         Dictionary with all Prometheus gauges for the given origin and dashboard.
     &#34;&#34;&#34;
-    print(&#34;Defining metrics&#34;)
+
+    setup = setup or load_setup()
 
     try:
-        hk_info_table = GlobalState.setup.telemetry.dictionary
+        hk_info_table = setup.telemetry.dictionary
     except AttributeError:
         raise SetupError(&#34;Version of the telemetry dictionary not specified in the current setup&#34;)
 
@@ -84,27 +87,47 @@ def define_metrics(origin: str, dashboard: str = None, use_site:bool = False) -&
     syn_names = hk_names[selection]
     descriptions = descriptions[selection]
 
-    if use_site:
-
-        th_prefix = f&#34;G{SITE_ID}_&#34;
-
-        th_syn_names = []
-        th_descriptions = []
-        for syn_name, description in zip(syn_names, descriptions):
-            if syn_name.startswith(th_prefix):
-                th_syn_names.append(syn_name)
-                th_descriptions.append(description)
-
-        return {
-            syn_name: Gauge(syn_name, description)
-            for syn_name, description in zip(th_syn_names, th_descriptions)
-        }
-
-    else:
+    if not use_site:
         return {
             syn_name: Gauge(syn_name, description)
             for syn_name, description in zip(syn_names, descriptions)
-        }</code></pre>
+        }
+
+    th_prefix = f&#34;G{SITE_ID}_&#34;
+
+    th_syn_names = []
+    th_descriptions = []
+    for syn_name, description in zip(syn_names, descriptions):
+        if syn_name.startswith(th_prefix):
+            th_syn_names.append(syn_name)
+            th_descriptions.append(description)
+
+    return {
+        syn_name: Gauge(syn_name, description)
+        for syn_name, description in zip(th_syn_names, th_descriptions)
+    }
+
+
+def update_metrics(metrics: dict, updates: dict):
+    &#34;&#34;&#34;
+    Updates the metrics parameters with the values from the updates dictionary.
+    Only the metrics parameters for which the names are keys in the given updates dict are actually updated. Other
+    metrics remain untouched.
+
+    The functions logs a warning when the updates dict contains a name which is not known as a metrics parameter.
+
+    Args:
+        metrics: the metrics dictionary previously defined with the define_metrics function
+        updates: a dictionary with key=metrics name and value is the to-be-updated value
+    &#34;&#34;&#34;
+    for metric_name, value in updates.items():
+        try:
+            if value is None:
+                metrics[metric_name].set(float(&#39;nan&#39;))
+            else:
+                metrics[metric_name].set(float(value))
+        except KeyError as exc:
+            LOGGER.warning(f&#34;Unknown metric name: {metric_name=}&#34;)</code></pre>
 </details>
 </section>
 <section>
@@ -115,7 +138,7 @@ def define_metrics(origin: str, dashboard: str = None, use_site:bool = False) -&
 <h2 class="section-title" id="header-functions">Functions</h2>
 <dl>
 <dt id="egse.metrics.define_metrics"><code class="name flex">
-<span>def <span class="ident">define_metrics</span></span>(<span>origin: str, dashboard: str = None, use_site: bool = False) ‑> dict</span>
+<span>def <span class="ident">define_metrics</span></span>(<span>origin: str, dashboard: str = None, use_site: bool = False, setup: Optional[<a title="egse.setup.Setup" href="setup.html#egse.setup.Setup">Setup</a>] = None) ‑> dict</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Create a metrics dictionary from the TM dictionary.</p>
@@ -130,7 +153,9 @@ gauges based on this information.</p>
 <dd>restrict the metrics selection to those that are defined for the given dashboard.
 You can select all dashboards with <code>dashboard='*'</code>.</dd>
 <dt><strong><code>use_site</code></strong></dt>
-<dd>Indicate whether or not the prefixes of the new HK names are TH-specific</dd>
+<dd>Indicate whether the prefixes of the new HK names are TH-specific</dd>
+<dt><strong><code>setup</code></strong></dt>
+<dd>Setup.</dd>
 </dl>
 <h2 id="returns">Returns</h2>
 <p>Dictionary with all Prometheus gauges for the given origin and dashboard.</p></div>
@@ -138,7 +163,7 @@ You can select all dashboards with <code>dashboard='*'</code>.</dd>
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def define_metrics(origin: str, dashboard: str = None, use_site:bool = False) -&gt; dict:
+<pre><code class="python">def define_metrics(origin: str, dashboard: str = None, use_site: bool = False, setup: Optional[Setup] = None) -&gt; dict:
     &#34;&#34;&#34;
     Create a metrics dictionary from the TM dictionary.
 
@@ -151,14 +176,16 @@ You can select all dashboards with <code>dashboard='*'</code>.</dd>
         origin: the storage mnemonics for the requested metrics
         dashboard: restrict the metrics selection to those that are defined for the given dashboard.
             You can select all dashboards with `dashboard=&#39;*&#39;`.
-        use_site: Indicate whether or not the prefixes of the new HK names are TH-specific
+        use_site: Indicate whether the prefixes of the new HK names are TH-specific
+        setup: Setup.
     Returns:
         Dictionary with all Prometheus gauges for the given origin and dashboard.
     &#34;&#34;&#34;
-    print(&#34;Defining metrics&#34;)
+
+    setup = setup or load_setup()
 
     try:
-        hk_info_table = GlobalState.setup.telemetry.dictionary
+        hk_info_table = setup.telemetry.dictionary
     except AttributeError:
         raise SetupError(&#34;Version of the telemetry dictionary not specified in the current setup&#34;)
 
@@ -182,27 +209,66 @@ You can select all dashboards with <code>dashboard='*'</code>.</dd>
     syn_names = hk_names[selection]
     descriptions = descriptions[selection]
 
-    if use_site:
-
-        th_prefix = f&#34;G{SITE_ID}_&#34;
-
-        th_syn_names = []
-        th_descriptions = []
-        for syn_name, description in zip(syn_names, descriptions):
-            if syn_name.startswith(th_prefix):
-                th_syn_names.append(syn_name)
-                th_descriptions.append(description)
-
-        return {
-            syn_name: Gauge(syn_name, description)
-            for syn_name, description in zip(th_syn_names, th_descriptions)
-        }
-
-    else:
+    if not use_site:
         return {
             syn_name: Gauge(syn_name, description)
             for syn_name, description in zip(syn_names, descriptions)
-        }</code></pre>
+        }
+
+    th_prefix = f&#34;G{SITE_ID}_&#34;
+
+    th_syn_names = []
+    th_descriptions = []
+    for syn_name, description in zip(syn_names, descriptions):
+        if syn_name.startswith(th_prefix):
+            th_syn_names.append(syn_name)
+            th_descriptions.append(description)
+
+    return {
+        syn_name: Gauge(syn_name, description)
+        for syn_name, description in zip(th_syn_names, th_descriptions)
+    }</code></pre>
+</details>
+</dd>
+<dt id="egse.metrics.update_metrics"><code class="name flex">
+<span>def <span class="ident">update_metrics</span></span>(<span>metrics: dict, updates: dict)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Updates the metrics parameters with the values from the updates dictionary.
+Only the metrics parameters for which the names are keys in the given updates dict are actually updated. Other
+metrics remain untouched.</p>
+<p>The functions logs a warning when the updates dict contains a name which is not known as a metrics parameter.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>metrics</code></strong></dt>
+<dd>the metrics dictionary previously defined with the define_metrics function</dd>
+<dt><strong><code>updates</code></strong></dt>
+<dd>a dictionary with key=metrics name and value is the to-be-updated value</dd>
+</dl></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def update_metrics(metrics: dict, updates: dict):
+    &#34;&#34;&#34;
+    Updates the metrics parameters with the values from the updates dictionary.
+    Only the metrics parameters for which the names are keys in the given updates dict are actually updated. Other
+    metrics remain untouched.
+
+    The functions logs a warning when the updates dict contains a name which is not known as a metrics parameter.
+
+    Args:
+        metrics: the metrics dictionary previously defined with the define_metrics function
+        updates: a dictionary with key=metrics name and value is the to-be-updated value
+    &#34;&#34;&#34;
+    for metric_name, value in updates.items():
+        try:
+            if value is None:
+                metrics[metric_name].set(float(&#39;nan&#39;))
+            else:
+                metrics[metric_name].set(float(value))
+        except KeyError as exc:
+            LOGGER.warning(f&#34;Unknown metric name: {metric_name=}&#34;)</code></pre>
 </details>
 </dd>
 </dl>
@@ -224,6 +290,7 @@ You can select all dashboards with <code>dashboard='*'</code>.</dd>
 <li><h3><a href="#header-functions">Functions</a></h3>
 <ul class="">
 <li><code><a title="egse.metrics.define_metrics" href="#egse.metrics.define_metrics">define_metrics</a></code></li>
+<li><code><a title="egse.metrics.update_metrics" href="#egse.metrics.update_metrics">update_metrics</a></code></li>
 </ul>
 </li>
 </ul>

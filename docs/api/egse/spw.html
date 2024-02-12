@@ -33,12 +33,14 @@ This module defines classes and functions to work with SpaceWire packets.
 import logging
 import os
 import struct
+import textwrap
 from enum import IntEnum
 from typing import Tuple
 from typing import Union
 
 import numpy as np
 
+import egse.rmap
 from egse.bits import clear_bit
 from egse.bits import crc_calc
 from egse.bits import set_bit
@@ -50,54 +52,23 @@ MODULE_LOGGER = logging.getLogger(__name__)
 
 try:
     _ = os.environ[&#34;PLATO_CAMERA_IS_EM&#34;]
+    MODULE_LOGGER.warning(
+        textwrap.dedent(&#34;&#34;&#34;\
+        The PLATO_CAMERA_IS_EM environment variable is defined.
+            For the EM camera, image data and camera sensor data are interpreted as twos-complement and 
+            converted accordingly. If the camera you are testing is not the EM camera, make sure the
+            PLATO_CAMERA_IS_EM environment variable is not defined when starting your control servers.  
+            &#34;&#34;&#34;
+        )
+    )
     TWOS_COMPLEMENT_OFFSET = 32768 if _.capitalize() in (&#34;1&#34;, &#34;True&#34;, &#34;Yes&#34;) else 0
 except KeyError:
     TWOS_COMPLEMENT_OFFSET = 0
 
-# RMAP Error Codes and Constants -------------------------------------------------------------------
 
-RMAP_PROTOCOL_ID = 0x01
-RMAP_TARGET_LOGICAL_ADDRESS_DEFAULT = 0xFE
-RMAP_TARGET_KEY = 0xD1
-
-# Error and Status Codes
-
-RMAP_SUCCESS = 0
-RMAP_GENERAL_ERROR = 1
-RMAP_UNUSED_PACKET_TYPE_COMMAND_CODE = 2
-RMAP_INVALID_KEY = 3
-RMAP_INVALID_DATA_CRC = 4
-RMAP_EARLY_EOP = 5
-RMAP_TOO_MUCH_DATA = 6
-RMAP_EEP = 7
-RMAP_RESERVED = 8
-RMAP_VERIFY_BUFFER_OVERRUN = 9
-RMAP_NOT_IMPLEMENTED_AUTHORISED = 10
-RMAP_RMW_DATA_LENGTH_ERROR = 11
-RMAP_INVALID_TARGET_LOGICAL_ADDRESS = 12
-
-# Memory Map layout --------------------------------------------------------------------------------
-
-# NOTE: These memory areas are currently equal for N-FEE and F-FEE. Don&#39;t know if this will
-#       change in the future.
-
-CRITICAL_AREA_START = 0x0000_0000
-CRITICAL_AREA_END = 0x0000_00FC
-GENERAL_AREA_START = 0x0000_0100
-GENERAL_AREA_END = 0x0000_06FC
-HK_AREA_START = 0x0000_0700
-HK_AREA_END = 0x0000_07FC
-WINDOWING_AREA_START = 0x0080_0000
-WINDOWING_AREA_END = 0x00FF_FFFC
-
-class RMAPError(Error):
-    &#34;&#34;&#34;An RMAP specific Error.&#34;&#34;&#34;
-    pass
-
-
-class CheckError(RMAPError):
+class CheckError(Error):
     &#34;&#34;&#34;
-    Raised when a check fails and you want to pass a status values along with the message.
+    Raised when a check fails, and you want to pass a status values along with the message.
     &#34;&#34;&#34;
 
     def __init__(self, message, status):
@@ -109,9 +80,11 @@ def update_transaction_identifier(tid: int) -&gt; int:
     &#34;&#34;&#34;
     Updates the transaction identifier and returns the new value.
 
-    FIXME: document more about this identifier, where is it used, when is it checked,
-           when does it need to be incremented, who initializes the identifier and
-           who updates it, ...
+    This identifier shall be incremented for each RMAP Request. The RMAP Request Reply packets
+    shall copy the transaction ID of the RMAP Request packet in their transaction ID field.
+
+    The transaction ID is a 16-bit field which is used to associate replies with the command
+    that caused the reply.
 
     Args:
         tid (int): The current transaction identifier
@@ -121,344 +94,6 @@ def update_transaction_identifier(tid: int) -&gt; int:
     &#34;&#34;&#34;
     tid = (tid + 1) &amp; 0xFFFF
     return tid
-
-
-def create_rmap_read_request_packet(address: int, length: int, tid: int, strict: bool = True) -&gt; bytes:
-    &#34;&#34;&#34;
-    Creates an RMAP Read Request SpaceWire packet.
-
-    The read request is an RMAP command that read a number of bytes from the FEE register memory.
-
-    The function returns a ``ctypes`` character array (which is basically a bytes array) that
-    can be passed into the EtherSpaceLink library function ``esl_write_packet()``.
-
-    Address shall be within the 0x0000_0000 and 0x00FF_FFFC. The memory map (register) is divided
-    in the following areas:
-
-        0x0000_0000 - 0x0000_00FC   Critical Configuration Area (verified write)
-        0x0000_0100 - 0x0000_06FC   General Configuration Area (unverified write)
-        0x0000_0700 - 0x0000_07FC   Housekeeping area
-        0x0000_0800 - 0x007F_FFFC   Not Supported
-        0x0080_0000 - 0x00FF_FFFC   Windowing Area (unverified write)
-        0x0010_0000 - 0xFFFF_FFFC   Not Supported
-
-    All read requests to the critical area shall have a fixed data length of 4 bytes.
-    All read requests to a general area shall have a maximum data length of 256 bytes.
-    All read requests to the housekeeping area shall have a maximum data length of 256 bytes.
-    All read requests to the windowing area shall have a maximum data length of 4096 bytes.
-
-    The transaction identifier shall be incremented for each read request. This shall be done by
-    the calling function!
-
-    Args:
-        address (int): the FEE register memory address
-        length (int): the data length
-        tid (int): transaction identifier
-        strict (bool): perform strict checking of address and length
-
-    Returns:
-        a bytes object containing the full RMAP Read Request packet.
-    &#34;&#34;&#34;
-
-    check_address_and_data_length(address, length, strict=strict)
-
-    buf = bytearray(16)
-
-    # NOTE: The first bytes would each carry the target SpW address or a destination port,
-    #       but this is not used for point-to-point connections, so we&#39;re safe.
-
-    buf[0] = 0x51  # Target N-FEE or F-FEE
-    buf[1] = 0x01  # RMAP Protocol ID
-    buf[2] = 0x4C  # Instruction: 0b1001100, RMAP Request, Read, Incrementing address, reply address
-    buf[3] = 0xD1  # Destination Key
-    buf[4] = 0x50  # Initiator is always the DPU
-    buf[5] = (tid &gt;&gt; 8) &amp; 0xFF  # MSB of the Transition ID
-    buf[6] = tid &amp; 0xFF  # LSB of the Transition ID
-    buf[7] = 0x00  # Extended address is not used
-    buf[8] = (address &gt;&gt; 24) &amp; 0xFF  # address (MSB)
-    buf[9] = (address &gt;&gt; 16) &amp; 0xFF  # address
-    buf[10] = (address &gt;&gt; 8) &amp; 0xFF  # address
-    buf[11] = address &amp; 0xFF  # address (LSB)
-    buf[12] = (length &gt;&gt; 16) &amp; 0xFF  # data length (MSB)
-    buf[13] = (length &gt;&gt; 8) &amp; 0xFF  # data length
-    buf[14] = length &amp; 0xFF  # data length (LSB)
-    buf[15] = rmap_crc_check(buf, 0, 15) &amp; 0xFF
-    return bytes(buf)
-
-
-def create_rmap_read_request_reply_packet(
-        instruction_field: int, tid: int, status: int, buffer: bytes, buffer_length: int) -&gt; bytes:
-    &#34;&#34;&#34;
-    Creates an RMAP Reply to a RMAP Read Request packet.
-
-    The function returns a ``ctypes`` character array (which is basically a bytes array) that
-    can be passed into the EtherSpaceLink library function ``esl_write_packet()``.
-
-    Args:
-        instruction_field (int): the instruction field of the RMAP read request packet
-        tid (int): the transaction identifier of the read request packet
-        status (int): the status field, 0 on success
-        buffer (bytes): the data that was read as indicated by the read request
-        buffer_length (int): the data length
-
-    Returns:
-        packet: a bytes object containing the full RMAP Reply packet.
-    &#34;&#34;&#34;
-
-    buf = bytearray(12 + buffer_length + 1)
-
-    buf[0] = 0x50  # Initiator address N-DPU or F-DPU
-    buf[1] = 0x01  # RMAP Protocol ID
-    buf[2] = instruction_field &amp; 0x3F  # Clear the command bit as this is a reply
-    buf[3] = status &amp; 0xFF  # Status field: 0 on success
-    buf[4] = 0x51  # Target address is always the N-FEE or F-FEE
-    buf[5] = (tid &gt;&gt; 8) &amp; 0xFF  # MSB of the Transition ID
-    buf[6] = tid &amp; 0xFF  # LSB of the Transition ID
-    buf[7] = 0x00  # Reserved
-    buf[8] = (buffer_length &gt;&gt; 16) &amp; 0xFF  # data length (MSB)
-    buf[9] = (buffer_length &gt;&gt; 8) &amp; 0xFF  # data length
-    buf[10] = buffer_length &amp; 0xFF  # data length (LSB)
-    buf[11] = rmap_crc_check(buf, 0, 11) &amp; 0xFF  # Header CRC
-
-    # Note that we assume here that len(buffer) == buffer_length.
-
-    if len(buffer) != buffer_length:
-        MODULE_LOGGER.warning(
-            f&#34;While creating an RMAP read reply packet, the length of the buffer ({len(buffer)}) &#34;
-            f&#34;not equals the buffer_length ({buffer_length})&#34;
-        )
-
-    for idx, value in enumerate(buffer):
-        buf[12 + idx] = value
-
-    buf[12 + buffer_length] = rmap_crc_check(buffer, 0, buffer_length) &amp; 0xFF  # data CRC
-
-    return bytes(buf)
-
-
-def create_rmap_verified_write_packet(address: int, data: bytes, tid: int) -&gt; bytes:
-    &#34;&#34;&#34;
-    Create an RMAP packet for a verified write request on the FEE. The length of the data is
-    by convention always 4 bytes and therefore not passed as an argument.
-
-    Args:
-        address: the start memory address on the FEE register map
-        data: the data to be written in the register map at address [4 bytes]
-        tid (int): transaction identifier
-
-    Returns:
-        packet: a bytes object containing the SpaceWire packet.
-    &#34;&#34;&#34;
-
-    if len(data) &lt; 4:
-        raise ValueError(
-            f&#34;The data argument should be at least 4 bytes, but it is only {len(data)} bytes: {data=}.&#34;)
-
-    if address &gt; CRITICAL_AREA_END:
-        raise ValueError(&#34;The address range for critical configuration is [0x00 - 0xFC].&#34;)
-
-    tid = update_transaction_identifier(tid)
-
-    # Buffer length is fixed at 24 bytes since the data length is fixed
-    # at 4 bytes (32 bit addressing)
-
-    buf = bytearray(21)
-
-    # The values below are taken from the PLATO N-FEE to N-DPU
-    # Interface Requirements Document [PLATO-DLR-PL-ICD-0010]
-
-    buf[0] = 0x51  # Logical Address
-    buf[1] = 0x01  # Protocol ID
-    buf[2] = 0x7C  # Instruction
-    buf[3] = 0xD1  # Key
-    buf[4] = 0x50  # Initiator Address
-    buf[5] = (tid &gt;&gt; 8) &amp; 0xFF  # MSB of the Transition ID
-    buf[6] = tid &amp; 0xFF  # LSB of the Transition ID
-    buf[7] = 0x00  # Extended address
-    buf[8] = (address &gt;&gt; 24) &amp; 0xFF  # address (MSB)
-    buf[9] = (address &gt;&gt; 16) &amp; 0xFF  # address
-    buf[10] = (address &gt;&gt; 8) &amp; 0xFF  # address
-    buf[11] = address &amp; 0xFF  # address (LSB)
-    buf[12] = 0x00  # data length (MSB)
-    buf[13] = 0x00  # data length
-    buf[14] = 0x04  # data length (LSB)
-    buf[15] = rmap_crc_check(buf, 0, 15) &amp; 0xFF  # header CRC
-    buf[16] = data[0]
-    buf[17] = data[1]
-    buf[18] = data[2]
-    buf[19] = data[3]
-    buf[20] = rmap_crc_check(buf, 16, 4) &amp; 0xFF  # data CRC
-
-    return bytes(buf)
-
-
-def create_rmap_unverified_write_packet(address: int, data: bytes, length: int, tid: int) -&gt; bytes:
-    &#34;&#34;&#34;
-    Create an RMAP packet for a unverified write request on the FEE.
-
-    Args:
-        address: the start memory address on the FEE register map
-        data: the data to be written in the register map at address
-        length: the length of the data
-        tid (int): transaction identifier
-
-    Returns:
-        packet: a bytes object containing the SpaceWire packet.
-    &#34;&#34;&#34;
-
-    # We can only handle data for which the length &gt;= the given length argument.
-
-    if len(data) &lt; length:
-        raise ValueError(
-            f&#34;The length of the data argument ({len(data)}) is smaller than &#34;
-            f&#34;the given length argument ({length}).&#34;
-        )
-
-    if len(data) &gt; length:
-        MODULE_LOGGER.warning(
-            f&#34;The length of the data argument ({len(data)}) is larger than &#34;
-            f&#34;the given length argument ({length}). The data will be truncated &#34;
-            f&#34;when copied into the packet.&#34;
-        )
-
-    if address &lt;= CRITICAL_AREA_END:
-        raise ValueError(
-            f&#34;The given address (0x{address:08X}) is in the range for critical configuration is &#34;
-            f&#34;[0x00 - 0xFC]. Use the verified write function for this.&#34;
-        )
-
-    tid = update_transaction_identifier(tid)
-
-    # Buffer length is fixed at 24 bytes since the data length
-    # is fixed at 4 bytes (32 bit addressing)
-
-    buf = bytearray(16 + length + 1)
-    offset = 0
-
-    buf[offset + 0] = 0x51  # Logical Address
-    buf[offset + 1] = 0x01  # Protocol ID
-    buf[offset + 2] = 0x6C  # Instruction
-    buf[offset + 3] = 0xD1  # Key
-    buf[offset + 4] = 0x50  # Initiator Address
-    buf[offset + 5] = (tid &gt;&gt; 8) &amp; 0xFF  # MSB of the Transition ID
-    buf[offset + 6] = tid &amp; 0xFF  # LSB of the Transition ID
-    buf[offset + 7] = 0x00  # Extended address
-    buf[offset + 8] = (address &gt;&gt; 24) &amp; 0xFF  # address (MSB)
-    buf[offset + 9] = (address &gt;&gt; 16) &amp; 0xFF  # address
-    buf[offset + 10] = (address &gt;&gt; 8) &amp; 0xFF  # address
-    buf[offset + 11] = address &amp; 0xFF  # address (LSB)
-    buf[offset + 12] = (length &gt;&gt; 16) &amp; 0xFF  # data length (MSB)
-    buf[offset + 13] = (length &gt;&gt; 8) &amp; 0xFF  # data length
-    buf[offset + 14] = length &amp; 0xFF  # data length (LSB)
-    buf[offset + 15] = rmap_crc_check(buf, 0, 15) &amp; 0xFF  # header CRC
-
-    offset += 16
-
-    for idx, value in enumerate(data):
-        buf[offset + idx] = value
-
-    buf[offset + length] = rmap_crc_check(buf, offset, length) &amp; 0xFF  # data CRC
-
-    return bytes(buf)
-
-
-def create_rmap_write_request_reply_packet(instruction_field: int, tid: int, status: int) -&gt; bytes:
-    buf = bytearray(8)
-
-    buf[0] = 0x50  # Initiator address N-DPU or F-DPU
-    buf[1] = 0x01  # RMAP Protocol ID
-    buf[2] = instruction_field &amp; 0x3F  # Clear the command bit as this is a reply
-    buf[3] = status &amp; 0xFF  # Status field: 0 on success
-    buf[4] = 0x51  # Target address is always the N-FEE or F-FEE
-    buf[5] = (tid &gt;&gt; 8) &amp; 0xFF  # MSB of the Transition ID
-    buf[6] = tid &amp; 0xFF  # LSB of the Transition ID
-    buf[7] = rmap_crc_check(buf, 0, 7) &amp; 0xFF  # Header CRC
-
-    return bytes(buf)
-
-
-def check_address_and_data_length(address: int, length: int, strict: bool = True) -&gt; None:
-    &#34;&#34;&#34;
-    Checks the address and length in the range of memory areas used by the FEE.
-
-    The ranges are taken from the PLATO-DLR-PL-ICD-0010 N-FEE to N-DPU IRD.
-
-    Args:
-        address (int): the memory address of the FEE Register
-        length (int): the number of bytes requested
-        strict (bool): strictly apply the rules
-
-    Raises:
-        RMAPError: when address + length fall outside any specified area.
-    &#34;&#34;&#34;
-
-    if not strict:
-        # All these restrictions have been relaxed on the N-FEE.
-        # We are returning here immediately instead of removing or commenting out the code.
-        # These reason is that we can then bring back restriction easier and gradually.
-
-        MODULE_LOGGER.warning(
-            &#34;Address and data length checks have been disabled, because the N-FEE &#34;
-            &#34;does not enforce restrictions in the critical memory area.&#34;)
-        return
-
-    if length % 4:
-        raise RMAPError(
-            &#34;The requested data length shall be a multiple of 4 bytes.&#34;, address, length
-        )
-
-    if address % 4:
-        raise RMAPError(&#34;The address shall be a multiple of 4 bytes.&#34;, address, length)
-
-    # Note that when checking the given data length, at the defined area end,
-    # we can still read 4 bytes.
-
-    if CRITICAL_AREA_START &lt;= address &lt;= CRITICAL_AREA_END:
-        if length != 4:
-            raise RMAPError(
-                &#34;Read requests to the critical area have a fixed data length of 4 bytes.&#34;,
-                address, length
-            )
-    elif GENERAL_AREA_START &lt;= address &lt;= GENERAL_AREA_END:
-        if length &gt; 256:
-            raise RMAPError(
-                &#34;Read requests to the general area have a maximum data length of 256 bytes.&#34;,
-                address, length
-            )
-        if address + length &gt; GENERAL_AREA_END + 4:
-            raise RMAPError(
-                &#34;The requested data length for the general area is too large. &#34;
-                &#34;The address + length exceeds the general area boundaries.&#34;,
-                address, length
-            )
-
-    elif HK_AREA_START &lt;= address &lt;= HK_AREA_END:
-        if length &gt; 256:
-            raise RMAPError(
-                &#34;Read requests to the housekeeping area have a maximum data length of 256 bytes.&#34;,
-                address, length
-            )
-        if address + length &gt; HK_AREA_END + 4:
-            raise RMAPError(
-                &#34;The requested data length for the housekeeping area is too large. &#34;
-                &#34;The address + length exceeds the housekeeping area boundaries.&#34;,
-                address, length
-            )
-
-    elif WINDOWING_AREA_START &lt;= address &lt;= WINDOWING_AREA_END:
-        if length &gt; 4096:
-            raise RMAPError(
-                &#34;Read requests to the windowing area have a maximum data length of 4096 bytes.&#34;,
-                address, length
-            )
-        if address + length &gt; WINDOWING_AREA_END + 4:
-            raise RMAPError(
-                &#34;The requested data length for the windowing area is too large. &#34;
-                &#34;The address + length exceeds the windowing area boundaries.&#34;, address, length
-            )
-
-    else:
-        raise RMAPError(&#34;Register address for RMAP read requests is invalid.&#34;, address, length)
 
 
 class PacketType(IntEnum):
@@ -743,16 +378,17 @@ class SpaceWirePacket:
         self._bytes = bytes(data)
 
     def __repr__(self):
-        options = np.get_printoptions()
-        np.set_printoptions(
-            formatter={&#34;int&#34;: lambda x: f&#34;0x{x:02x}&#34;},
-            threshold=self._threshold,
-            edgeitems=self._edgeitems,
-            linewidth=self._linewidth,
+        limit = 25
+        data_hex = &#39; &#39;.join(f&#34;{x:02x}&#34; for x in self._bytes[:limit])
+        data_hex += &#39;...&#39; if len(self._bytes) &gt; limit else &#39;&#39;
+
+        msg = (
+            f&#34;{self.__class__.__name__}(0x{data_hex})&#34;
         )
-        msg = f&#34;{self.__class__.__name__}({self._bytes})&#34;
-        np.set_printoptions(**options)
         return msg
+
+    def __len__(self):
+        return len(self._bytes)
 
     @property
     def packet_as_bytes(self):
@@ -782,6 +418,8 @@ class SpaceWirePacket:
         Factory method that returns a SpaceWire packet of the correct type based on the information
         in the header.
         &#34;&#34;&#34;
+        # MODULE_LOGGER.info(f&#34;{len(data) = }&#34;)
+
         if TimecodePacket.is_timecode_packet(data):
             return TimecodePacket(data)
         if HousekeepingPacket.is_housekeeping_packet(data):
@@ -799,6 +437,11 @@ class SpaceWirePacket:
         if ReadRequestReply.is_read_reply(data):
             return ReadRequestReply(data)
         return SpaceWirePacket(data)
+
+
+class ExtensionPacket:
+    def __init__(self):
+        pass
 
 
 class DataPacket(SpaceWirePacket):
@@ -940,6 +583,11 @@ class DataPacket(SpaceWirePacket):
             edgeitems=super()._edgeitems,
             linewidth=super()._linewidth,
         )
+        limit = 50
+        header_hex = &#39; &#39;.join(f&#39;{byte:02X}&#39; for byte in self.header_as_bytes()[:limit])
+        data_hex = &#39; &#39;.join(f&#39;{byte:02X}&#39; for byte in self.data[:limit])
+        data_ascii = &#39;&#39;.join((chr(byte) if 32 &lt;= byte &lt;= 126 else &#39;.&#39;) for byte in self.data[:limit])
+
         msg = (
             f&#34;{self.__class__.__name__}:\n&#34;
             f&#34;  Logical Address = 0x{self.logical_address:02X}\n&#34;
@@ -948,7 +596,9 @@ class DataPacket(SpaceWirePacket):
             f&#34;  Type = {self._type}\n&#34;
             f&#34;  Frame Counter = {self.frame_counter}\n&#34;
             f&#34;  Sequence Counter = {self.sequence_counter}\n&#34;
-            f&#34;  Data = \n{self.data}&#34;
+            f&#34;  Header = {header_hex}\n&#34;
+            f&#34;  Data HEX = {data_hex}\n&#34;
+            f&#34;  Data ASC = {data_ascii}\n&#34;
         )
         np.set_printoptions(**options)
         return msg
@@ -1040,7 +690,39 @@ class TimecodePacket(SpaceWirePacket):
         return data[0] == 0x91
 
     def __str__(self):
-        return f&#34;Timecode Packet: timecode = 0x{self.timecode:x}&#34;
+        return f&#34;Timecode Packet: timecode = 0x{self.timecode:02x} ({self.timecode:2d})&#34;
+
+
+class RMAPRequestMixin(SpaceWirePacket):
+    @property
+    def key(self):
+        &#34;&#34;&#34;Returns the key field.&#34;&#34;&#34;
+        return get_key_field(self._bytes)
+
+    @property
+    def initiator_address(self):
+        &#34;&#34;&#34;Returns the initiator logical address.&#34;&#34;&#34;
+        return self._bytes[4]
+
+    @property
+    def data_length(self):
+        return get_data_length(self._bytes)
+
+    @property
+    def address(self):
+        return get_address(self._bytes)
+
+
+class RMAPRequestReplyMixin(SpaceWirePacket):
+    @property
+    def target_address(self):
+        &#34;&#34;&#34;Returns the target logical address.&#34;&#34;&#34;
+        return self._bytes[4]
+
+    @property
+    def status(self):
+        &#34;&#34;&#34;Returns the status field.&#34;&#34;&#34;
+        return self._bytes[3]
 
 
 class RMAPPacket(SpaceWirePacket):
@@ -1052,11 +734,15 @@ class RMAPPacket(SpaceWirePacket):
         super().__init__(data)
 
     def __str__(self):
-        return (
-            f&#34;{self.__class__.__name__}:\n&#34;
-            f&#34;  Logical Address = 0x{self.logical_address:02X}\n&#34;
-            f&#34;  Data = {self.data}\n&#34;
+        msg = (
+            f&#34;RMAP Base Packet ({len(self)} bytes)\n&#34;
+            f&#34;Logical address:    0x{self.logical_address:02x}\n&#34;
+            f&#34;Protocol ID:        0x{self.protocol_id:02x}\n&#34;
+            f&#34;Instruction:        0x{self.instruction:02x} (0o{self.instruction:08b})\n&#34;
+            f&#34;Transaction ID:     0x{self.transaction_id:04x} ({self.transaction_id})\n&#34;
+            f&#34;Data = {self._bytes}\n&#34;
         )
+        return msg
 
     @property
     def instruction(self):
@@ -1066,6 +752,14 @@ class RMAPPacket(SpaceWirePacket):
     def transaction_id(self):
         return get_transaction_identifier(self._bytes)
 
+    @property
+    def header_crc(self):
+        return get_header_crc(self._bytes)
+
+    @property
+    def data_crc(self):
+        return get_data_crc(self._bytes)
+
     @classmethod
     def is_rmap_packet(cls, data: Union[bytes, np.ndarray]):
         if data[1] == 0x01:  # Protocol ID
@@ -1073,7 +767,7 @@ class RMAPPacket(SpaceWirePacket):
         return False
 
 
-class WriteRequest(RMAPPacket):
+class WriteRequest(RMAPPacket, RMAPRequestMixin):
     &#34;&#34;&#34;A Write Request SpaceWire RMAP Packet.&#34;&#34;&#34;
 
     def __init__(self, data: Union[bytes, np.ndarray]):
@@ -1084,10 +778,6 @@ class WriteRequest(RMAPPacket):
 
     def is_unverified(self):
         return self._bytes[2] == 0x6C
-
-    @property
-    def address(self):
-        return get_address(self._bytes)
 
     @property
     def data_length(self):
@@ -1109,15 +799,36 @@ class WriteRequest(RMAPPacket):
 
     def __str__(self):
         prefix = &#34;Verified&#34; if self.is_verified() else &#34;Unverified&#34;
-        return f&#34;{prefix} Write Request: {self.transaction_id=}, data=0x{self.data.hex()}&#34;
+        limit = 32
+        data_hex = &#39; &#39;.join(f&#39;{x:02X}&#39; for x in self.data[:limit])
+        data_hex += &#39; ...&#39; if len(self.data) &gt; limit else &#39;&#39;
+        data_asc = &#39;&#39;.join((chr(byte) if 32 &lt;= byte &lt;= 126 else &#39;.&#39;) for byte in self.data[:limit])
+        data_asc += &#39; ...&#39; if len(self.data) &gt; limit else &#39;&#39;
+
+        packet = self.packet_as_bytes
+        msg = (
+            f&#34;RMAP {prefix} Write Request ({len(packet)} bytes)\n&#34;
+            f&#34;Target address:     0x{self.logical_address:02x}\n&#34;
+            f&#34;Protocol ID:        0x{self.protocol_id:02x}\n&#34;
+            f&#34;Instruction:        0x{self.instruction:02x} (0o{self.instruction:08b})\n&#34;
+            f&#34;Key:                0x{self.key:02x}\n&#34;
+            f&#34;Initiator address:  0x{self.initiator_address:02x}\n&#34;
+            f&#34;Transaction ID:     0x{self.transaction_id:04x} ({self.transaction_id})\n&#34;
+            f&#34;Address:            0x{self.address:08x}\n&#34;
+            f&#34;Data Length:        {self.data_length}\n&#34;
+            f&#34;Header CRC:         0x{self.header_crc:02x}\n&#34;
+            f&#34;data (hex):         0x{data_hex}\n&#34;
+            f&#34;data (ascii):       {data_asc}\n&#34;
+            f&#34;Data CRC:           0x{self.data_crc:02x}\n&#34;
+        )
+        return msg
 
 
-class WriteRequestReply(RMAPPacket):
+class WriteRequestReply(RMAPPacket, RMAPRequestReplyMixin):
     &#34;&#34;&#34;An RMAP Reply packet to a Write Request.&#34;&#34;&#34;
 
     def __init__(self, data: Union[bytes, np.ndarray]):
         super().__init__(data)
-        self._status = data[3]
 
     @classmethod
     def is_write_reply(cls, data: Union[bytes, np.ndarray]):
@@ -1128,15 +839,22 @@ class WriteRequestReply(RMAPPacket):
         if (data[2] == 0x3C or data[2] == 0x2C) and data[4] == 0x51:
             return True
 
-    @property
-    def status(self):
-        return self._status
-
     def __str__(self):
-        return f&#34;Write Request Reply: status={self.status}&#34;
+        msg = (
+            f&#34;Write Request Reply ({len(self)} bytes)\n&#34;
+            f&#34;Initiator address:  0x{self.logical_address:02x}\n&#34;
+            f&#34;Protocol ID:        0x{self.protocol_id:02x}\n&#34;
+            f&#34;Instruction:        0x{self.instruction:02x} (0o{self.instruction:08b})\n&#34;
+            f&#34;Status:             0x{self.status:02x}\n&#34;
+            f&#34;target address:     0x{self.target_address:02x}\n&#34;
+            f&#34;transaction ID:     0x{self.transaction_id:02x} ({self.transaction_id})\n&#34;
+            f&#34;Header CRC:         0x{self.header_crc:02x}\n&#34;
+        )
+
+        return msg
 
 
-class ReadRequest(RMAPPacket):
+class ReadRequest(RMAPPacket, RMAPRequestMixin):
     &#34;&#34;&#34;A Read Request SpaceWire RMAP Packet.&#34;&#34;&#34;
 
     def __init__(self, data: Union[bytes, np.ndarray]):
@@ -1152,22 +870,24 @@ class ReadRequest(RMAPPacket):
             return True
         return False
 
-    @property
-    def address(self):
-        return get_address(self._bytes)
-
-    @property
-    def data_length(self):
-        return get_data_length(self._bytes)
-
     def __str__(self):
-        return (
-            f&#34;Read Request: tid={self.transaction_id}, address=0x{self.address:04x}, &#34;
-            f&#34;data length={self.data_length}&#34;
+        msg = (
+            f&#34;RMAP Read Request ({len(self)} bytes)\n&#34;
+            f&#34;Target address:     0x{self.logical_address:02x}\n&#34;
+            f&#34;Protocol ID:        0x{self.protocol_id:02x}\n&#34;
+            f&#34;Instruction:        0x{self.instruction:02x} (0o{self.instruction:08b})\n&#34;
+            f&#34;Key:                0x{self.key:02x}\n&#34;
+            f&#34;Initiator address:  0x{self.initiator_address:02x}\n&#34;
+            f&#34;Transaction ID:     0x{self.transaction_id:04x} ({self.transaction_id})\n&#34;
+            f&#34;(Extended) Address: 0x{self.address:08x}\n&#34;
+            f&#34;Data Length:        {self.data_length}\n&#34;
+            f&#34;Header CRC:         0x{self.header_crc:02x}\n&#34;
         )
 
+        return msg
 
-class ReadRequestReply(RMAPPacket):
+
+class ReadRequestReply(RMAPPacket, RMAPRequestReplyMixin):
     &#34;&#34;&#34;An RMAP Reply packet to a Read Request.&#34;&#34;&#34;
 
     def __init__(self, data: Union[bytes, np.ndarray]):
@@ -1192,8 +912,28 @@ class ReadRequestReply(RMAPPacket):
 
     def __str__(self):
         data_length = self.data_length
-        return f&#34;Read Request Reply: data length={data_length}, data={self.data[:20]} &#34; \
-               f&#34;{&#39;(data is cut to max 20 bytes)&#39; if data_length &gt; 20 else &#39;&#39;}\n&#34;
+        limit = 32
+        data_hex = &#39; &#39;.join(f&#39;{x:02X}&#39; for x in self.data[:limit])
+        data_hex += &#39; ...&#39; if len(self.data) &gt; limit else &#39;&#39;
+        data_asc = &#39;&#39;.join((chr(byte) if 32 &lt;= byte &lt;= 126 else &#39;.&#39;) for byte in self.data[:limit])
+        data_asc += &#39; ...&#39; if len(self.data) &gt; limit else &#39;&#39;
+
+        msg = (
+            f&#34;Read Request Reply ({len(self)} bytes)\n&#34;
+            f&#34;Initiator address:  0x{self.logical_address:02x}\n&#34;
+            f&#34;Protocol ID:        0x{self.protocol_id:02x}\n&#34;
+            f&#34;Instruction:        0x{self.instruction:02x} (0o{self.instruction:08b})\n&#34;
+            f&#34;Status:             0x{self.status:02x}\n&#34;
+            f&#34;target address:     0x{self.target_address:02x}\n&#34;
+            f&#34;transaction ID:     0x{self.transaction_id:02x} ({self.transaction_id})\n&#34;
+            f&#34;Data Length:        {self.data_length}\n&#34;
+            f&#34;Header CRC:         0x{self.header_crc:02x}\n&#34;
+            f&#34;Data (hex):         0x{data_hex}\n&#34;
+            f&#34;Data (ascii):       {data_asc}\n&#34;
+            f&#34;Data CRC:           0x{self.data_crc:02x}\n&#34;
+        )
+
+        return msg
 
 
 class SpaceWireInterface:
@@ -1204,6 +944,7 @@ class SpaceWireInterface:
 
     def __enter__(self):
         self.connect()
+        return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.disconnect()
@@ -1221,6 +962,7 @@ class SpaceWireInterface:
         raise NotImplementedError
 
     def send_timecode(self, timecode: int):
+        &#34;&#34;&#34;Send a timecode over the transport layer.&#34;&#34;&#34;
         raise NotImplementedError
 
     def read_packet(self, timeout: int = None) -&gt; Tuple[int, bytes]:
@@ -1298,16 +1040,18 @@ class SpaceWireInterface:
 
 # General RMAP helper functions ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
-def rmap_crc_check(data, start, length) -&gt; int:
-    &#34;&#34;&#34;Calculate the checksum for the given data.&#34;&#34;&#34;
-    return crc_calc(data, start, length)
-
-
 def get_protocol_id(data: bytes) -&gt; int:
     &#34;&#34;&#34;
     Returns the protocol identifier field. The protocol ID is 1 (0x01) for the RMAP protocol.
     &#34;&#34;&#34;
     return data[1]
+
+
+def is_rmap(rx_buffer):
+    &#34;&#34;&#34;
+    Returns True if the buffer represents an RMAP packet, False otherwise.
+    &#34;&#34;&#34;
+    return get_protocol_id(rx_buffer) == egse.rmap.RMAP_PROTOCOL_ID
 
 
 def get_reply_address_field_length(rx_buffer) -&gt; int:
@@ -1329,9 +1073,15 @@ def get_data(rxbuf) -&gt; bytes:
     Return the data from the RMAP packet.
 
     Raises:
-        ValueError: if there is no data section in the packet (TODO: not yet implemented)
+        ValueError: if there is no data section in the packet.
     &#34;&#34;&#34;
     instruction_field = get_instruction_field(rxbuf)
+
+    if is_write(instruction_field) and is_reply(instruction_field):
+        raise ValueError(&#34;A WriteRequestReply packet doesn&#39;t contain a data section.&#34;)
+    elif is_read(instruction_field) and is_command(instruction_field):
+        raise ValueError(&#34;A ReadRequest packet doesn&#39;t contain a data section.&#34;)
+
     address_length = get_reply_address_field_length(rxbuf)
     data_length = get_data_length(rxbuf)
 
@@ -1341,6 +1091,14 @@ def get_data(rxbuf) -&gt; bytes:
 
 
 def check_data_crc(rxbuf):
+    &#34;&#34;&#34;
+    Verifies that the data CRC that is given in the packet matches the calculated data CRC.
+
+    The only packets that have a data CRC are: WriteRequest, ReadRequestReply, and an F-CAM DataPacket.
+
+    Raises:
+        A CheckError when the provide and calculated CRC do not match.
+    &#34;&#34;&#34;
     instruction_field = get_instruction_field(rxbuf)
     address_length = get_reply_address_field_length(rxbuf)
     data_length = get_data_length(rxbuf)
@@ -1349,15 +1107,40 @@ def check_data_crc(rxbuf):
     idx = offset + address_length
 
     d_crc = rxbuf[idx + data_length]
-    c_crc = rmap_crc_check(rxbuf, idx, data_length) &amp; 0xFF
+    c_crc = crc_calc(rxbuf, idx, data_length) &amp; 0xFF
     if d_crc != c_crc:
         raise CheckError(
-            f&#34;Data CRC doesn&#39;t match calculated CRC, d_crc=0x{d_crc:02X} &amp; c_crc=0x{c_crc:02X}&#34;,
-            RMAP_GENERAL_ERROR
+            f&#34;Data CRC doesn&#39;t match calculated CRC, d_crc=0x{d_crc:02X} &amp; c_crc=0x{c_crc:02X}&#34;
         )
 
 
+def get_data_crc(rxbuf):
+    &#34;&#34;&#34;
+    Returns the data CRC of the RMAP packet.
+
+    The only packets that have a data CRC are: WriteRequest, ReadRequestReply, and an F-CAM DataPacket.
+    &#34;&#34;&#34;
+    instruction_field = get_instruction_field(rxbuf)
+    address_length = get_reply_address_field_length(rxbuf)
+    data_length = get_data_length(rxbuf)
+
+    offset = 12 if is_read(instruction_field) else 16
+    idx = offset + address_length
+
+    d_crc = rxbuf[idx + data_length]
+
+    return d_crc
+
+
 def check_header_crc(rxbuf):
+    &#34;&#34;&#34;
+    Verifies that the header CRC that is given in the packet matches the calculated header CRC.
+
+    Only RMAP Request and RequestReply packets have a header CRC, data packets not.
+
+    Raises:
+        A CheckError when the provide and calculated CRC do not match.
+    &#34;&#34;&#34;
     instruction_field = get_instruction_field(rxbuf)
     if is_command(instruction_field):
         offset = 15
@@ -1368,17 +1151,37 @@ def check_header_crc(rxbuf):
 
     idx = offset + get_reply_address_field_length(rxbuf)
     h_crc = rxbuf[idx]
-    c_crc = rmap_crc_check(rxbuf, 0, idx)
+    c_crc = crc_calc(rxbuf, 0, idx)
     if h_crc != c_crc:
         raise CheckError(
-            f&#34;Header CRC doesn&#39;t match calculated CRC, h_crc=0x{h_crc:02X} &amp; c_crc=0x{c_crc:02X}&#34;,
-            RMAP_GENERAL_ERROR
+            f&#34;Header CRC doesn&#39;t match calculated CRC, h_crc=0x{h_crc:02X} &amp; c_crc=0x{c_crc:02X}&#34;
         )
+
+
+def get_header_crc(rxbuf):
+    &#34;&#34;&#34;
+    Returns the Header CRC of the RMAP packet.
+
+    Only RMAP Request and RequestReply packets have a header CRC, data packets not.
+    &#34;&#34;&#34;
+    instruction_field = get_instruction_field(rxbuf)
+    if is_command(instruction_field):
+        offset = 15
+    elif is_write(instruction_field):
+        offset = 7
+    else:
+        offset = 11
+
+    idx = offset + get_reply_address_field_length(rxbuf)
+    h_crc = rxbuf[idx]
+
+    return h_crc
 
 
 def get_data_length(rxbuf) -&gt; int:
     &#34;&#34;&#34;
-    Returns the length of the data in bytes.
+    Returns the length of the data part of an RMAP Request packet. The returned value
+    is the number of bytes.
 
     Raises:
         TypeError: when this method is used on a Write Request Reply packet (which has no
@@ -1394,9 +1197,10 @@ def get_data_length(rxbuf) -&gt; int:
     idx = offset + get_reply_address_field_length(rxbuf)
 
     # We could use two alternative decoding methods here:
-    #   int.from_bytes(rxbuf[idx:idx+3], byteorder=&#39;big&#39;)    (timeit=1.166s)
-    #   struct.unpack(&#39;&gt;L&#39;, b&#39;\x00&#39; + rxbuf[idx:idx+3])[0]   (timeit=0.670s)
-    data_length = struct.unpack(&#39;&gt;L&#39;, b&#39;\x00&#39; + rxbuf[idx:idx + 3])[0]
+
+    # data_length = int.from_bytes(rxbuf[idx:idx+3], byteorder=&#39;big&#39;)  # (timeit=1.166s)
+    data_length = struct.unpack(&#39;&gt;L&#39;, b&#39;\x00&#39; + rxbuf[idx:idx + 3])[0]  # (timeit=0.670s)
+
     return data_length
 
 
@@ -1423,8 +1227,114 @@ def get_address(rxbuf) -&gt; int:
 
 
 def get_instruction_field(rxbuf):
+    &#34;&#34;&#34;
+    Returns the instruction field of the RMAP packet.
+    &#34;&#34;&#34;
     idx = 2
     return rxbuf[idx]
+
+
+def get_key_field(rxbuf):
+    &#34;&#34;&#34;
+    Returns the &#39;Key&#39; field of the RMAP packet.
+    &#34;&#34;&#34;
+    idx = 3
+    return rxbuf[idx]
+
+
+def check_instruction(rx_buffer) -&gt; None:
+    &#34;&#34;&#34;
+    Check the instruction field for inconsistencies and report the values in the LOGGER at DEBUG
+    level.
+
+
+    Args:
+        rx_buffer (bytes): The read buffer which contains the SpW packet
+
+    Raises:
+        CheckError: when the reserved bit is not zero,
+
+    Returns:
+        None.
+    &#34;&#34;&#34;
+    from egse.rmap import RMAP_NOT_IMPLEMENTED_AUTHORISED
+
+    # The Instruction Field is the third byte (base=0) of the packet buffer.
+    # Description of the Instruction Field can be found in ECSS-E-ST-50-52C.
+
+    instruction = get_instruction_field(rx_buffer)
+    if is_reserved(instruction):
+        raise CheckError(
+            f&#34;Instruction field [{instruction:08b}] reserved bit is not 0x00&#34;,
+            RMAP_NOT_IMPLEMENTED_AUTHORISED
+        )
+
+    msg = &#34;RMAP Instruction Field: &#34;
+    msg += &#34;Command; &#34; if is_command(instruction) else &#34;Reply; &#34;
+    msg += &#34;write; &#34; if is_write(instruction) else &#34;read; &#34;
+    msg += &#34;verify; &#34; if is_verify(instruction) else &#34;don&#39;t verify; &#34;
+    msg += &#34;reply; &#34; if is_reply_required(instruction) else &#34;don&#39;t reply; &#34;
+    msg += &#34;increment; &#34; if is_increment(instruction) else &#34;no increment; &#34;
+
+    MODULE_LOGGER.debug(msg)
+    if reply_address_length(instruction):
+        MODULE_LOGGER.debug(f&#34;Reply address length = {reply_address_length(instruction)} bytes.&#34;)
+
+
+def check_protocol_id(rxbuf):
+    from egse.rmap import RMAP_PROTOCOL_ID, RMAP_GENERAL_ERROR
+
+    idx = 1
+    protocol_id = rxbuf[idx]
+    if protocol_id != RMAP_PROTOCOL_ID:
+        raise CheckError(
+            f&#34;Protocol id is not the expected value {protocol_id}, expected {RMAP_PROTOCOL_ID}&#34;,
+            RMAP_GENERAL_ERROR)
+
+
+def get_target_logical_address(rxbuf: bytes) -&gt; int:
+    &#34;&#34;&#34;
+    The target logical address is always the FEE, i.e. 0x50. The location of the target logical
+    address is different for Request and RequestReply packets.
+    &#34;&#34;&#34;
+    instruction = get_instruction_field(rxbuf)
+    offset = 0 if is_command(instruction) else 4
+    tla_idx = offset + get_reply_address_field_length(rxbuf)
+    tla_rxbuf = rxbuf[tla_idx]
+    return tla_rxbuf
+
+
+def check_target_logical_address(rxbuf, tla):
+    from egse.rmap import RMAP_GENERAL_ERROR
+
+    tla_rxbuf = get_target_logical_address(rxbuf)
+    if tla != tla_rxbuf:
+        raise CheckError(
+            f&#34;Target Logical Address doesn&#39;t match, tla=0x{tla:02X} &amp; rxbuf[0]=0x{tla_rxbuf:02X}&#34;,
+            RMAP_GENERAL_ERROR
+        )
+
+
+def get_initiator_logical_address(rxbuf):
+    &#34;&#34;&#34;
+    The initiator logical address is always the DPU, i.e. 0x51. The location of the initiator logical
+    address is different for Request and RequestReply packets.
+    &#34;&#34;&#34;
+    instruction = get_instruction_field(rxbuf)
+    offset = 4 if is_command(instruction) else 0
+    idx = offset + get_reply_address_field_length(rxbuf)
+    ila_rxbuf = rxbuf[idx]
+    return ila_rxbuf
+
+
+def check_initiator_logical_address(rxbuf, ila):
+    ila_rxbuf = get_initiator_logical_address(rxbuf)
+    if ila != ila_rxbuf:
+        raise CheckError(
+            f&#34;Initiator Logical Address doesn&#39;t match, ila=0x{ila:02X} &amp; ila_rxbuf=0x&#34;
+            f&#34;{ila_rxbuf:02X}&#34;,
+            egse.rmap.RMAP_GENERAL_ERROR
+        )
 
 
 def get_transaction_identifier(rxbuf):
@@ -1433,15 +1343,27 @@ def get_transaction_identifier(rxbuf):
     return tid
 
 
+def check_key(rxbuf, key):
+    from egse.rmap import RMAP_INVALID_KEY
+
+    idx = 3
+    key_rxbuf = rxbuf[idx]
+    if key != key_rxbuf:
+        raise CheckError(
+            f&#34;Key doesn&#39;t match, key={key} &amp; key_rxbuf={key_rxbuf}&#34;, RMAP_INVALID_KEY
+        )
+
+
 # Functions to interpret the Instrument Field
 
 def is_reserved(instruction):
-    &#34;&#34;&#34;The reserved bit of the 2-bit packet type field from the instruction field.
+    &#34;&#34;&#34;
+    The reserved bit of the 2-bit packet type field from the instruction field.
 
     For PLATO this bit shall be zero as the 0b10 and 0b11 packet field values are reserved.
 
     Returns:
-        bit value: 1 or 0.
+        The bit value: 1 or 0.
     &#34;&#34;&#34;
     return (instruction &amp; 0b10000000) &gt;&gt; 7
 
@@ -1477,7 +1399,7 @@ def is_reply_required(instruction):
     Args:
         instruction (int): the instruction field of an RMAP packet
 
-    .. note:: the name of this function might be confusing.
+    Note: the name of this function might be confusing.
 
         This function does **not** test if the packet is a reply packet, but it checks
         if the command requests a reply from the target. If you need to test if the
@@ -1515,124 +1437,27 @@ def reply_address_length(instruction):
 <section>
 <h2 class="section-title" id="header-functions">Functions</h2>
 <dl>
-<dt id="egse.spw.check_address_and_data_length"><code class="name flex">
-<span>def <span class="ident">check_address_and_data_length</span></span>(<span>address: int, length: int, strict: bool = True) ‑> None</span>
-</code></dt>
-<dd>
-<div class="desc"><p>Checks the address and length in the range of memory areas used by the FEE.</p>
-<p>The ranges are taken from the PLATO-DLR-PL-ICD-0010 N-FEE to N-DPU IRD.</p>
-<h2 id="args">Args</h2>
-<dl>
-<dt><strong><code>address</code></strong> :&ensp;<code>int</code></dt>
-<dd>the memory address of the FEE Register</dd>
-<dt><strong><code>length</code></strong> :&ensp;<code>int</code></dt>
-<dd>the number of bytes requested</dd>
-<dt><strong><code>strict</code></strong> :&ensp;<code>bool</code></dt>
-<dd>strictly apply the rules</dd>
-</dl>
-<h2 id="raises">Raises</h2>
-<dl>
-<dt><code><a title="egse.spw.RMAPError" href="#egse.spw.RMAPError">RMAPError</a></code></dt>
-<dd>when address + length fall outside any specified area.</dd>
-</dl></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def check_address_and_data_length(address: int, length: int, strict: bool = True) -&gt; None:
-    &#34;&#34;&#34;
-    Checks the address and length in the range of memory areas used by the FEE.
-
-    The ranges are taken from the PLATO-DLR-PL-ICD-0010 N-FEE to N-DPU IRD.
-
-    Args:
-        address (int): the memory address of the FEE Register
-        length (int): the number of bytes requested
-        strict (bool): strictly apply the rules
-
-    Raises:
-        RMAPError: when address + length fall outside any specified area.
-    &#34;&#34;&#34;
-
-    if not strict:
-        # All these restrictions have been relaxed on the N-FEE.
-        # We are returning here immediately instead of removing or commenting out the code.
-        # These reason is that we can then bring back restriction easier and gradually.
-
-        MODULE_LOGGER.warning(
-            &#34;Address and data length checks have been disabled, because the N-FEE &#34;
-            &#34;does not enforce restrictions in the critical memory area.&#34;)
-        return
-
-    if length % 4:
-        raise RMAPError(
-            &#34;The requested data length shall be a multiple of 4 bytes.&#34;, address, length
-        )
-
-    if address % 4:
-        raise RMAPError(&#34;The address shall be a multiple of 4 bytes.&#34;, address, length)
-
-    # Note that when checking the given data length, at the defined area end,
-    # we can still read 4 bytes.
-
-    if CRITICAL_AREA_START &lt;= address &lt;= CRITICAL_AREA_END:
-        if length != 4:
-            raise RMAPError(
-                &#34;Read requests to the critical area have a fixed data length of 4 bytes.&#34;,
-                address, length
-            )
-    elif GENERAL_AREA_START &lt;= address &lt;= GENERAL_AREA_END:
-        if length &gt; 256:
-            raise RMAPError(
-                &#34;Read requests to the general area have a maximum data length of 256 bytes.&#34;,
-                address, length
-            )
-        if address + length &gt; GENERAL_AREA_END + 4:
-            raise RMAPError(
-                &#34;The requested data length for the general area is too large. &#34;
-                &#34;The address + length exceeds the general area boundaries.&#34;,
-                address, length
-            )
-
-    elif HK_AREA_START &lt;= address &lt;= HK_AREA_END:
-        if length &gt; 256:
-            raise RMAPError(
-                &#34;Read requests to the housekeeping area have a maximum data length of 256 bytes.&#34;,
-                address, length
-            )
-        if address + length &gt; HK_AREA_END + 4:
-            raise RMAPError(
-                &#34;The requested data length for the housekeeping area is too large. &#34;
-                &#34;The address + length exceeds the housekeeping area boundaries.&#34;,
-                address, length
-            )
-
-    elif WINDOWING_AREA_START &lt;= address &lt;= WINDOWING_AREA_END:
-        if length &gt; 4096:
-            raise RMAPError(
-                &#34;Read requests to the windowing area have a maximum data length of 4096 bytes.&#34;,
-                address, length
-            )
-        if address + length &gt; WINDOWING_AREA_END + 4:
-            raise RMAPError(
-                &#34;The requested data length for the windowing area is too large. &#34;
-                &#34;The address + length exceeds the windowing area boundaries.&#34;, address, length
-            )
-
-    else:
-        raise RMAPError(&#34;Register address for RMAP read requests is invalid.&#34;, address, length)</code></pre>
-</details>
-</dd>
 <dt id="egse.spw.check_data_crc"><code class="name flex">
 <span>def <span class="ident">check_data_crc</span></span>(<span>rxbuf)</span>
 </code></dt>
 <dd>
-<div class="desc"></div>
+<div class="desc"><p>Verifies that the data CRC that is given in the packet matches the calculated data CRC.</p>
+<p>The only packets that have a data CRC are: WriteRequest, ReadRequestReply, and an F-CAM DataPacket.</p>
+<h2 id="raises">Raises</h2>
+<p>A CheckError when the provide and calculated CRC do not match.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def check_data_crc(rxbuf):
+    &#34;&#34;&#34;
+    Verifies that the data CRC that is given in the packet matches the calculated data CRC.
+
+    The only packets that have a data CRC are: WriteRequest, ReadRequestReply, and an F-CAM DataPacket.
+
+    Raises:
+        A CheckError when the provide and calculated CRC do not match.
+    &#34;&#34;&#34;
     instruction_field = get_instruction_field(rxbuf)
     address_length = get_reply_address_field_length(rxbuf)
     data_length = get_data_length(rxbuf)
@@ -1641,11 +1466,10 @@ def reply_address_length(instruction):
     idx = offset + address_length
 
     d_crc = rxbuf[idx + data_length]
-    c_crc = rmap_crc_check(rxbuf, idx, data_length) &amp; 0xFF
+    c_crc = crc_calc(rxbuf, idx, data_length) &amp; 0xFF
     if d_crc != c_crc:
         raise CheckError(
-            f&#34;Data CRC doesn&#39;t match calculated CRC, d_crc=0x{d_crc:02X} &amp; c_crc=0x{c_crc:02X}&#34;,
-            RMAP_GENERAL_ERROR
+            f&#34;Data CRC doesn&#39;t match calculated CRC, d_crc=0x{d_crc:02X} &amp; c_crc=0x{c_crc:02X}&#34;
         )</code></pre>
 </details>
 </dd>
@@ -1653,12 +1477,23 @@ def reply_address_length(instruction):
 <span>def <span class="ident">check_header_crc</span></span>(<span>rxbuf)</span>
 </code></dt>
 <dd>
-<div class="desc"></div>
+<div class="desc"><p>Verifies that the header CRC that is given in the packet matches the calculated header CRC.</p>
+<p>Only RMAP Request and RequestReply packets have a header CRC, data packets not.</p>
+<h2 id="raises">Raises</h2>
+<p>A CheckError when the provide and calculated CRC do not match.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def check_header_crc(rxbuf):
+    &#34;&#34;&#34;
+    Verifies that the header CRC that is given in the packet matches the calculated header CRC.
+
+    Only RMAP Request and RequestReply packets have a header CRC, data packets not.
+
+    Raises:
+        A CheckError when the provide and calculated CRC do not match.
+    &#34;&#34;&#34;
     instruction_field = get_instruction_field(rxbuf)
     if is_command(instruction_field):
         offset = 15
@@ -1669,373 +1504,15 @@ def reply_address_length(instruction):
 
     idx = offset + get_reply_address_field_length(rxbuf)
     h_crc = rxbuf[idx]
-    c_crc = rmap_crc_check(rxbuf, 0, idx)
+    c_crc = crc_calc(rxbuf, 0, idx)
     if h_crc != c_crc:
         raise CheckError(
-            f&#34;Header CRC doesn&#39;t match calculated CRC, h_crc=0x{h_crc:02X} &amp; c_crc=0x{c_crc:02X}&#34;,
-            RMAP_GENERAL_ERROR
+            f&#34;Header CRC doesn&#39;t match calculated CRC, h_crc=0x{h_crc:02X} &amp; c_crc=0x{c_crc:02X}&#34;
         )</code></pre>
 </details>
 </dd>
-<dt id="egse.spw.create_rmap_read_request_packet"><code class="name flex">
-<span>def <span class="ident">create_rmap_read_request_packet</span></span>(<span>address: int, length: int, tid: int, strict: bool = True) ‑> bytes</span>
-</code></dt>
-<dd>
-<div class="desc"><p>Creates an RMAP Read Request SpaceWire packet.</p>
-<p>The read request is an RMAP command that read a number of bytes from the FEE register memory.</p>
-<p>The function returns a <code>ctypes</code> character array (which is basically a bytes array) that
-can be passed into the EtherSpaceLink library function <code>esl_write_packet()</code>.</p>
-<p>Address shall be within the 0x0000_0000 and 0x00FF_FFFC. The memory map (register) is divided
-in the following areas:</p>
-<pre><code>0x0000_0000 - 0x0000_00FC   Critical Configuration Area (verified write)
-0x0000_0100 - 0x0000_06FC   General Configuration Area (unverified write)
-0x0000_0700 - 0x0000_07FC   Housekeeping area
-0x0000_0800 - 0x007F_FFFC   Not Supported
-0x0080_0000 - 0x00FF_FFFC   Windowing Area (unverified write)
-0x0010_0000 - 0xFFFF_FFFC   Not Supported
-</code></pre>
-<p>All read requests to the critical area shall have a fixed data length of 4 bytes.
-All read requests to a general area shall have a maximum data length of 256 bytes.
-All read requests to the housekeeping area shall have a maximum data length of 256 bytes.
-All read requests to the windowing area shall have a maximum data length of 4096 bytes.</p>
-<p>The transaction identifier shall be incremented for each read request. This shall be done by
-the calling function!</p>
-<h2 id="args">Args</h2>
-<dl>
-<dt><strong><code>address</code></strong> :&ensp;<code>int</code></dt>
-<dd>the FEE register memory address</dd>
-<dt><strong><code>length</code></strong> :&ensp;<code>int</code></dt>
-<dd>the data length</dd>
-<dt><strong><code>tid</code></strong> :&ensp;<code>int</code></dt>
-<dd>transaction identifier</dd>
-<dt><strong><code>strict</code></strong> :&ensp;<code>bool</code></dt>
-<dd>perform strict checking of address and length</dd>
-</dl>
-<h2 id="returns">Returns</h2>
-<p>a bytes object containing the full RMAP Read Request packet.</p></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def create_rmap_read_request_packet(address: int, length: int, tid: int, strict: bool = True) -&gt; bytes:
-    &#34;&#34;&#34;
-    Creates an RMAP Read Request SpaceWire packet.
-
-    The read request is an RMAP command that read a number of bytes from the FEE register memory.
-
-    The function returns a ``ctypes`` character array (which is basically a bytes array) that
-    can be passed into the EtherSpaceLink library function ``esl_write_packet()``.
-
-    Address shall be within the 0x0000_0000 and 0x00FF_FFFC. The memory map (register) is divided
-    in the following areas:
-
-        0x0000_0000 - 0x0000_00FC   Critical Configuration Area (verified write)
-        0x0000_0100 - 0x0000_06FC   General Configuration Area (unverified write)
-        0x0000_0700 - 0x0000_07FC   Housekeeping area
-        0x0000_0800 - 0x007F_FFFC   Not Supported
-        0x0080_0000 - 0x00FF_FFFC   Windowing Area (unverified write)
-        0x0010_0000 - 0xFFFF_FFFC   Not Supported
-
-    All read requests to the critical area shall have a fixed data length of 4 bytes.
-    All read requests to a general area shall have a maximum data length of 256 bytes.
-    All read requests to the housekeeping area shall have a maximum data length of 256 bytes.
-    All read requests to the windowing area shall have a maximum data length of 4096 bytes.
-
-    The transaction identifier shall be incremented for each read request. This shall be done by
-    the calling function!
-
-    Args:
-        address (int): the FEE register memory address
-        length (int): the data length
-        tid (int): transaction identifier
-        strict (bool): perform strict checking of address and length
-
-    Returns:
-        a bytes object containing the full RMAP Read Request packet.
-    &#34;&#34;&#34;
-
-    check_address_and_data_length(address, length, strict=strict)
-
-    buf = bytearray(16)
-
-    # NOTE: The first bytes would each carry the target SpW address or a destination port,
-    #       but this is not used for point-to-point connections, so we&#39;re safe.
-
-    buf[0] = 0x51  # Target N-FEE or F-FEE
-    buf[1] = 0x01  # RMAP Protocol ID
-    buf[2] = 0x4C  # Instruction: 0b1001100, RMAP Request, Read, Incrementing address, reply address
-    buf[3] = 0xD1  # Destination Key
-    buf[4] = 0x50  # Initiator is always the DPU
-    buf[5] = (tid &gt;&gt; 8) &amp; 0xFF  # MSB of the Transition ID
-    buf[6] = tid &amp; 0xFF  # LSB of the Transition ID
-    buf[7] = 0x00  # Extended address is not used
-    buf[8] = (address &gt;&gt; 24) &amp; 0xFF  # address (MSB)
-    buf[9] = (address &gt;&gt; 16) &amp; 0xFF  # address
-    buf[10] = (address &gt;&gt; 8) &amp; 0xFF  # address
-    buf[11] = address &amp; 0xFF  # address (LSB)
-    buf[12] = (length &gt;&gt; 16) &amp; 0xFF  # data length (MSB)
-    buf[13] = (length &gt;&gt; 8) &amp; 0xFF  # data length
-    buf[14] = length &amp; 0xFF  # data length (LSB)
-    buf[15] = rmap_crc_check(buf, 0, 15) &amp; 0xFF
-    return bytes(buf)</code></pre>
-</details>
-</dd>
-<dt id="egse.spw.create_rmap_read_request_reply_packet"><code class="name flex">
-<span>def <span class="ident">create_rmap_read_request_reply_packet</span></span>(<span>instruction_field: int, tid: int, status: int, buffer: bytes, buffer_length: int) ‑> bytes</span>
-</code></dt>
-<dd>
-<div class="desc"><p>Creates an RMAP Reply to a RMAP Read Request packet.</p>
-<p>The function returns a <code>ctypes</code> character array (which is basically a bytes array) that
-can be passed into the EtherSpaceLink library function <code>esl_write_packet()</code>.</p>
-<h2 id="args">Args</h2>
-<dl>
-<dt><strong><code>instruction_field</code></strong> :&ensp;<code>int</code></dt>
-<dd>the instruction field of the RMAP read request packet</dd>
-<dt><strong><code>tid</code></strong> :&ensp;<code>int</code></dt>
-<dd>the transaction identifier of the read request packet</dd>
-<dt><strong><code>status</code></strong> :&ensp;<code>int</code></dt>
-<dd>the status field, 0 on success</dd>
-<dt><strong><code>buffer</code></strong> :&ensp;<code>bytes</code></dt>
-<dd>the data that was read as indicated by the read request</dd>
-<dt><strong><code>buffer_length</code></strong> :&ensp;<code>int</code></dt>
-<dd>the data length</dd>
-</dl>
-<h2 id="returns">Returns</h2>
-<dl>
-<dt><code>packet</code></dt>
-<dd>a bytes object containing the full RMAP Reply packet.</dd>
-</dl></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def create_rmap_read_request_reply_packet(
-        instruction_field: int, tid: int, status: int, buffer: bytes, buffer_length: int) -&gt; bytes:
-    &#34;&#34;&#34;
-    Creates an RMAP Reply to a RMAP Read Request packet.
-
-    The function returns a ``ctypes`` character array (which is basically a bytes array) that
-    can be passed into the EtherSpaceLink library function ``esl_write_packet()``.
-
-    Args:
-        instruction_field (int): the instruction field of the RMAP read request packet
-        tid (int): the transaction identifier of the read request packet
-        status (int): the status field, 0 on success
-        buffer (bytes): the data that was read as indicated by the read request
-        buffer_length (int): the data length
-
-    Returns:
-        packet: a bytes object containing the full RMAP Reply packet.
-    &#34;&#34;&#34;
-
-    buf = bytearray(12 + buffer_length + 1)
-
-    buf[0] = 0x50  # Initiator address N-DPU or F-DPU
-    buf[1] = 0x01  # RMAP Protocol ID
-    buf[2] = instruction_field &amp; 0x3F  # Clear the command bit as this is a reply
-    buf[3] = status &amp; 0xFF  # Status field: 0 on success
-    buf[4] = 0x51  # Target address is always the N-FEE or F-FEE
-    buf[5] = (tid &gt;&gt; 8) &amp; 0xFF  # MSB of the Transition ID
-    buf[6] = tid &amp; 0xFF  # LSB of the Transition ID
-    buf[7] = 0x00  # Reserved
-    buf[8] = (buffer_length &gt;&gt; 16) &amp; 0xFF  # data length (MSB)
-    buf[9] = (buffer_length &gt;&gt; 8) &amp; 0xFF  # data length
-    buf[10] = buffer_length &amp; 0xFF  # data length (LSB)
-    buf[11] = rmap_crc_check(buf, 0, 11) &amp; 0xFF  # Header CRC
-
-    # Note that we assume here that len(buffer) == buffer_length.
-
-    if len(buffer) != buffer_length:
-        MODULE_LOGGER.warning(
-            f&#34;While creating an RMAP read reply packet, the length of the buffer ({len(buffer)}) &#34;
-            f&#34;not equals the buffer_length ({buffer_length})&#34;
-        )
-
-    for idx, value in enumerate(buffer):
-        buf[12 + idx] = value
-
-    buf[12 + buffer_length] = rmap_crc_check(buffer, 0, buffer_length) &amp; 0xFF  # data CRC
-
-    return bytes(buf)</code></pre>
-</details>
-</dd>
-<dt id="egse.spw.create_rmap_unverified_write_packet"><code class="name flex">
-<span>def <span class="ident">create_rmap_unverified_write_packet</span></span>(<span>address: int, data: bytes, length: int, tid: int) ‑> bytes</span>
-</code></dt>
-<dd>
-<div class="desc"><p>Create an RMAP packet for a unverified write request on the FEE.</p>
-<h2 id="args">Args</h2>
-<dl>
-<dt><strong><code>address</code></strong></dt>
-<dd>the start memory address on the FEE register map</dd>
-<dt><strong><code>data</code></strong></dt>
-<dd>the data to be written in the register map at address</dd>
-<dt><strong><code>length</code></strong></dt>
-<dd>the length of the data</dd>
-<dt><strong><code>tid</code></strong> :&ensp;<code>int</code></dt>
-<dd>transaction identifier</dd>
-</dl>
-<h2 id="returns">Returns</h2>
-<dl>
-<dt><code>packet</code></dt>
-<dd>a bytes object containing the SpaceWire packet.</dd>
-</dl></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def create_rmap_unverified_write_packet(address: int, data: bytes, length: int, tid: int) -&gt; bytes:
-    &#34;&#34;&#34;
-    Create an RMAP packet for a unverified write request on the FEE.
-
-    Args:
-        address: the start memory address on the FEE register map
-        data: the data to be written in the register map at address
-        length: the length of the data
-        tid (int): transaction identifier
-
-    Returns:
-        packet: a bytes object containing the SpaceWire packet.
-    &#34;&#34;&#34;
-
-    # We can only handle data for which the length &gt;= the given length argument.
-
-    if len(data) &lt; length:
-        raise ValueError(
-            f&#34;The length of the data argument ({len(data)}) is smaller than &#34;
-            f&#34;the given length argument ({length}).&#34;
-        )
-
-    if len(data) &gt; length:
-        MODULE_LOGGER.warning(
-            f&#34;The length of the data argument ({len(data)}) is larger than &#34;
-            f&#34;the given length argument ({length}). The data will be truncated &#34;
-            f&#34;when copied into the packet.&#34;
-        )
-
-    if address &lt;= CRITICAL_AREA_END:
-        raise ValueError(
-            f&#34;The given address (0x{address:08X}) is in the range for critical configuration is &#34;
-            f&#34;[0x00 - 0xFC]. Use the verified write function for this.&#34;
-        )
-
-    tid = update_transaction_identifier(tid)
-
-    # Buffer length is fixed at 24 bytes since the data length
-    # is fixed at 4 bytes (32 bit addressing)
-
-    buf = bytearray(16 + length + 1)
-    offset = 0
-
-    buf[offset + 0] = 0x51  # Logical Address
-    buf[offset + 1] = 0x01  # Protocol ID
-    buf[offset + 2] = 0x6C  # Instruction
-    buf[offset + 3] = 0xD1  # Key
-    buf[offset + 4] = 0x50  # Initiator Address
-    buf[offset + 5] = (tid &gt;&gt; 8) &amp; 0xFF  # MSB of the Transition ID
-    buf[offset + 6] = tid &amp; 0xFF  # LSB of the Transition ID
-    buf[offset + 7] = 0x00  # Extended address
-    buf[offset + 8] = (address &gt;&gt; 24) &amp; 0xFF  # address (MSB)
-    buf[offset + 9] = (address &gt;&gt; 16) &amp; 0xFF  # address
-    buf[offset + 10] = (address &gt;&gt; 8) &amp; 0xFF  # address
-    buf[offset + 11] = address &amp; 0xFF  # address (LSB)
-    buf[offset + 12] = (length &gt;&gt; 16) &amp; 0xFF  # data length (MSB)
-    buf[offset + 13] = (length &gt;&gt; 8) &amp; 0xFF  # data length
-    buf[offset + 14] = length &amp; 0xFF  # data length (LSB)
-    buf[offset + 15] = rmap_crc_check(buf, 0, 15) &amp; 0xFF  # header CRC
-
-    offset += 16
-
-    for idx, value in enumerate(data):
-        buf[offset + idx] = value
-
-    buf[offset + length] = rmap_crc_check(buf, offset, length) &amp; 0xFF  # data CRC
-
-    return bytes(buf)</code></pre>
-</details>
-</dd>
-<dt id="egse.spw.create_rmap_verified_write_packet"><code class="name flex">
-<span>def <span class="ident">create_rmap_verified_write_packet</span></span>(<span>address: int, data: bytes, tid: int) ‑> bytes</span>
-</code></dt>
-<dd>
-<div class="desc"><p>Create an RMAP packet for a verified write request on the FEE. The length of the data is
-by convention always 4 bytes and therefore not passed as an argument.</p>
-<h2 id="args">Args</h2>
-<dl>
-<dt><strong><code>address</code></strong></dt>
-<dd>the start memory address on the FEE register map</dd>
-<dt><strong><code>data</code></strong></dt>
-<dd>the data to be written in the register map at address [4 bytes]</dd>
-<dt><strong><code>tid</code></strong> :&ensp;<code>int</code></dt>
-<dd>transaction identifier</dd>
-</dl>
-<h2 id="returns">Returns</h2>
-<dl>
-<dt><code>packet</code></dt>
-<dd>a bytes object containing the SpaceWire packet.</dd>
-</dl></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def create_rmap_verified_write_packet(address: int, data: bytes, tid: int) -&gt; bytes:
-    &#34;&#34;&#34;
-    Create an RMAP packet for a verified write request on the FEE. The length of the data is
-    by convention always 4 bytes and therefore not passed as an argument.
-
-    Args:
-        address: the start memory address on the FEE register map
-        data: the data to be written in the register map at address [4 bytes]
-        tid (int): transaction identifier
-
-    Returns:
-        packet: a bytes object containing the SpaceWire packet.
-    &#34;&#34;&#34;
-
-    if len(data) &lt; 4:
-        raise ValueError(
-            f&#34;The data argument should be at least 4 bytes, but it is only {len(data)} bytes: {data=}.&#34;)
-
-    if address &gt; CRITICAL_AREA_END:
-        raise ValueError(&#34;The address range for critical configuration is [0x00 - 0xFC].&#34;)
-
-    tid = update_transaction_identifier(tid)
-
-    # Buffer length is fixed at 24 bytes since the data length is fixed
-    # at 4 bytes (32 bit addressing)
-
-    buf = bytearray(21)
-
-    # The values below are taken from the PLATO N-FEE to N-DPU
-    # Interface Requirements Document [PLATO-DLR-PL-ICD-0010]
-
-    buf[0] = 0x51  # Logical Address
-    buf[1] = 0x01  # Protocol ID
-    buf[2] = 0x7C  # Instruction
-    buf[3] = 0xD1  # Key
-    buf[4] = 0x50  # Initiator Address
-    buf[5] = (tid &gt;&gt; 8) &amp; 0xFF  # MSB of the Transition ID
-    buf[6] = tid &amp; 0xFF  # LSB of the Transition ID
-    buf[7] = 0x00  # Extended address
-    buf[8] = (address &gt;&gt; 24) &amp; 0xFF  # address (MSB)
-    buf[9] = (address &gt;&gt; 16) &amp; 0xFF  # address
-    buf[10] = (address &gt;&gt; 8) &amp; 0xFF  # address
-    buf[11] = address &amp; 0xFF  # address (LSB)
-    buf[12] = 0x00  # data length (MSB)
-    buf[13] = 0x00  # data length
-    buf[14] = 0x04  # data length (LSB)
-    buf[15] = rmap_crc_check(buf, 0, 15) &amp; 0xFF  # header CRC
-    buf[16] = data[0]
-    buf[17] = data[1]
-    buf[18] = data[2]
-    buf[19] = data[3]
-    buf[20] = rmap_crc_check(buf, 16, 4) &amp; 0xFF  # data CRC
-
-    return bytes(buf)</code></pre>
-</details>
-</dd>
-<dt id="egse.spw.create_rmap_write_request_reply_packet"><code class="name flex">
-<span>def <span class="ident">create_rmap_write_request_reply_packet</span></span>(<span>instruction_field: int, tid: int, status: int) ‑> bytes</span>
+<dt id="egse.spw.check_initiator_logical_address"><code class="name flex">
+<span>def <span class="ident">check_initiator_logical_address</span></span>(<span>rxbuf, ila)</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -2043,19 +1520,135 @@ by convention always 4 bytes and therefore not passed as an argument.</p>
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def create_rmap_write_request_reply_packet(instruction_field: int, tid: int, status: int) -&gt; bytes:
-    buf = bytearray(8)
+<pre><code class="python">def check_initiator_logical_address(rxbuf, ila):
+    ila_rxbuf = get_initiator_logical_address(rxbuf)
+    if ila != ila_rxbuf:
+        raise CheckError(
+            f&#34;Initiator Logical Address doesn&#39;t match, ila=0x{ila:02X} &amp; ila_rxbuf=0x&#34;
+            f&#34;{ila_rxbuf:02X}&#34;,
+            egse.rmap.RMAP_GENERAL_ERROR
+        )</code></pre>
+</details>
+</dd>
+<dt id="egse.spw.check_instruction"><code class="name flex">
+<span>def <span class="ident">check_instruction</span></span>(<span>rx_buffer) ‑> None</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Check the instruction field for inconsistencies and report the values in the LOGGER at DEBUG
+level.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>rx_buffer</code></strong> :&ensp;<code>bytes</code></dt>
+<dd>The read buffer which contains the SpW packet</dd>
+</dl>
+<h2 id="raises">Raises</h2>
+<dl>
+<dt><code><a title="egse.spw.CheckError" href="#egse.spw.CheckError">CheckError</a></code></dt>
+<dd>when the reserved bit is not zero,</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<p>None.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def check_instruction(rx_buffer) -&gt; None:
+    &#34;&#34;&#34;
+    Check the instruction field for inconsistencies and report the values in the LOGGER at DEBUG
+    level.
 
-    buf[0] = 0x50  # Initiator address N-DPU or F-DPU
-    buf[1] = 0x01  # RMAP Protocol ID
-    buf[2] = instruction_field &amp; 0x3F  # Clear the command bit as this is a reply
-    buf[3] = status &amp; 0xFF  # Status field: 0 on success
-    buf[4] = 0x51  # Target address is always the N-FEE or F-FEE
-    buf[5] = (tid &gt;&gt; 8) &amp; 0xFF  # MSB of the Transition ID
-    buf[6] = tid &amp; 0xFF  # LSB of the Transition ID
-    buf[7] = rmap_crc_check(buf, 0, 7) &amp; 0xFF  # Header CRC
 
-    return bytes(buf)</code></pre>
+    Args:
+        rx_buffer (bytes): The read buffer which contains the SpW packet
+
+    Raises:
+        CheckError: when the reserved bit is not zero,
+
+    Returns:
+        None.
+    &#34;&#34;&#34;
+    from egse.rmap import RMAP_NOT_IMPLEMENTED_AUTHORISED
+
+    # The Instruction Field is the third byte (base=0) of the packet buffer.
+    # Description of the Instruction Field can be found in ECSS-E-ST-50-52C.
+
+    instruction = get_instruction_field(rx_buffer)
+    if is_reserved(instruction):
+        raise CheckError(
+            f&#34;Instruction field [{instruction:08b}] reserved bit is not 0x00&#34;,
+            RMAP_NOT_IMPLEMENTED_AUTHORISED
+        )
+
+    msg = &#34;RMAP Instruction Field: &#34;
+    msg += &#34;Command; &#34; if is_command(instruction) else &#34;Reply; &#34;
+    msg += &#34;write; &#34; if is_write(instruction) else &#34;read; &#34;
+    msg += &#34;verify; &#34; if is_verify(instruction) else &#34;don&#39;t verify; &#34;
+    msg += &#34;reply; &#34; if is_reply_required(instruction) else &#34;don&#39;t reply; &#34;
+    msg += &#34;increment; &#34; if is_increment(instruction) else &#34;no increment; &#34;
+
+    MODULE_LOGGER.debug(msg)
+    if reply_address_length(instruction):
+        MODULE_LOGGER.debug(f&#34;Reply address length = {reply_address_length(instruction)} bytes.&#34;)</code></pre>
+</details>
+</dd>
+<dt id="egse.spw.check_key"><code class="name flex">
+<span>def <span class="ident">check_key</span></span>(<span>rxbuf, key)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def check_key(rxbuf, key):
+    from egse.rmap import RMAP_INVALID_KEY
+
+    idx = 3
+    key_rxbuf = rxbuf[idx]
+    if key != key_rxbuf:
+        raise CheckError(
+            f&#34;Key doesn&#39;t match, key={key} &amp; key_rxbuf={key_rxbuf}&#34;, RMAP_INVALID_KEY
+        )</code></pre>
+</details>
+</dd>
+<dt id="egse.spw.check_protocol_id"><code class="name flex">
+<span>def <span class="ident">check_protocol_id</span></span>(<span>rxbuf)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def check_protocol_id(rxbuf):
+    from egse.rmap import RMAP_PROTOCOL_ID, RMAP_GENERAL_ERROR
+
+    idx = 1
+    protocol_id = rxbuf[idx]
+    if protocol_id != RMAP_PROTOCOL_ID:
+        raise CheckError(
+            f&#34;Protocol id is not the expected value {protocol_id}, expected {RMAP_PROTOCOL_ID}&#34;,
+            RMAP_GENERAL_ERROR)</code></pre>
+</details>
+</dd>
+<dt id="egse.spw.check_target_logical_address"><code class="name flex">
+<span>def <span class="ident">check_target_logical_address</span></span>(<span>rxbuf, tla)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def check_target_logical_address(rxbuf, tla):
+    from egse.rmap import RMAP_GENERAL_ERROR
+
+    tla_rxbuf = get_target_logical_address(rxbuf)
+    if tla != tla_rxbuf:
+        raise CheckError(
+            f&#34;Target Logical Address doesn&#39;t match, tla=0x{tla:02X} &amp; rxbuf[0]=0x{tla_rxbuf:02X}&#34;,
+            RMAP_GENERAL_ERROR
+        )</code></pre>
 </details>
 </dd>
 <dt id="egse.spw.get_address"><code class="name flex">
@@ -2102,7 +1695,7 @@ by convention always 4 bytes and therefore not passed as an argument.</p>
 <h2 id="raises">Raises</h2>
 <dl>
 <dt><code>ValueError</code></dt>
-<dd>if there is no data section in the packet (TODO: not yet implemented)</dd>
+<dd>if there is no data section in the packet.</dd>
 </dl></div>
 <details class="source">
 <summary>
@@ -2113,9 +1706,15 @@ by convention always 4 bytes and therefore not passed as an argument.</p>
     Return the data from the RMAP packet.
 
     Raises:
-        ValueError: if there is no data section in the packet (TODO: not yet implemented)
+        ValueError: if there is no data section in the packet.
     &#34;&#34;&#34;
     instruction_field = get_instruction_field(rxbuf)
+
+    if is_write(instruction_field) and is_reply(instruction_field):
+        raise ValueError(&#34;A WriteRequestReply packet doesn&#39;t contain a data section.&#34;)
+    elif is_read(instruction_field) and is_command(instruction_field):
+        raise ValueError(&#34;A ReadRequest packet doesn&#39;t contain a data section.&#34;)
+
     address_length = get_reply_address_field_length(rxbuf)
     data_length = get_data_length(rxbuf)
 
@@ -2124,11 +1723,40 @@ by convention always 4 bytes and therefore not passed as an argument.</p>
     return rxbuf[offset + address_length:offset + address_length + data_length]</code></pre>
 </details>
 </dd>
+<dt id="egse.spw.get_data_crc"><code class="name flex">
+<span>def <span class="ident">get_data_crc</span></span>(<span>rxbuf)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Returns the data CRC of the RMAP packet.</p>
+<p>The only packets that have a data CRC are: WriteRequest, ReadRequestReply, and an F-CAM DataPacket.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_data_crc(rxbuf):
+    &#34;&#34;&#34;
+    Returns the data CRC of the RMAP packet.
+
+    The only packets that have a data CRC are: WriteRequest, ReadRequestReply, and an F-CAM DataPacket.
+    &#34;&#34;&#34;
+    instruction_field = get_instruction_field(rxbuf)
+    address_length = get_reply_address_field_length(rxbuf)
+    data_length = get_data_length(rxbuf)
+
+    offset = 12 if is_read(instruction_field) else 16
+    idx = offset + address_length
+
+    d_crc = rxbuf[idx + data_length]
+
+    return d_crc</code></pre>
+</details>
+</dd>
 <dt id="egse.spw.get_data_length"><code class="name flex">
 <span>def <span class="ident">get_data_length</span></span>(<span>rxbuf) ‑> int</span>
 </code></dt>
 <dd>
-<div class="desc"><p>Returns the length of the data in bytes.</p>
+<div class="desc"><p>Returns the length of the data part of an RMAP Request packet. The returned value
+is the number of bytes.</p>
 <h2 id="raises">Raises</h2>
 <dl>
 <dt><code>TypeError</code></dt>
@@ -2141,7 +1769,8 @@ data length).</dd>
 </summary>
 <pre><code class="python">def get_data_length(rxbuf) -&gt; int:
     &#34;&#34;&#34;
-    Returns the length of the data in bytes.
+    Returns the length of the data part of an RMAP Request packet. The returned value
+    is the number of bytes.
 
     Raises:
         TypeError: when this method is used on a Write Request Reply packet (which has no
@@ -2157,23 +1786,96 @@ data length).</dd>
     idx = offset + get_reply_address_field_length(rxbuf)
 
     # We could use two alternative decoding methods here:
-    #   int.from_bytes(rxbuf[idx:idx+3], byteorder=&#39;big&#39;)    (timeit=1.166s)
-    #   struct.unpack(&#39;&gt;L&#39;, b&#39;\x00&#39; + rxbuf[idx:idx+3])[0]   (timeit=0.670s)
-    data_length = struct.unpack(&#39;&gt;L&#39;, b&#39;\x00&#39; + rxbuf[idx:idx + 3])[0]
+
+    # data_length = int.from_bytes(rxbuf[idx:idx+3], byteorder=&#39;big&#39;)  # (timeit=1.166s)
+    data_length = struct.unpack(&#39;&gt;L&#39;, b&#39;\x00&#39; + rxbuf[idx:idx + 3])[0]  # (timeit=0.670s)
+
     return data_length</code></pre>
+</details>
+</dd>
+<dt id="egse.spw.get_header_crc"><code class="name flex">
+<span>def <span class="ident">get_header_crc</span></span>(<span>rxbuf)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Returns the Header CRC of the RMAP packet.</p>
+<p>Only RMAP Request and RequestReply packets have a header CRC, data packets not.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_header_crc(rxbuf):
+    &#34;&#34;&#34;
+    Returns the Header CRC of the RMAP packet.
+
+    Only RMAP Request and RequestReply packets have a header CRC, data packets not.
+    &#34;&#34;&#34;
+    instruction_field = get_instruction_field(rxbuf)
+    if is_command(instruction_field):
+        offset = 15
+    elif is_write(instruction_field):
+        offset = 7
+    else:
+        offset = 11
+
+    idx = offset + get_reply_address_field_length(rxbuf)
+    h_crc = rxbuf[idx]
+
+    return h_crc</code></pre>
+</details>
+</dd>
+<dt id="egse.spw.get_initiator_logical_address"><code class="name flex">
+<span>def <span class="ident">get_initiator_logical_address</span></span>(<span>rxbuf)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>The initiator logical address is always the DPU, i.e. 0x51. The location of the initiator logical
+address is different for Request and RequestReply packets.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_initiator_logical_address(rxbuf):
+    &#34;&#34;&#34;
+    The initiator logical address is always the DPU, i.e. 0x51. The location of the initiator logical
+    address is different for Request and RequestReply packets.
+    &#34;&#34;&#34;
+    instruction = get_instruction_field(rxbuf)
+    offset = 4 if is_command(instruction) else 0
+    idx = offset + get_reply_address_field_length(rxbuf)
+    ila_rxbuf = rxbuf[idx]
+    return ila_rxbuf</code></pre>
 </details>
 </dd>
 <dt id="egse.spw.get_instruction_field"><code class="name flex">
 <span>def <span class="ident">get_instruction_field</span></span>(<span>rxbuf)</span>
 </code></dt>
 <dd>
-<div class="desc"></div>
+<div class="desc"><p>Returns the instruction field of the RMAP packet.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def get_instruction_field(rxbuf):
+    &#34;&#34;&#34;
+    Returns the instruction field of the RMAP packet.
+    &#34;&#34;&#34;
     idx = 2
+    return rxbuf[idx]</code></pre>
+</details>
+</dd>
+<dt id="egse.spw.get_key_field"><code class="name flex">
+<span>def <span class="ident">get_key_field</span></span>(<span>rxbuf)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Returns the 'Key' field of the RMAP packet.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_key_field(rxbuf):
+    &#34;&#34;&#34;
+    Returns the &#39;Key&#39; field of the RMAP packet.
+    &#34;&#34;&#34;
+    idx = 3
     return rxbuf[idx]</code></pre>
 </details>
 </dd>
@@ -2222,6 +1924,28 @@ reply_address_length() function that work on the instruction field.</p>
     &#34;&#34;&#34;
     instruction = get_instruction_field(rx_buffer)
     return reply_address_length(instruction) * 4</code></pre>
+</details>
+</dd>
+<dt id="egse.spw.get_target_logical_address"><code class="name flex">
+<span>def <span class="ident">get_target_logical_address</span></span>(<span>rxbuf: bytes) ‑> int</span>
+</code></dt>
+<dd>
+<div class="desc"><p>The target logical address is always the FEE, i.e. 0x50. The location of the target logical
+address is different for Request and RequestReply packets.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_target_logical_address(rxbuf: bytes) -&gt; int:
+    &#34;&#34;&#34;
+    The target logical address is always the FEE, i.e. 0x50. The location of the target logical
+    address is different for Request and RequestReply packets.
+    &#34;&#34;&#34;
+    instruction = get_instruction_field(rxbuf)
+    offset = 0 if is_command(instruction) else 4
+    tla_idx = offset + get_reply_address_field_length(rxbuf)
+    tla_rxbuf = rxbuf[tla_idx]
+    return tla_rxbuf</code></pre>
 </details>
 </dd>
 <dt id="egse.spw.get_transaction_identifier"><code class="name flex">
@@ -2305,12 +2029,11 @@ reply_address_length() function that work on the instruction field.</p>
 <dt><strong><code>instruction</code></strong> :&ensp;<code>int</code></dt>
 <dd>the instruction field of an RMAP packet</dd>
 </dl>
-<div class="admonition note">
-<p class="admonition-title">Note:&ensp;the name of this function might be confusing.</p>
-<p>This function does <strong>not</strong> test if the packet is a reply packet, but it checks
+<p>Note: the name of this function might be confusing.</p>
+<pre><code>This function does **not** test if the packet is a reply packet, but it checks
 if the command requests a reply from the target. If you need to test if the
-packet is a command or a reply, use the is_command() or is_reply() function.</p>
-</div></div>
+packet is a command or a reply, use the is_command() or is_reply() function.
+</code></pre></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
@@ -2321,7 +2044,7 @@ packet is a command or a reply, use the is_command() or is_reply() function.</p>
     Args:
         instruction (int): the instruction field of an RMAP packet
 
-    .. note:: the name of this function might be confusing.
+    Note: the name of this function might be confusing.
 
         This function does **not** test if the packet is a reply packet, but it checks
         if the command requests a reply from the target. If you need to test if the
@@ -2339,7 +2062,7 @@ packet is a command or a reply, use the is_command() or is_reply() function.</p>
 <p>For PLATO this bit shall be zero as the 0b10 and 0b11 packet field values are reserved.</p>
 <h2 id="returns">Returns</h2>
 <dl>
-<dt><code>bit value</code></dt>
+<dt><code>The bit value</code></dt>
 <dd>1 or 0.</dd>
 </dl></div>
 <details class="source">
@@ -2347,14 +2070,31 @@ packet is a command or a reply, use the is_command() or is_reply() function.</p>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def is_reserved(instruction):
-    &#34;&#34;&#34;The reserved bit of the 2-bit packet type field from the instruction field.
+    &#34;&#34;&#34;
+    The reserved bit of the 2-bit packet type field from the instruction field.
 
     For PLATO this bit shall be zero as the 0b10 and 0b11 packet field values are reserved.
 
     Returns:
-        bit value: 1 or 0.
+        The bit value: 1 or 0.
     &#34;&#34;&#34;
     return (instruction &amp; 0b10000000) &gt;&gt; 7</code></pre>
+</details>
+</dd>
+<dt id="egse.spw.is_rmap"><code class="name flex">
+<span>def <span class="ident">is_rmap</span></span>(<span>rx_buffer)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Returns True if the buffer represents an RMAP packet, False otherwise.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def is_rmap(rx_buffer):
+    &#34;&#34;&#34;
+    Returns True if the buffer represents an RMAP packet, False otherwise.
+    &#34;&#34;&#34;
+    return get_protocol_id(rx_buffer) == egse.rmap.RMAP_PROTOCOL_ID</code></pre>
 </details>
 </dd>
 <dt id="egse.spw.is_verify"><code class="name flex">
@@ -2418,20 +2158,6 @@ packet is a command or a reply, use the is_command() or is_reply() function.</p>
     return (instruction &amp; 0b00000011) &lt;&lt; 2</code></pre>
 </details>
 </dd>
-<dt id="egse.spw.rmap_crc_check"><code class="name flex">
-<span>def <span class="ident">rmap_crc_check</span></span>(<span>data, start, length) ‑> int</span>
-</code></dt>
-<dd>
-<div class="desc"><p>Calculate the checksum for the given data.</p></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def rmap_crc_check(data, start, length) -&gt; int:
-    &#34;&#34;&#34;Calculate the checksum for the given data.&#34;&#34;&#34;
-    return crc_calc(data, start, length)</code></pre>
-</details>
-</dd>
 <dt id="egse.spw.to_string"><code class="name flex">
 <span>def <span class="ident">to_string</span></span>(<span>data: <a title="egse.spw.DataPacketType" href="#egse.spw.DataPacketType">DataPacketType</a>) ‑> str</span>
 </code></dt>
@@ -2489,9 +2215,10 @@ processing or conversion.</p>
 </code></dt>
 <dd>
 <div class="desc"><p>Updates the transaction identifier and returns the new value.</p>
-<p>FIXME: document more about this identifier, where is it used, when is it checked,
-when does it need to be incremented, who initializes the identifier and
-who updates it, &hellip;</p>
+<p>This identifier shall be incremented for each RMAP Request. The RMAP Request Reply packets
+shall copy the transaction ID of the RMAP Request packet in their transaction ID field.</p>
+<p>The transaction ID is a 16-bit field which is used to associate replies with the command
+that caused the reply.</p>
 <h2 id="args">Args</h2>
 <dl>
 <dt><strong><code>tid</code></strong> :&ensp;<code>int</code></dt>
@@ -2507,9 +2234,11 @@ who updates it, &hellip;</p>
     &#34;&#34;&#34;
     Updates the transaction identifier and returns the new value.
 
-    FIXME: document more about this identifier, where is it used, when is it checked,
-           when does it need to be incremented, who initializes the identifier and
-           who updates it, ...
+    This identifier shall be incremented for each RMAP Request. The RMAP Request Reply packets
+    shall copy the transaction ID of the RMAP Request packet in their transaction ID field.
+
+    The transaction ID is a 16-bit field which is used to associate replies with the command
+    that caused the reply.
 
     Args:
         tid (int): The current transaction identifier
@@ -2531,14 +2260,14 @@ who updates it, &hellip;</p>
 <span>(</span><span>message, status)</span>
 </code></dt>
 <dd>
-<div class="desc"><p>Raised when a check fails and you want to pass a status values along with the message.</p></div>
+<div class="desc"><p>Raised when a check fails, and you want to pass a status values along with the message.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">class CheckError(RMAPError):
+<pre><code class="python">class CheckError(Error):
     &#34;&#34;&#34;
-    Raised when a check fails and you want to pass a status values along with the message.
+    Raised when a check fails, and you want to pass a status values along with the message.
     &#34;&#34;&#34;
 
     def __init__(self, message, status):
@@ -2547,7 +2276,6 @@ who updates it, &hellip;</p>
 </details>
 <h3>Ancestors</h3>
 <ul class="hlist">
-<li><a title="egse.spw.RMAPError" href="#egse.spw.RMAPError">RMAPError</a></li>
 <li><a title="egse.exceptions.Error" href="exceptions.html#egse.exceptions.Error">Error</a></li>
 <li><a title="egse.exceptions.CommonEGSEException" href="exceptions.html#egse.exceptions.CommonEGSEException">CommonEGSEException</a></li>
 <li>builtins.Exception</li>
@@ -2786,6 +2514,11 @@ factory method or the constructors of one of the sub-classes of this DataPacket 
             edgeitems=super()._edgeitems,
             linewidth=super()._linewidth,
         )
+        limit = 50
+        header_hex = &#39; &#39;.join(f&#39;{byte:02X}&#39; for byte in self.header_as_bytes()[:limit])
+        data_hex = &#39; &#39;.join(f&#39;{byte:02X}&#39; for byte in self.data[:limit])
+        data_ascii = &#39;&#39;.join((chr(byte) if 32 &lt;= byte &lt;= 126 else &#39;.&#39;) for byte in self.data[:limit])
+
         msg = (
             f&#34;{self.__class__.__name__}:\n&#34;
             f&#34;  Logical Address = 0x{self.logical_address:02X}\n&#34;
@@ -2794,7 +2527,9 @@ factory method or the constructors of one of the sub-classes of this DataPacket 
             f&#34;  Type = {self._type}\n&#34;
             f&#34;  Frame Counter = {self.frame_counter}\n&#34;
             f&#34;  Sequence Counter = {self.sequence_counter}\n&#34;
-            f&#34;  Data = \n{self.data}&#34;
+            f&#34;  Header = {header_hex}\n&#34;
+            f&#34;  Data HEX = {data_hex}\n&#34;
+            f&#34;  Data ASC = {data_ascii}\n&#34;
         )
         np.set_printoptions(**options)
         return msg</code></pre>
@@ -3531,6 +3266,20 @@ def value(self) -&gt; int:
 </dd>
 </dl>
 </dd>
+<dt id="egse.spw.ExtensionPacket"><code class="flex name class">
+<span>class <span class="ident">ExtensionPacket</span></span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class ExtensionPacket:
+    def __init__(self):
+        pass</code></pre>
+</details>
+</dd>
 <dt id="egse.spw.HousekeepingPacket"><code class="flex name class">
 <span>class <span class="ident">HousekeepingPacket</span></span>
 <span>(</span><span>data: Union[bytes, numpy.ndarray])</span>
@@ -3739,32 +3488,6 @@ def is_overscan_data_packet(cls, data: Union[bytes, np.ndarray]) -&gt; bool:
 </dd>
 </dl>
 </dd>
-<dt id="egse.spw.RMAPError"><code class="flex name class">
-<span>class <span class="ident">RMAPError</span></span>
-<span>(</span><span>*args, **kwargs)</span>
-</code></dt>
-<dd>
-<div class="desc"><p>An RMAP specific Error.</p></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">class RMAPError(Error):
-    &#34;&#34;&#34;An RMAP specific Error.&#34;&#34;&#34;
-    pass</code></pre>
-</details>
-<h3>Ancestors</h3>
-<ul class="hlist">
-<li><a title="egse.exceptions.Error" href="exceptions.html#egse.exceptions.Error">Error</a></li>
-<li><a title="egse.exceptions.CommonEGSEException" href="exceptions.html#egse.exceptions.CommonEGSEException">CommonEGSEException</a></li>
-<li>builtins.Exception</li>
-<li>builtins.BaseException</li>
-</ul>
-<h3>Subclasses</h3>
-<ul class="hlist">
-<li><a title="egse.spw.CheckError" href="#egse.spw.CheckError">CheckError</a></li>
-</ul>
-</dd>
 <dt id="egse.spw.RMAPPacket"><code class="flex name class">
 <span>class <span class="ident">RMAPPacket</span></span>
 <span>(</span><span>data: Union[bytes, numpy.ndarray])</span>
@@ -3789,11 +3512,15 @@ def is_overscan_data_packet(cls, data: Union[bytes, np.ndarray]) -&gt; bool:
         super().__init__(data)
 
     def __str__(self):
-        return (
-            f&#34;{self.__class__.__name__}:\n&#34;
-            f&#34;  Logical Address = 0x{self.logical_address:02X}\n&#34;
-            f&#34;  Data = {self.data}\n&#34;
+        msg = (
+            f&#34;RMAP Base Packet ({len(self)} bytes)\n&#34;
+            f&#34;Logical address:    0x{self.logical_address:02x}\n&#34;
+            f&#34;Protocol ID:        0x{self.protocol_id:02x}\n&#34;
+            f&#34;Instruction:        0x{self.instruction:02x} (0o{self.instruction:08b})\n&#34;
+            f&#34;Transaction ID:     0x{self.transaction_id:04x} ({self.transaction_id})\n&#34;
+            f&#34;Data = {self._bytes}\n&#34;
         )
+        return msg
 
     @property
     def instruction(self):
@@ -3802,6 +3529,14 @@ def is_overscan_data_packet(cls, data: Union[bytes, np.ndarray]) -&gt; bool:
     @property
     def transaction_id(self):
         return get_transaction_identifier(self._bytes)
+
+    @property
+    def header_crc(self):
+        return get_header_crc(self._bytes)
+
+    @property
+    def data_crc(self):
+        return get_data_crc(self._bytes)
 
     @classmethod
     def is_rmap_packet(cls, data: Union[bytes, np.ndarray]):
@@ -3841,6 +3576,30 @@ def is_rmap_packet(cls, data: Union[bytes, np.ndarray]):
 </dl>
 <h3>Instance variables</h3>
 <dl>
+<dt id="egse.spw.RMAPPacket.data_crc"><code class="name">var <span class="ident">data_crc</span></code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@property
+def data_crc(self):
+    return get_data_crc(self._bytes)</code></pre>
+</details>
+</dd>
+<dt id="egse.spw.RMAPPacket.header_crc"><code class="name">var <span class="ident">header_crc</span></code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@property
+def header_crc(self):
+    return get_header_crc(self._bytes)</code></pre>
+</details>
+</dd>
 <dt id="egse.spw.RMAPPacket.instruction"><code class="name">var <span class="ident">instruction</span></code></dt>
 <dd>
 <div class="desc"></div>
@@ -3875,6 +3634,184 @@ def transaction_id(self):
 </li>
 </ul>
 </dd>
+<dt id="egse.spw.RMAPRequestMixin"><code class="flex name class">
+<span>class <span class="ident">RMAPRequestMixin</span></span>
+<span>(</span><span>data: Union[bytes, numpy.ndarray])</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Base class for any packet transmitted over a SpaceWire cable.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>data</code></strong></dt>
+<dd>a bytes object or a numpy array of type np.uint8 (not enforced)</dd>
+</dl></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class RMAPRequestMixin(SpaceWirePacket):
+    @property
+    def key(self):
+        &#34;&#34;&#34;Returns the key field.&#34;&#34;&#34;
+        return get_key_field(self._bytes)
+
+    @property
+    def initiator_address(self):
+        &#34;&#34;&#34;Returns the initiator logical address.&#34;&#34;&#34;
+        return self._bytes[4]
+
+    @property
+    def data_length(self):
+        return get_data_length(self._bytes)
+
+    @property
+    def address(self):
+        return get_address(self._bytes)</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="egse.spw.SpaceWirePacket" href="#egse.spw.SpaceWirePacket">SpaceWirePacket</a></li>
+</ul>
+<h3>Subclasses</h3>
+<ul class="hlist">
+<li><a title="egse.spw.ReadRequest" href="#egse.spw.ReadRequest">ReadRequest</a></li>
+<li><a title="egse.spw.WriteRequest" href="#egse.spw.WriteRequest">WriteRequest</a></li>
+</ul>
+<h3>Instance variables</h3>
+<dl>
+<dt id="egse.spw.RMAPRequestMixin.address"><code class="name">var <span class="ident">address</span></code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@property
+def address(self):
+    return get_address(self._bytes)</code></pre>
+</details>
+</dd>
+<dt id="egse.spw.RMAPRequestMixin.data_length"><code class="name">var <span class="ident">data_length</span></code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@property
+def data_length(self):
+    return get_data_length(self._bytes)</code></pre>
+</details>
+</dd>
+<dt id="egse.spw.RMAPRequestMixin.initiator_address"><code class="name">var <span class="ident">initiator_address</span></code></dt>
+<dd>
+<div class="desc"><p>Returns the initiator logical address.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@property
+def initiator_address(self):
+    &#34;&#34;&#34;Returns the initiator logical address.&#34;&#34;&#34;
+    return self._bytes[4]</code></pre>
+</details>
+</dd>
+<dt id="egse.spw.RMAPRequestMixin.key"><code class="name">var <span class="ident">key</span></code></dt>
+<dd>
+<div class="desc"><p>Returns the key field.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@property
+def key(self):
+    &#34;&#34;&#34;Returns the key field.&#34;&#34;&#34;
+    return get_key_field(self._bytes)</code></pre>
+</details>
+</dd>
+</dl>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="egse.spw.SpaceWirePacket" href="#egse.spw.SpaceWirePacket">SpaceWirePacket</a></b></code>:
+<ul class="hlist">
+<li><code><a title="egse.spw.SpaceWirePacket.create_packet" href="#egse.spw.SpaceWirePacket.create_packet">create_packet</a></code></li>
+</ul>
+</li>
+</ul>
+</dd>
+<dt id="egse.spw.RMAPRequestReplyMixin"><code class="flex name class">
+<span>class <span class="ident">RMAPRequestReplyMixin</span></span>
+<span>(</span><span>data: Union[bytes, numpy.ndarray])</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Base class for any packet transmitted over a SpaceWire cable.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>data</code></strong></dt>
+<dd>a bytes object or a numpy array of type np.uint8 (not enforced)</dd>
+</dl></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class RMAPRequestReplyMixin(SpaceWirePacket):
+    @property
+    def target_address(self):
+        &#34;&#34;&#34;Returns the target logical address.&#34;&#34;&#34;
+        return self._bytes[4]
+
+    @property
+    def status(self):
+        &#34;&#34;&#34;Returns the status field.&#34;&#34;&#34;
+        return self._bytes[3]</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="egse.spw.SpaceWirePacket" href="#egse.spw.SpaceWirePacket">SpaceWirePacket</a></li>
+</ul>
+<h3>Subclasses</h3>
+<ul class="hlist">
+<li><a title="egse.spw.ReadRequestReply" href="#egse.spw.ReadRequestReply">ReadRequestReply</a></li>
+<li><a title="egse.spw.WriteRequestReply" href="#egse.spw.WriteRequestReply">WriteRequestReply</a></li>
+</ul>
+<h3>Instance variables</h3>
+<dl>
+<dt id="egse.spw.RMAPRequestReplyMixin.status"><code class="name">var <span class="ident">status</span></code></dt>
+<dd>
+<div class="desc"><p>Returns the status field.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@property
+def status(self):
+    &#34;&#34;&#34;Returns the status field.&#34;&#34;&#34;
+    return self._bytes[3]</code></pre>
+</details>
+</dd>
+<dt id="egse.spw.RMAPRequestReplyMixin.target_address"><code class="name">var <span class="ident">target_address</span></code></dt>
+<dd>
+<div class="desc"><p>Returns the target logical address.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@property
+def target_address(self):
+    &#34;&#34;&#34;Returns the target logical address.&#34;&#34;&#34;
+    return self._bytes[4]</code></pre>
+</details>
+</dd>
+</dl>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="egse.spw.SpaceWirePacket" href="#egse.spw.SpaceWirePacket">SpaceWirePacket</a></b></code>:
+<ul class="hlist">
+<li><code><a title="egse.spw.SpaceWirePacket.create_packet" href="#egse.spw.SpaceWirePacket.create_packet">create_packet</a></code></li>
+</ul>
+</li>
+</ul>
+</dd>
 <dt id="egse.spw.ReadRequest"><code class="flex name class">
 <span>class <span class="ident">ReadRequest</span></span>
 <span>(</span><span>data: Union[bytes, numpy.ndarray])</span>
@@ -3890,7 +3827,7 @@ def transaction_id(self):
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">class ReadRequest(RMAPPacket):
+<pre><code class="python">class ReadRequest(RMAPPacket, RMAPRequestMixin):
     &#34;&#34;&#34;A Read Request SpaceWire RMAP Packet.&#34;&#34;&#34;
 
     def __init__(self, data: Union[bytes, np.ndarray]):
@@ -3906,23 +3843,26 @@ def transaction_id(self):
             return True
         return False
 
-    @property
-    def address(self):
-        return get_address(self._bytes)
-
-    @property
-    def data_length(self):
-        return get_data_length(self._bytes)
-
     def __str__(self):
-        return (
-            f&#34;Read Request: tid={self.transaction_id}, address=0x{self.address:04x}, &#34;
-            f&#34;data length={self.data_length}&#34;
-        )</code></pre>
+        msg = (
+            f&#34;RMAP Read Request ({len(self)} bytes)\n&#34;
+            f&#34;Target address:     0x{self.logical_address:02x}\n&#34;
+            f&#34;Protocol ID:        0x{self.protocol_id:02x}\n&#34;
+            f&#34;Instruction:        0x{self.instruction:02x} (0o{self.instruction:08b})\n&#34;
+            f&#34;Key:                0x{self.key:02x}\n&#34;
+            f&#34;Initiator address:  0x{self.initiator_address:02x}\n&#34;
+            f&#34;Transaction ID:     0x{self.transaction_id:04x} ({self.transaction_id})\n&#34;
+            f&#34;(Extended) Address: 0x{self.address:08x}\n&#34;
+            f&#34;Data Length:        {self.data_length}\n&#34;
+            f&#34;Header CRC:         0x{self.header_crc:02x}\n&#34;
+        )
+
+        return msg</code></pre>
 </details>
 <h3>Ancestors</h3>
 <ul class="hlist">
 <li><a title="egse.spw.RMAPPacket" href="#egse.spw.RMAPPacket">RMAPPacket</a></li>
+<li><a title="egse.spw.RMAPRequestMixin" href="#egse.spw.RMAPRequestMixin">RMAPRequestMixin</a></li>
 <li><a title="egse.spw.SpaceWirePacket" href="#egse.spw.SpaceWirePacket">SpaceWirePacket</a></li>
 </ul>
 <h3>Static methods</h3>
@@ -3948,38 +3888,17 @@ def is_read_request(cls, data: Union[bytes, np.ndarray]):
 </details>
 </dd>
 </dl>
-<h3>Instance variables</h3>
-<dl>
-<dt id="egse.spw.ReadRequest.address"><code class="name">var <span class="ident">address</span></code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">@property
-def address(self):
-    return get_address(self._bytes)</code></pre>
-</details>
-</dd>
-<dt id="egse.spw.ReadRequest.data_length"><code class="name">var <span class="ident">data_length</span></code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">@property
-def data_length(self):
-    return get_data_length(self._bytes)</code></pre>
-</details>
-</dd>
-</dl>
 <h3>Inherited members</h3>
 <ul class="hlist">
 <li><code><b><a title="egse.spw.RMAPPacket" href="#egse.spw.RMAPPacket">RMAPPacket</a></b></code>:
 <ul class="hlist">
 <li><code><a title="egse.spw.RMAPPacket.create_packet" href="#egse.spw.SpaceWirePacket.create_packet">create_packet</a></code></li>
+</ul>
+</li>
+<li><code><b><a title="egse.spw.RMAPRequestMixin" href="#egse.spw.RMAPRequestMixin">RMAPRequestMixin</a></b></code>:
+<ul class="hlist">
+<li><code><a title="egse.spw.RMAPRequestMixin.initiator_address" href="#egse.spw.RMAPRequestMixin.initiator_address">initiator_address</a></code></li>
+<li><code><a title="egse.spw.RMAPRequestMixin.key" href="#egse.spw.RMAPRequestMixin.key">key</a></code></li>
 </ul>
 </li>
 </ul>
@@ -3999,7 +3918,7 @@ def data_length(self):
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">class ReadRequestReply(RMAPPacket):
+<pre><code class="python">class ReadRequestReply(RMAPPacket, RMAPRequestReplyMixin):
     &#34;&#34;&#34;An RMAP Reply packet to a Read Request.&#34;&#34;&#34;
 
     def __init__(self, data: Union[bytes, np.ndarray]):
@@ -4024,12 +3943,33 @@ def data_length(self):
 
     def __str__(self):
         data_length = self.data_length
-        return f&#34;Read Request Reply: data length={data_length}, data={self.data[:20]} &#34; \
-               f&#34;{&#39;(data is cut to max 20 bytes)&#39; if data_length &gt; 20 else &#39;&#39;}\n&#34;</code></pre>
+        limit = 32
+        data_hex = &#39; &#39;.join(f&#39;{x:02X}&#39; for x in self.data[:limit])
+        data_hex += &#39; ...&#39; if len(self.data) &gt; limit else &#39;&#39;
+        data_asc = &#39;&#39;.join((chr(byte) if 32 &lt;= byte &lt;= 126 else &#39;.&#39;) for byte in self.data[:limit])
+        data_asc += &#39; ...&#39; if len(self.data) &gt; limit else &#39;&#39;
+
+        msg = (
+            f&#34;Read Request Reply ({len(self)} bytes)\n&#34;
+            f&#34;Initiator address:  0x{self.logical_address:02x}\n&#34;
+            f&#34;Protocol ID:        0x{self.protocol_id:02x}\n&#34;
+            f&#34;Instruction:        0x{self.instruction:02x} (0o{self.instruction:08b})\n&#34;
+            f&#34;Status:             0x{self.status:02x}\n&#34;
+            f&#34;target address:     0x{self.target_address:02x}\n&#34;
+            f&#34;transaction ID:     0x{self.transaction_id:02x} ({self.transaction_id})\n&#34;
+            f&#34;Data Length:        {self.data_length}\n&#34;
+            f&#34;Header CRC:         0x{self.header_crc:02x}\n&#34;
+            f&#34;Data (hex):         0x{data_hex}\n&#34;
+            f&#34;Data (ascii):       {data_asc}\n&#34;
+            f&#34;Data CRC:           0x{self.data_crc:02x}\n&#34;
+        )
+
+        return msg</code></pre>
 </details>
 <h3>Ancestors</h3>
 <ul class="hlist">
 <li><a title="egse.spw.RMAPPacket" href="#egse.spw.RMAPPacket">RMAPPacket</a></li>
+<li><a title="egse.spw.RMAPRequestReplyMixin" href="#egse.spw.RMAPRequestReplyMixin">RMAPRequestReplyMixin</a></li>
 <li><a title="egse.spw.SpaceWirePacket" href="#egse.spw.SpaceWirePacket">SpaceWirePacket</a></li>
 </ul>
 <h3>Static methods</h3>
@@ -4088,6 +4028,12 @@ def data_length(self):
 <li><code><a title="egse.spw.RMAPPacket.create_packet" href="#egse.spw.SpaceWirePacket.create_packet">create_packet</a></code></li>
 </ul>
 </li>
+<li><code><b><a title="egse.spw.RMAPRequestReplyMixin" href="#egse.spw.RMAPRequestReplyMixin">RMAPRequestReplyMixin</a></b></code>:
+<ul class="hlist">
+<li><code><a title="egse.spw.RMAPRequestReplyMixin.status" href="#egse.spw.RMAPRequestReplyMixin.status">status</a></code></li>
+<li><code><a title="egse.spw.RMAPRequestReplyMixin.target_address" href="#egse.spw.RMAPRequestReplyMixin.target_address">target_address</a></code></li>
+</ul>
+</li>
 </ul>
 </dd>
 <dt id="egse.spw.SpaceWireInterface"><code class="flex name class">
@@ -4108,6 +4054,7 @@ SpaceWire.</p></div>
 
     def __enter__(self):
         self.connect()
+        return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.disconnect()
@@ -4125,6 +4072,7 @@ SpaceWire.</p></div>
         raise NotImplementedError
 
     def send_timecode(self, timecode: int):
+        &#34;&#34;&#34;Send a timecode over the transport layer.&#34;&#34;&#34;
         raise NotImplementedError
 
     def read_packet(self, timeout: int = None) -&gt; Tuple[int, bytes]:
@@ -4364,12 +4312,13 @@ SpaceWire.</p></div>
 <span>def <span class="ident">send_timecode</span></span>(<span>self, timecode: int)</span>
 </code></dt>
 <dd>
-<div class="desc"></div>
+<div class="desc"><p>Send a timecode over the transport layer.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def send_timecode(self, timecode: int):
+    &#34;&#34;&#34;Send a timecode over the transport layer.&#34;&#34;&#34;
     raise NotImplementedError</code></pre>
 </details>
 </dd>
@@ -4421,7 +4370,7 @@ and then sends an RMAP write request for the register to the N-FEE.</p>
 </dl>
 <h2 id="raises">Raises</h2>
 <dl>
-<dt><code><a title="egse.spw.RMAPError" href="#egse.spw.RMAPError">RMAPError</a></code></dt>
+<dt><code>RMAPError</code></dt>
 <dd>when data can not be written on the target, i.e. the N-FEE.</dd>
 </dl></div>
 <details class="source">
@@ -4483,16 +4432,17 @@ and then sends an RMAP write request for the register to the N-FEE.</p>
         self._bytes = bytes(data)
 
     def __repr__(self):
-        options = np.get_printoptions()
-        np.set_printoptions(
-            formatter={&#34;int&#34;: lambda x: f&#34;0x{x:02x}&#34;},
-            threshold=self._threshold,
-            edgeitems=self._edgeitems,
-            linewidth=self._linewidth,
+        limit = 25
+        data_hex = &#39; &#39;.join(f&#34;{x:02x}&#34; for x in self._bytes[:limit])
+        data_hex += &#39;...&#39; if len(self._bytes) &gt; limit else &#39;&#39;
+
+        msg = (
+            f&#34;{self.__class__.__name__}(0x{data_hex})&#34;
         )
-        msg = f&#34;{self.__class__.__name__}({self._bytes})&#34;
-        np.set_printoptions(**options)
         return msg
+
+    def __len__(self):
+        return len(self._bytes)
 
     @property
     def packet_as_bytes(self):
@@ -4522,6 +4472,8 @@ and then sends an RMAP write request for the register to the N-FEE.</p>
         Factory method that returns a SpaceWire packet of the correct type based on the information
         in the header.
         &#34;&#34;&#34;
+        # MODULE_LOGGER.info(f&#34;{len(data) = }&#34;)
+
         if TimecodePacket.is_timecode_packet(data):
             return TimecodePacket(data)
         if HousekeepingPacket.is_housekeeping_packet(data):
@@ -4544,6 +4496,8 @@ and then sends an RMAP write request for the register to the N-FEE.</p>
 <ul class="hlist">
 <li><a title="egse.spw.DataPacket" href="#egse.spw.DataPacket">DataPacket</a></li>
 <li><a title="egse.spw.RMAPPacket" href="#egse.spw.RMAPPacket">RMAPPacket</a></li>
+<li><a title="egse.spw.RMAPRequestMixin" href="#egse.spw.RMAPRequestMixin">RMAPRequestMixin</a></li>
+<li><a title="egse.spw.RMAPRequestReplyMixin" href="#egse.spw.RMAPRequestReplyMixin">RMAPRequestReplyMixin</a></li>
 <li><a title="egse.spw.TimecodePacket" href="#egse.spw.TimecodePacket">TimecodePacket</a></li>
 </ul>
 <h3>Static methods</h3>
@@ -4564,6 +4518,8 @@ def create_packet(data: Union[bytes, np.ndarray]):
     Factory method that returns a SpaceWire packet of the correct type based on the information
     in the header.
     &#34;&#34;&#34;
+    # MODULE_LOGGER.info(f&#34;{len(data) = }&#34;)
+
     if TimecodePacket.is_timecode_packet(data):
         return TimecodePacket(data)
     if HousekeepingPacket.is_housekeeping_packet(data):
@@ -4694,7 +4650,7 @@ Interface (DSI) to forward a SpaceWire timecode over the Ethernet connection.</p
         return data[0] == 0x91
 
     def __str__(self):
-        return f&#34;Timecode Packet: timecode = 0x{self.timecode:x}&#34;</code></pre>
+        return f&#34;Timecode Packet: timecode = 0x{self.timecode:02x} ({self.timecode:2d})&#34;</code></pre>
 </details>
 <h3>Ancestors</h3>
 <ul class="hlist">
@@ -4772,7 +4728,7 @@ def timecode(self) -&gt; int:
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">class WriteRequest(RMAPPacket):
+<pre><code class="python">class WriteRequest(RMAPPacket, RMAPRequestMixin):
     &#34;&#34;&#34;A Write Request SpaceWire RMAP Packet.&#34;&#34;&#34;
 
     def __init__(self, data: Union[bytes, np.ndarray]):
@@ -4783,10 +4739,6 @@ def timecode(self) -&gt; int:
 
     def is_unverified(self):
         return self._bytes[2] == 0x6C
-
-    @property
-    def address(self):
-        return get_address(self._bytes)
 
     @property
     def data_length(self):
@@ -4808,11 +4760,34 @@ def timecode(self) -&gt; int:
 
     def __str__(self):
         prefix = &#34;Verified&#34; if self.is_verified() else &#34;Unverified&#34;
-        return f&#34;{prefix} Write Request: {self.transaction_id=}, data=0x{self.data.hex()}&#34;</code></pre>
+        limit = 32
+        data_hex = &#39; &#39;.join(f&#39;{x:02X}&#39; for x in self.data[:limit])
+        data_hex += &#39; ...&#39; if len(self.data) &gt; limit else &#39;&#39;
+        data_asc = &#39;&#39;.join((chr(byte) if 32 &lt;= byte &lt;= 126 else &#39;.&#39;) for byte in self.data[:limit])
+        data_asc += &#39; ...&#39; if len(self.data) &gt; limit else &#39;&#39;
+
+        packet = self.packet_as_bytes
+        msg = (
+            f&#34;RMAP {prefix} Write Request ({len(packet)} bytes)\n&#34;
+            f&#34;Target address:     0x{self.logical_address:02x}\n&#34;
+            f&#34;Protocol ID:        0x{self.protocol_id:02x}\n&#34;
+            f&#34;Instruction:        0x{self.instruction:02x} (0o{self.instruction:08b})\n&#34;
+            f&#34;Key:                0x{self.key:02x}\n&#34;
+            f&#34;Initiator address:  0x{self.initiator_address:02x}\n&#34;
+            f&#34;Transaction ID:     0x{self.transaction_id:04x} ({self.transaction_id})\n&#34;
+            f&#34;Address:            0x{self.address:08x}\n&#34;
+            f&#34;Data Length:        {self.data_length}\n&#34;
+            f&#34;Header CRC:         0x{self.header_crc:02x}\n&#34;
+            f&#34;data (hex):         0x{data_hex}\n&#34;
+            f&#34;data (ascii):       {data_asc}\n&#34;
+            f&#34;Data CRC:           0x{self.data_crc:02x}\n&#34;
+        )
+        return msg</code></pre>
 </details>
 <h3>Ancestors</h3>
 <ul class="hlist">
 <li><a title="egse.spw.RMAPPacket" href="#egse.spw.RMAPPacket">RMAPPacket</a></li>
+<li><a title="egse.spw.RMAPRequestMixin" href="#egse.spw.RMAPRequestMixin">RMAPRequestMixin</a></li>
 <li><a title="egse.spw.SpaceWirePacket" href="#egse.spw.SpaceWirePacket">SpaceWirePacket</a></li>
 </ul>
 <h3>Static methods</h3>
@@ -4840,18 +4815,6 @@ def is_write_request(cls, data: Union[bytes, np.ndarray]):
 </dl>
 <h3>Instance variables</h3>
 <dl>
-<dt id="egse.spw.WriteRequest.address"><code class="name">var <span class="ident">address</span></code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">@property
-def address(self):
-    return get_address(self._bytes)</code></pre>
-</details>
-</dd>
 <dt id="egse.spw.WriteRequest.data"><code class="name">var <span class="ident">data</span> : bytes</code></dt>
 <dd>
 <div class="desc"></div>
@@ -4913,6 +4876,12 @@ def data_length(self):
 <li><code><a title="egse.spw.RMAPPacket.create_packet" href="#egse.spw.SpaceWirePacket.create_packet">create_packet</a></code></li>
 </ul>
 </li>
+<li><code><b><a title="egse.spw.RMAPRequestMixin" href="#egse.spw.RMAPRequestMixin">RMAPRequestMixin</a></b></code>:
+<ul class="hlist">
+<li><code><a title="egse.spw.RMAPRequestMixin.initiator_address" href="#egse.spw.RMAPRequestMixin.initiator_address">initiator_address</a></code></li>
+<li><code><a title="egse.spw.RMAPRequestMixin.key" href="#egse.spw.RMAPRequestMixin.key">key</a></code></li>
+</ul>
+</li>
 </ul>
 </dd>
 <dt id="egse.spw.WriteRequestReply"><code class="flex name class">
@@ -4930,12 +4899,11 @@ def data_length(self):
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">class WriteRequestReply(RMAPPacket):
+<pre><code class="python">class WriteRequestReply(RMAPPacket, RMAPRequestReplyMixin):
     &#34;&#34;&#34;An RMAP Reply packet to a Write Request.&#34;&#34;&#34;
 
     def __init__(self, data: Union[bytes, np.ndarray]):
         super().__init__(data)
-        self._status = data[3]
 
     @classmethod
     def is_write_reply(cls, data: Union[bytes, np.ndarray]):
@@ -4946,16 +4914,24 @@ def data_length(self):
         if (data[2] == 0x3C or data[2] == 0x2C) and data[4] == 0x51:
             return True
 
-    @property
-    def status(self):
-        return self._status
-
     def __str__(self):
-        return f&#34;Write Request Reply: status={self.status}&#34;</code></pre>
+        msg = (
+            f&#34;Write Request Reply ({len(self)} bytes)\n&#34;
+            f&#34;Initiator address:  0x{self.logical_address:02x}\n&#34;
+            f&#34;Protocol ID:        0x{self.protocol_id:02x}\n&#34;
+            f&#34;Instruction:        0x{self.instruction:02x} (0o{self.instruction:08b})\n&#34;
+            f&#34;Status:             0x{self.status:02x}\n&#34;
+            f&#34;target address:     0x{self.target_address:02x}\n&#34;
+            f&#34;transaction ID:     0x{self.transaction_id:02x} ({self.transaction_id})\n&#34;
+            f&#34;Header CRC:         0x{self.header_crc:02x}\n&#34;
+        )
+
+        return msg</code></pre>
 </details>
 <h3>Ancestors</h3>
 <ul class="hlist">
 <li><a title="egse.spw.RMAPPacket" href="#egse.spw.RMAPPacket">RMAPPacket</a></li>
+<li><a title="egse.spw.RMAPRequestReplyMixin" href="#egse.spw.RMAPRequestReplyMixin">RMAPRequestReplyMixin</a></li>
 <li><a title="egse.spw.SpaceWirePacket" href="#egse.spw.SpaceWirePacket">SpaceWirePacket</a></li>
 </ul>
 <h3>Static methods</h3>
@@ -4980,26 +4956,17 @@ def is_write_reply(cls, data: Union[bytes, np.ndarray]):
 </details>
 </dd>
 </dl>
-<h3>Instance variables</h3>
-<dl>
-<dt id="egse.spw.WriteRequestReply.status"><code class="name">var <span class="ident">status</span></code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">@property
-def status(self):
-    return self._status</code></pre>
-</details>
-</dd>
-</dl>
 <h3>Inherited members</h3>
 <ul class="hlist">
 <li><code><b><a title="egse.spw.RMAPPacket" href="#egse.spw.RMAPPacket">RMAPPacket</a></b></code>:
 <ul class="hlist">
 <li><code><a title="egse.spw.RMAPPacket.create_packet" href="#egse.spw.SpaceWirePacket.create_packet">create_packet</a></code></li>
+</ul>
+</li>
+<li><code><b><a title="egse.spw.RMAPRequestReplyMixin" href="#egse.spw.RMAPRequestReplyMixin">RMAPRequestReplyMixin</a></b></code>:
+<ul class="hlist">
+<li><code><a title="egse.spw.RMAPRequestReplyMixin.status" href="#egse.spw.RMAPRequestReplyMixin.status">status</a></code></li>
+<li><code><a title="egse.spw.RMAPRequestReplyMixin.target_address" href="#egse.spw.RMAPRequestReplyMixin.target_address">target_address</a></code></li>
 </ul>
 </li>
 </ul>
@@ -5020,20 +4987,24 @@ def status(self):
 </li>
 <li><h3><a href="#header-functions">Functions</a></h3>
 <ul class="">
-<li><code><a title="egse.spw.check_address_and_data_length" href="#egse.spw.check_address_and_data_length">check_address_and_data_length</a></code></li>
 <li><code><a title="egse.spw.check_data_crc" href="#egse.spw.check_data_crc">check_data_crc</a></code></li>
 <li><code><a title="egse.spw.check_header_crc" href="#egse.spw.check_header_crc">check_header_crc</a></code></li>
-<li><code><a title="egse.spw.create_rmap_read_request_packet" href="#egse.spw.create_rmap_read_request_packet">create_rmap_read_request_packet</a></code></li>
-<li><code><a title="egse.spw.create_rmap_read_request_reply_packet" href="#egse.spw.create_rmap_read_request_reply_packet">create_rmap_read_request_reply_packet</a></code></li>
-<li><code><a title="egse.spw.create_rmap_unverified_write_packet" href="#egse.spw.create_rmap_unverified_write_packet">create_rmap_unverified_write_packet</a></code></li>
-<li><code><a title="egse.spw.create_rmap_verified_write_packet" href="#egse.spw.create_rmap_verified_write_packet">create_rmap_verified_write_packet</a></code></li>
-<li><code><a title="egse.spw.create_rmap_write_request_reply_packet" href="#egse.spw.create_rmap_write_request_reply_packet">create_rmap_write_request_reply_packet</a></code></li>
+<li><code><a title="egse.spw.check_initiator_logical_address" href="#egse.spw.check_initiator_logical_address">check_initiator_logical_address</a></code></li>
+<li><code><a title="egse.spw.check_instruction" href="#egse.spw.check_instruction">check_instruction</a></code></li>
+<li><code><a title="egse.spw.check_key" href="#egse.spw.check_key">check_key</a></code></li>
+<li><code><a title="egse.spw.check_protocol_id" href="#egse.spw.check_protocol_id">check_protocol_id</a></code></li>
+<li><code><a title="egse.spw.check_target_logical_address" href="#egse.spw.check_target_logical_address">check_target_logical_address</a></code></li>
 <li><code><a title="egse.spw.get_address" href="#egse.spw.get_address">get_address</a></code></li>
 <li><code><a title="egse.spw.get_data" href="#egse.spw.get_data">get_data</a></code></li>
+<li><code><a title="egse.spw.get_data_crc" href="#egse.spw.get_data_crc">get_data_crc</a></code></li>
 <li><code><a title="egse.spw.get_data_length" href="#egse.spw.get_data_length">get_data_length</a></code></li>
+<li><code><a title="egse.spw.get_header_crc" href="#egse.spw.get_header_crc">get_header_crc</a></code></li>
+<li><code><a title="egse.spw.get_initiator_logical_address" href="#egse.spw.get_initiator_logical_address">get_initiator_logical_address</a></code></li>
 <li><code><a title="egse.spw.get_instruction_field" href="#egse.spw.get_instruction_field">get_instruction_field</a></code></li>
+<li><code><a title="egse.spw.get_key_field" href="#egse.spw.get_key_field">get_key_field</a></code></li>
 <li><code><a title="egse.spw.get_protocol_id" href="#egse.spw.get_protocol_id">get_protocol_id</a></code></li>
 <li><code><a title="egse.spw.get_reply_address_field_length" href="#egse.spw.get_reply_address_field_length">get_reply_address_field_length</a></code></li>
+<li><code><a title="egse.spw.get_target_logical_address" href="#egse.spw.get_target_logical_address">get_target_logical_address</a></code></li>
 <li><code><a title="egse.spw.get_transaction_identifier" href="#egse.spw.get_transaction_identifier">get_transaction_identifier</a></code></li>
 <li><code><a title="egse.spw.is_command" href="#egse.spw.is_command">is_command</a></code></li>
 <li><code><a title="egse.spw.is_increment" href="#egse.spw.is_increment">is_increment</a></code></li>
@@ -5041,10 +5012,10 @@ def status(self):
 <li><code><a title="egse.spw.is_reply" href="#egse.spw.is_reply">is_reply</a></code></li>
 <li><code><a title="egse.spw.is_reply_required" href="#egse.spw.is_reply_required">is_reply_required</a></code></li>
 <li><code><a title="egse.spw.is_reserved" href="#egse.spw.is_reserved">is_reserved</a></code></li>
+<li><code><a title="egse.spw.is_rmap" href="#egse.spw.is_rmap">is_rmap</a></code></li>
 <li><code><a title="egse.spw.is_verify" href="#egse.spw.is_verify">is_verify</a></code></li>
 <li><code><a title="egse.spw.is_write" href="#egse.spw.is_write">is_write</a></code></li>
 <li><code><a title="egse.spw.reply_address_length" href="#egse.spw.reply_address_length">reply_address_length</a></code></li>
-<li><code><a title="egse.spw.rmap_crc_check" href="#egse.spw.rmap_crc_check">rmap_crc_check</a></code></li>
 <li><code><a title="egse.spw.to_string" href="#egse.spw.to_string">to_string</a></code></li>
 <li><code><a title="egse.spw.update_transaction_identifier" href="#egse.spw.update_transaction_identifier">update_transaction_identifier</a></code></li>
 </ul>
@@ -5104,6 +5075,9 @@ def status(self):
 </ul>
 </li>
 <li>
+<h4><code><a title="egse.spw.ExtensionPacket" href="#egse.spw.ExtensionPacket">ExtensionPacket</a></code></h4>
+</li>
+<li>
 <h4><code><a title="egse.spw.HousekeepingPacket" href="#egse.spw.HousekeepingPacket">HousekeepingPacket</a></code></h4>
 <ul class="">
 <li><code><a title="egse.spw.HousekeepingPacket.is_housekeeping_packet" href="#egse.spw.HousekeepingPacket.is_housekeeping_packet">is_housekeeping_packet</a></code></li>
@@ -5126,21 +5100,34 @@ def status(self):
 </ul>
 </li>
 <li>
-<h4><code><a title="egse.spw.RMAPError" href="#egse.spw.RMAPError">RMAPError</a></code></h4>
-</li>
-<li>
 <h4><code><a title="egse.spw.RMAPPacket" href="#egse.spw.RMAPPacket">RMAPPacket</a></code></h4>
 <ul class="">
+<li><code><a title="egse.spw.RMAPPacket.data_crc" href="#egse.spw.RMAPPacket.data_crc">data_crc</a></code></li>
+<li><code><a title="egse.spw.RMAPPacket.header_crc" href="#egse.spw.RMAPPacket.header_crc">header_crc</a></code></li>
 <li><code><a title="egse.spw.RMAPPacket.instruction" href="#egse.spw.RMAPPacket.instruction">instruction</a></code></li>
 <li><code><a title="egse.spw.RMAPPacket.is_rmap_packet" href="#egse.spw.RMAPPacket.is_rmap_packet">is_rmap_packet</a></code></li>
 <li><code><a title="egse.spw.RMAPPacket.transaction_id" href="#egse.spw.RMAPPacket.transaction_id">transaction_id</a></code></li>
 </ul>
 </li>
 <li>
+<h4><code><a title="egse.spw.RMAPRequestMixin" href="#egse.spw.RMAPRequestMixin">RMAPRequestMixin</a></code></h4>
+<ul class="">
+<li><code><a title="egse.spw.RMAPRequestMixin.address" href="#egse.spw.RMAPRequestMixin.address">address</a></code></li>
+<li><code><a title="egse.spw.RMAPRequestMixin.data_length" href="#egse.spw.RMAPRequestMixin.data_length">data_length</a></code></li>
+<li><code><a title="egse.spw.RMAPRequestMixin.initiator_address" href="#egse.spw.RMAPRequestMixin.initiator_address">initiator_address</a></code></li>
+<li><code><a title="egse.spw.RMAPRequestMixin.key" href="#egse.spw.RMAPRequestMixin.key">key</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="egse.spw.RMAPRequestReplyMixin" href="#egse.spw.RMAPRequestReplyMixin">RMAPRequestReplyMixin</a></code></h4>
+<ul class="">
+<li><code><a title="egse.spw.RMAPRequestReplyMixin.status" href="#egse.spw.RMAPRequestReplyMixin.status">status</a></code></li>
+<li><code><a title="egse.spw.RMAPRequestReplyMixin.target_address" href="#egse.spw.RMAPRequestReplyMixin.target_address">target_address</a></code></li>
+</ul>
+</li>
+<li>
 <h4><code><a title="egse.spw.ReadRequest" href="#egse.spw.ReadRequest">ReadRequest</a></code></h4>
 <ul class="">
-<li><code><a title="egse.spw.ReadRequest.address" href="#egse.spw.ReadRequest.address">address</a></code></li>
-<li><code><a title="egse.spw.ReadRequest.data_length" href="#egse.spw.ReadRequest.data_length">data_length</a></code></li>
 <li><code><a title="egse.spw.ReadRequest.is_read_request" href="#egse.spw.ReadRequest.is_read_request">is_read_request</a></code></li>
 </ul>
 </li>
@@ -5188,8 +5175,7 @@ def status(self):
 </li>
 <li>
 <h4><code><a title="egse.spw.WriteRequest" href="#egse.spw.WriteRequest">WriteRequest</a></code></h4>
-<ul class="two-column">
-<li><code><a title="egse.spw.WriteRequest.address" href="#egse.spw.WriteRequest.address">address</a></code></li>
+<ul class="">
 <li><code><a title="egse.spw.WriteRequest.data" href="#egse.spw.WriteRequest.data">data</a></code></li>
 <li><code><a title="egse.spw.WriteRequest.data_length" href="#egse.spw.WriteRequest.data_length">data_length</a></code></li>
 <li><code><a title="egse.spw.WriteRequest.is_unverified" href="#egse.spw.WriteRequest.is_unverified">is_unverified</a></code></li>
@@ -5201,7 +5187,6 @@ def status(self):
 <h4><code><a title="egse.spw.WriteRequestReply" href="#egse.spw.WriteRequestReply">WriteRequestReply</a></code></h4>
 <ul class="">
 <li><code><a title="egse.spw.WriteRequestReply.is_write_reply" href="#egse.spw.WriteRequestReply.is_write_reply">is_write_reply</a></code></li>
-<li><code><a title="egse.spw.WriteRequestReply.status" href="#egse.spw.WriteRequestReply.status">status</a></code></li>
 </ul>
 </li>
 </ul>

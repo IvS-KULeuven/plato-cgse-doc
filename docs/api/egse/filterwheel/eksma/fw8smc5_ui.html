@@ -41,12 +41,10 @@ from PyQt5.QtWidgets import QMainWindow, QApplication, QLabel, QFrame, QHBoxLayo
 from zmq import ZMQError
 
 from egse.filterwheel.eksma.fw8smc5 import CTRL_SETTINGS as FW_CTRL_SETTINGS
-from egse.filterwheel.eksma.fw8smc5 import Fw8Smc5Proxy, Fw8Smc5Simulator
+from egse.filterwheel.eksma.fw8smc5 import Fw8Smc5Proxy
 from egse.gui.led import Led
 from egse.lampcontrol.beaglebone.beaglebone import BeagleboneProxy
 from egse.lampcontrol.beaglebone.beaglebone import CTRL_SETTINGS as BB_CTRL_SETTINGS
-
-from egse.gui.led import Led, Indic as LedIndic
 from egse.observer import Observer, Observable
 from egse.powermeter.thorlabs.pm100a import CTRL_SETTINGS as PM100_CTRL_SETTINGS
 from egse.resource import get_resource
@@ -55,7 +53,6 @@ from egse.shutter.thorlabs.sc10 import CTRL_SETTINGS as SC10_CTRL_SETTINGS
 from egse.shutter.thorlabs.sc10 import Sc10Proxy
 from egse.stages.arun.smd3 import CTRL_SETTINGS as SMD3_CTRL_SETTINGS
 from egse.stages.arun.smd3 import Smd3Proxy
-
 from egse.zmq_ser import connect_address
 
 multiprocessing.current_process().name = &#39;fw8smc5_ui&#39;
@@ -701,6 +698,7 @@ class OGSEUIView(QMainWindow, Observable):
 
         self.groupbox.pushButton_29.clicked.connect(self.toggle_lamp_control)
         self.groupbox.pushButton_30.clicked.connect(self.toggle_lamp_control)
+        self.groupbox.pushButton_31.clicked.connect(self.clear_lamp_fault)
         
         self.groupbox.lineEdit_6.textChanged.connect(self.update_scrollArea)
         
@@ -802,6 +800,12 @@ class OGSEUIView(QMainWindow, Observable):
             self.actionObservers({&#39;set_lamp&#39; : [state]})
         except Exception as e:
             warning_popup(f&#34;set_lamp {state}&#34;, e)
+    
+    def clear_lamp_fault(self):
+        try:
+            self.actionObservers({&#39;fix_controller_fault&#39;: []})
+        except Exception as e:
+            warning_popup(&#34;fix_controller_fault&#34;, e)
     
     def update_scrollArea(self, text):
         for button in self.groupbox.ri_pushButtons.values():
@@ -968,6 +972,10 @@ class OGSEUIModel:
     def set_lamp(self, state):
         with BeagleboneProxy() as bb:
             bb.set_lamp(state)
+            
+    def fix_controller_fault(self):
+        with BeagleboneProxy() as bb:
+            bb.fix_controller_fault()
         
         
 class OGSEUIController(Observer):
@@ -1034,6 +1042,8 @@ class OGSEUIController(Observer):
             if action == &#34;set_lamp&#34;:
                 state = value[0]
                 self.model.set_lamp(state)
+            if action == &#34;fix_controller_fault&#34;:
+                self.model.fix_controller_fault()
         
 def parse_arguments():
     &#34;&#34;&#34;
@@ -1180,7 +1190,7 @@ if __name__ == &#34;__main__&#34;:
 <span>class <span class="ident">FilterWheelMonitoringWorker</span></span>
 </code></dt>
 <dd>
-<div class="desc"><p>QObject(parent: QObject = None)</p></div>
+<div class="desc"><p>QObject(parent: typing.Optional[QObject] = None)</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
@@ -1755,7 +1765,9 @@ inheritance.</p></div>
                 self.model.home_filterwheel()
             if action == &#34;set_lamp&#34;:
                 state = value[0]
-                self.model.set_lamp(state)</code></pre>
+                self.model.set_lamp(state)
+            if action == &#34;fix_controller_fault&#34;:
+                self.model.fix_controller_fault()</code></pre>
 </details>
 <h3>Ancestors</h3>
 <ul class="hlist">
@@ -1802,7 +1814,9 @@ inheritance.</p></div>
             self.model.home_filterwheel()
         if action == &#34;set_lamp&#34;:
             state = value[0]
-            self.model.set_lamp(state)</code></pre>
+            self.model.set_lamp(state)
+        if action == &#34;fix_controller_fault&#34;:
+            self.model.fix_controller_fault()</code></pre>
 </details>
 </dd>
 <dt id="egse.filterwheel.eksma.fw8smc5_ui.OGSEUIController.update"><code class="name flex">
@@ -1926,7 +1940,11 @@ inheritance.</p></div>
             
     def set_lamp(self, state):
         with BeagleboneProxy() as bb:
-            bb.set_lamp(state)</code></pre>
+            bb.set_lamp(state)
+            
+    def fix_controller_fault(self):
+        with BeagleboneProxy() as bb:
+            bb.fix_controller_fault()</code></pre>
 </details>
 <h3>Methods</h3>
 <dl>
@@ -1960,6 +1978,20 @@ inheritance.</p></div>
 
     elif self.mode == &#39;simulator&#39;:
         return self.fw.disconnect()</code></pre>
+</details>
+</dd>
+<dt id="egse.filterwheel.eksma.fw8smc5_ui.OGSEUIModel.fix_controller_fault"><code class="name flex">
+<span>def <span class="ident">fix_controller_fault</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def fix_controller_fault(self):
+    with BeagleboneProxy() as bb:
+        bb.fix_controller_fault()</code></pre>
 </details>
 </dd>
 <dt id="egse.filterwheel.eksma.fw8smc5_ui.OGSEUIModel.has_commands"><code class="name flex">
@@ -2143,7 +2175,7 @@ inheritance.</p></div>
 <span>class <span class="ident">OGSEUIView</span></span>
 </code></dt>
 <dd>
-<div class="desc"><p>QMainWindow(parent: QWidget = None, flags: Union[Qt.WindowFlags, Qt.WindowType] = Qt.WindowFlags())</p></div>
+<div class="desc"><p>QMainWindow(parent: typing.Optional[QWidget] = None, flags: Union[Qt.WindowFlags, Qt.WindowType] = Qt.WindowFlags())</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
@@ -2208,6 +2240,7 @@ inheritance.</p></div>
 
         self.groupbox.pushButton_29.clicked.connect(self.toggle_lamp_control)
         self.groupbox.pushButton_30.clicked.connect(self.toggle_lamp_control)
+        self.groupbox.pushButton_31.clicked.connect(self.clear_lamp_fault)
         
         self.groupbox.lineEdit_6.textChanged.connect(self.update_scrollArea)
         
@@ -2309,6 +2342,12 @@ inheritance.</p></div>
             self.actionObservers({&#39;set_lamp&#39; : [state]})
         except Exception as e:
             warning_popup(f&#34;set_lamp {state}&#34;, e)
+    
+    def clear_lamp_fault(self):
+        try:
+            self.actionObservers({&#39;fix_controller_fault&#39;: []})
+        except Exception as e:
+            warning_popup(&#34;fix_controller_fault&#34;, e)
     
     def update_scrollArea(self, text):
         for button in self.groupbox.ri_pushButtons.values():
@@ -2425,6 +2464,22 @@ inheritance.</p></div>
 </dl>
 <h3>Methods</h3>
 <dl>
+<dt id="egse.filterwheel.eksma.fw8smc5_ui.OGSEUIView.clear_lamp_fault"><code class="name flex">
+<span>def <span class="ident">clear_lamp_fault</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def clear_lamp_fault(self):
+    try:
+        self.actionObservers({&#39;fix_controller_fault&#39;: []})
+    except Exception as e:
+        warning_popup(&#34;fix_controller_fault&#34;, e)</code></pre>
+</details>
+</dd>
 <dt id="egse.filterwheel.eksma.fw8smc5_ui.OGSEUIView.decrease_intensity_wheel"><code class="name flex">
 <span>def <span class="ident">decrease_intensity_wheel</span></span>(<span>self)</span>
 </code></dt>
@@ -2555,6 +2610,7 @@ inheritance.</p></div>
 
     self.groupbox.pushButton_29.clicked.connect(self.toggle_lamp_control)
     self.groupbox.pushButton_30.clicked.connect(self.toggle_lamp_control)
+    self.groupbox.pushButton_31.clicked.connect(self.clear_lamp_fault)
     
     self.groupbox.lineEdit_6.textChanged.connect(self.update_scrollArea)
     
@@ -2871,8 +2927,8 @@ inheritance.</p></div>
 <span>(</span><span>setup)</span>
 </code></dt>
 <dd>
-<div class="desc"><p>QGroupBox(parent: QWidget = None)
-QGroupBox(str, parent: QWidget = None)</p></div>
+<div class="desc"><p>QGroupBox(parent: typing.Optional[QWidget] = None)
+QGroupBox(title: str, parent: typing.Optional[QWidget] = None)</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
@@ -3310,6 +3366,7 @@ QGroupBox(str, parent: QWidget = None)</p></div>
 <ul class="">
 <li><code><a title="egse.filterwheel.eksma.fw8smc5_ui.OGSEUIModel.decrease_position_wheel" href="#egse.filterwheel.eksma.fw8smc5_ui.OGSEUIModel.decrease_position_wheel">decrease_position_wheel</a></code></li>
 <li><code><a title="egse.filterwheel.eksma.fw8smc5_ui.OGSEUIModel.disconnect" href="#egse.filterwheel.eksma.fw8smc5_ui.OGSEUIModel.disconnect">disconnect</a></code></li>
+<li><code><a title="egse.filterwheel.eksma.fw8smc5_ui.OGSEUIModel.fix_controller_fault" href="#egse.filterwheel.eksma.fw8smc5_ui.OGSEUIModel.fix_controller_fault">fix_controller_fault</a></code></li>
 <li><code><a title="egse.filterwheel.eksma.fw8smc5_ui.OGSEUIModel.has_commands" href="#egse.filterwheel.eksma.fw8smc5_ui.OGSEUIModel.has_commands">has_commands</a></code></li>
 <li><code><a title="egse.filterwheel.eksma.fw8smc5_ui.OGSEUIModel.home_filterwheel" href="#egse.filterwheel.eksma.fw8smc5_ui.OGSEUIModel.home_filterwheel">home_filterwheel</a></code></li>
 <li><code><a title="egse.filterwheel.eksma.fw8smc5_ui.OGSEUIModel.increase_position_wheel" href="#egse.filterwheel.eksma.fw8smc5_ui.OGSEUIModel.increase_position_wheel">increase_position_wheel</a></code></li>
@@ -3331,6 +3388,7 @@ QGroupBox(str, parent: QWidget = None)</p></div>
 <li><code><a title="egse.filterwheel.eksma.fw8smc5_ui.OGSEUIView.ROTATION_STEPS" href="#egse.filterwheel.eksma.fw8smc5_ui.OGSEUIView.ROTATION_STEPS">ROTATION_STEPS</a></code></li>
 <li><code><a title="egse.filterwheel.eksma.fw8smc5_ui.OGSEUIView.TOTAL_POSITIONS" href="#egse.filterwheel.eksma.fw8smc5_ui.OGSEUIView.TOTAL_POSITIONS">TOTAL_POSITIONS</a></code></li>
 <li><code><a title="egse.filterwheel.eksma.fw8smc5_ui.OGSEUIView.WHEEL_POSITIONS" href="#egse.filterwheel.eksma.fw8smc5_ui.OGSEUIView.WHEEL_POSITIONS">WHEEL_POSITIONS</a></code></li>
+<li><code><a title="egse.filterwheel.eksma.fw8smc5_ui.OGSEUIView.clear_lamp_fault" href="#egse.filterwheel.eksma.fw8smc5_ui.OGSEUIView.clear_lamp_fault">clear_lamp_fault</a></code></li>
 <li><code><a title="egse.filterwheel.eksma.fw8smc5_ui.OGSEUIView.decrease_intensity_wheel" href="#egse.filterwheel.eksma.fw8smc5_ui.OGSEUIView.decrease_intensity_wheel">decrease_intensity_wheel</a></code></li>
 <li><code><a title="egse.filterwheel.eksma.fw8smc5_ui.OGSEUIView.decrease_position_wheel" href="#egse.filterwheel.eksma.fw8smc5_ui.OGSEUIView.decrease_position_wheel">decrease_position_wheel</a></code></li>
 <li><code><a title="egse.filterwheel.eksma.fw8smc5_ui.OGSEUIView.home_filterwheel" href="#egse.filterwheel.eksma.fw8smc5_ui.OGSEUIView.home_filterwheel">home_filterwheel</a></code></li>

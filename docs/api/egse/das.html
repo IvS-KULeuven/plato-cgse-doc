@@ -92,39 +92,40 @@ Commands:
 ```
 
 &#34;&#34;&#34;
-import itertools
 import logging
 import multiprocessing
-from datetime import timezone
-
-import rich
-
-from egse.hk import read_conversion_dict
-from egse.state import GlobalState
-
-multiprocessing.current_process().name = &#34;das&#34;
-
 import re
-import sys
-import time
 from datetime import datetime
+from datetime import timezone
 from pathlib import Path
 from typing import List
 
 import click
 import invoke
-from prometheus_client import Gauge, Summary
+import itertools
+import rich
+import sys
+import time
+from prometheus_client import Gauge
 from prometheus_client import start_http_server
 
-from egse.confman import ConfigurationManagerProxy
+from egse.aeu.aeu import CRIOProxy, OperatingMode
+from egse.aeu.aeu import is_aeu_cs_active
 from egse.control import Failure
+from egse.hk import read_conversion_dict, convert_hk_names
+from egse.metrics import define_metrics
+from egse.ni.alarms.cdaq9375 import cdaq9375Proxy
+from egse.ni.alarms.cdaq9375_cs import is_cdaq9375_cs_active
+from egse.powermeter.ni.cdaq9184 import cdaq9184Proxy
+from egse.powermeter.ni.cdaq9184_cs import is_cdaq9184_cs_active
 from egse.settings import Settings
-from egse.setup import Setup
+from egse.setup import Setup, load_setup
 from egse.storage import StorageProxy
 from egse.storage import is_storage_manager_active
 from egse.storage.persistence import CSV
-from egse.system import SignalCatcher, format_datetime
+from egse.system import SignalCatcher
 from egse.system import flatten_dict
+from egse.system import format_datetime
 from egse.tcs.tcs import TCSProxy
 from egse.tcs.tcs import is_tcs_cs_active
 from egse.tempcontrol.keithley.daq6510 import DAQ6510Proxy
@@ -133,14 +134,6 @@ from egse.tempcontrol.keithley.daq6510 import get_channel_names
 from egse.tempcontrol.keithley.daq6510_cs import is_daq6510_cs_active
 from egse.tempcontrol.srs.ptc10 import ptc10Proxy
 from egse.tempcontrol.srs.ptc10_cs import is_ptc10_cs_active
-
-from egse.powermeter.ni.cdaq9184 import cdaq9184Proxy
-from egse.powermeter.ni.cdaq9184_cs import is_cdaq9184_cs_active
-
-from egse.metrics import define_metrics
-from egse.synoptics import SynopticsManagerProxy
-
-from egse.system import format_datetime
 
 LOGGER = logging.getLogger(__name__)
 
@@ -156,12 +149,6 @@ def load_setup_from_input_file(input_file: str):
         return None
 
     return Setup.from_yaml_file(input_file)
-
-
-def load_setup_from_configuration_manager():
-    &#34;&#34;&#34;Loads a Setup YAML file from the Configuration Manager.&#34;&#34;&#34;
-
-    return GlobalState.setup
 
 
 class Config:
@@ -217,7 +204,16 @@ def daq6510(config, count, interval, delay, channel_list, background: bool, inpu
 
     &#34;&#34;&#34;
 
-    hk_conversion_table = read_conversion_dict(&#34;DAS-DAQ6510&#34;, use_site=True)
+    if input_file:
+        setup = load_setup_from_input_file(input_file)
+    else:
+        setup = load_setup()
+
+    if setup is None:
+        LOGGER.error(&#34;ERROR: Could not load setup.&#34;)
+        sys.exit(1)
+
+    hk_conversion_table = read_conversion_dict(&#34;DAS-DAQ6510&#34;, use_site=True, setup=setup)
     column_names = list(hk_conversion_table.values())
 
     if background:
@@ -245,15 +241,6 @@ def daq6510(config, count, interval, delay, channel_list, background: bool, inpu
         LOGGER.error(&#34;The storage manager is not running, start the core services &#34;
                      &#34;before running the data acquisition.&#34;)
         return
-
-    if input_file:
-        setup = load_setup_from_input_file(input_file)
-    else:
-        setup = load_setup_from_configuration_manager()
-
-    if setup is None:
-        LOGGER.error(&#34;ERROR: Could not load setup.&#34;)
-        sys.exit(1)
 
     if config.verbose:
         LOGGER.info(setup)
@@ -295,7 +282,7 @@ def daq6510(config, count, interval, delay, channel_list, background: bool, inpu
     prep = {
         &#34;mode&#34;: &#34;a&#34;,
         &#34;ending&#34;: &#34;\n&#34;,
-        &#34;column_names&#34;: [&#34;Timestamp&#34;, *column_names],
+        &#34;column_names&#34;: [&#34;timestamp&#34;, *column_names],
     }
 
     killer = SignalCatcher()
@@ -359,11 +346,12 @@ def daq6510(config, count, interval, delay, channel_list, background: bool, inpu
                 # LOGGER.debug(f&#34;{response=}&#34;)
 
                 dts = response[0][1].strip()
-                datetime_string = format_datetime(datetime.strptime(dts[:-3], &#34;%m/%d/%Y %H:%M:%S.%f&#34;))
+                dt = datetime.strptime(dts[:-3], &#34;%m/%d/%Y %H:%M:%S.%f&#34;)
+                datetime_string = format_datetime(dt.replace(tzinfo=timezone.utc))
 
                 data = {hk_conversion_table[measure[0]]: float(measure[2]) for measure in response}
 
-                data.update({&#34;Timestamp&#34;: datetime_string})
+                data.update({&#34;timestamp&#34;: datetime_string})
 
                 # FIXME: we probably need to do something with the units...
 
@@ -427,8 +415,8 @@ def ptc10(config, user_regulation: float, auto_regulation: int, background: bool
 
     if background:
         cmd = &#34;das ptc10&#34;
-        cm += f&#34;--user_regulation {user_regulation}&#34;
-        cm += f&#34;--auto_regulation {auto_regulation}&#34;
+        cmd += f&#34; --user_regulation {user_regulation}&#34;
+        cmd += f&#34; --auto_regulation {auto_regulation}&#34;
         cmd += f&#34; {input_file}&#34; if input_file else &#34;&#34;
         LOGGER.info(f&#34;Invoking background command: {cmd}&#34;)
         invoke.run(cmd, disown=True)
@@ -452,7 +440,7 @@ def ptc10(config, user_regulation: float, auto_regulation: int, background: bool
     if input_file:
         setup = load_setup_from_input_file(input_file)
     else:
-        setup = load_setup_from_configuration_manager()
+        setup = load_setup()
 
     if setup is None:
         LOGGER.error(&#34;ERROR: Could not load setup.&#34;)
@@ -478,7 +466,7 @@ def ptc10(config, user_regulation: float, auto_regulation: int, background: bool
     # HK_names is [&#39;GIAS_TTS_BiP_01&#39;, &#39;GIAS_TRP2&#39;, &#39;GIAS_TRP3&#39;, &#39;GIAS_TRP4&#39;, &#39;GIAS_H1_ampere&#39;, &#39;GIAS_H2_ampere&#39;, &#39;GIAS_H3_ampere&#39;, &#39;GIAS_H1_watt&#39;, &#39;GIAS_H2_watt&#39;, &#39;GIAS_H3_watt&#39;, &#39;GIAS_H1_volt&#39;, &#39;GIAS_H2_volt&#39;, &#39;GIAS_H3_volt&#39;]
 
     # Creation of Prometheus METRICS in a dictionnary from TM dictionnary
-    PTC_METRICS = define_metrics(&#34;DAS-PTC10&#34;)
+    PTC_METRICS = define_metrics(&#34;DAS-PTC10&#34;, setup=setup)
 
     if not list(PTC_METRICS.keys()) == HK_names: # Check if names in setup file (used for HK names) and names defined in TM dictionary for metrics names are same
         LOGGER.error(&#34;The names of HK defined in the current setup file &#34; + setup.get_id() + &#34; are not the same than those in TM dictionary for metrics&#34;)
@@ -492,7 +480,8 @@ def ptc10(config, user_regulation: float, auto_regulation: int, background: bool
     prep = {
         &#34;mode&#34;: &#34;a&#34;,
         &#34;ending&#34;: &#34;\n&#34;,
-        &#34;column_names&#34;: [&#34;Timestamp&#34;, *HK_names],
+        &#34;header&#34;: &#34;PTC10 First Connection Tests&#34;,
+        &#34;column_names&#34;: [&#34;timestamp&#34;, *PTC_METRICS],
     }
 
     killer = SignalCatcher()
@@ -500,7 +489,6 @@ def ptc10(config, user_regulation: float, auto_regulation: int, background: bool
     with ptc10Proxy() as ptc, StorageProxy() as storage:
 
         storage.register({&#34;origin&#34;: origin, &#34;persistence_class&#34;: persistence_class, &#34;prep&#34;: prep})
-        storage.save({&#34;origin&#34;: origin, &#34;data&#34;: prep[&#34;column_names&#34;]})
 
         # Renaming the names of channels in PTC10 device with names defined in the setup file
         old_channel_names = ptc.get_names()  # old_channel_names is a tuple of 2 lists with the names of inputs (4 sensors)
@@ -566,7 +554,7 @@ def ptc10(config, user_regulation: float, auto_regulation: int, background: bool
                 try:
                     response = [ptc.get_time()] + ptc.read_temperature() + ptc.read_heater()[0]
                 # Sometimes randomly PTC10 doesn&#39;t return the time and there is a Failure, so to avoid
-                # a bad type in the column Timestamp, if there is a Failure, HK are not saved for this
+                # a bad type in the column timestamp, if there is a Failure, HK are not saved for this
                 # time and the code go back at the top of the while loop thanks to exceptions.
                 except TypeError:
                     LOGGER.warning(&#34;TYPE ERROR&#34;)
@@ -603,21 +591,20 @@ def ptc10(config, user_regulation: float, auto_regulation: int, background: bool
                 for i in [5, 6, 7]:
                     response.append(R * response[i])
 
-                # Creation of the dictionary data wich contains only values (not timestamp) for Prometheus metrics
-                data = {HK_names[i]: response[i+1] for i in range(len(HK_names))} # the first element of response is timestamp which doesn&#39;t go into the dictionary data
+                hk_dict = {&#34;timestamp&#34;: response[0]}
+                hk_dict.update({k: v for k, v in zip(HK_names, response[1:])})
 
                 LOGGER.debug(f&#34;{response=}&#34;)
 
-                LOGGER.debug(data)
+                LOGGER.debug(hk_dict)
 
-                # Saving HK with PTC10 time as timestamp (the response list contains timestamp and values)
-                storage.save({&#34;origin&#34;: origin, &#34;data&#34;: response})
-                synoptics = SynopticsManagerProxy()
-                synoptics.store_th_synoptics(response)
+                # Saving HK with PTC10 time as timestamp
+                storage.save({&#34;origin&#34;: origin, &#34;data&#34;: hk_dict})
 
-                # Now extract from data the values measured to update the metrics
-                for name in PTC_METRICS:
-                    PTC_METRICS[name].set(data[name])
+                # Now set the values in the metrics
+                hk_dict.pop(&#34;timestamp&#34;)
+                for key, value in hk_dict.items():
+                    PTC_METRICS[key].set(value)
 
 
             except KeyboardInterrupt:
@@ -702,7 +689,7 @@ def tcs(config, use_all_hk, interval, background):
 
         names = patterns.keys()
 
-        # For each of the names, create also a Timestamp column for that name
+        # For each of the names, create also a timestamp column for that name
 
         columns = list(itertools.chain.from_iterable((x + &#39;_ts&#39;, x) for x in names))
 
@@ -952,15 +939,17 @@ def cdaq(config, use_all_hk, interval, background):
 
     &#34;&#34;&#34;
 
+    setup = load_setup()
+
     if background:
-        cmd = &#34;das cdaq&#34;
+        cmd = &#34;das cdaq-photo&#34;
         cmd += &#34; --use-all-hk&#34; if use_all_hk else &#34;&#34;
         cmd += f&#34; --interval {interval}&#34;
         LOGGER.info(f&#34;Invoking background command: {cmd}&#34;)
         invoke.run(cmd, disown=True)
         return
 
-    multiprocessing.current_process().name = &#34;das-cdaq&#34;
+    multiprocessing.current_process().name = &#34;das-cdaq-photodiodes&#34;
 
     if config.debug:
         logging.basicConfig(level=logging.DEBUG, format=Settings.LOG_FORMAT_FULL)
@@ -975,29 +964,24 @@ def cdaq(config, use_all_hk, interval, background):
                      &#34;before running the data acquisition.&#34;)
         return
 
-    # Channel names for tall the HK, Here we only take the mean values (dismissing stddev values)
+    metrics_cdaq = define_metrics(&#34;DAS-CDAQ-PHOTODIODES&#34;, setup=setup)
+    hk_names = [&#34;GIAS_OGSE2_PHOTOD_1&#34;, &#34;GIAS_OGSE2_PHOTOD_2&#34;, &#34;GIAS_OGSE2_TAMPLI_1&#34;, &#34;GIAS_OGSE2_TAMPLI_2&#34;,
+                &#34;GIAS_OGSE2_TSPHERE&#34;, &#34;GIAS_OGSE2_GAMPLI_1&#34;, &#34;GIAS_OGSE2_GAMPLI_2&#34;]
 
-    channel_names = [&#34;Photodiode_1&#34;, &#34;Photodiode_2&#34;, &#34;Collimator_Temp_1&#34;, &#34;Collimator_Temp_2&#34;, &#34;Sphere_Temp&#34;]
 
-    # GRAFANA/PROMETHEUS METRICS
-    DAQ_METRICS = {}
-    for channel in channel_names:
-        DAQ_METRICS[channel] = Gauge(f&#34;cdaq_{channel}&#34;,
-                                     f&#34;The current measure for the sensor connected to channel {channel} on the CDAQ&#34;)
-
+    # The unit for photodiodes is V, for temperatures is °C and without unit for gains
 
     start_http_server(DAS.METRICS_PORT_CDAQ)
 
     # Initialize some variables that will be used for registration to the Storage Manager
-    # the channel name units for the photodiodes are V, and C for the temperature sensors
 
-    origin = &#34;DAS-CDAQ&#34;
+    origin = &#34;DAS-CDAQ-PHOTODIODES&#34;
     persistence_class = CSV
     prep = {
         &#34;mode&#34;: &#34;a&#34;,
         &#34;ending&#34;: &#34;\n&#34;,
         &#34;header&#34;: &#34;CDAQ First Connection Tests&#34;,
-        &#34;column_names&#34;: [&#34;Daytime&#34;, &#34;Timestamp&#34;, *channel_names],
+        &#34;column_names&#34;: [&#34;timestamp&#34;, *metrics_cdaq],
     }
 
     killer = SignalCatcher()
@@ -1011,10 +995,6 @@ def cdaq(config, use_all_hk, interval, background):
         while True:
             try:
                 response = cdaq.read_values()
-                # Here we only take the mean values (dismissing stddev values)
-                values = [v for i, v in enumerate(response[2:]) if i % 2 == 0]
-                del response[2:]
-                response = response + values
 
                 if killer.term_signal_received:
                     break
@@ -1030,15 +1010,17 @@ def cdaq(config, use_all_hk, interval, background):
                     time.sleep(1.0)
                     continue
 
-                LOGGER.info(f&#34;Response: {response=}&#34;)
-                storage.save({&#34;origin&#34;: origin, &#34;data&#34;: response})
+                reformatted_response = reformat_cdaq_values(response)
+                values = reformatted_response[2:]
+                hk_dict = {key: value for key, value in zip(hk_names, values)}
+                timestamp = format_datetime(datetime.strptime(reformatted_response[0] + &#39;-&#39; + reformatted_response[1], &#34;%y/%m/%d-%H:%M:%S.%f&#34;))
+                data = [timestamp] + values
+                storage.save({&#34;origin&#34;: origin, &#34;data&#34;: data})
 
-#demo
+                for key, value in hk_dict.items():
+                    metrics_cdaq[key].set(value)
 
-                for i in range(len(channel_names)):
-                    DAQ_METRICS[channel_names[i]].set(values[i])
-
-                time.sleep(interval)
+                # time.sleep(interval)
 
             except KeyboardInterrupt:
                 LOGGER.debug(&#34;Interrupt received, terminating...&#34;)
@@ -1047,6 +1029,263 @@ def cdaq(config, use_all_hk, interval, background):
             except Exception as exc:
                 LOGGER.warning(f&#34;DAS Exception: {exc}&#34;, exc_info=True)
                 LOGGER.warning(&#34;Got a corrupt response from the CDAQ. &#34;
+                               &#34;Check log messages for &#39;DAS Exception&#39;.&#34;)
+                time.sleep(1.0)
+                continue
+
+        storage.unregister({&#34;origin&#34;: origin})
+
+
+def reformat_cdaq_values(data_to_be_reformatted: list) -&gt; list:
+    data = data_to_be_reformatted
+    if len(data) != 35:
+        LOGGER.error(f&#34;Data received from Labview has not the expected length ({len(data)} but expected 35).&#34;)
+    else:
+        # The next elements (see the names in the headers) are not wanted so I delete them:
+        # 1) Filtre_Roue_1, Filtre_Roue_2, Shutter, FEMTO_1_BIAS, FEMTO_2_BIAS, FEMTO_1_Input_Current,
+        # FEMTO_2_Input_Current (the 7 last elements)
+        # 2) Temp_4 to Temp_8 (elements from index 16 to 25)
+        # 3) FEMTO_1_OVERLOAD and FEMTO_2_OVERLOAD (elements at indexes 4, 5, 8 and 9)
+
+        # 1)
+        del data[-7:]
+        # 2)
+        del data[16:26]
+        # 3)
+        for i in [9, 8, 5, 4]:
+            del data[i]
+
+        # Only mean is wanted, not deviation. So I delete all deviation elements
+        # which are at indexes [3, 5, 7, 9, 11 ( = list(range(3, 12, 2)) )
+        for index_to_delete in sorted(list(range(3, 12, 2)), reverse=True):  # I delete in the reverse order
+            del data[index_to_delete]
+
+        # The 2 first elements of data are date as str type. I leave them as str type. I convert the other elements of
+        # data (which are relevant values) from str to float.
+        data = data[:2] + [float(value) for value in data[2:]]
+
+        return data
+
+
+@cli.command()
+@click.option(
+    &#34;--background/--no-background&#34;, &#34;-bg/-no-bg&#34;, default=False,
+    help=&#34;start the data acquisition in the background&#34;
+)
+@pass_config
+def cdaq_alarms(config, background):
+    &#34;&#34;&#34;
+    Run the Data Acquisition System for the CDAQ alarms (CDAQ9375).
+
+    INPUT_FILE: YAML file containing the Setup for the CDAQ [optional]
+
+    Note: When this command runs in the background, send an INTERRUPT SIGNAL with the kill command
+    to terminate. Never send a KILL SIGNAL (9) because then the process will not properly be
+    unregistered from the storage manager.
+
+    $ kill -INT &lt;PID&gt;
+
+    &#34;&#34;&#34;
+
+    setup = load_setup()
+
+    if background:
+        cmd = &#34;das cdaq-alarms&#34;
+        LOGGER.info(f&#34;Invoking background command: {cmd}&#34;)
+        invoke.run(cmd, disown=True)
+        return
+
+    multiprocessing.current_process().name = &#34;das-cdaq-alarms&#34;
+
+    if config.debug:
+        logging.basicConfig(level=logging.DEBUG, format=Settings.LOG_FORMAT_FULL)
+
+    if not is_cdaq9375_cs_active():
+        LOGGER.error(&#34;The cdaq9375 Control Server is not running, start the &#39;cdaq9375_cs&#39; command &#34;
+                     &#34;before running the data acquisition.&#34;)
+        return
+
+    if not is_tcs_cs_active():
+        LOGGER.error(&#34;The TCS Control Server is not running, start the &#39;tcs_cs&#39; command &#34;
+                     &#34;before running the data acquisition.&#34;)
+        return
+
+    if not is_aeu_cs_active(name=&#34;CRIO&#34;, timeout=1):
+        LOGGER.error(&#34;The AEU Control Server is not running, start the &#39;aeu_cs&#39; command &#34;
+                     &#34;before running the data acquisition.&#34;)
+        return
+
+    if not is_storage_manager_active():
+        LOGGER.error(&#34;The storage manager is not running, start the core services &#34;
+                     &#34;before running the data acquisition.&#34;)
+        return
+
+    metrics_cdaq_alarms = define_metrics(&#34;DAS-CDAQ-ALARMS&#34;, setup=setup)
+
+    start_http_server(DAS.METRICS_PORT_CDAQ_ALARMS)
+
+    # Initialize some variables that will be used for registration to the Storage Manager
+
+    origin = &#34;DAS-CDAQ-ALARMS&#34;
+    persistence_class = CSV
+    prep = {
+        &#34;mode&#34;: &#34;a&#34;,
+        &#34;ending&#34;: &#34;\n&#34;,
+        &#34;header&#34;: &#34;CDAQ-ALARMS First Connection Tests&#34;,
+        &#34;column_names&#34;: [&#34;timestamp&#34;, *metrics_cdaq_alarms],
+    }
+
+    killer = SignalCatcher()
+
+    with cdaq9375Proxy() as cdaq, StorageProxy() as storage, TCSProxy() as tcs_proxy, CRIOProxy() as aeu_crio:
+
+        # Use the names in the header of the CSV file as column names.
+
+        storage.register({&#34;origin&#34;: origin, &#34;persistence_class&#34;: persistence_class, &#34;prep&#34;: prep})
+
+        alarms_temperature = setup.gse.CDAQ_alarms.alarms_temperature
+
+        trp1_min_op = alarms_temperature.trp1_min_op
+        trp1_max_op = alarms_temperature.trp1_max_op
+        trp1_min_nop = alarms_temperature.trp1_min_nop
+        trp1_max_nop = alarms_temperature.trp1_max_nop
+        trp22_min_op = alarms_temperature.trp22_min_op
+        trp22_max_op = alarms_temperature.trp22_max_op
+        trp22_min_nop = alarms_temperature.trp22_min_nop
+        trp22_max_nop = alarms_temperature.trp22_max_nop
+
+        alarm_exp1 = False # Low Temp NOP
+        alarm_exp2 = False # High Temp NOP
+        alarm_exp3 = False # low/High Temp OP
+        alarm_exp4 = False # UPS alarm (UPS_Arrakis_alarm_summary or UPS_Ix_alarm_summary)
+        c3 = 0  # Counter number triggers alarm EXP3
+
+        while True:
+            try:
+                response = cdaq.get_tvac_and_ups_state()
+
+                if killer.term_signal_received:
+                    break
+                if not response:
+                    LOGGER.warning(&#34;Received an empty response from the CDAQ9375, &#34;
+                       &#34;check the connection with the device.&#34;)
+                    LOGGER.warning(f&#34;Response: {response=}&#34;)
+                    time.sleep(1.0)
+                    continue
+                if isinstance(response, Failure):
+                    LOGGER.warning(f&#34;Received a Failure from the CDAQ9375 Control Server:&#34;)
+                    LOGGER.warning(f&#34;Response: {response}&#34;)
+                    time.sleep(1.0)
+                    continue
+
+                # EXP4
+                if any([response[&#34;UPS_Ix_alarm_summary&#34;], response[&#34;UPS_Ix_power_supply_absence&#34;],
+                        response[&#34;UPS_Arrakis_alarm_summary&#34;], response[&#34;UPS_Arrakis_power_supply_absence&#34;]]):
+                    alarm_exp4 = True
+                else:
+                    alarm_exp4 = False
+
+                try:
+                    trp1_avg = tcs_proxy.get_housekeeping_value(&#34;tou_rtd_tav&#34;).value
+
+                    if not trp1_avg:
+                        LOGGER.warning(&#34;Received an empty response from the TCS, &#34;
+                                       &#34;check the connection with the device.&#34;)
+                        LOGGER.warning(f&#34;Response: {trp1_avg=}&#34;)
+                        time.sleep(1.0)
+                        continue
+                    if isinstance(trp1_avg, Failure):
+                        LOGGER.warning(f&#34;Received a Failure from the TCS EGSE Control Server:&#34;)
+                        LOGGER.warning(f&#34;Response: {trp1_avg}&#34;)
+                        time.sleep(1.0)
+                        continue
+
+                    trp1_avg = float(trp1_avg)
+
+                except ValueError:
+                    LOGGER.warning(f&#34;TRP1 Value Error in cdaq alarms: trp1_avg should be a number, got {trp1_avg}.&#34;
+                                   f&#34;\nTerminating...&#34;)
+                    if trp1_avg == &#34;tbd&#34;:
+                        LOGGER.warning(&#34;Got TBD for TRP1_AVG.\nCheck if the task is well running.\nTerminating...&#34;)
+                    break
+
+                try:
+                    trp22_avg = tcs_proxy.get_housekeeping_value(&#34;fee_rtd_tav&#34;).value
+
+                    if not trp22_avg:
+                        LOGGER.warning(&#34;Received an empty response from the TCS, &#34;
+                                       &#34;check the connection with the device.&#34;)
+                        LOGGER.warning(f&#34;Response: {trp22_avg=}&#34;)
+                        time.sleep(1.0)
+                        continue
+                    if isinstance(trp22_avg, Failure):
+                        LOGGER.warning(f&#34;Received a Failure from the TCS EGSE Control Server:&#34;)
+                        LOGGER.warning(f&#34;Response: {trp22_avg}&#34;)
+                        time.sleep(1.0)
+                        continue
+
+                    trp22_avg = float(trp22_avg)
+
+                except ValueError:
+                    LOGGER.warning(f&#34;TRP22_AVG ValueError: trp22_avg should be a number, got {trp22_avg}.&#34;
+                                   f&#34;\nTerminating...&#34;)
+                    if trp22_avg == &#34;tbd&#34;:
+                        LOGGER.warning(&#34;Got TBD for TRP22_AVG.\nCheck if the task is well running.\nTerminating...&#34;)
+                    break
+
+
+                aeu_standby = aeu_crio.get_operating_mode() == OperatingMode.STANDBY  # True means aeu is in standby mode
+
+                if aeu_standby:
+                    alarm_exp3 = False
+                    c3 = 0
+
+
+                    # EXP1
+                    if trp1_avg &lt; trp1_min_nop or trp22_avg &lt; trp22_min_nop:
+                        alarm_exp1 = True
+                    else:
+                        alarm_exp1 = False
+
+                    # EXP2
+                    if trp1_avg &gt; trp1_max_nop or trp22_avg &gt; trp22_max_nop:
+                        alarm_exp2 = True
+                    else:
+                        alarm_exp2 = False
+
+                # EXP3
+                else:
+                    if any([trp1_avg &lt; trp1_min_op, trp1_avg &gt; trp1_max_op,
+                            trp22_avg &lt; trp22_min_op, trp22_avg &gt; trp22_max_op]):
+                        alarm_exp3 = True
+                        c3 += 1
+                    else:
+                        alarm_exp3 = False
+                        c3 = 0
+
+                alarm_exp_dict = {&#34;alarm_EXP1&#34;: int(alarm_exp1),
+                                  &#34;alarm_EXP2&#34;: int(alarm_exp2),
+                                  &#34;alarm_EXP3&#34;: int(alarm_exp3),
+                                  &#34;alarm_EXP4&#34;: int(alarm_exp4)}
+                response.update(alarm_exp_dict)
+                hk_conversion_table = read_conversion_dict(&#34;DAS-CDAQ-ALARMS&#34;, setup=setup)
+                hk_dict = convert_hk_names(response, hk_conversion_table)
+                storage.save({&#34;origin&#34;: origin, &#34;data&#34;: hk_dict})
+
+                hk_dict.pop(&#34;timestamp&#34;)
+                for key, value in hk_dict.items():
+                    metrics_cdaq_alarms[key].set(value)
+
+                alarm_exp3 = c3 &gt; 3  # Send SMS via TVAC only if EXP3 is triggered more than 3 consecutive times
+                cdaq.send_egse_state_to_tvac(alarm_exp1, alarm_exp2, alarm_exp3, alarm_exp4)
+
+            except KeyboardInterrupt:
+                LOGGER.debug(&#34;Interrupt received, terminating...&#34;)
+                break
+
+            except Exception as exc:
+                LOGGER.warning(f&#34;DAS Exception: {exc}&#34;, exc_info=True)
+                LOGGER.warning(&#34;Got a corrupt hk_dict from the CDAQ. &#34;
                                &#34;Check log messages for &#39;DAS Exception&#39;.&#34;)
                 time.sleep(1.0)
                 continue
@@ -1101,21 +1340,6 @@ parsing a temperature takes the 'ºC' into account when extracting the actual va
     if match is not None:
         value = match.group(1)
     return value</code></pre>
-</details>
-</dd>
-<dt id="egse.das.load_setup_from_configuration_manager"><code class="name flex">
-<span>def <span class="ident">load_setup_from_configuration_manager</span></span>(<span>)</span>
-</code></dt>
-<dd>
-<div class="desc"><p>Loads a Setup YAML file from the Configuration Manager.</p></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def load_setup_from_configuration_manager():
-    &#34;&#34;&#34;Loads a Setup YAML file from the Configuration Manager.&#34;&#34;&#34;
-
-    return GlobalState.setup</code></pre>
 </details>
 </dd>
 <dt id="egse.das.load_setup_from_input_file"><code class="name flex">
@@ -1207,6 +1431,46 @@ parameters can occur multiple times, only the last entry is retained.</p>
     return processed_data</code></pre>
 </details>
 </dd>
+<dt id="egse.das.reformat_cdaq_values"><code class="name flex">
+<span>def <span class="ident">reformat_cdaq_values</span></span>(<span>data_to_be_reformatted: list) ‑> list</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def reformat_cdaq_values(data_to_be_reformatted: list) -&gt; list:
+    data = data_to_be_reformatted
+    if len(data) != 35:
+        LOGGER.error(f&#34;Data received from Labview has not the expected length ({len(data)} but expected 35).&#34;)
+    else:
+        # The next elements (see the names in the headers) are not wanted so I delete them:
+        # 1) Filtre_Roue_1, Filtre_Roue_2, Shutter, FEMTO_1_BIAS, FEMTO_2_BIAS, FEMTO_1_Input_Current,
+        # FEMTO_2_Input_Current (the 7 last elements)
+        # 2) Temp_4 to Temp_8 (elements from index 16 to 25)
+        # 3) FEMTO_1_OVERLOAD and FEMTO_2_OVERLOAD (elements at indexes 4, 5, 8 and 9)
+
+        # 1)
+        del data[-7:]
+        # 2)
+        del data[16:26]
+        # 3)
+        for i in [9, 8, 5, 4]:
+            del data[i]
+
+        # Only mean is wanted, not deviation. So I delete all deviation elements
+        # which are at indexes [3, 5, 7, 9, 11 ( = list(range(3, 12, 2)) )
+        for index_to_delete in sorted(list(range(3, 12, 2)), reverse=True):  # I delete in the reverse order
+            del data[index_to_delete]
+
+        # The 2 first elements of data are date as str type. I leave them as str type. I convert the other elements of
+        # data (which are relevant values) from str to float.
+        data = data[:2] + [float(value) for value in data[2:]]
+
+        return data</code></pre>
+</details>
+</dd>
 </dl>
 </section>
 <section>
@@ -1244,9 +1508,9 @@ parameters can occur multiple times, only the last entry is retained.</p>
 <li><h3><a href="#header-functions">Functions</a></h3>
 <ul class="">
 <li><code><a title="egse.das.extract_value" href="#egse.das.extract_value">extract_value</a></code></li>
-<li><code><a title="egse.das.load_setup_from_configuration_manager" href="#egse.das.load_setup_from_configuration_manager">load_setup_from_configuration_manager</a></code></li>
 <li><code><a title="egse.das.load_setup_from_input_file" href="#egse.das.load_setup_from_input_file">load_setup_from_input_file</a></code></li>
 <li><code><a title="egse.das.process_data" href="#egse.das.process_data">process_data</a></code></li>
+<li><code><a title="egse.das.reformat_cdaq_values" href="#egse.das.reformat_cdaq_values">reformat_cdaq_values</a></code></li>
 </ul>
 </li>
 <li><h3><a href="#header-classes">Classes</a></h3>

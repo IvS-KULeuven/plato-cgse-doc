@@ -33,17 +33,17 @@ import threading
 
 import click
 import invoke
+import numpy as np
 import rich
 import sys
 import zmq
-from math import sin, cos, tan, acos, asin, atan, atan2, radians, degrees, pi, sqrt
-from numpy import sign
+from math import sin, cos, acos, atan, atan2, radians, degrees
 from prometheus_client import start_http_server
 
 from egse.control import is_control_server_active
 from egse.fov import store_actual_fov_position
 from egse.settings import Settings
-from egse.state import GlobalState
+from egse.setup import load_setup
 from egse.storage import is_storage_manager_active
 from egse.storage import register_to_storage_manager
 from egse.storage.persistence import CSV
@@ -137,7 +137,7 @@ class FovHk:
 
     def __init__(self):
 
-        self.setup = GlobalState.setup
+        self.setup = load_setup()
         self.keep_acquiring_fov_hk = True
 
     def run(self, commander, poller):
@@ -182,7 +182,7 @@ class CslFovHk(FovHk):
 
         super(CslFovHk, self).__init__()
 
-        setup = GlobalState.setup
+        setup = load_setup()
         self.height_collimated_beam = setup.gse.stages.calibration.height_collimated_beam
         self.offset_delta_x = setup.gse.stages.calibration.offset_delta_x
         self.offset_phi = setup.gse.stages.calibration.offset_phi
@@ -262,7 +262,7 @@ class Csl1FovHk(FovHk):
 
         super(Csl1FovHk, self).__init__()
 
-        setup = GlobalState.setup
+        setup = load_setup()
         self.offset_alpha = setup.gse.stages.calibration.offset_alpha
         self.alpha_correction_coefficients = setup.gse.stages.calibration.alpha_correction_coefficients
         self.offset_phi = setup.gse.stages.calibration.offset_phi
@@ -401,27 +401,29 @@ class SronFovHk(FovHk):
                     rotx = radians(monitoring_info[&#34;alpha&#34;])    # [radians]
                     roty = radians(monitoring_info[&#34;beta&#34;])     # [radians]
 
+                    if isinstance(roty, float):
+                        rotx = np.array([rotx])
+                        roty = np.array([roty])
+
                     tolerance = 1.e-5
 
-                    # Gnomonic distance to optical axis and in-field angle [degrees]
+                    # Corrections based on #598
+                    # Copied from camtest.commanding.function.sron_functions.gimbal_rotations_to_fov_angles
+                    theta = np.arccos(np.cos(rotx) * np.cos(roty))
 
-                    theta = degrees(acos(cos(rotx) * cos(roty)))    # [degrees]
+                    phi = np.zeros_like(roty)
 
-                    phi = 0.0
-                    if abs(roty) &lt; tolerance:
-                        phi = sign(rotx) * pi / 2.
-                    elif abs(roty) &gt; tolerance:
-                        phi = atan(sign(roty) * tan(rotx) / sin(roty))
+                    sel = np.where(np.abs(roty) &lt; tolerance)
 
-                    phi = degrees(phi)      # [degrees]
+                    phi[sel] = np.sign(rotx[sel]) * np.pi/2.
 
-                    if roty &lt; 0:
-                        phi = -180. - phi
+                    sel = np.where(np.abs(roty) &gt; tolerance)
 
-                    if phi &lt; -180:
-                        phi += 360.
+                    phi[sel] = np.arctan2(-np.sin(-rotx[sel]) * np.cos(roty[sel]), np.sin(roty[sel]))
 
-                    store_actual_fov_position(theta, phi)
+                    theta, phi = np.rad2deg(theta), np.rad2deg(phi)
+
+                    store_actual_fov_position(theta[0], phi[0])
 
                 elif is_control_server_active(self.cmd_endpoint):
                     self.monitoring_timeout += 0.5
@@ -488,13 +490,20 @@ class IasFovHk(FovHk):
                     # Retrieve the rotation angles around the y- and z-axis [degrees]
                     # (the rotation angle around the x-axis and the translation are not needed here)
 
+                    rot_y_z_mini = 1 / 3600  # lower threshold: 1 arcsecond = 1/3600 degree
+
                     *_, hexapod_rot_y, hexapod_rot_z = monitoring_info[&#34;user&#34;]
 
-                    hexapod_rot_y = radians(hexapod_rot_y)    # Rotation angle around the x-axis [radians]
-                    hexapod_rot_z = radians(hexapod_rot_z)    # Rotation angle around the y-axis [radians]
+                    if hexapod_rot_y &lt; rot_y_z_mini and hexapod_rot_z &lt; rot_y_z_mini:
+                        theta = 0
+                        phi = 0
 
-                    theta = degrees(acos(cos(hexapod_rot_y) * cos(hexapod_rot_z)))
-                    phi = degrees(-asin(sin(hexapod_rot_z) / sqrt(1 - pow(cos(hexapod_rot_y) * cos(hexapod_rot_z), 2))))
+                    else:
+                        hexapod_rot_y = radians(hexapod_rot_y)  # Rotation angle around the x-axis [radians]
+                        hexapod_rot_z = radians(hexapod_rot_z)  # Rotation angle around the y-axis [radians]
+
+                        theta = degrees(acos(cos(hexapod_rot_y) * cos(hexapod_rot_z)))
+                        phi = degrees(atan2(sin(hexapod_rot_z), -sin(hexapod_rot_y) * cos(hexapod_rot_z)))
 
                     store_actual_fov_position(theta, phi)
 
@@ -572,13 +581,14 @@ class IntaFovHk(FovHk):
 
                     #
                     # According to inta_point_source_to_fov:
-                    #   grx = theta * np.cos(np.deg2rad(phi))
-                    #   gry = theta * np.sin(np.deg2rad(phi))
+                    #   grx = np.rad2deg(-np.arcsin(np.sin(np.deg2rad(theta)) * np.sin(np.deg2rad(phi))))
+                    #   gry = np.rad2deg(np.arctan2(np.sin(np.deg2rad(theta)) * np.cos(np.deg2rad(phi)), np.cos(np.deg2rad(theta))))
                     #
                     # grx and gry are already in degrees, therefore:
                     #
-                    theta = sqrt(grx ** 2 + gry ** 2)
-                    phi   = degrees(atan2(gry, grx))
+                    
+                    theta = np.rad2deg(np.arccos(np.cos(np.deg2rad(grx))*np.cos(np.deg2rad(gry))))
+                    phi   = np.rad2deg(np.arctan2(-np.sin(np.deg2rad(grx)), np.cos(np.deg2rad(grx))*np.sin(np.deg2rad(gry))))   
                     
                     store_actual_fov_position(theta, phi)
 
@@ -796,7 +806,7 @@ Returns: Response to the request.</li>
 
         super(Csl1FovHk, self).__init__()
 
-        setup = GlobalState.setup
+        setup = load_setup()
         self.offset_alpha = setup.gse.stages.calibration.offset_alpha
         self.alpha_correction_coefficients = setup.gse.stages.calibration.alpha_correction_coefficients
         self.offset_phi = setup.gse.stages.calibration.offset_phi
@@ -938,7 +948,7 @@ Returns: Response to the request.</li>
 
         super(CslFovHk, self).__init__()
 
-        setup = GlobalState.setup
+        setup = load_setup()
         self.height_collimated_beam = setup.gse.stages.calibration.height_collimated_beam
         self.offset_delta_x = setup.gse.stages.calibration.offset_delta_x
         self.offset_phi = setup.gse.stages.calibration.offset_phi
@@ -1073,7 +1083,7 @@ Returns: Response to the request.</li>
 
     def __init__(self):
 
-        self.setup = GlobalState.setup
+        self.setup = load_setup()
         self.keep_acquiring_fov_hk = True
 
     def run(self, commander, poller):
@@ -1244,13 +1254,20 @@ Returns: Response to the request.</li>
                     # Retrieve the rotation angles around the y- and z-axis [degrees]
                     # (the rotation angle around the x-axis and the translation are not needed here)
 
+                    rot_y_z_mini = 1 / 3600  # lower threshold: 1 arcsecond = 1/3600 degree
+
                     *_, hexapod_rot_y, hexapod_rot_z = monitoring_info[&#34;user&#34;]
 
-                    hexapod_rot_y = radians(hexapod_rot_y)    # Rotation angle around the x-axis [radians]
-                    hexapod_rot_z = radians(hexapod_rot_z)    # Rotation angle around the y-axis [radians]
+                    if hexapod_rot_y &lt; rot_y_z_mini and hexapod_rot_z &lt; rot_y_z_mini:
+                        theta = 0
+                        phi = 0
 
-                    theta = degrees(acos(cos(hexapod_rot_y) * cos(hexapod_rot_z)))
-                    phi = degrees(-asin(sin(hexapod_rot_z) / sqrt(1 - pow(cos(hexapod_rot_y) * cos(hexapod_rot_z), 2))))
+                    else:
+                        hexapod_rot_y = radians(hexapod_rot_y)  # Rotation angle around the x-axis [radians]
+                        hexapod_rot_z = radians(hexapod_rot_z)  # Rotation angle around the y-axis [radians]
+
+                        theta = degrees(acos(cos(hexapod_rot_y) * cos(hexapod_rot_z)))
+                        phi = degrees(atan2(sin(hexapod_rot_z), -sin(hexapod_rot_y) * cos(hexapod_rot_z)))
 
                     store_actual_fov_position(theta, phi)
 
@@ -1297,13 +1314,20 @@ Returns: Response to the request.</li>
                 # Retrieve the rotation angles around the y- and z-axis [degrees]
                 # (the rotation angle around the x-axis and the translation are not needed here)
 
+                rot_y_z_mini = 1 / 3600  # lower threshold: 1 arcsecond = 1/3600 degree
+
                 *_, hexapod_rot_y, hexapod_rot_z = monitoring_info[&#34;user&#34;]
 
-                hexapod_rot_y = radians(hexapod_rot_y)    # Rotation angle around the x-axis [radians]
-                hexapod_rot_z = radians(hexapod_rot_z)    # Rotation angle around the y-axis [radians]
+                if hexapod_rot_y &lt; rot_y_z_mini and hexapod_rot_z &lt; rot_y_z_mini:
+                    theta = 0
+                    phi = 0
 
-                theta = degrees(acos(cos(hexapod_rot_y) * cos(hexapod_rot_z)))
-                phi = degrees(-asin(sin(hexapod_rot_z) / sqrt(1 - pow(cos(hexapod_rot_y) * cos(hexapod_rot_z), 2))))
+                else:
+                    hexapod_rot_y = radians(hexapod_rot_y)  # Rotation angle around the x-axis [radians]
+                    hexapod_rot_z = radians(hexapod_rot_z)  # Rotation angle around the y-axis [radians]
+
+                    theta = degrees(acos(cos(hexapod_rot_y) * cos(hexapod_rot_z)))
+                    phi = degrees(atan2(sin(hexapod_rot_z), -sin(hexapod_rot_y) * cos(hexapod_rot_z)))
 
                 store_actual_fov_position(theta, phi)
 
@@ -1382,13 +1406,14 @@ Returns: Response to the request.</li>
 
                     #
                     # According to inta_point_source_to_fov:
-                    #   grx = theta * np.cos(np.deg2rad(phi))
-                    #   gry = theta * np.sin(np.deg2rad(phi))
+                    #   grx = np.rad2deg(-np.arcsin(np.sin(np.deg2rad(theta)) * np.sin(np.deg2rad(phi))))
+                    #   gry = np.rad2deg(np.arctan2(np.sin(np.deg2rad(theta)) * np.cos(np.deg2rad(phi)), np.cos(np.deg2rad(theta))))
                     #
                     # grx and gry are already in degrees, therefore:
                     #
-                    theta = sqrt(grx ** 2 + gry ** 2)
-                    phi   = degrees(atan2(gry, grx))
+                    
+                    theta = np.rad2deg(np.arccos(np.cos(np.deg2rad(grx))*np.cos(np.deg2rad(gry))))
+                    phi   = np.rad2deg(np.arctan2(-np.sin(np.deg2rad(grx)), np.cos(np.deg2rad(grx))*np.sin(np.deg2rad(gry))))   
                     
                     store_actual_fov_position(theta, phi)
 
@@ -1441,13 +1466,14 @@ Returns: Response to the request.</li>
 
                 #
                 # According to inta_point_source_to_fov:
-                #   grx = theta * np.cos(np.deg2rad(phi))
-                #   gry = theta * np.sin(np.deg2rad(phi))
+                #   grx = np.rad2deg(-np.arcsin(np.sin(np.deg2rad(theta)) * np.sin(np.deg2rad(phi))))
+                #   gry = np.rad2deg(np.arctan2(np.sin(np.deg2rad(theta)) * np.cos(np.deg2rad(phi)), np.cos(np.deg2rad(theta))))
                 #
                 # grx and gry are already in degrees, therefore:
                 #
-                theta = sqrt(grx ** 2 + gry ** 2)
-                phi   = degrees(atan2(gry, grx))
+                
+                theta = np.rad2deg(np.arccos(np.cos(np.deg2rad(grx))*np.cos(np.deg2rad(gry))))
+                phi   = np.rad2deg(np.arctan2(-np.sin(np.deg2rad(grx)), np.cos(np.deg2rad(grx))*np.sin(np.deg2rad(gry))))   
                 
                 store_actual_fov_position(theta, phi)
 
@@ -1527,27 +1553,29 @@ Returns: Response to the request.</li>
                     rotx = radians(monitoring_info[&#34;alpha&#34;])    # [radians]
                     roty = radians(monitoring_info[&#34;beta&#34;])     # [radians]
 
+                    if isinstance(roty, float):
+                        rotx = np.array([rotx])
+                        roty = np.array([roty])
+
                     tolerance = 1.e-5
 
-                    # Gnomonic distance to optical axis and in-field angle [degrees]
+                    # Corrections based on #598
+                    # Copied from camtest.commanding.function.sron_functions.gimbal_rotations_to_fov_angles
+                    theta = np.arccos(np.cos(rotx) * np.cos(roty))
 
-                    theta = degrees(acos(cos(rotx) * cos(roty)))    # [degrees]
+                    phi = np.zeros_like(roty)
 
-                    phi = 0.0
-                    if abs(roty) &lt; tolerance:
-                        phi = sign(rotx) * pi / 2.
-                    elif abs(roty) &gt; tolerance:
-                        phi = atan(sign(roty) * tan(rotx) / sin(roty))
+                    sel = np.where(np.abs(roty) &lt; tolerance)
 
-                    phi = degrees(phi)      # [degrees]
+                    phi[sel] = np.sign(rotx[sel]) * np.pi/2.
 
-                    if roty &lt; 0:
-                        phi = -180. - phi
+                    sel = np.where(np.abs(roty) &gt; tolerance)
 
-                    if phi &lt; -180:
-                        phi += 360.
+                    phi[sel] = np.arctan2(-np.sin(-rotx[sel]) * np.cos(roty[sel]), np.sin(roty[sel]))
 
-                    store_actual_fov_position(theta, phi)
+                    theta, phi = np.rad2deg(theta), np.rad2deg(phi)
+
+                    store_actual_fov_position(theta[0], phi[0])
 
                 elif is_control_server_active(self.cmd_endpoint):
                     self.monitoring_timeout += 0.5
@@ -1599,27 +1627,29 @@ Returns: Response to the request.</li>
                 rotx = radians(monitoring_info[&#34;alpha&#34;])    # [radians]
                 roty = radians(monitoring_info[&#34;beta&#34;])     # [radians]
 
+                if isinstance(roty, float):
+                    rotx = np.array([rotx])
+                    roty = np.array([roty])
+
                 tolerance = 1.e-5
 
-                # Gnomonic distance to optical axis and in-field angle [degrees]
+                # Corrections based on #598
+                # Copied from camtest.commanding.function.sron_functions.gimbal_rotations_to_fov_angles
+                theta = np.arccos(np.cos(rotx) * np.cos(roty))
 
-                theta = degrees(acos(cos(rotx) * cos(roty)))    # [degrees]
+                phi = np.zeros_like(roty)
 
-                phi = 0.0
-                if abs(roty) &lt; tolerance:
-                    phi = sign(rotx) * pi / 2.
-                elif abs(roty) &gt; tolerance:
-                    phi = atan(sign(roty) * tan(rotx) / sin(roty))
+                sel = np.where(np.abs(roty) &lt; tolerance)
 
-                phi = degrees(phi)      # [degrees]
+                phi[sel] = np.sign(rotx[sel]) * np.pi/2.
 
-                if roty &lt; 0:
-                    phi = -180. - phi
+                sel = np.where(np.abs(roty) &gt; tolerance)
 
-                if phi &lt; -180:
-                    phi += 360.
+                phi[sel] = np.arctan2(-np.sin(-rotx[sel]) * np.cos(roty[sel]), np.sin(roty[sel]))
 
-                store_actual_fov_position(theta, phi)
+                theta, phi = np.rad2deg(theta), np.rad2deg(phi)
+
+                store_actual_fov_position(theta[0], phi[0])
 
             elif is_control_server_active(self.cmd_endpoint):
                 self.monitoring_timeout += 0.5

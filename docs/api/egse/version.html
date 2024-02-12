@@ -26,9 +26,8 @@ or the release number is needed, this module shall be imported …" />
 <p>This module defines the version for the Common-EGSE release. Whenever a version number
 or the release number is needed, this module shall be imported. The version and release
 number is then available as:</p>
-<pre><code>import egse.version
-
-print(f"version = {egse.version.VERSION}")
+<pre><code>&gt;&gt;&gt; import egse.version
+&gt;&gt;&gt; print(f"version = {egse.version.VERSION}")
 </code></pre>
 <p>The actual numbers are updated for each release in the <code>settings.yaml</code> configuration file.</p>
 <details class="source">
@@ -40,49 +39,174 @@ This module defines the version for the Common-EGSE release. Whenever a version 
 or the release number is needed, this module shall be imported. The version and release
 number is then available as:
 
-    import egse.version
-
-    print(f&#34;version = {egse.version.VERSION}&#34;)
+    &gt;&gt;&gt; import egse.version
+    &gt;&gt;&gt; print(f&#34;version = {egse.version.VERSION}&#34;)
 
 The actual numbers are updated for each release in the `settings.yaml` configuration file.
 
 &#34;&#34;&#34;
+from __future__ import annotations
+
+# WARNING: Make sure you are not importing any `egse` packages at the module level.
+# This module is magically loaded by pip to determine the VERSION number before the
+# package has been installed (see pyproject.py).
+# Any imports from an &#39;egse&#39; package will result in a ModuleNotFound error.
+
+import os
 import subprocess
 from pathlib import Path
 
-try:
-    from egse.settings import Settings
+HERE = Path(__file__).parent.resolve()
 
-    settings = Settings.load(&#34;Common-EGSE&#34;)
-    VERSION = settings.VERSION
-except ModuleNotFoundError:
-    VERSION = &#34;unknown version&#34;
+__all__ = [
+    &#34;get_version_installed&#34;,
+    &#34;get_version_from_git&#34;,
+    &#34;get_version_from_settings&#34;,
+    &#34;VERSION&#34;,
+]
 
 
-if __name__ == &#34;__main__&#34;:
+def get_version_from_settings_file_raw(group_name: str, location: Path | str = None) -&gt; str:
+    &#34;&#34;&#34;
+    Reads the VERSION field from the `settings.yaml` file in raw mode, meaning the file
+    is not read using the PyYAML module, but using the `readline()` function of the file
+    descriptor.
 
-    import rich
+    Args:
+        group_name: major group name that contains the VERSION field, i.e. Common-EGSE or PLATO_TEST_SCRIPTS.
+        location: the location of the `settings.yaml` file or None in which case the location of this file is used.
 
+    Raises:
+        A RuntimeError when the group_name is incorrect and unknown or the VERSION field is not found.
+
+    Returns:
+        The version from the `settings.yaml` file as a string.
+    &#34;&#34;&#34;
+    basedir = location or os.path.dirname(__file__)
+
+    with open(os.path.join(basedir, &#34;settings.yaml&#34;), mode=&#34;r&#34;) as yaml_fd:
+        line = yaml_fd.readline()
+        if not line.startswith(group_name):
+            raise RuntimeError(f&#34;Incompatible format for the settings.yaml file, should start with &#39;{group_name}&#39;&#34;)
+
+        line = yaml_fd.readline().lstrip()
+        if not line.startswith(&#34;VERSION&#34;):
+            raise RuntimeError(&#34;Incompatible format for the settings.yaml file, no VERSION found.&#34;)
+        _, version = line.split(&#34;:&#34;)
+
+        # remove possible trailing comment starting with &#39;#&#39;
+        version, *_ = version.split(&#34;#&#34;)
+        version = version.strip()
+
+    return version
+
+
+def get_version_from_settings(group_name: str, location: Path = None):
+    &#34;&#34;&#34;
+    Reads the VERSION field from the `settings.yaml` file. This function first tries to load the proper Settings
+    and Group and if that fails uses the raw method.
+
+    Args:
+        group_name: major group name that contains the VERSION field, i.e. Common-EGSE or PLATO_TEST_SCRIPTS.
+        location: the location of the `settings.yaml` file or None in which case the location of this file is used.
+
+    Raises:
+        A RuntimeError when the group_name is incorrect and unknown or the VERSION field is not found.
+
+    Returns:
+        The version from the `settings.yaml` file as a string.
+    &#34;&#34;&#34;
+    from egse.settings import Settings, SettingsError
+
+    try:
+        settings = Settings.load(group_name, location=location)
+        version = settings.VERSION
+    except (ModuleNotFoundError, SettingsError):
+        version = get_version_from_settings_file_raw(group_name, location=location)
+
+    return version
+
+
+def get_version_from_git(location: str = None):
+    &#34;&#34;&#34;
+    Returns the Git version number for the repository at the given location.
+
+    The returned string has the following format: YYYY.X.Y+REPO.TH-N-HASH, where:
+
+    * YYYY is the year
+    * X is the major version number and equal to the week number of the release
+    * Y is the minor version patch number
+    * REPO is the name of the repository, i.e. CGSE or TS
+    * TH is the name of the test house, i.e. CSL1, CSL2, IAS, INTA, SRON
+    * N is the number of commits since the release
+    * HASH is the Git hash number of the commit
+
+    Args:
+        location: The absolute path of the root or a sub-folder of the repo.
+
+    Returns:
+        The Git version number.
+    &#34;&#34;&#34;
+    from egse.system import chdir
+
+    location = location or Path().cwd()
+
+    with chdir(location):
+        try:
+            std_out = subprocess.check_output(
+                [&#34;git&#34;, &#34;describe&#34;, &#34;--tags&#34;, &#34;--long&#34;, &#34;--always&#34;], stderr=subprocess.PIPE
+            )
+            version = std_out.strip().decode(&#34;ascii&#34;)
+            if &#34;cgse&#34; not in version.lower() and &#34;ts&#34; not in version.lower():
+                version = None
+        except subprocess.CalledProcessError as exc:
+            version = None
+
+    return version
+
+
+def get_version_installed(package_name: str) -&gt; str:
+    &#34;&#34;&#34;
+    Returns the version that is installed, i.e. read from the metadata in the import lib.
+
+    Args:
+        package_name: the name of the installed package, e.g. cgse or cgse-ts
+
+    Returns:
+        The version of the installed repo.
+    &#34;&#34;&#34;
     from egse.system import chdir
 
     with chdir(Path(__file__).parent):
-        try:
-            std_out = subprocess.check_output(
-                [&#34;git&#34;, &#34;describe&#34;, &#34;--tags&#34;, &#34;--long&#34;], stderr=subprocess.PIPE)
-            git_version = std_out.strip().decode(&#34;ascii&#34;)
-        except subprocess.CalledProcessError as exc:
-            git_version = None
-        try:
-            from importlib.metadata import version, PackageNotFoundError
-            installed_version = version(&#34;Common-EGSE&#34;)
-        except PackageNotFoundError as exc:
-            installed_version = None
+        from importlib.metadata import version, PackageNotFoundError
 
-    if VERSION and VERSION != installed_version:
+        try:
+            version = version(package_name)
+        except PackageNotFoundError as exc:
+            version = None
+
+    return version
+
+
+VERSION = get_version_from_settings_file_raw(&#34;Common-EGSE&#34;, location=HERE)
+
+# The __PYPI_VERSION__ is the version number that will be used for the installation.
+# The version will appear in PyPI and also as the `installed version`.
+
+__PYPI_VERSION__ = VERSION.split(&#39;+&#39;)[0]
+
+
+if __name__ == &#34;__main__&#34;:
+    import rich
+    from egse.system import get_module_location
+
+    if VERSION:
         rich.print(f&#34;CGSE version in Settings: [bold default]{VERSION}[/]&#34;)
-    if git_version:
+
+    if git_version := get_version_from_git(location=get_module_location(&#34;egse&#34;)):
         rich.print(f&#34;CGSE git version = [bold default]{git_version}[/]&#34;)
-    if installed_version:
+
+    if installed_version := get_version_installed(&#34;cgse&#34;):
         rich.print(f&#34;CGSE installed version = [bold default]{installed_version}[/]&#34;)</code></pre>
 </details>
 </section>
@@ -91,6 +215,159 @@ if __name__ == &#34;__main__&#34;:
 <section>
 </section>
 <section>
+<h2 class="section-title" id="header-functions">Functions</h2>
+<dl>
+<dt id="egse.version.get_version_from_git"><code class="name flex">
+<span>def <span class="ident">get_version_from_git</span></span>(<span>location: str = None)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Returns the Git version number for the repository at the given location.</p>
+<p>The returned string has the following format: YYYY.X.Y+REPO.TH-N-HASH, where:</p>
+<ul>
+<li>YYYY is the year</li>
+<li>X is the major version number and equal to the week number of the release</li>
+<li>Y is the minor version patch number</li>
+<li>REPO is the name of the repository, i.e. CGSE or TS</li>
+<li>TH is the name of the test house, i.e. CSL1, CSL2, IAS, INTA, SRON</li>
+<li>N is the number of commits since the release</li>
+<li>HASH is the Git hash number of the commit</li>
+</ul>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>location</code></strong></dt>
+<dd>The absolute path of the root or a sub-folder of the repo.</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<p>The Git version number.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_version_from_git(location: str = None):
+    &#34;&#34;&#34;
+    Returns the Git version number for the repository at the given location.
+
+    The returned string has the following format: YYYY.X.Y+REPO.TH-N-HASH, where:
+
+    * YYYY is the year
+    * X is the major version number and equal to the week number of the release
+    * Y is the minor version patch number
+    * REPO is the name of the repository, i.e. CGSE or TS
+    * TH is the name of the test house, i.e. CSL1, CSL2, IAS, INTA, SRON
+    * N is the number of commits since the release
+    * HASH is the Git hash number of the commit
+
+    Args:
+        location: The absolute path of the root or a sub-folder of the repo.
+
+    Returns:
+        The Git version number.
+    &#34;&#34;&#34;
+    from egse.system import chdir
+
+    location = location or Path().cwd()
+
+    with chdir(location):
+        try:
+            std_out = subprocess.check_output(
+                [&#34;git&#34;, &#34;describe&#34;, &#34;--tags&#34;, &#34;--long&#34;, &#34;--always&#34;], stderr=subprocess.PIPE
+            )
+            version = std_out.strip().decode(&#34;ascii&#34;)
+            if &#34;cgse&#34; not in version.lower() and &#34;ts&#34; not in version.lower():
+                version = None
+        except subprocess.CalledProcessError as exc:
+            version = None
+
+    return version</code></pre>
+</details>
+</dd>
+<dt id="egse.version.get_version_from_settings"><code class="name flex">
+<span>def <span class="ident">get_version_from_settings</span></span>(<span>group_name: str, location: Path = None)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Reads the VERSION field from the <code>settings.yaml</code> file. This function first tries to load the proper Settings
+and Group and if that fails uses the raw method.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>group_name</code></strong></dt>
+<dd>major group name that contains the VERSION field, i.e. Common-EGSE or PLATO_TEST_SCRIPTS.</dd>
+<dt><strong><code>location</code></strong></dt>
+<dd>the location of the <code>settings.yaml</code> file or None in which case the location of this file is used.</dd>
+</dl>
+<h2 id="raises">Raises</h2>
+<p>A RuntimeError when the group_name is incorrect and unknown or the VERSION field is not found.</p>
+<h2 id="returns">Returns</h2>
+<p>The version from the <code>settings.yaml</code> file as a string.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_version_from_settings(group_name: str, location: Path = None):
+    &#34;&#34;&#34;
+    Reads the VERSION field from the `settings.yaml` file. This function first tries to load the proper Settings
+    and Group and if that fails uses the raw method.
+
+    Args:
+        group_name: major group name that contains the VERSION field, i.e. Common-EGSE or PLATO_TEST_SCRIPTS.
+        location: the location of the `settings.yaml` file or None in which case the location of this file is used.
+
+    Raises:
+        A RuntimeError when the group_name is incorrect and unknown or the VERSION field is not found.
+
+    Returns:
+        The version from the `settings.yaml` file as a string.
+    &#34;&#34;&#34;
+    from egse.settings import Settings, SettingsError
+
+    try:
+        settings = Settings.load(group_name, location=location)
+        version = settings.VERSION
+    except (ModuleNotFoundError, SettingsError):
+        version = get_version_from_settings_file_raw(group_name, location=location)
+
+    return version</code></pre>
+</details>
+</dd>
+<dt id="egse.version.get_version_installed"><code class="name flex">
+<span>def <span class="ident">get_version_installed</span></span>(<span>package_name: str) ‑> str</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Returns the version that is installed, i.e. read from the metadata in the import lib.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>package_name</code></strong></dt>
+<dd>the name of the installed package, e.g. cgse or cgse-ts</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<p>The version of the installed repo.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_version_installed(package_name: str) -&gt; str:
+    &#34;&#34;&#34;
+    Returns the version that is installed, i.e. read from the metadata in the import lib.
+
+    Args:
+        package_name: the name of the installed package, e.g. cgse or cgse-ts
+
+    Returns:
+        The version of the installed repo.
+    &#34;&#34;&#34;
+    from egse.system import chdir
+
+    with chdir(Path(__file__).parent):
+        from importlib.metadata import version, PackageNotFoundError
+
+        try:
+            version = version(package_name)
+        except PackageNotFoundError as exc:
+            version = None
+
+    return version</code></pre>
+</details>
+</dd>
+</dl>
 </section>
 <section>
 </section>
@@ -104,6 +381,13 @@ if __name__ == &#34;__main__&#34;:
 <li><h3>Super-module</h3>
 <ul>
 <li><code><a title="egse" href="index.html">egse</a></code></li>
+</ul>
+</li>
+<li><h3><a href="#header-functions">Functions</a></h3>
+<ul class="">
+<li><code><a title="egse.version.get_version_from_git" href="#egse.version.get_version_from_git">get_version_from_git</a></code></li>
+<li><code><a title="egse.version.get_version_from_settings" href="#egse.version.get_version_from_settings">get_version_from_settings</a></code></li>
+<li><code><a title="egse.version.get_version_installed" href="#egse.version.get_version_installed">get_version_installed</a></code></li>
 </ul>
 </li>
 </ul>

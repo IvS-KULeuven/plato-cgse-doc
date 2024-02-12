@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="generator" content="Asciidoctor 2.0.17">
+<meta name="generator" content="Asciidoctor 2.0.20">
 <meta name="author" content="Sara Regibo, Rik Huygen">
 <title>Common-EGSE : Installation Manual</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Open+Sans:300,300italic,400,400italic,600,600italic%7CNoto+Serif:400,400italic,700,700italic%7CDroid+Sans+Mono:400,700">
@@ -85,10 +85,10 @@ code{font-family:"Droid Sans Mono","DejaVu Sans Mono",monospace;font-weight:400;
 ul,ol,dl{line-height:1.6;margin-bottom:1.25em;list-style-position:outside;font-family:inherit}
 ul,ol{margin-left:1.5em}
 ul li ul,ul li ol{margin-left:1.25em;margin-bottom:0}
-ul.square li ul,ul.circle li ul,ul.disc li ul{list-style:inherit}
-ul.square{list-style-type:square}
 ul.circle{list-style-type:circle}
 ul.disc{list-style-type:disc}
+ul.square{list-style-type:square}
+ul.circle ul:not([class]),ul.disc ul:not([class]),ul.square ul:not([class]){list-style:inherit}
 ol li ul,ol li ol{margin-left:1.25em;margin-bottom:0}
 dl dt{margin-bottom:.3125em;font-weight:bold}
 dl dd{margin-bottom:1.25em}
@@ -209,13 +209,10 @@ table.tableblock.fit-content>caption.title{white-space:nowrap;width:0}
 .admonitionblock>table td.content{padding-left:1.125em;padding-right:1.25em;border-left:1px solid #dddddf;color:rgba(0,0,0,.6);word-wrap:anywhere}
 .admonitionblock>table td.content>:last-child>:last-child{margin-bottom:0}
 .exampleblock>.content{border:1px solid #e6e6e6;margin-bottom:1.25em;padding:1.25em;background:#fff;border-radius:4px}
-.exampleblock>.content>:first-child{margin-top:0}
-.exampleblock>.content>:last-child{margin-bottom:0}
 .sidebarblock{border:1px solid #dbdbd6;margin-bottom:1.25em;padding:1.25em;background:#f3f3f2;border-radius:4px}
-.sidebarblock>:first-child{margin-top:0}
-.sidebarblock>:last-child{margin-bottom:0}
 .sidebarblock>.content>.title{color:#7a2518;margin-top:0;text-align:center}
-.exampleblock>.content>:last-child>:last-child,.exampleblock>.content .olist>ol>li:last-child>:last-child,.exampleblock>.content .ulist>ul>li:last-child>:last-child,.exampleblock>.content .qlist>ol>li:last-child>:last-child,.sidebarblock>.content>:last-child>:last-child,.sidebarblock>.content .olist>ol>li:last-child>:last-child,.sidebarblock>.content .ulist>ul>li:last-child>:last-child,.sidebarblock>.content .qlist>ol>li:last-child>:last-child{margin-bottom:0}
+.exampleblock>.content>:first-child,.sidebarblock>.content>:first-child{margin-top:0}
+.exampleblock>.content>:last-child,.exampleblock>.content>:last-child>:last-child,.exampleblock>.content .olist>ol>li:last-child>:last-child,.exampleblock>.content .ulist>ul>li:last-child>:last-child,.exampleblock>.content .qlist>ol>li:last-child>:last-child,.sidebarblock>.content>:last-child,.sidebarblock>.content>:last-child>:last-child,.sidebarblock>.content .olist>ol>li:last-child>:last-child,.sidebarblock>.content .ulist>ul>li:last-child>:last-child,.sidebarblock>.content .qlist>ol>li:last-child>:last-child{margin-bottom:0}
 .literalblock pre,.listingblock>.content>pre{border-radius:4px;overflow-x:auto;padding:1em;font-size:.8125em}
 @media screen and (min-width:768px){.literalblock pre,.listingblock>.content>pre{font-size:.90625em}}
 @media screen and (min-width:1280px){.literalblock pre,.listingblock>.content>pre{font-size:1em}}
@@ -394,7 +391,7 @@ b.conum *{color:inherit!important}
 dt,th.tableblock,td.content,div.footnote{text-rendering:optimizeLegibility}
 h1,h2,p,td.content,span.alt,summary{letter-spacing:-.01em}
 p strong,td.content strong,div.footnote strong{letter-spacing:-.005em}
-p,blockquote,dt,td.content,span.alt,summary{font-size:1.0625rem}
+p,blockquote,dt,td.content,td.hdlist1,span.alt,summary{font-size:1.0625rem}
 p{margin-bottom:1.25rem}
 .sidebarblock p,.sidebarblock dt,.sidebarblock td.content,p.tableblock{font-size:1em}
 .exampleblock>.content{background:#fffef7;border-color:#e0e0dc;box-shadow:0 1px 4px #e0e0dc}
@@ -439,73 +436,113 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
 <style>
 /*! Asciidoctor Tabs | Copyright (c) 2018-present Dan Allen | MIT License */
-.tabs > ul {
-  display: flex;
-  flex-wrap: wrap;
-  list-style: none;
-  margin: 0 -0.25em 0 0;
-  padding: 0;
-}
-
-.tabs > ul li {
-  align-items: center;
-  border: 1px solid black;
-  border-bottom: 0;
-  cursor: pointer;
-  display: flex;
-  font-weight: bold;
-  height: 2em;
-  line-height: 1;
-  margin-right: 0.25em;
-  padding: 0 1em;
-  position: relative;
-}
-
-.tabs > ul li, .tabs > ul p {
-  margin-bottom: 0;
-}
-
-.tabs > ul li + li[id] {
-  margin-top: 0;
-}
-
-.tabset {
+.tabs {
   margin-bottom: 1.25em;
 }
 
-.tabset.is-loading .tabs li:not(:first-child),
-.tabset:not(.is-loading) .tabs li:not(.is-active) {
-  background-color: black;
-  color: white;
+.tablist > ul {
+  display: flex;
+  flex-wrap: wrap;
+  list-style: none;
+  margin: 0;
+  padding: 0;
 }
 
-.tabset.is-loading .tabs li:first-child::after,
-.tabs li.is-active::after {
-  background-color: white;
+.tablist > ul li {
+  align-items: center;
+  background-color: #fff;
+  cursor: pointer;
+  display: flex;
+  font-weight: bold;
+  line-height: 1.5;
+  padding: 0.25em 1em;
+  position: relative;
+}
+
+.tablist > ul li:focus-visible {
+  outline: none;
+}
+
+.tablist.ulist,
+.tablist.ulist > ul li {
+  margin: 0;
+}
+
+.tablist.ulist > ul li + li {
+  margin-left: 0.25em;
+}
+
+.tabs .tablist li::after {
   content: "";
   display: block;
-  height: 3px; /* Chrome doesn't always paint the line accurately, so add a little extra */
+  height: 1px;
   position: absolute;
-  bottom: -1.5px;
+  bottom: -1px;
   left: 0;
   right: 0;
 }
 
-.tabset > .content {
-  border: 1px solid gray;
+.tabs.is-loading .tablist li:not(:first-child),
+.tabs:not(.is-loading) .tablist li:not(.is-selected) {
+  background-color: #f5f5f5;
+}
+
+.tabs.is-loading .tablist li:first-child::after,
+.tabs:not(.is-loading) .tablist li.is-selected::after {
+  background-color: #fff;
+}
+
+/*
+.tabs:not(.is-loading) .tablist li,
+.tabs:not(.is-loading) .tablist li::after {
+  transition: background-color 200ms ease-in-out;
+}
+*/
+
+.tablist > ul p {
+  line-height: inherit;
+  margin: 0;
+}
+
+.tabpanel {
+  background-color: #fff;
   padding: 1.25em;
 }
 
-.tabset.is-loading .tab-pane:not(:first-child),
-.tabset:not(.is-loading) .tab-pane:not(.is-active) {
+.tablist > ul li,
+.tabpanel {
+  border: 1px solid #dcdcdc;
+}
+
+.tablist > ul li {
+  border-bottom: 0;
+}
+
+.tabs.is-loading .tabpanel + .tabpanel,
+.tabs:not(.is-loading) .tabpanel.is-hidden {
   display: none;
 }
 
-.tab-pane > :first-child {
+.tabpanel > :first-child {
   margin-top: 0;
 }
 
-.tab-pane > :last-child > :last-child {
+/* #content is a signature of the Asciidoctor standalone HTML output */
+#content .tabpanel > :last-child,
+#content .tabpanel > :last-child > :last-child,
+#content .tabpanel > :last-child > :last-child > li:last-child > :last-child {
+  margin-bottom: 0;
+}
+
+.tablecontainer {
+  overflow-x: auto;
+}
+
+#content .tablecontainer {
+  margin-bottom: 1.25em;
+}
+
+#content .tablecontainer > table.tableblock {
   margin-bottom: 0;
 }
 </style>
@@ -515,8 +552,8 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <h1>Common-EGSE : Installation Manual</h1>
 <div class="details">
 <span id="author" class="author">Sara Regibo, Rik Huygen</span><br>
-<span id="revnumber">version 1.4,</span>
-<span id="revdate">19/06/2023</span>
+<span id="revnumber">version 1.5,</span>
+<span id="revdate">15/09/2023</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -571,36 +608,54 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <li><a href="#cgse-install">8. Installation of the Common-EGSE</a></li>
 <li><a href="#test-scripts-install">9. Installing the Test Scripts</a></li>
 <li><a href="#cgse-conf-install">10. Installation of Setups</a></li>
-<li><a href="#desktop-entry-install">11. Installation of Desktop Entries</a></li>
-<li><a href="#install-vnc">12. Installation of a VNC Server</a>
+<li><a href="#user-installation">11. User Installation</a>
 <ul class="sectlevel2">
-<li><a href="#_install_packages">12.1. Install packages</a></li>
-<li><a href="#_configure_the_gnome_display_manager">12.2. Configure the GNOME Display Manager</a></li>
-<li><a href="#_install_and_activate_the_vnc_service">12.3. Install and Activate the VNC service</a></li>
+<li><a href="#_set_up_your_python_environment">11.1. Set up your Python environment</a>
+<ul class="sectlevel3">
+<li><a href="#venv">11.1.1. Installed Python version and <code>venv</code></a></li>
+<li><a href="#_pyenv">11.1.2. pyenv</a></li>
 </ul>
 </li>
-<li><a href="#setup-environment">13. Setting up the environment</a>
-<ul class="sectlevel2">
-<li><a href="#_environment_variables">13.1. Environment Variables</a></li>
-<li><a href="#_the_environment_for_systemd_services">13.2. The environment for Systemd services</a></li>
+<li><a href="#_set_up_your_shell_environment">11.2. Set up your shell environment</a>
+<ul class="sectlevel3">
+<li><a href="#_environment_variables">11.2.1. Environment variables</a></li>
+<li><a href="#_direnv">11.2.2. direnv</a></li>
 </ul>
 </li>
-<li><a href="#github-deploy">14. Setting up ssh access and GitHub deploy keys</a>
-<ul class="sectlevel2">
-<li><a href="#deploy-key-egse-server">14.1. Create a deploy key for the plato-common-egse</a></li>
-<li><a href="#_create_a_deploy_key_for_the_plato_test_scripts">14.2. Create a deploy key for the plato-test-scripts</a></li>
-<li><a href="#deploy-key-cgse-conf">14.3. Create a deploy key for the plato-cgse-conf</a></li>
+<li><a href="#ts-dev-user-installation">11.3. Contributing to the PLATO Test Scripts</a></li>
+<li><a href="#_contributing_to_plato_test_scripts_and_common_egse">11.4. Contributing to PLATO Test Scripts and Common-EGSE</a></li>
 </ul>
 </li>
-<li><a href="#cgse-update">15. Update the Common-EGSE to the latest release</a></li>
-<li><a href="#test-scripts-update">16. Update the Test Scripts to the latest release</a></li>
-<li><a href="#python-package-update">17. Update Python packages</a></li>
-<li><a href="#_data_propagation">18. Data Propagation</a></li>
-<li><a href="#_shared_libraries">19. Shared Libraries</a></li>
-<li><a href="#_installating_external_tools">20. Installating External Tools</a>
+<li><a href="#desktop-entry-install">12. Installation of Desktop Entries</a></li>
+<li><a href="#install-vnc">13. Installation of a VNC Server</a>
 <ul class="sectlevel2">
-<li><a href="#_cutelog_gui">20.1. Cutelog GUI</a></li>
-<li><a href="#_textualog_tui">20.2. Textualog TUI</a></li>
+<li><a href="#_install_packages">13.1. Install packages</a></li>
+<li><a href="#_configure_the_gnome_display_manager">13.2. Configure the GNOME Display Manager</a></li>
+<li><a href="#_install_and_activate_the_vnc_service">13.3. Install and Activate the VNC service</a></li>
+</ul>
+</li>
+<li><a href="#setup-environment">14. Setting up the environment</a>
+<ul class="sectlevel2">
+<li><a href="#_environment_variables_2">14.1. Environment Variables</a></li>
+<li><a href="#_the_environment_for_systemd_services">14.2. The environment for Systemd services</a></li>
+</ul>
+</li>
+<li><a href="#github-deploy">15. Setting up ssh access and GitHub deploy keys</a>
+<ul class="sectlevel2">
+<li><a href="#deploy-key-egse-server">15.1. Create a deploy key for the plato-common-egse</a></li>
+<li><a href="#_create_a_deploy_key_for_the_plato_test_scripts">15.2. Create a deploy key for the plato-test-scripts</a></li>
+<li><a href="#deploy-key-cgse-conf">15.3. Create a deploy key for the plato-cgse-conf</a></li>
+</ul>
+</li>
+<li><a href="#cgse-update">16. Update the Common-EGSE to the latest release</a></li>
+<li><a href="#test-scripts-update">17. Update the Test Scripts to the latest release</a></li>
+<li><a href="#python-package-update">18. Update Python packages</a></li>
+<li><a href="#_data_propagation">19. Data Propagation</a></li>
+<li><a href="#_shared_libraries">20. Shared Libraries</a></li>
+<li><a href="#_installating_external_tools">21. Installating External Tools</a>
+<ul class="sectlevel2">
+<li><a href="#_cutelog_gui">21.1. Cutelog GUI</a></li>
+<li><a href="#_textualog_tui">21.2. Textualog TUI</a></li>
 </ul>
 </li>
 </ul>
@@ -621,6 +676,16 @@ Backlink &#8594; <a href="https://ivs-kuleuven.github.io/plato-cgse-doc/">CGSE D
 <div class="sectionbody">
 <div class="dlist">
 <dl>
+<dt class="hdlist1">15/09/2023 — v1.5</dt>
+<dd>
+<div class="ulist">
+<ul>
+<li>
+<p>added a section on user installation of CGSE + TS, see <a href="#user-installation">Chapter 11</a></p>
+</li>
+</ul>
+</div>
+</dd>
 <dt class="hdlist1">18/06/2023 — v1.4</dt>
 <dd>
 <div class="ulist">
@@ -636,7 +701,7 @@ Backlink &#8594; <a href="https://ivs-kuleuven.github.io/plato-cgse-doc/">CGSE D
 <div class="ulist">
 <ul>
 <li>
-<p>Added description for the PLATO_CAMERA_IS_EM environment variable, see <a href="#setup-environment">Chapter 13</a></p>
+<p>Added description for the PLATO_CAMERA_IS_EM environment variable, see <a href="#setup-environment">Chapter 14</a></p>
 </li>
 <li>
 <p>Added section on providing <em>sudo</em> permissions to plato-data in the user administration, see <a href="#user-admin">Section 2.3</a>.</p>
@@ -661,19 +726,19 @@ Backlink &#8594; <a href="https://ivs-kuleuven.github.io/plato-cgse-doc/">CGSE D
 <p>We will now try to maintain a changelog.</p>
 </li>
 <li>
-<p>Documented the installation and activation of a VNC Server on Ubuntu, see <a href="#install-vnc">Chapter 12</a></p>
+<p>Documented the installation and activation of a VNC Server on Ubuntu, see <a href="#install-vnc">Chapter 13</a></p>
 </li>
 <li>
-<p>Improved section on 'Setting up the environment', see <a href="#setup-environment">Chapter 13</a></p>
+<p>Improved section on 'Setting up the environment', see <a href="#setup-environment">Chapter 14</a></p>
 </li>
 <li>
-<p>Updated the version numbering used for releases in update commands, see <a href="#cgse-update">Chapter 15</a> and <a href="#test-scripts-update">Chapter 16</a></p>
+<p>Updated the version numbering used for releases in update commands, see <a href="#cgse-update">Chapter 16</a> and <a href="#test-scripts-update">Chapter 17</a></p>
 </li>
 <li>
 <p>Added info on how to set the terminal title, see <a href="#set-terminal-title">[set-terminal-title]</a></p>
 </li>
 <li>
-<p>Added explanation of <code>--ignore-installed</code> optional argument for <code>pip</code>, see <a href="#python-package-update">Chapter 17</a></p>
+<p>Added explanation of <code>--ignore-installed</code> optional argument for <code>pip</code>, see <a href="#python-package-update">Chapter 18</a></p>
 </li>
 <li>
 <p>Added a brief explanation on exporting a mount point on the egse-server <a href="#export-mount-point">Section 2.1.8</a> and mounting the mount point <a href="#mount">Section 2.2.1</a> on the egse-client.</p>
@@ -760,24 +825,24 @@ This feature is only available in the HTML version of the documents. If you are 
 </tr>
 </table>
 </div>
-<div id="_tabset_1" class="tabset is-loading">
-<div class="ulist tabs">
+<div id="_tabs_1" class="openblock tabs is-loading">
+<div class="content">
+<div class="ulist tablist">
 <ul>
-<li id="_tabset_1_fm">
+<li id="_tabs_1_fm" class="tab">
 <p>FM</p>
 </li>
-<li id="_tabset_1_em">
+<li id="_tabs_1_em" class="tab">
 <p>EM</p>
 </li>
 </ul>
 </div>
-<div class="content">
-<div class="tab-pane" aria-labelledby="_tabset_1_fm">
+<div id="_tabs_1_fm--panel" class="tabpanel" aria-labelledby="_tabs_1_fm">
 <div class="paragraph">
 <p>In this TAB we present <em>FM specific information</em>.</p>
 </div>
 </div>
-<div class="tab-pane" aria-labelledby="_tabset_1_em">
+<div id="_tabs_1_em--panel" class="tabpanel" aria-labelledby="_tabs_1_em">
 <div class="paragraph">
 <p>In this TAB we present <strong>EM specific information</strong>.</p>
 </div>
@@ -920,19 +985,19 @@ plato-data@strawberry:/data/CSL1/obs/01151_CSL1_chimay$</pre>
 <div class="paragraph">
 <p>In the next sections, we will briefly explain how to install the <code>egse-server</code> and <code>egse-client</code> machines. The frame below explains where to download and perform a basic installation of CentOS 8 or Ubuntu 20.04.</p>
 </div>
-<div id="_tabset_2" class="tabset is-loading">
-<div class="ulist tabs">
+<div id="_tabs_2" class="openblock tabs is-loading">
+<div class="content">
+<div class="ulist tablist">
 <ul>
-<li id="_tabset_2_centos_8">
+<li id="_tabs_2_centos_8" class="tab">
 <p>CentOS 8</p>
 </li>
-<li id="_tabset_2_ubuntu_20_04">
+<li id="_tabs_2_ubuntu_20_04" class="tab">
 <p>Ubuntu 20.04</p>
 </li>
 </ul>
 </div>
-<div class="content">
-<div class="tab-pane" aria-labelledby="_tabset_2_centos_8">
+<div id="_tabs_2_centos_8--panel" class="tabpanel" aria-labelledby="_tabs_2_centos_8">
 <div class="paragraph">
 <p>Perform a normal/default installation of CentOS-8. Follow the default settings.</p>
 </div>
@@ -950,7 +1015,7 @@ plato-data@strawberry:/data/CSL1/obs/01151_CSL1_chimay$</pre>
 </ul>
 </div>
 </div>
-<div class="tab-pane" aria-labelledby="_tabset_2_ubuntu_20_04">
+<div id="_tabs_2_ubuntu_20_04--panel" class="tabpanel" aria-labelledby="_tabs_2_ubuntu_20_04">
 <div class="ulist">
 <ul>
 <li>
@@ -993,19 +1058,19 @@ housekeeping data, logging information, metrics, etc. This is the mounted SSD di
 <div class="paragraph">
 <p>We will install Python from the official Python website, as described in <a href="#python-install">Chapter 6</a>. The procedure is as follows: We first install the development tools for CentOS and a number of <code>devel</code> packages that are needed for header files during compilation. We then get the Python source distribution from <code>www.python.org</code>, unpack, configure and compile. Use <code>altinstall</code> instead of <code>install</code> if you don&#8217;t want previous installations of Python to be overwritten. This will install <code>python3.8</code> in <code>/usr/local/bin</code>. All the commands need to be executes as root.</p>
 </div>
-<div id="_tabset_3" class="tabset is-loading">
-<div class="ulist tabs">
+<div id="_tabs_3" class="openblock tabs is-loading">
+<div class="content">
+<div class="ulist tablist">
 <ul>
-<li id="_tabset_3_centos_8">
+<li id="_tabs_3_centos_8" class="tab">
 <p>CentOS 8</p>
 </li>
-<li id="_tabset_3_ubuntu_20_04">
+<li id="_tabs_3_ubuntu_20_04" class="tab">
 <p>Ubuntu 20.04</p>
 </li>
 </ul>
 </div>
-<div class="content">
-<div class="tab-pane" aria-labelledby="_tabset_3_centos_8">
+<div id="_tabs_3_centos_8--panel" class="tabpanel" aria-labelledby="_tabs_3_centos_8">
 <div class="listingblock">
 <div class="content">
 <pre>yum -y groupinstall "Development Tools"
@@ -1019,7 +1084,7 @@ make altinstall</pre>
 </div>
 </div>
 </div>
-<div class="tab-pane" aria-labelledby="_tabset_3_ubuntu_20_04">
+<div id="_tabs_3_ubuntu_20_04--panel" class="tabpanel" aria-labelledby="_tabs_3_ubuntu_20_04">
 <div class="paragraph">
 <p>Python 3.8 comes installed with Ubuntu 20.04, no need to re-install it.</p>
 </div>
@@ -1385,19 +1450,19 @@ Export list for 139.xxx.yyy.74:
 <div class="paragraph">
 <p>We will need to make this mount permanently available, also after rebooting the system. This can be done as a static mount or by using the autmounter daemon.</p>
 </div>
-<div id="_tabset_4" class="tabset is-loading">
-<div class="ulist tabs">
+<div id="_tabs_4" class="openblock tabs is-loading">
+<div class="content">
+<div class="ulist tablist">
 <ul>
-<li id="_tabset_4_static_mount">
+<li id="_tabs_4_static_mount" class="tab">
 <p>Static mount</p>
 </li>
-<li id="_tabset_4_automounter">
+<li id="_tabs_4_automounter" class="tab">
 <p>Automounter</p>
 </li>
 </ul>
 </div>
-<div class="content">
-<div class="tab-pane" aria-labelledby="_tabset_4_static_mount">
+<div id="_tabs_4_static_mount--panel" class="tabpanel" aria-labelledby="_tabs_4_static_mount">
 <div class="paragraph">
 <p>With <code>fstab</code> we will create a static mount for the <code>/data</code> location. We add the mount point to <code>/etc/fstab</code> which will automatically mount the folder at startup and it will remain mounted until system shutdown or explicitly unmounted.</p>
 </div>
@@ -1417,7 +1482,7 @@ Export list for 139.xxx.yyy.74:
 </div>
 </div>
 </div>
-<div class="tab-pane" aria-labelledby="_tabset_4_automounter">
+<div id="_tabs_4_automounter--panel" class="tabpanel" aria-labelledby="_tabs_4_automounter">
 <div class="paragraph">
 <p>The automounter daemon is controlled by the <code>autofs</code> service. In the master configuration file for <code>autofs</code>, add a new line to specify a direct map for the file <code>/etc/auto.cgse</code>:</p>
 </div>
@@ -1871,7 +1936,7 @@ ENABLE_USER_SITE: True
 <p>The installation will be done as the <code>plato-data</code> user. We will <em>clone</em> the IvS-KULeuven <code>plato-test-scripts</code> repository. There is no need to <em>fork</em> because we will not develop from this account and will therefore not do any pushes or  pull requests.</p>
 </div>
 <div class="paragraph">
-<p>Create a <code>~/git</code> folder in the home directory of the <code>plato-data</code> user, move into that directory and clone the GitHub repository. Then move into the <code>plato-test-scripts</code> folder that was created by the <em>clone</em> command. If this is a first-time installation, you must first create a deploy key for the <code>plato-test-scripts</code>, see <a href="#github-deploy">Chapter 14</a>.</p>
+<p>Create a <code>~/git</code> folder in the home directory of the <code>plato-data</code> user, move into that directory and clone the GitHub repository. Then move into the <code>plato-test-scripts</code> folder that was created by the <em>clone</em> command. If this is a first-time installation, you must first create a deploy key for the <code>plato-test-scripts</code>, see <a href="#github-deploy">Chapter 15</a>.</p>
 </div>
 <div class="listingblock">
 <div class="content">
@@ -1900,7 +1965,7 @@ $ source venv/bin/activate</pre>
 </div>
 <h3 id="_installation_on_the_server" class="discrete">Installation on the server</h3>
 <div class="paragraph">
-<p>The <code>plato-cgse-conf</code> repository shall be cloned on the server in the folder <code>~/git</code> where also the <code>plato-common-egse</code> resides. To clone the repo, you need access to this repository first, follow the steps described in <a href="#deploy-key-cgse-conf">Section 14.3</a>. When you have executed that procedure, you should have the repository up-to-date on your system.</p>
+<p>The <code>plato-cgse-conf</code> repository shall be cloned on the server in the folder <code>~/git</code> where also the <code>plato-common-egse</code> resides. To clone the repo, you need access to this repository first, follow the steps described in <a href="#deploy-key-cgse-conf">Section 15.3</a>. When you have executed that procedure, you should have the repository up-to-date on your system.</p>
 </div>
 <div class="admonitionblock warning">
 <table>
@@ -1932,7 +1997,7 @@ Check that the <em>upload</em> remote is indeed a tracking branch, see <a href="
 </div>
 <h3 id="_installation_on_the_client" class="discrete">Installation on the client</h3>
 <div class="paragraph">
-<p>For the client follow the same procedure to create a deploy key and clone the repository (see <a href="#deploy-key-cgse-conf">Section 14.3</a>), but <strong>do not</strong> allow write access on GitHub and only create the remote <em>updates</em> (the <em>upload</em> remote is not used on the client).</p>
+<p>For the client follow the same procedure to create a deploy key and clone the repository (see <a href="#deploy-key-cgse-conf">Section 15.3</a>), but <strong>do not</strong> allow write access on GitHub and only create the remote <em>updates</em> (the <em>upload</em> remote is not used on the client).</p>
 </div>
 <div class="paragraph">
 <p>Alternatively, the folder <code>~/git/plato-cgse-conf</code> can be mounted read-only from the server. make sure the location is also <code>~/git/plato-cgse-conf</code>.</p>
@@ -1943,7 +2008,482 @@ Check that the <em>upload</em> remote is indeed a tracking branch, see <a href="
 </div>
 </div>
 <div class="sect1">
-<h2 id="desktop-entry-install">11. Installation of Desktop Entries</h2>
+<h2 id="user-installation">11. User Installation</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>This section describes how a user of the system can install the Common-EGSE and Test Scripts in a non-operational environment. The idea of such an installation is to work with the system, get used to it and/or perform some analysis on the test data. The user  is not supposed to make changes to the software. If that is the case, i.e. you are working with test scripts, and make contributions and changes to the test scripts, go and read the section <a href="#ts-dev-user-installation">Section 11.3</a>.</p>
+</div>
+<div class="paragraph">
+<p>Installation of the CGSE + TS requires a few steps to prepare. We recommend to use an existing Python 3.8 installation with <code>venv</code> to create a virtual environment<sup class="footnote">[<a id="_footnoteref_7" class="footnote" href="#_footnotedef_7" title="View footnote.">7</a>]</sup> or use <code>pyenv</code> to manage your Python versions if Python 3.8 is not installed on your system. To manage your shell environment<sup class="footnote">[<a id="_footnoteref_8" class="footnote" href="#_footnotedef_8" title="View footnote.">8</a>]</sup> you can define the PLATO environment variables in your <code>~/.bash_profile</code> or use <code>direnv</code> to manage your environment variables on a per-directory basis. We will explain the different possibilities in the following sections.</p>
+</div>
+<div class="paragraph">
+<p>The diagram below outlines the discussion in the next sections. There are two paths that we recommend new users to follow (1) using an existing Python installation and the standard virtual environment, or (2) using <code>pyenv</code> to manage both a new Python installation and virtual environment.</p>
+</div>
+<div class="imageblock text-center">
+<div class="content">
+<img src="../images/user-installation.png" alt="user installation" width="75%">
+</div>
+</div>
+<div class="sect2">
+<h3 id="_set_up_your_python_environment">11.1. Set up your Python environment</h3>
+<div class="sect3">
+<h4 id="venv">11.1.1. Installed Python version and <code>venv</code></h4>
+<div class="paragraph">
+<p>The Common-EGSE and Test Scripts require Python 3.8. Higher versions might work but are not tested and there are some known problem with e.g. the <code>astropy</code> package. You can test which Python version is installed on your system as follows:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>$ python3 -V
+Python 3.8.17</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>If you have Python 3.8 running you are good to go, you can use this version with <code>venv</code> to create a virtual environment in your work folder. The work folder I refer to here is the folder where you want to perform your PLATO work and keep scripts at hand. In this folder we will create a virtual environment for Python 3.8.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>$ mkdir ~/plato-work
+$ cd ~/plato-work
+$ python3 -m venv venv --prompt='cgse-ts'
+$ source venv/bin/activate
+(cgse-ts) $</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Now you have a Python 3.8 virtual environment which is activated. You can use the <code>python</code> and <code>pip</code> commands to set up your CGSE+TS installation (for clarity, I left out the <code>(cgse-ts)</code> from the prompt in the lines below):</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>$ pip install --upgrade pip setuptools wheel
+$ pip install cgse-ts
+$ python -m egse.version
+CGSE version in Settings: 2023.37.0+CGSE
+CGSE installed version = 2023.37.0
+$ python -m camtest.version
+CAMTEST version in Settings: 2023.37.0+TS
+CAMTEST installed version = 2023.37.0</pre>
+</div>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_pyenv">11.1.2. pyenv</h4>
+<div class="paragraph">
+<p>In case that you do not have Python 3.8 installed on your system, we recommend to use <code>pyenv</code> to install and manage different Python versions.
+The purpose of using <code>pyenv</code> is to keep track of Python installations on your system and to maintain Python virtual environments.</p>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+<div class="title">A nice <code>pyenv</code> tutorial</div>
+The Real Python website contains a very nice introductory tutorial on <code>pyenv</code> going through the installation on different platforms and the basic usage of the software. This section is largely based on that tutorial. You can access it at <a href="https://realpython.com/intro-to-pyenv/" class="bare">https://realpython.com/intro-to-pyenv/</a>.
+</td>
+</tr>
+</table>
+</div>
+<div class="sidebarblock">
+<div class="content">
+<div class="title">Installing <code>pyenv</code></div>
+<div class="paragraph">
+<p>When you don&#8217;t have <code>pyenv</code> installed on your system, use the following guidelines. The <code>pyenv</code> can be installed easily in a normal user account. Since <code>pyenv</code> builds the Python installations from source, you will need to install some build dependencies to actually use <code>pyenv</code>.</p>
+</div>
+<div id="_tabs_5" class="openblock tabs is-loading">
+<div class="content">
+<div class="ulist tablist">
+<ul>
+<li id="_tabs_5_macos" class="tab">
+<p>macOS</p>
+</li>
+<li id="_tabs_5_ubuntu" class="tab">
+<p>Ubuntu</p>
+</li>
+</ul>
+</div>
+<div id="_tabs_5_macos--panel" class="tabpanel" aria-labelledby="_tabs_5_macos">
+<div class="paragraph">
+<p>Use <code>brew</code> to install build dependencies, then install <code>pyenv</code> using the <a href="https://github.com/pyenv/pyenv-installer">pyenv-installer</a>:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>$ brew update
+$ brew install openssl readline sqlite3 xz zlib
+
+$ curl https://pyenv.run | bash</pre>
+</div>
+</div>
+</div>
+<div id="_tabs_5_ubuntu--panel" class="tabpanel" aria-labelledby="_tabs_5_ubuntu">
+<div class="paragraph">
+<p>Use the following command to install build dependencies, the install <code>pyenv</code> using the <a href="https://github.com/pyenv/pyenv-installer">pyenv-installer</a>:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>$ sudo apt-get install -y make build-essential libssl-dev zlib1g-dev \
+libbz2-dev libreadline-dev libsqlite3-dev wget curl llvm libncurses5-dev \
+libncursesw5-dev xz-utils tk-dev libffi-dev liblzma-dev python-openssl
+
+$ curl https://pyenv.run | bash</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="paragraph">
+<p>After the installation, follow the instructions to properly configure your shell to use <code>pyenv</code>. Add the following three lines to your <code>~/.bashrc</code> and reload your shell or restart a terminal.<sup class="footnote">[<a id="_footnoteref_9" class="footnote" href="#_footnotedef_9" title="View footnote.">9</a>]</sup></p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>export PATH="$HOME/.pyenv/bin:$PATH"
+eval "$(pyenv init -)"
+eval "$(pyenv virtualenv-init -)"</pre>
+</div>
+</div>
+</div>
+</div>
+<div class="paragraph">
+<p>Now you should have a properly installed <code>pyenv</code> and you will be able to see which Python versions are installed on your system. As you can see below I have several Python versions installed on my system. Never mind about that, the CGSE+TS need Python 3.8.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>$ pyenv versions
+  system
+  3.8.17
+  3.9.17
+  3.10.12
+  3.11.4</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>If you don&#8217;t have a Python 3.8 installation, use the following command to install the latest patch for this Python version:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>$ pyenv install 3.8</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>You should always install any Python packages in a virtual environment. That will isolate your installation from any other software that you have installed, make sure the packages on which the CGSE+TS dependent are not shared (or worse) changed by other software installations. A virtual environment is set up as follows with <code>pyenv</code>:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>$ pyenv virtualenv 3.8 ts-3.8
+$ mkdir -p ~/plato-work
+$ cd ~/plato-work
+$ pyenv local ts-3.8
+$ pip install --upgrade pip setuptools wheel
+$ pip install cgse-ts</pre>
+</div>
+</div>
+<div class="sidebarblock">
+<div class="content">
+<div class="title">Global and local virtual environments</div>
+<div class="paragraph">
+<p>A virtual environment is in principle independent of the directory where your project lives or where you keep your personal working scripts. You can create a virtual environment inside your project folder as we did above in  <a href="#venv">Section 11.1.1</a>, but <code>pyenv</code> keeps its virtual environments at one location independent of the project root. Instead, <code>pyenv</code> maintains a concept of a <em>global</em> and a <em>local</em> virtual environment. A global virtual environment can be used from any location and is defined  with the following command, for clarity, we first create a new virtual environment <code>core-3.8</code>, then we set it as <em>global</em>:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>$ pyenv virtualenv 3.8 core-3.8
+$ pyenv global core-3.8</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>A local virtual environment is associated with a directory and its sub-folders. Whenever you navigate into a directory structure that has a local virtual environment associated, the virtual environment will automatically be activated in your current shell. When you leave the directory structure, the virtual environment will be deactivated.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>$ cd ~/plato-work
+$ pyenv local ts-3.8
+$ pyenv local
+ts-3.8
+$ cd ..
+$ pyenv local
+pyenv: no local version configured for this directory
+$ pyenv global
+core-3.8</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>So, the <em>local</em> takes precedence over the <em>global</em>.</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_set_up_your_shell_environment">11.2. Set up your shell environment</h3>
+<div class="sect3">
+<h4 id="_environment_variables">11.2.1. Environment variables</h4>
+<div class="paragraph">
+<p>The non-operational installation needs the following environment variables to work without problems. You can define those environment variables in your <code>~/.bash_profile</code> or <code>~/.bashrc</code>, or you can use <code>direnv</code> to define them only for specific locations.</p>
+</div>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 33.3333%;">
+<col style="width: 66.6667%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Name</th>
+<th class="tableblock halign-left valign-top">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">PLATO_DATA_STORAGE_LOCATION</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">the root folder of your data storage, usually <code>/data</code> or <code>~/data</code>. The SITE is automatically appended by the CGSE and underneath the SITE folder, folders like <code>obs</code>, <code>daily</code> and <code>log</code> are located. So, for example, if you are working at INTA and your PLATO_DATA_STORAGE_LOCATION is set to <code>/data</code>, the observation data for <code>OBSID=793</code> will be in <code>/data/INTA/obs/00793_INTA_duvel</code>. Even if you are not working on an operational machine, the directory structure underneath the <code>PLATO_DATA_STORAGE_LOCATION</code> shall be respected.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">PLATO_LOCAL_SETTINGS</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">the location of the <code>local-settings.yaml</code> file. This settings file will overwrite the global settings defined by the distribution. In this file you shall put your SITE ID, IP addresses of devices, different port numbers etc. The structure is the same as the global <code>settings.yaml</code> file, only with less content. You can put this file in the data storage root folder or in a dedicated folder like <code>~/cgse</code>.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">PLATO_CONF_DATA_LOCATION</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">the location of the configuration data, i.e. Setups and related files, usually <code>~/git/plato-cgse-conf/data/{SITE}/conf</code> <sup class="footnote">[<a id="_footnoteref_10" class="footnote" href="#_footnotedef_10" title="View footnote.">10</a>]</sup></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">PLATO_CONF_REPO_LOCATION</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">the location of the configuration data repository, usually <code>~/git/plato-cgse-conf</code>.</p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p>For more information on these variables, check the installation guide.</p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_direnv">11.2.2. direnv</h4>
+<div class="sidebarblock">
+<div class="content">
+<div class="title">Installing <code>direnv</code></div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+The installation described below is based on the information from <a href="https://direnv.net" class="bare">https://direnv.net</a>
+</td>
+</tr>
+</table>
+</div>
+<div class="paragraph">
+<p>The purpose of <code>direnv</code> is to set up environment variables on a per-folder basis. When you enter a folder with the <code>cd</code> command in your terminal, the shell will load a set of environment variables applicable for that folder. Let&#8217;s first install <code>direnv</code> on your system.</p>
+</div>
+<div id="_tabs_6" class="openblock tabs is-loading">
+<div class="content">
+<div class="ulist tablist">
+<ul>
+<li id="_tabs_6_macos" class="tab">
+<p>macOS</p>
+</li>
+<li id="_tabs_6_ubuntu" class="tab">
+<p>Ubuntu</p>
+</li>
+</ul>
+</div>
+<div id="_tabs_6_macos--panel" class="tabpanel" aria-labelledby="_tabs_6_macos">
+<div class="listingblock">
+<div class="content">
+<pre>$ brew install direnv</pre>
+</div>
+</div>
+</div>
+<div id="_tabs_6_ubuntu--panel" class="tabpanel" aria-labelledby="_tabs_6_ubuntu">
+<div class="listingblock">
+<div class="content">
+<pre>$ sudo apt-get install direnv</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="paragraph">
+<p>In order to activate <code>direnv</code>, append the following line at the end of your <code>~/.bashrc</code> file:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>eval "$(direnv hook bash)"</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Make sure it appears even after any shell extensions that manipulate the prompt.</p>
+</div>
+</div>
+</div>
+<div class="paragraph">
+<p>Now that <code>direnv</code> is installed, you can go to your project folder and create a <code>.envrc</code> file that contains the definitions of the environment variables needed for the CGSE+TS.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>$ cd ~/plato-work
+$ cat &gt; .envrc
+SITE=CSL2
+
+export PLATO_CONF_DATA_LOCATION=~/git/plato-cgse-conf/data/${SITE}/conf
+export PLATO_CONF_REPO_LOCATION=~/git/plato-cgse-conf
+export PLATO_DATA_STORAGE_LOCATION=~/data
+export PLATO_LOCAL_SETTINGS=~/cgse/local_settings.yaml
+
+export PYTHONSTARTUP=~/plato-work/startup.py
+^D
+$ direnv allow .</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>That last command will load the environment variables in your shell. You can easily check this with the following command (try this both inside and outside of the project folder):</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>$ set | grep PLATO
+PLATO_CONF_DATA_LOCATION=/Users/rik/git/plato-cgse-conf/data/CSL2/conf
+PLATO_CONF_REPO_LOCATION=/Users/rik/git/plato-cgse-conf
+PLATO_DATA_STORAGE_LOCATION=/Users/rik/data
+PLATO_LOCAL_SETTINGS=/Users/rik/cgse/local_settings.yaml</pre>
+</div>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="ts-dev-user-installation">11.3. Contributing to the PLATO Test Scripts</h3>
+<div class="paragraph">
+<p>In the previous sections we have installed the CGSE and TS as read-only packages in a virtual environment. That allowed you to use the software, but not to make changes or contribute to improve the software. This section will assume you need to contribute to the test scripts but not the Common-EGSE. Make sure you have a fork of the <code>plato-test-scripts</code> repository and clone this into a folder <code>~/git/plato-test-scripts</code>.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>$ cd ~/git
+$ git clone https://github.com/&lt;username&gt;/plato-test-scripts.git
+$ cd plato-test-scripts</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Now create a virtual environment either with <code>venv</code> or with <code>pyenv</code> as explained in the sections above. I will use <code>venv</code> here assuming Python 3.8 is installed.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>$ python3 -m venv venv --prompt='cgse-ts'
+$ source venv/bin/activate
+$ pip install --upgrade pip setuptools wheel</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Now install the test scripts as an editable installation. What will happen is that the following command will install the latest <code>cgse</code> package and all dependencies needed for CGSE and TS. It will then install the code in the <code>src</code> folder, e.g. the <code>camtest</code> and <code>scripts</code> as an editable install. Whenever you make changes to the code, it will be picked up if you run the code again.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>$ pip install -e .</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Check the versions installed for CGSE and TS:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>$ python -m egse.version
+CGSE version in Settings: 2023.37.0+CGSE
+CGSE installed version = 2023.37.0
+$ python -m camtest.version
+CAMTEST version in Settings: 2023.37.0+TS
+CAMTEST git version: 2023.37.0+TS-0-g3ccd722
+CAMTEST installed version = 2023.37.0</pre>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_contributing_to_plato_test_scripts_and_common_egse">11.4. Contributing to PLATO Test Scripts and Common-EGSE</h3>
+<div class="paragraph">
+<p>In this last section we look into the case where you are making contributions to both the CGSE and TS. Of course, when you arrive at this point, I assume you have a better understanding of git and package distribution and I will not explain everything in detail. Basically, what this boils down to is that both CGSE and TS will be installed as editable packages in the same virtual environment.</p>
+</div>
+<div class="paragraph">
+<p>Create a virtual environment:</p>
+</div>
+<div id="_tabs_7" class="openblock tabs is-loading">
+<div class="content">
+<div class="ulist tablist">
+<ul>
+<li id="_tabs_7_venv" class="tab">
+<p>venv</p>
+</li>
+<li id="_tabs_7_pyenv" class="tab">
+<p>pyenv</p>
+</li>
+</ul>
+</div>
+<div id="_tabs_7_venv--panel" class="tabpanel" aria-labelledby="_tabs_7_venv">
+<div class="paragraph">
+<p>Put this virtual environment in a folder that is not the project folder of CGSE nor TS, i.e. use a global virtual environment, not one that is created inside the project.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>$ cd ~/venvs
+$ python3.8 -m venv cgse-ts-3.8
+$ source cgse-ts-3.8/bin/activate</pre>
+</div>
+</div>
+</div>
+<div id="_tabs_7_pyenv--panel" class="tabpanel" aria-labelledby="_tabs_7_pyenv">
+<div class="listingblock">
+<div class="content">
+<pre>$ pyenv virtualenv 3.8 cgse-ts-3.8
+$ pyenv shell cgse-ts-3.8</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="paragraph">
+<p>Update the standard packages that are used for the installation:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>$ pip install --upgrade pip setuptools wheel</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Now navigate to the project folder of the CGSE and pip install this project as an editable package. Do the same for the TS project.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>$ cd ~/git/plato-common-egse
+$ pip install -e .
+$ cd ~/git/plato-test-scripts
+$ pip install -e .</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>If you now check your installed packages, you will see that  both <code>cgse</code> and <code>cgse-ts</code> are installed as editable projects:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight nowrap"><code>$ pip list -v
+Package             Version        Editable project location                               Location                                                                Installer
+------------------- -------------- ------------------------------------------------------- ----------------------------------------------------------------------- ---------
+appnope             0.1.3                                                                  /Users/rik/.pyenv/versions/3.8.17/envs/ts-x/lib/python3.8/site-packages pip
+APScheduler         3.10.4                                                                 /Users/rik/.pyenv/versions/3.8.17/envs/ts-x/lib/python3.8/site-packages pip
+astropy             4.0                                                                    /Users/rik/.pyenv/versions/3.8.17/envs/ts-x/lib/python3.8/site-packages pip
+asttokens           2.4.0                                                                  /Users/rik/.pyenv/versions/3.8.17/envs/ts-x/lib/python3.8/site-packages pip
+backcall            0.2.0                                                                  /Users/rik/.pyenv/versions/3.8.17/envs/ts-x/lib/python3.8/site-packages pip
+backports.zoneinfo  0.2.1                                                                  /Users/rik/.pyenv/versions/3.8.17/envs/ts-x/lib/python3.8/site-packages pip
+bcrypt              4.0.1                                                                  /Users/rik/.pyenv/versions/3.8.17/envs/ts-x/lib/python3.8/site-packages pip
+certifi             2023.7.22                                                              /Users/rik/.pyenv/versions/3.8.17/envs/ts-x/lib/python3.8/site-packages pip
+cffi                1.15.1                                                                 /Users/rik/.pyenv/versions/3.8.17/envs/ts-x/lib/python3.8/site-packages pip
+cgse                2023.37.0      /Users/rik/Documents/PyCharmProjects/plato-common-egse  /Users/rik/.pyenv/versions/3.8.17/envs/ts-x/lib/python3.8/site-packages pip
+cgse-ts             2023.37.0      /Users/rik/Documents/PyCharmProjects/plato-test-scripts /Users/rik/.pyenv/versions/3.8.17/envs/ts-x/lib/python3.8/site-packages pip
+charset-normalizer  3.2.0                                                                  /Users/rik/.pyenv/versions/3.8.17/envs/ts-x/lib/python3.8/site-packages pip
+click               8.1.7                                                                  /Users/rik/.pyenv/versions/3.8.17/envs/ts-x/lib/python3.8/site-packages pip</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Make sure you are in the correct virtual environment when working on the CGSE or TS.</p>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="desktop-entry-install">12. Installation of Desktop Entries</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>This section explains how to install a Desktop icon for one of the GUI applications. In the screenshot below, you see the icon for the <em>Mechanical Positions Hexapod GUI</em> in the toolbar on the left side of the screen. Click that icon to start the Task GUI.</p>
@@ -2029,7 +2569,7 @@ $ update-desktop-database ~/.local/share/applications/</pre>
 </div>
 </div>
 <div class="sect1">
-<h2 id="install-vnc">12. Installation of a VNC Server</h2>
+<h2 id="install-vnc">13. Installation of a VNC Server</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>This section describes how to install a VNC Server on your client machine. The VNC server will run on <code>display=:0</code> and will allow remote users to connect to the main desktop that is used by the operator. This remote connection will then be able to provide support and in case of emergency take over the desktop from the operator.</p>
@@ -2038,9 +2578,9 @@ $ update-desktop-database ~/.local/share/applications/</pre>
 <p>We will install the packages <code>x11vnc</code> and <code>net-tools</code>, then we will configure the GNOME Display Manager (<code>gdm3</code>) and finally install and activate the X11 VNC service.</p>
 </div>
 <div class="sect2">
-<h3 id="_install_packages">12.1. Install packages</h3>
+<h3 id="_install_packages">13.1. Install packages</h3>
 <div class="paragraph">
-<p>Use the following command to install the necessary packages. You can do this as user 'plato-data' and when asked for a password, provide the password of that user<sup class="footnote">[<a id="_footnoteref_7" class="footnote" href="#_footnotedef_7" title="View footnote.">7</a>]</sup>.</p>
+<p>Use the following command to install the necessary packages. You can do this as user 'plato-data' and when asked for a password, provide the password of that user<sup class="footnote">[<a id="_footnoteref_11" class="footnote" href="#_footnotedef_11" title="View footnote.">11</a>]</sup>.</p>
 </div>
 <div class="listingblock">
 <div class="content">
@@ -2049,7 +2589,7 @@ $ update-desktop-database ~/.local/share/applications/</pre>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_configure_the_gnome_display_manager">12.2. Configure the GNOME Display Manager</h3>
+<h3 id="_configure_the_gnome_display_manager">13.2. Configure the GNOME Display Manager</h3>
 <div class="paragraph">
 <p>Edit the file <code>/etc/gdm3/custom.conf</code> to disable Wayland and enable automatic login by the 'plato-data' user. The changes are all in the daemon section of the configuration file. If some entries do not exist on your system, create them. You should edit this file as 'root' or with <code>sudo</code> under the 'plato-data' user.</p>
 </div>
@@ -2066,7 +2606,7 @@ AutomaticLogin = plato-data</pre>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_install_and_activate_the_vnc_service">12.3. Install and Activate the VNC service</h3>
+<h3 id="_install_and_activate_the_vnc_service">13.3. Install and Activate the VNC service</h3>
 <div class="paragraph">
 <p>To install the X11 VNC service under Systemd, create a file <code>/etc/systemd/system/x11vnc.service</code> with the following content.</p>
 </div>
@@ -2112,10 +2652,10 @@ $ sudo systemctl start x11vnc.service</pre>
 </div>
 </div>
 <div class="sect1">
-<h2 id="setup-environment">13. Setting up the environment</h2>
+<h2 id="setup-environment">14. Setting up the environment</h2>
 <div class="sectionbody">
 <div class="sect2">
-<h3 id="_environment_variables">13.1. Environment Variables</h3>
+<h3 id="_environment_variables_2">14.1. Environment Variables</h3>
 <div class="paragraph">
 <p>The environment variables that are used by the CGSE or test scripts are listed in the table below. It is best practice to define those variable in <code>~/.bash_profile</code> to have them loaded on login. With the below definitions, a standard <code>~/.bash_profile</code> would look like this (example taken from the CSL1 egse-client <em>daiquiri</em>)</p>
 </div>
@@ -2193,7 +2733,7 @@ alias cd2ts="cd ~/git/plato-test-scripts"</pre>
 <td class="tableblock halign-left valign-top"><p class="tableblock"><code>/cgse/lib/python/:/cgse/lib/python3.8/site-packages</code></p></td>
 </tr>
 <tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock">PYTHONPATH – egse-client<sup class="footnote">[<a id="_footnoteref_8" class="footnote" href="#_footnotedef_8" title="View footnote.">8</a>]</sup></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">PYTHONPATH – egse-client<sup class="footnote">[<a id="_footnoteref_12" class="footnote" href="#_footnotedef_12" title="View footnote.">12</a>]</sup></p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock"><code>/cgse/lib/python:/cgse/lib/python3.8/site-packages:/home/plato-data/git/plato-test-scripts/src:/home/plato-data/git/plato-test-scripts/venv/lib/python3.8/site-packages/</code></p></td>
 </tr>
 <tr>
@@ -2205,7 +2745,7 @@ alias cd2ts="cd ~/git/plato-test-scripts"</pre>
 <td class="tableblock halign-left valign-top"><p class="tableblock"><code>/data/&lt;SITE_ID&gt;/conf</code></p></td>
 </tr>
 <tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock">PLATO_CONF_REPO_LOCATION<sup class="footnote">[<a id="_footnoteref_9" class="footnote" href="#_footnotedef_9" title="View footnote.">9</a>]</sup></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">PLATO_CONF_REPO_LOCATION<sup class="footnote">[<a id="_footnoteref_13" class="footnote" href="#_footnotedef_13" title="View footnote.">13</a>]</sup></p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock"><code>/home/plato-data/git/plato-cgse-conf</code></p></td>
 </tr>
 <tr>
@@ -2229,14 +2769,14 @@ alias cd2ts="cd ~/git/plato-test-scripts"</pre>
 <td class="tableblock halign-left valign-top"><p class="tableblock"><code>/home/plato-data/git/plato-common-egse/src/egse/lib/ximc/libximc.framework</code></p></td>
 </tr>
 <tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock">PLATO_CAMERA_IS_EM<sup class="footnote">[<a id="_footnoteref_10" class="footnote" href="#_footnotedef_10" title="View footnote.">10</a>]</sup></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">PLATO_CAMERA_IS_EM<sup class="footnote">[<a id="_footnoteref_14" class="footnote" href="#_footnotedef_14" title="View footnote.">14</a>]</sup></p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock"><code>True</code> | <code>False</code></p></td>
 </tr>
 </tbody>
 </table>
 </div>
 <div class="sect2">
-<h3 id="_the_environment_for_systemd_services">13.2. The environment for Systemd services</h3>
+<h3 id="_the_environment_for_systemd_services">14.2. The environment for Systemd services</h3>
 <div class="paragraph">
 <p>For the CGSE core services, that are started by the Systemd on the egse-server, the environment variable are defined in the file <code>/cgse/env.txt</code>. The example below shows the content of this file from the CSL1 egse-server <em>strawberry</em></p>
 </div>
@@ -2255,13 +2795,13 @@ PLATO_LOG_FILE_LOCATION=/data/CSL1/log</pre>
 </div>
 </div>
 <div class="sect1">
-<h2 id="github-deploy">14. Setting up ssh access and GitHub deploy keys</h2>
+<h2 id="github-deploy">15. Setting up ssh access and GitHub deploy keys</h2>
 <div class="sectionbody">
 <div class="paragraph">
-<p>We have a semi-automatic update procedure in place for the Common-EGSE and the Test Scripts. This procedure will be described in <a href="#cgse-update">Chapter 15</a> and <a href="#test-scripts-update">Chapter 16</a>, but before we can use that we need to have the proper permissions to fetch changes from the different GitHub repositories without the need to provide our credentials every time. The best way to do that is to set up deploy keys on the GitHub repos.</p>
+<p>We have a semi-automatic update procedure in place for the Common-EGSE and the Test Scripts. This procedure will be described in <a href="#cgse-update">Chapter 16</a> and <a href="#test-scripts-update">Chapter 17</a>, but before we can use that we need to have the proper permissions to fetch changes from the different GitHub repositories without the need to provide our credentials every time. The best way to do that is to set up deploy keys on the GitHub repos.</p>
 </div>
 <div class="sect2">
-<h3 id="deploy-key-egse-server">14.1. Create a deploy key for the plato-common-egse</h3>
+<h3 id="deploy-key-egse-server">15.1. Create a deploy key for the plato-common-egse</h3>
 <div class="paragraph">
 <p>You can create an ssh key-pair for the CGSE with the following command. Execute this code on the <code>egse-server</code> as user <code>plato-data</code> in the folder <code>~/.ssh</code> (create the folder if it doesn&#8217;t exist).</p>
 </div>
@@ -2370,7 +2910,7 @@ $ git remote add updates git@repo-common-egse:IvS-KULeuven/plato-common-egse.git
 </div>
 </div>
 <div class="sect2">
-<h3 id="_create_a_deploy_key_for_the_plato_test_scripts">14.2. Create a deploy key for the plato-test-scripts</h3>
+<h3 id="_create_a_deploy_key_for_the_plato_test_scripts">15.2. Create a deploy key for the plato-test-scripts</h3>
 <div class="paragraph">
 <p>You can create an ssh key-pair for the test scripts with the following command. Execute this code on the <code>egse-client</code> as user <code>plato-data</code> in the folder <code>~/.ssh</code> (create the folder if it doesn&#8217;t exist).</p>
 </div>
@@ -2483,7 +3023,7 @@ $ python3 -m pip install -e .</pre>
 </div>
 </div>
 <div class="sect2">
-<h3 id="deploy-key-cgse-conf">14.3. Create a deploy key for the plato-cgse-conf</h3>
+<h3 id="deploy-key-cgse-conf">15.3. Create a deploy key for the plato-cgse-conf</h3>
 <div class="paragraph">
 <p>You can create an ssh key-pair for the plato-cgse-conf with the following command. Execute this code on the <code>egse-server</code> as user <code>plato-data</code> in the folder <code>~/.ssh</code> (create the folder if it doesn&#8217;t exist).</p>
 </div>
@@ -2556,7 +3096,7 @@ The key's randomart image is:
 </table>
 </div>
 <div class="paragraph">
-<p>Check the permissions of the <code>~/.ssh</code> directory and the files in it (see <a href="#deploy-key-egse-server">Section 14.1</a>).</p>
+<p>Check the permissions of the <code>~/.ssh</code> directory and the files in it (see <a href="#deploy-key-egse-server">Section 15.1</a>).</p>
 </div>
 <div class="paragraph">
 <p>If you have not yet cloned the plato-cgse-conf repository, you can do that now with the following command:</p>
@@ -2614,7 +3154,7 @@ $ git branch -vv
 </div>
 </div>
 <div class="sect1">
-<h2 id="cgse-update">15. Update the Common-EGSE to the latest release</h2>
+<h2 id="cgse-update">16. Update the Common-EGSE to the latest release</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>At some point you will be asked to update to a specific release. Make sure you are in the develop branch, then execute the following commands:</p>
@@ -2646,7 +3186,7 @@ CGSE installed version = 2022.3.4+cgse</pre>
 </div>
 </div>
 <div class="sect1">
-<h2 id="test-scripts-update">16. Update the Test Scripts to the latest release</h2>
+<h2 id="test-scripts-update">17. Update the Test Scripts to the latest release</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>When you need to update the test scripts on your <code>egse-client</code> machine, use the following commands:</p>
@@ -2681,7 +3221,7 @@ CAMTEST git version = 2022.3.6+TS-0-g602f139  <i class="conum" data-value="1"></
 </div>
 </div>
 <div class="sect1">
-<h2 id="python-package-update">17. Update Python packages</h2>
+<h2 id="python-package-update">18. Update Python packages</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Ideally, the installed third party packages should be the versions that are given the requirements file of the project. If the requirements file is updated, you can use the following command to update your installation:</p>
@@ -2725,7 +3265,7 @@ $ python3 -m pip install --upgrade -r requirements.txt</pre>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_data_propagation">18. Data Propagation</h2>
+<h2 id="_data_propagation">19. Data Propagation</h2>
 <div class="sectionbody">
 <div class="ulist checklist">
 <ul class="checklist">
@@ -2784,7 +3324,7 @@ $ python3 -m pip install --upgrade -r requirements.txt</pre>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_shared_libraries">19. Shared Libraries</h2>
+<h2 id="_shared_libraries">20. Shared Libraries</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>Some components use a shared library that is loaded by the Python interpreter. In order to load the library, the absolute path to the shared object file must be known. Different modules handle this in their own way.</p>
@@ -2809,10 +3349,10 @@ $ python3 -m pip install --upgrade -r requirements.txt</pre>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_installating_external_tools">20. Installating External Tools</h2>
+<h2 id="_installating_external_tools">21. Installating External Tools</h2>
 <div class="sectionbody">
 <div class="sect2">
-<h3 id="_cutelog_gui">20.1. Cutelog GUI</h3>
+<h3 id="_cutelog_gui">21.1. Cutelog GUI</h3>
 <div class="paragraph">
 <p>Cutelog is a GUI that can be installed in your virtual environment using <code>pip</code>.</p>
 </div>
@@ -2831,7 +3371,7 @@ $ python3 -m pip install --upgrade -r requirements.txt</pre>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_textualog_tui">20.2. Textualog TUI</h3>
+<h3 id="_textualog_tui">21.2. Textualog TUI</h3>
 <div class="paragraph">
 <p>Textualog is a terminal application (TUI) that allows you to inspect the log files in <code>$PLATO_LOG_FILE_LOCATION</code>. The package is open-source and can be installed in your virtual environment from PyPI using <code>pip</code>:</p>
 </div>
@@ -2841,7 +3381,7 @@ $ python3 -m pip install --upgrade -r requirements.txt</pre>
 </div>
 </div>
 <div class="paragraph">
-<p>Textualog is extremely useful to inspect and follow logging messages in a remote terminal. It is inpired on the <code>cutelog</code> app and developed specifically for the remote users. After installation, the current log file can be inspected with the following command<sup class="footnote">[<a id="_footnoteref_11" class="footnote" href="#_footnotedef_11" title="View footnote.">11</a>]</sup>:</p>
+<p>Textualog is extremely useful to inspect and follow logging messages in a remote terminal. It is inpired on the <code>cutelog</code> app and developed specifically for the remote users. After installation, the current log file can be inspected with the following command<sup class="footnote">[<a id="_footnoteref_15" class="footnote" href="#_footnotedef_15" title="View footnote.">15</a>]</sup>:</p>
 </div>
 <div class="listingblock">
 <div class="content">
@@ -2878,72 +3418,165 @@ $ python3 -m pip install --upgrade -r requirements.txt</pre>
 <a href="#_footnoteref_6">6</a>. The latest release tag can be found on the GitHub pages of the repository
 </div>
 <div class="footnote" id="_footnotedef_7">
-<a href="#_footnoteref_7">7</a>. The 'plato-data' user is supposed to have sudo rights.
+<a href="#_footnoteref_7">7</a>. I will use the term <em>virtual environment</em> when I&#8217;m talking about a Python environment where packages are installed at a specific location for a specific Python version.
 </div>
 <div class="footnote" id="_footnotedef_8">
-<a href="#_footnoteref_8">8</a>. The PYTHONPATH on the client is different because it also has the plato-test-scripts installed, so in addition to the CGSE packages, it needs to have access to the test scripts Python code and packages that were installed as part of the plato-test-scripts virtual environment.
+<a href="#_footnoteref_8">8</a>. I will use the term <em>shell environment</em> when talking about an environment in your Terminal, i.e. usually bash or zsh where your environment variables are defined and you execute commands.
 </div>
 <div class="footnote" id="_footnotedef_9">
-<a href="#_footnoteref_9">9</a>. This variable only needs to be defined in the <code>/cgse/env.txt</code> file on the egse-server.
+<a href="#_footnoteref_9">9</a>. If you don&#8217;t have a <code>~/.bashrc</code> file, append the lines to your <code>~/.bash_profile</code> file.
 </div>
 <div class="footnote" id="_footnotedef_10">
-<a href="#_footnoteref_10">10</a>. PLATO_CAMERA_IS_EM was introduced in release 2022.3.2+CGSE to handle the difference between EM and pFM camera with respect to the format of image and housekeeping data provided by the FPGA. The EM camera data was in twos-complement.
+<a href="#_footnoteref_10">10</a>. {SITE} shall be replaced by the SITE_ID of your test house.
 </div>
 <div class="footnote" id="_footnotedef_11">
-<a href="#_footnoteref_11">11</a>. the textualog package might already installed on the egse-server at the test houses.
+<a href="#_footnoteref_11">11</a>. The 'plato-data' user is supposed to have sudo rights.
+</div>
+<div class="footnote" id="_footnotedef_12">
+<a href="#_footnoteref_12">12</a>. The PYTHONPATH on the client is different because it also has the plato-test-scripts installed, so in addition to the CGSE packages, it needs to have access to the test scripts Python code and packages that were installed as part of the plato-test-scripts virtual environment.
+</div>
+<div class="footnote" id="_footnotedef_13">
+<a href="#_footnoteref_13">13</a>. This variable only needs to be defined in the <code>/cgse/env.txt</code> file on the egse-server.
+</div>
+<div class="footnote" id="_footnotedef_14">
+<a href="#_footnoteref_14">14</a>. PLATO_CAMERA_IS_EM was introduced in release 2022.3.2+CGSE to handle the difference between EM and pFM camera with respect to the format of image and housekeeping data provided by the FPGA. The EM camera data was in twos-complement.
+</div>
+<div class="footnote" id="_footnotedef_15">
+<a href="#_footnoteref_15">15</a>. the textualog package might already installed on the egse-server at the test houses.
 </div>
 </div>
 <div id="footer">
 <div id="footer-text">
-Version 1.4<br>
-Last updated 2023-06-19 16:38:14 +0200
+Version 1.5<br>
+Last updated 2023-09-15 22:05:05 +0200
 </div>
 </div>
 <script>
-/*! Asciidoctor Tabs | Copyright (c) 2018-present Dan Allen | MIT License */
-;(function () {
+;(function () { /*! Asciidoctor Tabs | Copyright (c) 2018-present Dan Allen | MIT License */
   'use strict'
 
-  var hash = window.location.hash
-  find('.tabset').forEach(function (tabset) {
-    var active
-    var tabs = tabset.querySelector('.tabs')
-    if (tabs) {
-      var first
-      find('li', tabs).forEach(function (tab, idx) {
-        var id = (tab.querySelector('a[id]') || tab).id
-        if (!id) return
-        var pane = tabset.querySelector('.tab-pane[aria-labelledby~="' + id + '"]')
-        if (!pane) return
-        if (!idx) first = { tab: tab, pane: pane }
-        if (!active && hash === '#' + id && (active = true)) {
-          tab.classList.add('is-active')
-          if (pane) pane.classList.add('is-active')
-        } else if (!idx) {
-          tab.classList.remove('is-active')
-          if (pane) pane.classList.remove('is-active')
+  var config = (document.currentScript || {}).dataset || {}
+  var forEach = Array.prototype.forEach
+
+  init(document.querySelectorAll('.tabs'))
+
+  function init (tabsBlocks) {
+    if (!tabsBlocks.length) return
+    forEach.call(tabsBlocks, function (tabs) {
+      var syncIds = tabs.classList.contains('is-sync') ? {} : undefined
+      var tablist = tabs.querySelector('.tablist ul')
+      tablist.setAttribute('role', 'tablist')
+      var start
+      forEach.call(tablist.querySelectorAll('li'), function (tab, idx) {
+        tab.tabIndex = -1
+        tab.setAttribute('role', tab.classList.add('tab') || 'tab')
+        var id, anchor, syncId
+        if (!(id = tab.id) && (anchor = tab.querySelector('a[id]'))) {
+          id = tab.id = anchor.parentNode.removeChild(anchor).id
         }
-        tab.addEventListener('click', activateTab.bind({ tabset: tabset, tab: tab, pane: pane }))
+        var panel = id && tabs.querySelector('.tabpanel[aria-labelledby~="' + id + '"]')
+        if (!panel) return idx ? undefined : toggleSelected(tab, true) // invalid state
+        syncIds && (((syncId = tab.textContent.trim()) in syncIds) ? (syncId = undefined) : true) &&
+          (syncIds[(tab.dataset.syncId = syncId)] = tab)
+        idx || (syncIds && (start = { tab: tab, panel: panel })) ? toggleHidden(panel, true) : toggleSelected(tab, true)
+        tab.setAttribute('aria-controls', panel.id)
+        panel.setAttribute('role', 'tabpanel')
+        var onClick = syncId === undefined ? activateTab : activateTabSync
+        tab.addEventListener('click', onClick.bind({ tabs: tabs, tab: tab, panel: panel }))
       })
-      if (!active && first) {
-        first.tab.classList.add('is-active')
-        if (first.pane) first.pane.classList.add('is-active')
+      if (!tabs.closest('.tabpanel')) {
+        forEach.call(tabs.querySelectorAll('.tabpanel table.tableblock'), function (table) {
+          var container = Object.assign(document.createElement('div'), { className: 'tablecontainer' })
+          table.parentNode.insertBefore(container, table).appendChild(table)
+        })
       }
-    }
-    tabset.classList.remove('is-loading')
-  })
+      if (start) {
+        var syncGroupId
+        for (var i = 0, lst = tabs.classList, len = lst.length, className; i !== len; i++) {
+          if (!(className = lst.item(i)).startsWith('data-sync-group-id=')) continue
+          tabs.dataset.syncGroupId = syncGroupId = lst.remove(className) || className.slice(19).replace(/\u00a0/g, ' ')
+          break
+        }
+        if (syncGroupId === undefined) tabs.dataset.syncGroupId = syncGroupId = Object.keys(syncIds).sort().join('|')
+        var preferredSyncId = 'syncStorageKey' in config &&
+          window[(config.syncStorageScope || 'local') + 'Storage'].getItem(config.syncStorageKey + '-' + syncGroupId)
+        var tab = preferredSyncId && syncIds[preferredSyncId]
+        tab && Object.assign(start, { tab: tab, panel: document.getElementById(tab.getAttribute('aria-controls')) })
+        toggleSelected(start.tab, true) || toggleHidden(start.panel, false)
+      }
+    })
+    onHashChange()
+    toggleClassOnEach(tabsBlocks, 'is-loading', 'remove')
+    window.setTimeout(toggleClassOnEach.bind(null, tabsBlocks, 'is-loaded', 'add'), 0)
+    window.addEventListener('hashchange', onHashChange)
+  }
 
   function activateTab (e) {
     var tab = this.tab
-    var pane = this.pane
-    find('.tabs li, .tab-pane', this.tabset).forEach(function (it) {
-      it === tab || it === pane ? it.classList.add('is-active') : it.classList.remove('is-active')
+    var tabs = this.tabs || (this.tabs = tab.closest('.tabs'))
+    var panel = this.panel || (this.panel = document.getElementById(tab.getAttribute('aria-controls')))
+    querySelectorWithSiblings(tabs, '.tablist .tab', 'tab').forEach(function (el) {
+      toggleSelected(el, el === tab)
     })
+    querySelectorWithSiblings(tabs, '.tabpanel', 'tabpanel').forEach(function (el) {
+      toggleHidden(el, el !== panel)
+    })
+    if (!this.isSync && 'syncStorageKey' in config && 'syncGroupId' in tabs.dataset) {
+      var storageKey = config.syncStorageKey + '-' + tabs.dataset.syncGroupId
+      window[(config.syncStorageScope || 'local') + 'Storage'].setItem(storageKey, tab.dataset.syncId)
+    }
+    if (!e) return
+    var loc = window.location
+    var hashIdx = loc.hash ? loc.href.indexOf('#') : -1
+    if (~hashIdx) window.history.replaceState(null, '', loc.href.slice(0, hashIdx))
     e.preventDefault()
   }
 
-  function find (selector, from) {
-    return Array.prototype.slice.call((from || document).querySelectorAll(selector))
+  function activateTabSync (e) {
+    activateTab.call(this, e)
+    var thisTabs = this.tabs
+    var thisTab = this.tab
+    var initialY = thisTabs.getBoundingClientRect().y
+    forEach.call(document.querySelectorAll('.tabs'), function (tabs) {
+      if (tabs === thisTabs || tabs.dataset.syncGroupId !== thisTabs.dataset.syncGroupId) return
+      querySelectorWithSiblings(tabs, '.tablist .tab', 'tab').forEach(function (tab) {
+        if (tab.dataset.syncId === thisTab.dataset.syncId) activateTab.call({ tabs: tabs, tab: tab, isSync: true })
+      })
+    })
+    var shiftedBy = thisTabs.getBoundingClientRect().y - initialY
+    if (shiftedBy && (shiftedBy = Math.round(shiftedBy))) window.scrollBy({ top: shiftedBy, behavior: 'instant' })
+  }
+
+  function querySelectorWithSiblings (scope, selector, siblingClass) {
+    var el = scope.querySelector(selector)
+    if (!el) return []
+    var result = [el]
+    while ((el = el.nextElementSibling) && el.classList.contains(siblingClass)) result.push(el)
+    return result
+  }
+
+  function toggleClassOnEach (elements, className, method) {
+    forEach.call(elements, function (el) {
+      el.classList[method](className)
+    })
+  }
+
+  function toggleHidden (el, state) {
+    el.classList[(el.hidden = state) ? 'add' : 'remove']('is-hidden')
+  }
+
+  function toggleSelected (el, state) {
+    el.setAttribute('aria-selected', '' + state)
+    el.classList[state ? 'add' : 'remove']('is-selected')
+    el.tabIndex = state ? 0 : -1
+  }
+
+  function onHashChange () {
+    var id = window.location.hash.slice(1)
+    if (!id) return
+    var tab = document.getElementById(~id.indexOf('%') ? decodeURIComponent(id) : id)
+    if (!(tab && tab.classList.contains('tab'))) return
+    'syncId' in tab.dataset ? activateTabSync.call({ tab: tab }) : activateTab.call({ tab: tab })
   }
 })()
 </script>

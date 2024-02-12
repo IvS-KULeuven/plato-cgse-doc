@@ -83,6 +83,20 @@ class StorageControlServer(ControlServer):
 
         self.poller.register(self.dev_ctrl_cmd_sock, zmq.POLLIN)
 
+        from egse.confman import ConfigurationManagerProxy, is_configuration_manager_active
+        from egse.listener import EVENT_ID
+
+        self.register_as_listener(
+            proxy=ConfigurationManagerProxy,
+            listener={&#39;name&#39;: &#39;Storage CS&#39;, &#39;proxy&#39;: StorageProxy, &#39;event_id&#39;: EVENT_ID.SETUP}
+        )
+
+        # NOTE:
+        #     Since the CM CS is started after the SM CS in the normal startup sequence, delay the task to load
+        #     the Setup until after the CM CS has been properly started. We do that now with a delay time of 30s,
+        #     but we might in the future use a function returning a boolean, until...
+        self.schedule_task(self.device_protocol.controller.load_setup, after=10.0, when=is_configuration_manager_active)
+
     def before_serve(self):
 
         self.scheduler = BackgroundScheduler(timezone=utc)
@@ -92,7 +106,10 @@ class StorageControlServer(ControlServer):
         start_http_server(CTRL_SETTINGS.METRICS_PORT)
 
     def after_serve(self):
+        from egse.confman import ConfigurationManagerProxy
+
         self.scheduler.shutdown()
+        self.unregister_as_listener(proxy=ConfigurationManagerProxy, listener={&#39;name&#39;: &#39;Storage CS&#39;})
 
     def get_communication_protocol(self):
         return CTRL_SETTINGS.PROTOCOL
@@ -172,6 +189,7 @@ def status(full):
             rich.print(f&#34;  Commanding port: {sm.get_commanding_port()}&#34;)
             rich.print(f&#34;  Service port: {sm.get_service_port()}&#34;)
             rich.print(f&#34;  Storage location: {sm.get_storage_location()}&#34;)
+            rich.print(f&#34;  Loaded Setup: {sm.get_loaded_setup_id()}&#34;)
             rich.print(f&#34;  Registrations: {sm.get_registry_names()}&#34;)
             if full:
                 rich.print(&#34;Filenames for all registered items:&#34;)
@@ -187,7 +205,6 @@ def status(full):
                 rich.print(f&#34;Total disk space: {humanize_bytes(total)}&#34;)
                 rich.print(f&#34;Used disk space: {humanize_bytes(used)} ({(used / total * 100):.2f}%)&#34;)
                 rich.print(f&#34;Free disk space: {humanize_bytes(free)} ({(free / total * 100):.2f}%)&#34;)
-
     else:
         rich.print(&#34;  Status: [red]not active&#34;)
 
@@ -221,7 +238,7 @@ def check_prerequisites():
         )
         fails += 1
 
-    logger.debug(f&#34;location = {location}&#34;)
+    # logger.debug(f&#34;Storage location for data = {location}&#34;)
 
     daily_dir = location / &#34;daily&#34;
     obs_dir = location / &#34;obs&#34;
@@ -293,7 +310,7 @@ if __name__ == &#34;__main__&#34;:
         )
         fails += 1
 
-    logger.debug(f&#34;location = {location}&#34;)
+    # logger.debug(f&#34;Storage location for data = {location}&#34;)
 
     daily_dir = location / &#34;daily&#34;
     obs_dir = location / &#34;obs&#34;
@@ -345,6 +362,20 @@ if __name__ == &#34;__main__&#34;:
 
         self.poller.register(self.dev_ctrl_cmd_sock, zmq.POLLIN)
 
+        from egse.confman import ConfigurationManagerProxy, is_configuration_manager_active
+        from egse.listener import EVENT_ID
+
+        self.register_as_listener(
+            proxy=ConfigurationManagerProxy,
+            listener={&#39;name&#39;: &#39;Storage CS&#39;, &#39;proxy&#39;: StorageProxy, &#39;event_id&#39;: EVENT_ID.SETUP}
+        )
+
+        # NOTE:
+        #     Since the CM CS is started after the SM CS in the normal startup sequence, delay the task to load
+        #     the Setup until after the CM CS has been properly started. We do that now with a delay time of 30s,
+        #     but we might in the future use a function returning a boolean, until...
+        self.schedule_task(self.device_protocol.controller.load_setup, after=10.0, when=is_configuration_manager_active)
+
     def before_serve(self):
 
         self.scheduler = BackgroundScheduler(timezone=utc)
@@ -354,7 +385,10 @@ if __name__ == &#34;__main__&#34;:
         start_http_server(CTRL_SETTINGS.METRICS_PORT)
 
     def after_serve(self):
+        from egse.confman import ConfigurationManagerProxy
+
         self.scheduler.shutdown()
+        self.unregister_as_listener(proxy=ConfigurationManagerProxy, listener={&#39;name&#39;: &#39;Storage CS&#39;})
 
     def get_communication_protocol(self):
         return CTRL_SETTINGS.PROTOCOL
@@ -384,7 +418,10 @@ if __name__ == &#34;__main__&#34;:
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def after_serve(self):
-    self.scheduler.shutdown()</code></pre>
+    from egse.confman import ConfigurationManagerProxy
+
+    self.scheduler.shutdown()
+    self.unregister_as_listener(proxy=ConfigurationManagerProxy, listener={&#39;name&#39;: &#39;Storage CS&#39;})</code></pre>
 </details>
 </dd>
 <dt id="egse.storage.storage_cs.StorageControlServer.before_serve"><code class="name flex">
@@ -462,10 +499,15 @@ if __name__ == &#34;__main__&#34;:
 <ul class="hlist">
 <li><code><b><a title="egse.control.ControlServer" href="../control.html#egse.control.ControlServer">ControlServer</a></b></code>:
 <ul class="hlist">
+<li><code><a title="egse.control.ControlServer.handle_scheduled_tasks" href="../control.html#egse.control.ControlServer.handle_scheduled_tasks">handle_scheduled_tasks</a></code></li>
+<li><code><a title="egse.control.ControlServer.notify_listeners" href="../control.html#egse.control.ControlServer.notify_listeners">notify_listeners</a></code></li>
+<li><code><a title="egse.control.ControlServer.register_as_listener" href="../control.html#egse.control.ControlServer.register_as_listener">register_as_listener</a></code></li>
 <li><code><a title="egse.control.ControlServer.register_to_storage_manager" href="../control.html#egse.control.ControlServer.register_to_storage_manager">register_to_storage_manager</a></code></li>
+<li><code><a title="egse.control.ControlServer.schedule_task" href="../control.html#egse.control.ControlServer.schedule_task">schedule_task</a></code></li>
 <li><code><a title="egse.control.ControlServer.set_delay" href="../control.html#egse.control.ControlServer.set_delay">set_delay</a></code></li>
 <li><code><a title="egse.control.ControlServer.set_hk_delay" href="../control.html#egse.control.ControlServer.set_hk_delay">set_hk_delay</a></code></li>
 <li><code><a title="egse.control.ControlServer.store_housekeeping_information" href="../control.html#egse.control.ControlServer.store_housekeeping_information">store_housekeeping_information</a></code></li>
+<li><code><a title="egse.control.ControlServer.unregister_as_listener" href="../control.html#egse.control.ControlServer.unregister_as_listener">unregister_as_listener</a></code></li>
 <li><code><a title="egse.control.ControlServer.unregister_from_storage_manager" href="../control.html#egse.control.ControlServer.unregister_from_storage_manager">unregister_from_storage_manager</a></code></li>
 </ul>
 </li>

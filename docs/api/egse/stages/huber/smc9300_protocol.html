@@ -38,6 +38,7 @@ from egse.metrics import define_metrics
 from egse.process import SubProcess
 from egse.protocol import DynamicCommandProtocol
 from egse.settings import Settings
+from egse.setup import load_setup
 from egse.stages.huber.smc9300 import HuberSMC9300Controller
 from egse.stages.huber.smc9300 import HuberSMC9300Interface
 from egse.system import format_datetime
@@ -55,10 +56,11 @@ class HuberSMC9300Protocol(DynamicCommandProtocol):
 
         self.huber_sim: SubProcess
         self.huber = HuberSMC9300Interface
+        setup = load_setup()
 
         storage_mnemonic = self.get_control_server().get_storage_mnemonic()
 
-        self.hk_conversion_table = read_conversion_dict(storage_mnemonic, use_site=True)
+        self.hk_conversion_table = read_conversion_dict(storage_mnemonic, use_site=True, setup=setup)
 
         if Settings.simulation_mode():
             # In simulation mode, we start the simulator process and have the control server
@@ -81,7 +83,7 @@ class HuberSMC9300Protocol(DynamicCommandProtocol):
                 &#34;Couldn&#39;t establish a connection to the HUBER Stages, check the log messages.&#34;)
             MODULE_LOGGER.debug(f&#34;{exc = }&#34;)
 
-        self.metrics = define_metrics(storage_mnemonic, use_site=True)
+        self.metrics = define_metrics(storage_mnemonic, use_site=True, setup=setup)
 
     def quit(self):
         if self.huber_sim is not None:
@@ -166,10 +168,11 @@ update of its state by calling the <code>update_connection_state()</code> method
 
         self.huber_sim: SubProcess
         self.huber = HuberSMC9300Interface
+        setup = load_setup()
 
         storage_mnemonic = self.get_control_server().get_storage_mnemonic()
 
-        self.hk_conversion_table = read_conversion_dict(storage_mnemonic, use_site=True)
+        self.hk_conversion_table = read_conversion_dict(storage_mnemonic, use_site=True, setup=setup)
 
         if Settings.simulation_mode():
             # In simulation mode, we start the simulator process and have the control server
@@ -192,7 +195,7 @@ update of its state by calling the <code>update_connection_state()</code> method
                 &#34;Couldn&#39;t establish a connection to the HUBER Stages, check the log messages.&#34;)
             MODULE_LOGGER.debug(f&#34;{exc = }&#34;)
 
-        self.metrics = define_metrics(storage_mnemonic, use_site=True)
+        self.metrics = define_metrics(storage_mnemonic, use_site=True, setup=setup)
 
     def quit(self):
         if self.huber_sim is not None:

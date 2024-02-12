@@ -225,11 +225,8 @@ from typing import Any
 from typing import Optional
 from typing import Union
 
-import pandas
 import rich
 import yaml
-from deepdiff import DeepDiff
-from numpy import genfromtxt
 from rich.tree import Tree
 
 from egse.control import Failure
@@ -266,6 +263,8 @@ def _load_class(class_name: str):
 
 def _load_csv(resource_name: str):
     &#34;&#34;&#34;Find and return the content of a CSV file.&#34;&#34;&#34;
+    from numpy import genfromtxt
+
     parts = resource_name[5:].rsplit(&#34;/&#34;, 1)
     [in_dir, fn] = parts if len(parts) &gt; 1 else [None, parts[0]]
     conf_location = os.environ[&#39;PLATO_CONF_DATA_LOCATION&#39;]
@@ -328,6 +327,8 @@ def _load_pandas(resource_name: str, separator: str):
         - resource_name: Filename, preceded by &#34;pandas//&#34;.
         - separator: Column separator.
     &#34;&#34;&#34;
+    import pandas
+
     parts = resource_name[8:].rsplit(&#34;/&#34;, 1)
     [in_dir, fn] = parts if len(parts) &gt; 1 else [None, parts[0]]
     conf_location = os.environ[&#39;PLATO_CONF_DATA_LOCATION&#39;]
@@ -361,19 +362,34 @@ def _parse_filename_for_setup_id(filename: str):
         return None
 
 
-def get_last_setup_id_file_path():
-    return Path(
-        os.environ.get(&#34;PLATO_DATA_STORAGE_LOCATION&#34;) or &#34;~&#34;).expanduser().resolve() / &#34;last_setup_id.txt&#34;
+def get_last_setup_id_file_path(site_id: str = None) -&gt; Path:
+    &#34;&#34;&#34;
+    Return the fully expanded file path of the file containing the last loaded Setup in the configuration manager.
+
+    Args:
+        site_id: The SITE identifier
+
+    &#34;&#34;&#34;
+    from egse.env import get_data_storage_location
+    from egse.settings import Settings
+
+    site_id = site_id or Settings.load(&#34;SITE&#34;).ID
+    location = get_data_storage_location(site_id=site_id)
+
+    return Path(location).expanduser().resolve() / &#34;last_setup_id.txt&#34;
 
 
-def load_last_setup_id() -&gt; int:
+def load_last_setup_id(site_id: str = None) -&gt; int:
     &#34;&#34;&#34;
     Returns the ID of the last Setup that was used by the configuration manager.
     The file shall only contain the Setup ID which must be an integer on the first line of the file.
     If no such ID can be found, the Setup ID = 0 will be returned.
+
+    Args:
+        site_id: The SITE identifier
     &#34;&#34;&#34;
 
-    last_setup_id_file_path = get_last_setup_id_file_path()
+    last_setup_id_file_path = get_last_setup_id_file_path(site_id=site_id)
     try:
         with last_setup_id_file_path.open(&#39;r&#39;) as fd:
             setup_id = int(fd.read().strip())
@@ -384,10 +400,17 @@ def load_last_setup_id() -&gt; int:
     return setup_id
 
 
-def save_last_setup_id(setup_id: int | str):
-    &#34;&#34;&#34;Makes the given Setup ID persistent, so it can be restored upon the next startup.&#34;&#34;&#34;
+def save_last_setup_id(setup_id: int | str, site_id: str = None):
+    &#34;&#34;&#34;
+    Makes the given Setup ID persistent, so it can be restored upon the next startup.
 
-    last_setup_id_file_path = get_last_setup_id_file_path()
+    Args:
+        setup_id: The Setup identifier to be saved
+        site_id: The SITE identifier
+
+    &#34;&#34;&#34;
+
+    last_setup_id_file_path = get_last_setup_id_file_path(site_id=site_id)
     with last_setup_id_file_path.open(&#39;w&#39;) as fd:
         fd.write(f&#34;{int(setup_id):d}&#34;)
 
@@ -812,6 +835,7 @@ class Setup(NavigableDict):
     def compare(setup_1: NavigableDict, setup_2: NavigableDict):
         from egse.device import DeviceInterface
         from egse.dpu import DPUSimulator
+        from deepdiff import DeepDiff
 
         return DeepDiff(setup_1, setup_2, exclude_types={DeviceInterface, DPUSimulator})
 
@@ -964,13 +988,14 @@ def get_setup(setup_id: int = None):
     from egse.confman import ConfigurationManagerProxy
 
     try:
-        with ConfigurationManagerProxy() as proxy:
+        with ConfigurationManagerProxy(timeout=1000) as proxy:
             setup = proxy.get_setup(setup_id)
         return setup
     except ConnectionError as exc:
-        print(
-            &#34;Could not make a connection with the Configuration Manager, no Setup returned.&#34;
+        MODULE_LOGGER.warning(
+            &#34;Could not make a connection with the Configuration Manager, no Setup retrieved, None returned.&#34;
         )
+        return None
 
 
 def _check_conditions_for_get_path_of_setup_file(site_id: str) -&gt; Path:
@@ -1301,13 +1326,14 @@ this within the test script, but use the <code>GlobalState.setup</code> property
     from egse.confman import ConfigurationManagerProxy
 
     try:
-        with ConfigurationManagerProxy() as proxy:
+        with ConfigurationManagerProxy(timeout=1000) as proxy:
             setup = proxy.get_setup(setup_id)
         return setup
     except ConnectionError as exc:
-        print(
-            &#34;Could not make a connection with the Configuration Manager, no Setup returned.&#34;
-        )</code></pre>
+        MODULE_LOGGER.warning(
+            &#34;Could not make a connection with the Configuration Manager, no Setup retrieved, None returned.&#34;
+        )
+        return None</code></pre>
 </details>
 </dd>
 <dt id="egse.setup.list_setups"><code class="name flex">
@@ -1366,24 +1392,32 @@ CSL at position 2, use:</p>
 </details>
 </dd>
 <dt id="egse.setup.load_last_setup_id"><code class="name flex">
-<span>def <span class="ident">load_last_setup_id</span></span>(<span>) ‑> int</span>
+<span>def <span class="ident">load_last_setup_id</span></span>(<span>site_id: str = None) ‑> int</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Returns the ID of the last Setup that was used by the configuration manager.
 The file shall only contain the Setup ID which must be an integer on the first line of the file.
-If no such ID can be found, the Setup ID = 0 will be returned.</p></div>
+If no such ID can be found, the Setup ID = 0 will be returned.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>site_id</code></strong></dt>
+<dd>The SITE identifier</dd>
+</dl></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def load_last_setup_id() -&gt; int:
+<pre><code class="python">def load_last_setup_id(site_id: str = None) -&gt; int:
     &#34;&#34;&#34;
     Returns the ID of the last Setup that was used by the configuration manager.
     The file shall only contain the Setup ID which must be an integer on the first line of the file.
     If no such ID can be found, the Setup ID = 0 will be returned.
+
+    Args:
+        site_id: The SITE identifier
     &#34;&#34;&#34;
 
-    last_setup_id_file_path = get_last_setup_id_file_path()
+    last_setup_id_file_path = get_last_setup_id_file_path(site_id=site_id)
     try:
         with last_setup_id_file_path.open(&#39;r&#39;) as fd:
             setup_id = int(fd.read().strip())
@@ -1485,18 +1519,32 @@ configuration manager.</p></div>
 </details>
 </dd>
 <dt id="egse.setup.save_last_setup_id"><code class="name flex">
-<span>def <span class="ident">save_last_setup_id</span></span>(<span>setup_id: int | str)</span>
+<span>def <span class="ident">save_last_setup_id</span></span>(<span>setup_id: int | str, site_id: str = None)</span>
 </code></dt>
 <dd>
-<div class="desc"><p>Makes the given Setup ID persistent, so it can be restored upon the next startup.</p></div>
+<div class="desc"><p>Makes the given Setup ID persistent, so it can be restored upon the next startup.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>setup_id</code></strong></dt>
+<dd>The Setup identifier to be saved</dd>
+<dt><strong><code>site_id</code></strong></dt>
+<dd>The SITE identifier</dd>
+</dl></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def save_last_setup_id(setup_id: int | str):
-    &#34;&#34;&#34;Makes the given Setup ID persistent, so it can be restored upon the next startup.&#34;&#34;&#34;
+<pre><code class="python">def save_last_setup_id(setup_id: int | str, site_id: str = None):
+    &#34;&#34;&#34;
+    Makes the given Setup ID persistent, so it can be restored upon the next startup.
 
-    last_setup_id_file_path = get_last_setup_id_file_path()
+    Args:
+        setup_id: The Setup identifier to be saved
+        site_id: The SITE identifier
+
+    &#34;&#34;&#34;
+
+    last_setup_id_file_path = get_last_setup_id_file_path(site_id=site_id)
     with last_setup_id_file_path.open(&#39;w&#39;) as fd:
         fd.write(f&#34;{int(setup_id):d}&#34;)</code></pre>
 </details>
@@ -1724,6 +1772,7 @@ test setup and the Camera Under Test (CUT).</p>
     def compare(setup_1: NavigableDict, setup_2: NavigableDict):
         from egse.device import DeviceInterface
         from egse.dpu import DPUSimulator
+        from deepdiff import DeepDiff
 
         return DeepDiff(setup_1, setup_2, exclude_types={DeviceInterface, DPUSimulator})
 
@@ -1848,6 +1897,7 @@ test setup and the Camera Under Test (CUT).</p>
 def compare(setup_1: NavigableDict, setup_2: NavigableDict):
     from egse.device import DeviceInterface
     from egse.dpu import DPUSimulator
+    from deepdiff import DeepDiff
 
     return DeepDiff(setup_1, setup_2, exclude_types={DeviceInterface, DPUSimulator})</code></pre>
 </details>

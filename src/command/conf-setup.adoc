@@ -95,6 +95,14 @@ NavigableDict
 │   ├── 2: Removed TCS block
 ----
 
+You can check the version of the Setup with the following command:
+
+----
+>>> print(setup.get_id())
+00068
+----
+The number printed on your system will be different.
+
 === Available Setups
 
 Setups will be available in the form of YAML files that are stored in the `plato-cgse-conf` repository and are located (probably) at `~/git` where the repos are kept.
@@ -180,6 +188,27 @@ In python:
 >>> from camtest import load_setup
 >>> setup = load_setup(7)
 ----
+
+The above command will load the Setup in the configuration manager and also in the Python console you used to execute the `load_setup()` command.
+
+WARNING: Loading or submitting a Setup will have an effect on the configuration manager. The Setup is however NOT automatically propagated to other components in the system like the device drivers or the synoptics manager. Therefore, always check if you have the right Setup available, especially in the QtConsole.
+
+You can check which Setup is loaded in the configuration manager with
+----
+$ cm_cs status
+Configuration manager:
+  Status: active
+  Site ID: CSL2
+  No observation running
+  Setup loaded: 00068
+  Hostname: 192.168.0.163
+  Monitoring port: 6001
+  Commanding port: 6000
+  Service port: 6002
+  Listeners: Storage CS
+----
+Also the process manager (`pm_ui`) and the Operator GUI (e.g. `csl_ui`) indicate which Setup is loaded, but keep in mind that this is only true for that particular process and is not necessarily propagated to all processes running in this distributed environment.
+
 
 === Inspecting, accessing, and modifying a Setup
 

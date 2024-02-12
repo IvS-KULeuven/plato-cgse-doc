@@ -26,26 +26,17 @@
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">import os
-import re
-import logging
-import psutil
+<pre><code class="python">import logging
+import os
 import subprocess
-
-from threading import Thread
 from datetime import datetime
 
-import yaml
-
-from PyQt5.QtWidgets import QMessageBox, QApplication, QDialog, QLabel, QVBoxLayout
-
-from egse.settings import Settings
-from egse.setup import get_setup
-from egse.system import replace_environment_variable
-from egse.control import Success
-from egse.fdir.fdir_remote_interface import FdirRemoteInterface
-from egse.fdir.fdir_remote import FdirRemoteProxy
 from egse.fdir import generate_popup
+from egse.fdir.fdir_remote import FdirRemoteProxy
+from egse.fdir.fdir_remote_interface import FdirRemoteInterface
+from egse.settings import Settings
+from egse.setup import load_setup
+from egse.system import replace_environment_variable
 
 logger = logging.getLogger(__name__)
 
@@ -63,88 +54,27 @@ class FdirManagerController(FdirRemoteInterface):
 
         self._state = &#34;&#34;
         self._priority = -1
-        self._local_pids = []
-        self._remote_pids = []
         self._storage_path = replace_environment_variable(CTRL_SETTINGS.RECOVERY_SCRIPT_LOCATION)
         self._logging_path = replace_environment_variable(CTRL_SETTINGS.LOGGING_LOCATION)
         self._remote_proxy = FdirRemoteProxy()
         # Check if the remote is online.
         if not self._remote_proxy.is_cs_connected():
             logger.warning(&#34;FDIR Manager could not connect to the FDIR remote CS&#34;)
-            # raise RuntimeError(&#34;FDIR Manager could not connect the the FDIR Remote CS&#34;)
         else:
             logger.info(f&#34;connected to remote CS @ {REMOTE_SETTINGS.HOSTNAME}&#34;)
 
         # Try to load fdir table.
         try:
-            table_path = self._storage_path + &#34;/fdir_table.yaml&#34;
-            with open(table_path) as f:
-                self._fdir_table = yaml.load(f, Loader=yaml.Loader)
-        except Exception as e:
-            logger.error(f&#34;Could not load FDIR table from {table_path}: {e}&#34;)
-            raise e
-
+            setup = load_setup()
+            self._fdir_table = setup.gse.fdir_manager.configuration.table
+        except AttributeError as ex:
+            raise FdirException(&#34;Could not FDIR table from current setup&#34;) from ex
 
     def is_connected(self):
         return True
     
     def is_simulator(self):
         return False
-
-    def register_script(self, host: str, pid: int):
-
-        if self._state != 0:
-            logger.error(f&#34;Attempt to register script while state is not idle ({self._state}).&#34;)
-            raise FdirException(
-                f&#34;Cannot register script because FDIR state is not idle ({self._state}).&#34;)
-
-        elif host in [&#39;localhost&#39;, os.uname()[1]]:
-
-            if pid in self._local_pids:
-                logger.error(f&#34;Attempt to register existing PID {pid} @ localhost.&#34;)
-                raise FdirException(&#34;PID is already registered.&#34;)
-            else:
-                self._local_pids.append(pid)
-                logger.info(f&#34;Successful registration of PID {pid} @ localhost.&#34;)
-
-        elif host == REMOTE_SETTINGS.HOSTNAME:
-
-            if pid in self._remote_pids:
-                logger.error(f&#34;Attempt to register existing PID {pid} @ {host}.&#34;)
-                raise FdirException(&#34;PID is already registered.&#34;)
-            else:
-                self._remote_pids.append(pid)
-                logger.info(f&#34;Successful registration of PID {pid} @ {host}.&#34;)
-
-        else:
-            logger.error(f&#34;Attempt to register a script with unknown hostname ({host})&#34;)
-            raise FdirException(&#34;unknown hostname&#34;)
-
-
-    def deregister_script(self, host: str, pid: int):
-
-        if host in [&#39;localhost&#39;, os.uname()[1]]:
-
-            if pid not in self._local_pids[host]:
-                logger.error(f&#34;Attempt to deregister unknown PID {pid} @ localhost.&#34;)
-                raise FdirException(&#34;PID is unknown.&#34;)
-            else:
-                self._pids[host].remove(pid)
-                logger.info(f&#34;Successful deregistration of PID {pid} @ localhost.&#34;)
-
-        if host == REMOTE_SETTINGS.HOSTNAME:
-
-            if pid not in self._local_pids[host]:
-                logger.error(f&#34;Attempt to deregister unknown PID {pid} @ {host}.&#34;)
-                raise FdirException(&#34;PID is unknown.&#34;)
-            else:
-                self._pids[host].remove(pid)
-                logger.info(f&#34;Successful deregistration of PID {pid} @ {host}.&#34;)
-
-        else:
-            logger.error(f&#34;attempt to deregister a script with unknown hostname ({host})&#34;)
-            raise FdirException(&#34;unknown hostname&#34;)
-
 
     def signal_fdir(self, fdir_code: str, script_args: list):
 
@@ -166,30 +96,6 @@ class FdirManagerController(FdirRemoteInterface):
 
         self._state = fdir_code
         self._priority = priority
-
-        # kill registered local scripts
-        for pid in self._local_pids:
-            try:
-                process = psutil.Process(pid)
-            except psutil.NoSuchProcess:
-                logger.warning(
-                    f&#34;Could not find a process with PID {pid} @ localhost.&#34;)
-            else:
-                process.kill()
-                logger.info(f&#34;Killed registered script with PID {pid} @ localhost.&#34;)
-
-        # Kill registered remote scripts
-        for pid in self._remote_pids:
-            response = self._remote_proxy.kill_process(pid)
-            if isinstance(response, Success):
-                logger.info(f&#34;Killed registered script with PID {pid} @ {REMOTE_SETTINGS.HOSTNAME}.&#34;)
-            else:
-                logger.warning(
-                    f&#34;Could not kill process with PID {pid} @ {REMOTE_SETTINGS.HOSTNAME}.&#34;)
-
-        # Clear all stored PIDs
-        self._local_pids = []
-        self._remote_pids = []
 
         # open filewriter for fdir script output logging
         timestring = datetime.now().strftime(&#34;%y-%m-%d_%H:%M:%S&#34;)
@@ -235,13 +141,11 @@ class FdirManagerController(FdirRemoteInterface):
             generate_popup(code=fdir_code, actions=action_string, success=script_success)
 
     def clear_fdir(self):
-
         self._priority = 0
         logger.info(&#34;Cleared FDIR state.&#34;)
 
 
     def get_state(self):
-
         return self._priority
 
 
@@ -327,88 +231,27 @@ if __name__ == &#34;__main__&#34;:
 
         self._state = &#34;&#34;
         self._priority = -1
-        self._local_pids = []
-        self._remote_pids = []
         self._storage_path = replace_environment_variable(CTRL_SETTINGS.RECOVERY_SCRIPT_LOCATION)
         self._logging_path = replace_environment_variable(CTRL_SETTINGS.LOGGING_LOCATION)
         self._remote_proxy = FdirRemoteProxy()
         # Check if the remote is online.
         if not self._remote_proxy.is_cs_connected():
             logger.warning(&#34;FDIR Manager could not connect to the FDIR remote CS&#34;)
-            # raise RuntimeError(&#34;FDIR Manager could not connect the the FDIR Remote CS&#34;)
         else:
             logger.info(f&#34;connected to remote CS @ {REMOTE_SETTINGS.HOSTNAME}&#34;)
 
         # Try to load fdir table.
         try:
-            table_path = self._storage_path + &#34;/fdir_table.yaml&#34;
-            with open(table_path) as f:
-                self._fdir_table = yaml.load(f, Loader=yaml.Loader)
-        except Exception as e:
-            logger.error(f&#34;Could not load FDIR table from {table_path}: {e}&#34;)
-            raise e
-
+            setup = load_setup()
+            self._fdir_table = setup.gse.fdir_manager.configuration.table
+        except AttributeError as ex:
+            raise FdirException(&#34;Could not FDIR table from current setup&#34;) from ex
 
     def is_connected(self):
         return True
     
     def is_simulator(self):
         return False
-
-    def register_script(self, host: str, pid: int):
-
-        if self._state != 0:
-            logger.error(f&#34;Attempt to register script while state is not idle ({self._state}).&#34;)
-            raise FdirException(
-                f&#34;Cannot register script because FDIR state is not idle ({self._state}).&#34;)
-
-        elif host in [&#39;localhost&#39;, os.uname()[1]]:
-
-            if pid in self._local_pids:
-                logger.error(f&#34;Attempt to register existing PID {pid} @ localhost.&#34;)
-                raise FdirException(&#34;PID is already registered.&#34;)
-            else:
-                self._local_pids.append(pid)
-                logger.info(f&#34;Successful registration of PID {pid} @ localhost.&#34;)
-
-        elif host == REMOTE_SETTINGS.HOSTNAME:
-
-            if pid in self._remote_pids:
-                logger.error(f&#34;Attempt to register existing PID {pid} @ {host}.&#34;)
-                raise FdirException(&#34;PID is already registered.&#34;)
-            else:
-                self._remote_pids.append(pid)
-                logger.info(f&#34;Successful registration of PID {pid} @ {host}.&#34;)
-
-        else:
-            logger.error(f&#34;Attempt to register a script with unknown hostname ({host})&#34;)
-            raise FdirException(&#34;unknown hostname&#34;)
-
-
-    def deregister_script(self, host: str, pid: int):
-
-        if host in [&#39;localhost&#39;, os.uname()[1]]:
-
-            if pid not in self._local_pids[host]:
-                logger.error(f&#34;Attempt to deregister unknown PID {pid} @ localhost.&#34;)
-                raise FdirException(&#34;PID is unknown.&#34;)
-            else:
-                self._pids[host].remove(pid)
-                logger.info(f&#34;Successful deregistration of PID {pid} @ localhost.&#34;)
-
-        if host == REMOTE_SETTINGS.HOSTNAME:
-
-            if pid not in self._local_pids[host]:
-                logger.error(f&#34;Attempt to deregister unknown PID {pid} @ {host}.&#34;)
-                raise FdirException(&#34;PID is unknown.&#34;)
-            else:
-                self._pids[host].remove(pid)
-                logger.info(f&#34;Successful deregistration of PID {pid} @ {host}.&#34;)
-
-        else:
-            logger.error(f&#34;attempt to deregister a script with unknown hostname ({host})&#34;)
-            raise FdirException(&#34;unknown hostname&#34;)
-
 
     def signal_fdir(self, fdir_code: str, script_args: list):
 
@@ -430,30 +273,6 @@ if __name__ == &#34;__main__&#34;:
 
         self._state = fdir_code
         self._priority = priority
-
-        # kill registered local scripts
-        for pid in self._local_pids:
-            try:
-                process = psutil.Process(pid)
-            except psutil.NoSuchProcess:
-                logger.warning(
-                    f&#34;Could not find a process with PID {pid} @ localhost.&#34;)
-            else:
-                process.kill()
-                logger.info(f&#34;Killed registered script with PID {pid} @ localhost.&#34;)
-
-        # Kill registered remote scripts
-        for pid in self._remote_pids:
-            response = self._remote_proxy.kill_process(pid)
-            if isinstance(response, Success):
-                logger.info(f&#34;Killed registered script with PID {pid} @ {REMOTE_SETTINGS.HOSTNAME}.&#34;)
-            else:
-                logger.warning(
-                    f&#34;Could not kill process with PID {pid} @ {REMOTE_SETTINGS.HOSTNAME}.&#34;)
-
-        # Clear all stored PIDs
-        self._local_pids = []
-        self._remote_pids = []
 
         # open filewriter for fdir script output logging
         timestring = datetime.now().strftime(&#34;%y-%m-%d_%H:%M:%S&#34;)
@@ -499,13 +318,11 @@ if __name__ == &#34;__main__&#34;:
             generate_popup(code=fdir_code, actions=action_string, success=script_success)
 
     def clear_fdir(self):
-
         self._priority = 0
         logger.info(&#34;Cleared FDIR state.&#34;)
 
 
     def get_state(self):
-
         return self._priority</code></pre>
 </details>
 <h3>Ancestors</h3>
@@ -524,43 +341,8 @@ if __name__ == &#34;__main__&#34;:
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def clear_fdir(self):
-
     self._priority = 0
     logger.info(&#34;Cleared FDIR state.&#34;)</code></pre>
-</details>
-</dd>
-<dt id="egse.fdir.fdir_manager_controller.FdirManagerController.deregister_script"><code class="name flex">
-<span>def <span class="ident">deregister_script</span></span>(<span>self, host: str, pid: int)</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def deregister_script(self, host: str, pid: int):
-
-    if host in [&#39;localhost&#39;, os.uname()[1]]:
-
-        if pid not in self._local_pids[host]:
-            logger.error(f&#34;Attempt to deregister unknown PID {pid} @ localhost.&#34;)
-            raise FdirException(&#34;PID is unknown.&#34;)
-        else:
-            self._pids[host].remove(pid)
-            logger.info(f&#34;Successful deregistration of PID {pid} @ localhost.&#34;)
-
-    if host == REMOTE_SETTINGS.HOSTNAME:
-
-        if pid not in self._local_pids[host]:
-            logger.error(f&#34;Attempt to deregister unknown PID {pid} @ {host}.&#34;)
-            raise FdirException(&#34;PID is unknown.&#34;)
-        else:
-            self._pids[host].remove(pid)
-            logger.info(f&#34;Successful deregistration of PID {pid} @ {host}.&#34;)
-
-    else:
-        logger.error(f&#34;attempt to deregister a script with unknown hostname ({host})&#34;)
-        raise FdirException(&#34;unknown hostname&#34;)</code></pre>
 </details>
 </dd>
 <dt id="egse.fdir.fdir_manager_controller.FdirManagerController.get_state"><code class="name flex">
@@ -573,7 +355,6 @@ if __name__ == &#34;__main__&#34;:
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def get_state(self):
-
     return self._priority</code></pre>
 </details>
 </dd>
@@ -601,45 +382,6 @@ if __name__ == &#34;__main__&#34;:
 </summary>
 <pre><code class="python">def is_simulator(self):
     return False</code></pre>
-</details>
-</dd>
-<dt id="egse.fdir.fdir_manager_controller.FdirManagerController.register_script"><code class="name flex">
-<span>def <span class="ident">register_script</span></span>(<span>self, host: str, pid: int)</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def register_script(self, host: str, pid: int):
-
-    if self._state != 0:
-        logger.error(f&#34;Attempt to register script while state is not idle ({self._state}).&#34;)
-        raise FdirException(
-            f&#34;Cannot register script because FDIR state is not idle ({self._state}).&#34;)
-
-    elif host in [&#39;localhost&#39;, os.uname()[1]]:
-
-        if pid in self._local_pids:
-            logger.error(f&#34;Attempt to register existing PID {pid} @ localhost.&#34;)
-            raise FdirException(&#34;PID is already registered.&#34;)
-        else:
-            self._local_pids.append(pid)
-            logger.info(f&#34;Successful registration of PID {pid} @ localhost.&#34;)
-
-    elif host == REMOTE_SETTINGS.HOSTNAME:
-
-        if pid in self._remote_pids:
-            logger.error(f&#34;Attempt to register existing PID {pid} @ {host}.&#34;)
-            raise FdirException(&#34;PID is already registered.&#34;)
-        else:
-            self._remote_pids.append(pid)
-            logger.info(f&#34;Successful registration of PID {pid} @ {host}.&#34;)
-
-    else:
-        logger.error(f&#34;Attempt to register a script with unknown hostname ({host})&#34;)
-        raise FdirException(&#34;unknown hostname&#34;)</code></pre>
 </details>
 </dd>
 <dt id="egse.fdir.fdir_manager_controller.FdirManagerController.signal_fdir"><code class="name flex">
@@ -671,30 +413,6 @@ if __name__ == &#34;__main__&#34;:
 
     self._state = fdir_code
     self._priority = priority
-
-    # kill registered local scripts
-    for pid in self._local_pids:
-        try:
-            process = psutil.Process(pid)
-        except psutil.NoSuchProcess:
-            logger.warning(
-                f&#34;Could not find a process with PID {pid} @ localhost.&#34;)
-        else:
-            process.kill()
-            logger.info(f&#34;Killed registered script with PID {pid} @ localhost.&#34;)
-
-    # Kill registered remote scripts
-    for pid in self._remote_pids:
-        response = self._remote_proxy.kill_process(pid)
-        if isinstance(response, Success):
-            logger.info(f&#34;Killed registered script with PID {pid} @ {REMOTE_SETTINGS.HOSTNAME}.&#34;)
-        else:
-            logger.warning(
-                f&#34;Could not kill process with PID {pid} @ {REMOTE_SETTINGS.HOSTNAME}.&#34;)
-
-    # Clear all stored PIDs
-    self._local_pids = []
-    self._remote_pids = []
 
     # open filewriter for fdir script output logging
     timestring = datetime.now().strftime(&#34;%y-%m-%d_%H:%M:%S&#34;)
@@ -768,13 +486,11 @@ if __name__ == &#34;__main__&#34;:
 </li>
 <li>
 <h4><code><a title="egse.fdir.fdir_manager_controller.FdirManagerController" href="#egse.fdir.fdir_manager_controller.FdirManagerController">FdirManagerController</a></code></h4>
-<ul class="two-column">
+<ul class="">
 <li><code><a title="egse.fdir.fdir_manager_controller.FdirManagerController.clear_fdir" href="#egse.fdir.fdir_manager_controller.FdirManagerController.clear_fdir">clear_fdir</a></code></li>
-<li><code><a title="egse.fdir.fdir_manager_controller.FdirManagerController.deregister_script" href="#egse.fdir.fdir_manager_controller.FdirManagerController.deregister_script">deregister_script</a></code></li>
 <li><code><a title="egse.fdir.fdir_manager_controller.FdirManagerController.get_state" href="#egse.fdir.fdir_manager_controller.FdirManagerController.get_state">get_state</a></code></li>
 <li><code><a title="egse.fdir.fdir_manager_controller.FdirManagerController.is_connected" href="#egse.fdir.fdir_manager_controller.FdirManagerController.is_connected">is_connected</a></code></li>
 <li><code><a title="egse.fdir.fdir_manager_controller.FdirManagerController.is_simulator" href="#egse.fdir.fdir_manager_controller.FdirManagerController.is_simulator">is_simulator</a></code></li>
-<li><code><a title="egse.fdir.fdir_manager_controller.FdirManagerController.register_script" href="#egse.fdir.fdir_manager_controller.FdirManagerController.register_script">register_script</a></code></li>
 <li><code><a title="egse.fdir.fdir_manager_controller.FdirManagerController.signal_fdir" href="#egse.fdir.fdir_manager_controller.FdirManagerController.signal_fdir">signal_fdir</a></code></li>
 </ul>
 </li>

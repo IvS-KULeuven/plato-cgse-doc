@@ -46,7 +46,7 @@ from egse.obsid import obsid_from_storage
 from egse.protocol import CommandProtocol
 from egse.proxy import Proxy
 from egse.settings import Settings
-from egse.state import GlobalState
+from egse.setup import load_setup, Setup
 from egse.storage import StorageProxy
 from egse.storage import is_storage_manager_active
 from egse.storage import register_to_storage_manager
@@ -194,6 +194,8 @@ class SynopticsManagerController(SynopticsManagerInterface):
         &#34;&#34;&#34;Initialisation for the Synoptics Manager Controller.
         &#34;&#34;&#34;
 
+        self.setup = load_setup()
+
         # Storage Manager must be active
 
         if not is_storage_manager_active():
@@ -211,8 +213,8 @@ class SynopticsManagerController(SynopticsManagerInterface):
         self.synoptics_metrics = None
 
     def read_hk_info(self):
-        self.syn_names, self.original_name_egse, self.original_name_th = read_hk_info()
-        self.synoptics_metrics = define_metrics(ORIGIN)
+        self.syn_names, self.original_name_egse, self.original_name_th = read_hk_info(self.setup)
+        self.synoptics_metrics = define_metrics(ORIGIN, setup=self.setup)
 
         self.hk_info_read = True
 
@@ -311,8 +313,11 @@ class SynopticsManagerController(SynopticsManagerInterface):
             logger.debug(f&#34;Cannot store synoptics metrics: {name} is not a synoptical parameter&#34;)
 
 
-def read_hk_info() -&gt; (dict, dict):
+def read_hk_info(setup: Setup) -&gt; (dict, dict):
     &#34;&#34;&#34; Read the table with the HK information, i.e. the TM dictionary.
+
+    Args:
+        - setup: Setup
 
     Returns:
         - List with the name of the timestamp and synoptics
@@ -320,7 +325,7 @@ def read_hk_info() -&gt; (dict, dict):
         - Dictionary with the original name from the EGSE (not TH-specific)
     &#34;&#34;&#34;
 
-    hk_info_table = GlobalState.setup.telemetry.dictionary
+    hk_info_table = setup.telemetry.dictionary
 
     syn_selection = np.where(hk_info_table[TmDictionaryColumns.STORAGE_MNEMONIC].values == ORIGIN)
     syn_names = hk_info_table[TmDictionaryColumns.CORRECT_HK_NAMES].values[syn_selection]
@@ -580,10 +585,14 @@ known, for the registration to the Storage Manager.</p>
 </details>
 </dd>
 <dt id="egse.synoptics.read_hk_info"><code class="name flex">
-<span>def <span class="ident">read_hk_info</span></span>(<span>) ‑> (<class 'dict'>, <class 'dict'>)</span>
+<span>def <span class="ident">read_hk_info</span></span>(<span>setup: <a title="egse.setup.Setup" href="../setup.html#egse.setup.Setup">Setup</a>) ‑> (<class 'dict'>, <class 'dict'>)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Read the table with the HK information, i.e. the TM dictionary.</p>
+<h2 id="args">Args</h2>
+<ul>
+<li>setup: Setup</li>
+</ul>
 <h2 id="returns">Returns</h2>
 <ul>
 <li>List with the name of the timestamp and synoptics</li>
@@ -594,8 +603,11 @@ known, for the registration to the Storage Manager.</p>
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def read_hk_info() -&gt; (dict, dict):
+<pre><code class="python">def read_hk_info(setup: Setup) -&gt; (dict, dict):
     &#34;&#34;&#34; Read the table with the HK information, i.e. the TM dictionary.
+
+    Args:
+        - setup: Setup
 
     Returns:
         - List with the name of the timestamp and synoptics
@@ -603,7 +615,7 @@ known, for the registration to the Storage Manager.</p>
         - Dictionary with the original name from the EGSE (not TH-specific)
     &#34;&#34;&#34;
 
-    hk_info_table = GlobalState.setup.telemetry.dictionary
+    hk_info_table = setup.telemetry.dictionary
 
     syn_selection = np.where(hk_info_table[TmDictionaryColumns.STORAGE_MNEMONIC].values == ORIGIN)
     syn_names = hk_info_table[TmDictionaryColumns.CORRECT_HK_NAMES].values[syn_selection]
@@ -688,6 +700,8 @@ known, for the registration to the Storage Manager.</p>
         &#34;&#34;&#34;Initialisation for the Synoptics Manager Controller.
         &#34;&#34;&#34;
 
+        self.setup = load_setup()
+
         # Storage Manager must be active
 
         if not is_storage_manager_active():
@@ -705,8 +719,8 @@ known, for the registration to the Storage Manager.</p>
         self.synoptics_metrics = None
 
     def read_hk_info(self):
-        self.syn_names, self.original_name_egse, self.original_name_th = read_hk_info()
-        self.synoptics_metrics = define_metrics(ORIGIN)
+        self.syn_names, self.original_name_egse, self.original_name_th = read_hk_info(self.setup)
+        self.synoptics_metrics = define_metrics(ORIGIN, setup=self.setup)
 
         self.hk_info_read = True
 
@@ -820,8 +834,8 @@ known, for the registration to the Storage Manager.</p>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def read_hk_info(self):
-    self.syn_names, self.original_name_egse, self.original_name_th = read_hk_info()
-    self.synoptics_metrics = define_metrics(ORIGIN)
+    self.syn_names, self.original_name_egse, self.original_name_th = read_hk_info(self.setup)
+    self.synoptics_metrics = define_metrics(ORIGIN, setup=self.setup)
 
     self.hk_info_read = True</code></pre>
 </details>

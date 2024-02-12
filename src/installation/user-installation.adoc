@@ -1,0 +1,300 @@
+[#user-installation]
+== User Installation
+:imagesdir: ../images
+
+This section describes how a user of the system can install the Common-EGSE and Test Scripts in a non-operational environment. The idea of such an installation is to work with the system, get used to it and/or perform some analysis on the test data. The user  is not supposed to make changes to the software. If that is the case, i.e. you are working with test scripts, and make contributions and changes to the test scripts, go and read the section <<ts-dev-user-installation>>.
+
+Installation of the CGSE + TS requires a few steps to prepare. We recommend to use an existing Python 3.8 installation with `venv` to create a virtual environmentfootnote:[I will use the term _virtual environment_ when I'm talking about a Python environment where packages are installed at a specific location for a specific Python version.] or use `pyenv` to manage your Python versions if Python 3.8 is not installed on your system. To manage your shell environmentfootnote:[I will use the term _shell environment_ when talking about an environment in your Terminal, i.e. usually bash or zsh where your environment variables are defined and you execute commands.] you can define the PLATO environment variables in your `~/.bash_profile` or use `direnv` to manage your environment variables on a per-directory basis. We will explain the different possibilities in the following sections.
+
+The diagram below outlines the discussion in the next sections. There are two paths that we recommend new users to follow (1) using an existing Python installation and the standard virtual environment, or (2) using `pyenv` to manage both a new Python installation and virtual environment.
+
+image::user-installation.png[width=75%,align=center]
+
+=== Set up your Python environment
+
+[#venv]
+==== Installed Python version and `venv`
+
+The Common-EGSE and Test Scripts require Python 3.8. Higher versions might work but are not tested and there are some known problem with e.g. the `astropy` package. You can test which Python version is installed on your system as follows:
+----
+$ python3 -V
+Python 3.8.17
+----
+If you have Python 3.8 running you are good to go, you can use this version with `venv` to create a virtual environment in your work folder. The work folder I refer to here is the folder where you want to perform your PLATO work and keep scripts at hand. In this folder we will create a virtual environment for Python 3.8.
+----
+$ mkdir ~/plato-work
+$ cd ~/plato-work
+$ python3 -m venv venv --prompt='cgse-ts'
+$ source venv/bin/activate
+(cgse-ts) $
+----
+Now you have a Python 3.8 virtual environment which is activated. You can use the `python` and `pip` commands to set up your CGSE+TS installation (for clarity, I left out the `(cgse-ts)` from the prompt in the lines below):
+----
+$ pip install --upgrade pip setuptools wheel
+$ pip install cgse-ts
+$ python -m egse.version
+CGSE version in Settings: 2023.37.0+CGSE
+CGSE installed version = 2023.37.0
+$ python -m camtest.version
+CAMTEST version in Settings: 2023.37.0+TS
+CAMTEST installed version = 2023.37.0
+----
+
+==== pyenv
+
+In case that you do not have Python 3.8 installed on your system, we recommend to use `pyenv` to install and manage different Python versions.
+The purpose of using `pyenv` is to keep track of Python installations on your system and to maintain Python virtual environments.
+
+.A nice `pyenv` tutorial
+NOTE: The Real Python website contains a very nice introductory tutorial on `pyenv` going through the installation on different platforms and the basic usage of the software. This section is largely based on that tutorial. You can access it at https://realpython.com/intro-to-pyenv/.
+
+.Installing `pyenv`
+****
+
+When you don't have `pyenv` installed on your system, use the following guidelines. The `pyenv` can be installed easily in a normal user account. Since `pyenv` builds the Python installations from source, you will need to install some build dependencies to actually use `pyenv`.
+
+[tabs]
+======
+macOS::
+Use `brew` to install build dependencies, then install `pyenv` using the https://github.com/pyenv/pyenv-installer[pyenv-installer]:
++
+----
+$ brew update
+$ brew install openssl readline sqlite3 xz zlib
+
+$ curl https://pyenv.run | bash
+----
+
+Ubuntu::
++
+Use the following command to install build dependencies, the install `pyenv` using the https://github.com/pyenv/pyenv-installer[pyenv-installer]:
++
+----
+$ sudo apt-get install -y make build-essential libssl-dev zlib1g-dev \
+libbz2-dev libreadline-dev libsqlite3-dev wget curl llvm libncurses5-dev \
+libncursesw5-dev xz-utils tk-dev libffi-dev liblzma-dev python-openssl
+
+$ curl https://pyenv.run | bash
+----
+
+======
+
+After the installation, follow the instructions to properly configure your shell to use `pyenv`. Add the following three lines to your `~/.bashrc` and reload your shell or restart a terminal.footnote:[If you don't have a `~/.bashrc` file, append the lines to your `~/.bash_profile` file.]
+----
+export PATH="$HOME/.pyenv/bin:$PATH"
+eval "$(pyenv init -)"
+eval "$(pyenv virtualenv-init -)"
+----
+
+****
+
+Now you should have a properly installed `pyenv` and you will be able to see which Python versions are installed on your system. As you can see below I have several Python versions installed on my system. Never mind about that, the CGSE+TS need Python 3.8.
+----
+$ pyenv versions
+  system
+  3.8.17
+  3.9.17
+  3.10.12
+  3.11.4
+----
+If you don't have a Python 3.8 installation, use the following command to install the latest patch for this Python version:
+----
+$ pyenv install 3.8
+----
+
+You should always install any Python packages in a virtual environment. That will isolate your installation from any other software that you have installed, make sure the packages on which the CGSE+TS dependent are not shared (or worse) changed by other software installations. A virtual environment is set up as follows with `pyenv`:
+
+----
+$ pyenv virtualenv 3.8 ts-3.8
+$ mkdir -p ~/plato-work
+$ cd ~/plato-work
+$ pyenv local ts-3.8
+$ pip install --upgrade pip setuptools wheel
+$ pip install cgse-ts
+----
+
+.Global and local virtual environments
+****
+A virtual environment is in principle independent of the directory where your project lives or where you keep your personal working scripts. You can create a virtual environment inside your project folder as we did above in  <<venv>>, but `pyenv` keeps its virtual environments at one location independent of the project root. Instead, `pyenv` maintains a concept of a _global_ and a _local_ virtual environment. A global virtual environment can be used from any location and is defined  with the following command, for clarity, we first create a new virtual environment `core-3.8`, then we set it as _global_:
+----
+$ pyenv virtualenv 3.8 core-3.8
+$ pyenv global core-3.8
+----
+A local virtual environment is associated with a directory and its sub-folders. Whenever you navigate into a directory structure that has a local virtual environment associated, the virtual environment will automatically be activated in your current shell. When you leave the directory structure, the virtual environment will be deactivated.
+----
+$ cd ~/plato-work
+$ pyenv local ts-3.8
+$ pyenv local
+ts-3.8
+$ cd ..
+$ pyenv local
+pyenv: no local version configured for this directory
+$ pyenv global
+core-3.8
+----
+
+So, the _local_ takes precedence over the _global_.
+****
+
+=== Set up your shell environment
+
+==== Environment variables
+
+The non-operational installation needs the following environment variables to work without problems. You can define those environment variables in your `~/.bash_profile` or `~/.bashrc`, or you can use `direnv` to define them only for specific locations.
+
+[cols="1,2"]
+|===
+|Name | Description
+
+|PLATO_DATA_STORAGE_LOCATION  | the root folder of your data storage, usually `/data` or `~/data`. The SITE is automatically appended by the CGSE and underneath the SITE folder, folders like `obs`, `daily` and `log` are located. So, for example, if you are working at INTA and your PLATO_DATA_STORAGE_LOCATION is set to `/data`, the observation data for `OBSID=793` will be in `/data/INTA/obs/00793_INTA_duvel`. Even if you are not working on an operational machine, the directory structure underneath the `PLATO_DATA_STORAGE_LOCATION` shall be respected.
+|PLATO_LOCAL_SETTINGS         | the location of the `local-settings.yaml` file. This settings file will overwrite the global settings defined by the distribution. In this file you shall put your SITE ID, IP addresses of devices, different port numbers etc. The structure is the same as the global `settings.yaml` file, only with less content. You can put this file in the data storage root folder or in a dedicated folder like `~/cgse`.
+|PLATO_CONF_DATA_LOCATION     | the location of the configuration data, i.e. Setups and related files, usually `~/git/plato-cgse-conf/data/{SITE}/conf` footnote:[{SITE} shall be replaced by the SITE_ID of your test house.]
+|PLATO_CONF_REPO_LOCATION     | the location of the configuration data repository, usually `~/git/plato-cgse-conf`.
+
+|===
+
+
+For more information on these variables, check the installation guide.
+
+==== direnv
+
+.Installing `direnv`
+****
+NOTE: The installation described below is based on the information from https://direnv.net
+
+The purpose of `direnv` is to set up environment variables on a per-folder basis. When you enter a folder with the `cd` command in your terminal, the shell will load a set of environment variables applicable for that folder. Let's first install `direnv` on your system.
+
+[tabs]
+======
+macOS::
++
+----
+$ brew install direnv
+----
+Ubuntu::
++
+----
+$ sudo apt-get install direnv
+----
+======
+
+In order to activate `direnv`, append the following line at the end of your `~/.bashrc` file:
+----
+eval "$(direnv hook bash)"
+----
+Make sure it appears even after any shell extensions that manipulate the prompt.
+****
+
+Now that `direnv` is installed, you can go to your project folder and create a `.envrc` file that contains the definitions of the environment variables needed for the CGSE+TS.
+
+----
+$ cd ~/plato-work
+$ cat > .envrc
+SITE=CSL2
+
+export PLATO_CONF_DATA_LOCATION=~/git/plato-cgse-conf/data/${SITE}/conf
+export PLATO_CONF_REPO_LOCATION=~/git/plato-cgse-conf
+export PLATO_DATA_STORAGE_LOCATION=~/data
+export PLATO_LOCAL_SETTINGS=~/cgse/local_settings.yaml
+
+export PYTHONSTARTUP=~/plato-work/startup.py
+^D
+$ direnv allow .
+----
+That last command will load the environment variables in your shell. You can easily check this with the following command (try this both inside and outside of the project folder):
+----
+$ set | grep PLATO
+PLATO_CONF_DATA_LOCATION=/Users/rik/git/plato-cgse-conf/data/CSL2/conf
+PLATO_CONF_REPO_LOCATION=/Users/rik/git/plato-cgse-conf
+PLATO_DATA_STORAGE_LOCATION=/Users/rik/data
+PLATO_LOCAL_SETTINGS=/Users/rik/cgse/local_settings.yaml
+----
+
+
+[#ts-dev-user-installation]
+=== Contributing to the PLATO Test Scripts
+
+In the previous sections we have installed the CGSE and TS as read-only packages in a virtual environment. That allowed you to use the software, but not to make changes or contribute to improve the software. This section will assume you need to contribute to the test scripts but not the Common-EGSE. Make sure you have a fork of the `plato-test-scripts` repository and clone this into a folder `~/git/plato-test-scripts`.
+----
+$ cd ~/git
+$ git clone https://github.com/<username>/plato-test-scripts.git
+$ cd plato-test-scripts
+----
+Now create a virtual environment either with `venv` or with `pyenv` as explained in the sections above. I will use `venv` here assuming Python 3.8 is installed.
+----
+$ python3 -m venv venv --prompt='cgse-ts'
+$ source venv/bin/activate
+$ pip install --upgrade pip setuptools wheel
+----
+Now install the test scripts as an editable installation. What will happen is that the following command will install the latest `cgse` package and all dependencies needed for CGSE and TS. It will then install the code in the `src` folder, e.g. the `camtest` and `scripts` as an editable install. Whenever you make changes to the code, it will be picked up if you run the code again.
+----
+$ pip install -e .
+----
+Check the versions installed for CGSE and TS:
+----
+$ python -m egse.version
+CGSE version in Settings: 2023.37.0+CGSE
+CGSE installed version = 2023.37.0
+$ python -m camtest.version
+CAMTEST version in Settings: 2023.37.0+TS
+CAMTEST git version: 2023.37.0+TS-0-g3ccd722
+CAMTEST installed version = 2023.37.0
+----
+
+
+=== Contributing to PLATO Test Scripts and Common-EGSE
+
+In this last section we look into the case where you are making contributions to both the CGSE and TS. Of course, when you arrive at this point, I assume you have a better understanding of git and package distribution and I will not explain everything in detail. Basically, what this boils down to is that both CGSE and TS will be installed as editable packages in the same virtual environment.
+
+Create a virtual environment:
+
+[tabs]
+======
+venv::
++
+Put this virtual environment in a folder that is not the project folder of CGSE nor TS, i.e. use a global virtual environment, not one that is created inside the project.
++
+----
+$ cd ~/venvs
+$ python3.8 -m venv cgse-ts-3.8
+$ source cgse-ts-3.8/bin/activate
+----
+pyenv::
++
+----
+$ pyenv virtualenv 3.8 cgse-ts-3.8
+$ pyenv shell cgse-ts-3.8
+----
+======
+Update the standard packages that are used for the installation:
+----
+$ pip install --upgrade pip setuptools wheel
+----
+Now navigate to the project folder of the CGSE and pip install this project as an editable package. Do the same for the TS project.
+----
+$ cd ~/git/plato-common-egse
+$ pip install -e .
+$ cd ~/git/plato-test-scripts
+$ pip install -e .
+----
+If you now check your installed packages, you will see that  both `cgse` and `cgse-ts` are installed as editable projects:
+[source%nowrap]
+----
+$ pip list -v
+Package             Version        Editable project location                               Location                                                                Installer
+------------------- -------------- ------------------------------------------------------- ----------------------------------------------------------------------- ---------
+appnope             0.1.3                                                                  /Users/rik/.pyenv/versions/3.8.17/envs/ts-x/lib/python3.8/site-packages pip
+APScheduler         3.10.4                                                                 /Users/rik/.pyenv/versions/3.8.17/envs/ts-x/lib/python3.8/site-packages pip
+astropy             4.0                                                                    /Users/rik/.pyenv/versions/3.8.17/envs/ts-x/lib/python3.8/site-packages pip
+asttokens           2.4.0                                                                  /Users/rik/.pyenv/versions/3.8.17/envs/ts-x/lib/python3.8/site-packages pip
+backcall            0.2.0                                                                  /Users/rik/.pyenv/versions/3.8.17/envs/ts-x/lib/python3.8/site-packages pip
+backports.zoneinfo  0.2.1                                                                  /Users/rik/.pyenv/versions/3.8.17/envs/ts-x/lib/python3.8/site-packages pip
+bcrypt              4.0.1                                                                  /Users/rik/.pyenv/versions/3.8.17/envs/ts-x/lib/python3.8/site-packages pip
+certifi             2023.7.22                                                              /Users/rik/.pyenv/versions/3.8.17/envs/ts-x/lib/python3.8/site-packages pip
+cffi                1.15.1                                                                 /Users/rik/.pyenv/versions/3.8.17/envs/ts-x/lib/python3.8/site-packages pip
+cgse                2023.37.0      /Users/rik/Documents/PyCharmProjects/plato-common-egse  /Users/rik/.pyenv/versions/3.8.17/envs/ts-x/lib/python3.8/site-packages pip
+cgse-ts             2023.37.0      /Users/rik/Documents/PyCharmProjects/plato-test-scripts /Users/rik/.pyenv/versions/3.8.17/envs/ts-x/lib/python3.8/site-packages pip
+charset-normalizer  3.2.0                                                                  /Users/rik/.pyenv/versions/3.8.17/envs/ts-x/lib/python3.8/site-packages pip
+click               8.1.7                                                                  /Users/rik/.pyenv/versions/3.8.17/envs/ts-x/lib/python3.8/site-packages pip
+----
+Make sure you are in the correct virtual environment when working on the CGSE or TS.

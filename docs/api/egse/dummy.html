@@ -31,14 +31,24 @@
 This module provides dummy implementation for classes of the Commanding chain.
 &#34;&#34;&#34;
 import logging
+import multiprocessing
 import pickle
+import random
 import sys
+import threading
+import time
+from functools import partial
 
 import click
 import zmq
 
 from egse.command import ClientServerCommand
+from egse.confman import is_configuration_manager_active
 from egse.control import ControlServer
+from egse.control import is_control_server_active
+from egse.decorators import dynamic_interface
+from egse.listener import Event
+from egse.listener import EventInterface
 from egse.protocol import CommandProtocol
 from egse.proxy import Proxy
 from egse.settings import Settings
@@ -48,7 +58,7 @@ from egse.zmq_ser import bind_address
 from egse.zmq_ser import connect_address
 
 logging.basicConfig(level=logging.DEBUG, format=Settings.LOG_FORMAT_FULL)
-logger = logging.getLogger(&#34;DUMMY&#34;)
+LOGGER = logging.getLogger(&#34;egse.dummy&#34;)
 
 # Especially DummyCommand and DummyController need to be defined in a known module
 # because those objects are pickled and when de-pickled at the clients side the class
@@ -63,7 +73,9 @@ ctrl_settings = AttributeDict(
         &#39;COMMANDING_PORT&#39;: 4443,
         &#39;SERVICE_PORT&#39;: 4444,
         &#39;MONITORING_PORT&#39;: 4445,
-        &#39;PROTOCOL&#39;: &#39;tcp&#39;
+        &#39;PROTOCOL&#39;: &#39;tcp&#39;,
+        &#39;TIMEOUT&#39;: 10,
+        &#39;HK_DELAY&#39;: 1.0,
     }
 )
 
@@ -78,12 +90,36 @@ commands = AttributeDict(
             &#39;device_method&#39;: &#39;response&#39;,
             &#39;cmd&#39;: &#39;{one} {two} {fake}&#39;,
             &#39;response&#39;: &#39;handle_device_method&#39;
-        }
+        },
+        &#39;handle_event&#39;: {
+            &#39;description&#39;: &#34;Notification of an event&#34;,
+            &#39;device_method&#39;: &#39;handle_event&#39;,
+            &#39;cmd&#39;: &#39;{event}&#39;,
+            &#39;response&#39;: &#39;handle_device_method&#39;
+        },
     }
 )
 
+def is_dummy_cs_active():
+    return is_control_server_active(
+        endpoint=connect_address(ctrl_settings.PROTOCOL, ctrl_settings.HOSTNAME, ctrl_settings.COMMANDING_PORT)
+    )
 
-class DummyProxy(Proxy):
+
+class DummyCommand(ClientServerCommand):
+    pass
+
+
+class DummyInterface:
+    @dynamic_interface
+    def info(self):
+        ...
+    @dynamic_interface
+    def response(self, *args, **kwargs):
+        ...
+
+
+class DummyProxy(Proxy, DummyInterface, EventInterface):
     def __init__(self,
                  protocol=ctrl_settings.PROTOCOL, hostname=ctrl_settings.HOSTNAME, port=ctrl_settings.COMMANDING_PORT):
         &#34;&#34;&#34;
@@ -92,19 +128,45 @@ class DummyProxy(Proxy):
             hostname: location of the control server (IP address) [default is taken from settings file]
             port: TCP port on which the control server is listening for commands [default is taken from settings file]
         &#34;&#34;&#34;
-        super().__init__(connect_address(protocol, hostname, port))
+        super().__init__(connect_address(protocol, hostname, port), timeout=ctrl_settings.TIMEOUT)
 
 
-class DummyCommand(ClientServerCommand):
-    pass
+class DummyController(DummyInterface, EventInterface):
+    def __init__(self, control_server):
+        self._cs = control_server
 
-
-class DummyController:
     def info(self):
         return &#34;method info() called on DummyController&#34;
 
     def response(self, *args, **kwargs):
         return f&#34;response({args}, {kwargs})&#34;
+
+    def handle_event(self, event: Event) -&gt; str:
+
+        _exec_in_thread = False
+
+        def _handle_event(event):
+            LOGGER.info(f&#34;An event is received, {event=}&#34;)
+            LOGGER.info(f&#34;CM CS active? {is_configuration_manager_active()}&#34;)
+            time.sleep(5.0)
+            LOGGER.info(f&#34;CM CS active? {is_configuration_manager_active()}&#34;)
+            LOGGER.info(f&#34;An event is processed, {event=}&#34;)
+
+        if _exec_in_thread:
+            # We execute this function in a daemon thread so the acknowledgment is
+            # sent back immediately (the ACK means &#39;command received and will be
+            # executed).
+
+            retry_thread = threading.Thread(target=_handle_event, args=(event,))
+            retry_thread.daemon = True
+            retry_thread.start()
+        else:
+            # An alternative to the daemon thread is to create a scheduled task that will be executed
+            # after the event is acknowledged.
+
+            self._cs.schedule_task(partial(_handle_event, event))
+
+        return &#34;ACK&#34;
 
 
 class DummyProtocol(CommandProtocol):
@@ -113,11 +175,13 @@ class DummyProtocol(CommandProtocol):
         super().__init__()
         self.control_server = control_server
 
-        self.device_controller = DummyController()
+        self.device_controller = DummyController(control_server)
 
         self.load_commands(commands, DummyCommand, DummyController)
 
         self.build_device_method_lookup_table(self.device_controller)
+
+        self._count = 0
 
     def get_bind_address(self):
         return bind_address(self.control_server.get_communication_protocol(), self.control_server.get_commanding_port())
@@ -126,8 +190,22 @@ class DummyProtocol(CommandProtocol):
         return super().get_status()
 
     def get_housekeeping(self) -&gt; dict:
+
+        # LOGGER.debug(f&#34;Executing get_housekeeping function for {self.__class__.__name__}.&#34;)
+
+        self._count += 1
+
+        # use the sleep to test the responsiveness of the control server when even this get_housekeeping function takes
+        # a lot of time, i.e. up to several minutes in the case of data acquisition devices
+        # import time
+        # time.sleep(2.0)
+
+
         return {
             &#39;timestamp&#39;: format_datetime(),
+            &#39;COUNT&#39;: self._count,
+            &#39;PI&#39;: 3.14159,  # just to have a constant parameter
+            &#39;Random&#39;: random.randint(0, 100),  # just to have a variable parameter
         }
 
 
@@ -146,6 +224,8 @@ class DummyControlServer(ControlServer):
     &#34;&#34;&#34;
 
     def __init__(self):
+        multiprocessing.current_process().name = &#34;dummy_cs&#34;
+
         super().__init__()
 
         self.device_protocol = DummyProtocol(self)
@@ -155,6 +235,17 @@ class DummyControlServer(ControlServer):
         self.device_protocol.bind(self.dev_ctrl_cmd_sock)
 
         self.poller.register(self.dev_ctrl_cmd_sock, zmq.POLLIN)
+
+        self.set_hk_delay(ctrl_settings.HK_DELAY)
+
+        from egse.confman import ConfigurationManagerProxy
+        from egse.listener import EVENT_ID
+
+        self.register_as_listener(
+            proxy=ConfigurationManagerProxy,
+            listener={&#39;name&#39;: &#39;Dummy CS&#39;, &#39;proxy&#39;: DummyProxy, &#39;event_id&#39;: EVENT_ID.SETUP}
+        )
+
 
     def get_communication_protocol(self):
         return &#39;tcp&#39;
@@ -168,14 +259,27 @@ class DummyControlServer(ControlServer):
     def get_monitoring_port(self):
         return ctrl_settings.MONITORING_PORT
 
+    def get_storage_mnemonic(self):
+        return &#34;DUMMY-HK&#34;
+
+    def after_serve(self):
+        from egse.confman import ConfigurationManagerProxy
+
+        self.unregister_as_listener(proxy=ConfigurationManagerProxy, listener={&#39;name&#39;: &#39;Dummy CS&#39;})
+
 
 @click.group()
 def cli():
     pass
 
-
-@cli.command()
+@click.group()
 def control_server():
+    pass
+
+cli.add_command(control_server)
+
+@control_server.command()
+def start():
     &#34;&#34;&#34;Start the dummy control server on localhost.&#34;&#34;&#34;
     from egse.dummy import DummyControlServer
 
@@ -190,6 +294,13 @@ def control_server():
     except Exception:
         import traceback
         traceback.print_exc(file=sys.stdout)
+
+@control_server.command()
+def stop():
+    &#34;&#34;&#34;Send a quit service command to the dummy control server.&#34;&#34;&#34;
+    with DummyProxy() as dummy:
+        sp = dummy.get_service_proxy()
+        sp.quit_server()
 
 
 @cli.command()
@@ -226,9 +337,9 @@ def monitoring(use_pickle: bool, hostname: str = &#39;localhost&#39;, port: int 
             if use_pickle:
                 response = pickle.loads(response)
 
-            logger.info(response)
+            LOGGER.info(response)
         except KeyboardInterrupt:
-            logger.info(&#34;KeyboardInterrupt caught!&#34;)
+            LOGGER.info(&#34;KeyboardInterrupt caught!&#34;)
             break
 
 
@@ -241,6 +352,24 @@ if __name__ == &#34;__main__&#34;:
 <section>
 </section>
 <section>
+<h2 class="section-title" id="header-functions">Functions</h2>
+<dl>
+<dt id="egse.dummy.is_dummy_cs_active"><code class="name flex">
+<span>def <span class="ident">is_dummy_cs_active</span></span>(<span>)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def is_dummy_cs_active():
+    return is_control_server_active(
+        endpoint=connect_address(ctrl_settings.PROTOCOL, ctrl_settings.HOSTNAME, ctrl_settings.COMMANDING_PORT)
+    )</code></pre>
+</details>
+</dd>
+</dl>
 </section>
 <section>
 <h2 class="section-title" id="header-classes">Classes</h2>
@@ -313,6 +442,8 @@ information to all the connected clients every DELAY seconds.</p>
     &#34;&#34;&#34;
 
     def __init__(self):
+        multiprocessing.current_process().name = &#34;dummy_cs&#34;
+
         super().__init__()
 
         self.device_protocol = DummyProtocol(self)
@@ -322,6 +453,17 @@ information to all the connected clients every DELAY seconds.</p>
         self.device_protocol.bind(self.dev_ctrl_cmd_sock)
 
         self.poller.register(self.dev_ctrl_cmd_sock, zmq.POLLIN)
+
+        self.set_hk_delay(ctrl_settings.HK_DELAY)
+
+        from egse.confman import ConfigurationManagerProxy
+        from egse.listener import EVENT_ID
+
+        self.register_as_listener(
+            proxy=ConfigurationManagerProxy,
+            listener={&#39;name&#39;: &#39;Dummy CS&#39;, &#39;proxy&#39;: DummyProxy, &#39;event_id&#39;: EVENT_ID.SETUP}
+        )
+
 
     def get_communication_protocol(self):
         return &#39;tcp&#39;
@@ -333,7 +475,15 @@ information to all the connected clients every DELAY seconds.</p>
         return ctrl_settings.SERVICE_PORT
 
     def get_monitoring_port(self):
-        return ctrl_settings.MONITORING_PORT</code></pre>
+        return ctrl_settings.MONITORING_PORT
+
+    def get_storage_mnemonic(self):
+        return &#34;DUMMY-HK&#34;
+
+    def after_serve(self):
+        from egse.confman import ConfigurationManagerProxy
+
+        self.unregister_as_listener(proxy=ConfigurationManagerProxy, listener={&#39;name&#39;: &#39;Dummy CS&#39;})</code></pre>
 </details>
 <h3>Ancestors</h3>
 <ul class="hlist">
@@ -341,6 +491,21 @@ information to all the connected clients every DELAY seconds.</p>
 </ul>
 <h3>Methods</h3>
 <dl>
+<dt id="egse.dummy.DummyControlServer.after_serve"><code class="name flex">
+<span>def <span class="ident">after_serve</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def after_serve(self):
+    from egse.confman import ConfigurationManagerProxy
+
+    self.unregister_as_listener(proxy=ConfigurationManagerProxy, listener={&#39;name&#39;: &#39;Dummy CS&#39;})</code></pre>
+</details>
+</dd>
 <dt id="egse.dummy.DummyControlServer.get_commanding_port"><code class="name flex">
 <span>def <span class="ident">get_commanding_port</span></span>(<span>self)</span>
 </code></dt>
@@ -393,22 +558,8 @@ information to all the connected clients every DELAY seconds.</p>
     return ctrl_settings.SERVICE_PORT</code></pre>
 </details>
 </dd>
-</dl>
-<h3>Inherited members</h3>
-<ul class="hlist">
-<li><code><b><a title="egse.control.ControlServer" href="control.html#egse.control.ControlServer">ControlServer</a></b></code>:
-<ul class="hlist">
-<li><code><a title="egse.control.ControlServer.register_to_storage_manager" href="control.html#egse.control.ControlServer.register_to_storage_manager">register_to_storage_manager</a></code></li>
-<li><code><a title="egse.control.ControlServer.set_delay" href="control.html#egse.control.ControlServer.set_delay">set_delay</a></code></li>
-<li><code><a title="egse.control.ControlServer.set_hk_delay" href="control.html#egse.control.ControlServer.set_hk_delay">set_hk_delay</a></code></li>
-<li><code><a title="egse.control.ControlServer.store_housekeeping_information" href="control.html#egse.control.ControlServer.store_housekeeping_information">store_housekeeping_information</a></code></li>
-<li><code><a title="egse.control.ControlServer.unregister_from_storage_manager" href="control.html#egse.control.ControlServer.unregister_from_storage_manager">unregister_from_storage_manager</a></code></li>
-</ul>
-</li>
-</ul>
-</dd>
-<dt id="egse.dummy.DummyController"><code class="flex name class">
-<span>class <span class="ident">DummyController</span></span>
+<dt id="egse.dummy.DummyControlServer.get_storage_mnemonic"><code class="name flex">
+<span>def <span class="ident">get_storage_mnemonic</span></span>(<span>self)</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -416,13 +567,84 @@ information to all the connected clients every DELAY seconds.</p>
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">class DummyController:
+<pre><code class="python">def get_storage_mnemonic(self):
+    return &#34;DUMMY-HK&#34;</code></pre>
+</details>
+</dd>
+</dl>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="egse.control.ControlServer" href="control.html#egse.control.ControlServer">ControlServer</a></b></code>:
+<ul class="hlist">
+<li><code><a title="egse.control.ControlServer.handle_scheduled_tasks" href="control.html#egse.control.ControlServer.handle_scheduled_tasks">handle_scheduled_tasks</a></code></li>
+<li><code><a title="egse.control.ControlServer.notify_listeners" href="control.html#egse.control.ControlServer.notify_listeners">notify_listeners</a></code></li>
+<li><code><a title="egse.control.ControlServer.register_as_listener" href="control.html#egse.control.ControlServer.register_as_listener">register_as_listener</a></code></li>
+<li><code><a title="egse.control.ControlServer.register_to_storage_manager" href="control.html#egse.control.ControlServer.register_to_storage_manager">register_to_storage_manager</a></code></li>
+<li><code><a title="egse.control.ControlServer.schedule_task" href="control.html#egse.control.ControlServer.schedule_task">schedule_task</a></code></li>
+<li><code><a title="egse.control.ControlServer.set_delay" href="control.html#egse.control.ControlServer.set_delay">set_delay</a></code></li>
+<li><code><a title="egse.control.ControlServer.set_hk_delay" href="control.html#egse.control.ControlServer.set_hk_delay">set_hk_delay</a></code></li>
+<li><code><a title="egse.control.ControlServer.store_housekeeping_information" href="control.html#egse.control.ControlServer.store_housekeeping_information">store_housekeeping_information</a></code></li>
+<li><code><a title="egse.control.ControlServer.unregister_as_listener" href="control.html#egse.control.ControlServer.unregister_as_listener">unregister_as_listener</a></code></li>
+<li><code><a title="egse.control.ControlServer.unregister_from_storage_manager" href="control.html#egse.control.ControlServer.unregister_from_storage_manager">unregister_from_storage_manager</a></code></li>
+</ul>
+</li>
+</ul>
+</dd>
+<dt id="egse.dummy.DummyController"><code class="flex name class">
+<span>class <span class="ident">DummyController</span></span>
+<span>(</span><span>control_server)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>A dynamic interface for handling events.</p>
+<p>This interface defines a single method, 'handle_event', which is intended
+to be implemented by classes that want to handle specific types of events.</p>
+<p>Use this interface as a mixin for classes (Proxy/Controller) that implement this <code>handle_event</code> method.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class DummyController(DummyInterface, EventInterface):
+    def __init__(self, control_server):
+        self._cs = control_server
+
     def info(self):
         return &#34;method info() called on DummyController&#34;
 
     def response(self, *args, **kwargs):
-        return f&#34;response({args}, {kwargs})&#34;</code></pre>
+        return f&#34;response({args}, {kwargs})&#34;
+
+    def handle_event(self, event: Event) -&gt; str:
+
+        _exec_in_thread = False
+
+        def _handle_event(event):
+            LOGGER.info(f&#34;An event is received, {event=}&#34;)
+            LOGGER.info(f&#34;CM CS active? {is_configuration_manager_active()}&#34;)
+            time.sleep(5.0)
+            LOGGER.info(f&#34;CM CS active? {is_configuration_manager_active()}&#34;)
+            LOGGER.info(f&#34;An event is processed, {event=}&#34;)
+
+        if _exec_in_thread:
+            # We execute this function in a daemon thread so the acknowledgment is
+            # sent back immediately (the ACK means &#39;command received and will be
+            # executed).
+
+            retry_thread = threading.Thread(target=_handle_event, args=(event,))
+            retry_thread.daemon = True
+            retry_thread.start()
+        else:
+            # An alternative to the daemon thread is to create a scheduled task that will be executed
+            # after the event is acknowledged.
+
+            self._cs.schedule_task(partial(_handle_event, event))
+
+        return &#34;ACK&#34;</code></pre>
 </details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="egse.dummy.DummyInterface" href="#egse.dummy.DummyInterface">DummyInterface</a></li>
+<li><a title="egse.listener.EventInterface" href="listener.html#egse.listener.EventInterface">EventInterface</a></li>
+</ul>
 <h3>Methods</h3>
 <dl>
 <dt id="egse.dummy.DummyController.info"><code class="name flex">
@@ -452,6 +674,68 @@ information to all the connected clients every DELAY seconds.</p>
 </details>
 </dd>
 </dl>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="egse.listener.EventInterface" href="listener.html#egse.listener.EventInterface">EventInterface</a></b></code>:
+<ul class="hlist">
+<li><code><a title="egse.listener.EventInterface.handle_event" href="listener.html#egse.listener.EventInterface.handle_event">handle_event</a></code></li>
+</ul>
+</li>
+</ul>
+</dd>
+<dt id="egse.dummy.DummyInterface"><code class="flex name class">
+<span>class <span class="ident">DummyInterface</span></span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class DummyInterface:
+    @dynamic_interface
+    def info(self):
+        ...
+    @dynamic_interface
+    def response(self, *args, **kwargs):
+        ...</code></pre>
+</details>
+<h3>Subclasses</h3>
+<ul class="hlist">
+<li><a title="egse.dummy.DummyController" href="#egse.dummy.DummyController">DummyController</a></li>
+<li><a title="egse.dummy.DummyProxy" href="#egse.dummy.DummyProxy">DummyProxy</a></li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="egse.dummy.DummyInterface.info"><code class="name flex">
+<span>def <span class="ident">info</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@dynamic_interface
+def info(self):
+    ...</code></pre>
+</details>
+</dd>
+<dt id="egse.dummy.DummyInterface.response"><code class="name flex">
+<span>def <span class="ident">response</span></span>(<span>self, *args, **kwargs)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@dynamic_interface
+def response(self, *args, **kwargs):
+    ...</code></pre>
+</details>
+</dd>
+</dl>
 </dd>
 <dt id="egse.dummy.DummyProtocol"><code class="flex name class">
 <span>class <span class="ident">DummyProtocol</span></span>
@@ -476,11 +760,13 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
         super().__init__()
         self.control_server = control_server
 
-        self.device_controller = DummyController()
+        self.device_controller = DummyController(control_server)
 
         self.load_commands(commands, DummyCommand, DummyController)
 
         self.build_device_method_lookup_table(self.device_controller)
+
+        self._count = 0
 
     def get_bind_address(self):
         return bind_address(self.control_server.get_communication_protocol(), self.control_server.get_commanding_port())
@@ -489,8 +775,22 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
         return super().get_status()
 
     def get_housekeeping(self) -&gt; dict:
+
+        # LOGGER.debug(f&#34;Executing get_housekeeping function for {self.__class__.__name__}.&#34;)
+
+        self._count += 1
+
+        # use the sleep to test the responsiveness of the control server when even this get_housekeeping function takes
+        # a lot of time, i.e. up to several minutes in the case of data acquisition devices
+        # import time
+        # time.sleep(2.0)
+
+
         return {
             &#39;timestamp&#39;: format_datetime(),
+            &#39;COUNT&#39;: self._count,
+            &#39;PI&#39;: 3.14159,  # just to have a constant parameter
+            &#39;Random&#39;: random.randint(0, 100),  # just to have a variable parameter
         }</code></pre>
 </details>
 <h3>Ancestors</h3>
@@ -541,7 +841,7 @@ during initialization, a ConnectionError will be raised.</p>
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">class DummyProxy(Proxy):
+<pre><code class="python">class DummyProxy(Proxy, DummyInterface, EventInterface):
     def __init__(self,
                  protocol=ctrl_settings.PROTOCOL, hostname=ctrl_settings.HOSTNAME, port=ctrl_settings.COMMANDING_PORT):
         &#34;&#34;&#34;
@@ -550,13 +850,15 @@ during initialization, a ConnectionError will be raised.</p>
             hostname: location of the control server (IP address) [default is taken from settings file]
             port: TCP port on which the control server is listening for commands [default is taken from settings file]
         &#34;&#34;&#34;
-        super().__init__(connect_address(protocol, hostname, port))</code></pre>
+        super().__init__(connect_address(protocol, hostname, port), timeout=ctrl_settings.TIMEOUT)</code></pre>
 </details>
 <h3>Ancestors</h3>
 <ul class="hlist">
 <li><a title="egse.proxy.Proxy" href="proxy.html#egse.proxy.Proxy">Proxy</a></li>
 <li><a title="egse.proxy.BaseProxy" href="proxy.html#egse.proxy.BaseProxy">BaseProxy</a></li>
 <li><a title="egse.proxy.ControlServerConnectionInterface" href="proxy.html#egse.proxy.ControlServerConnectionInterface">ControlServerConnectionInterface</a></li>
+<li><a title="egse.dummy.DummyInterface" href="#egse.dummy.DummyInterface">DummyInterface</a></li>
+<li><a title="egse.listener.EventInterface" href="listener.html#egse.listener.EventInterface">EventInterface</a></li>
 </ul>
 <h3>Inherited members</h3>
 <ul class="hlist">
@@ -579,6 +881,11 @@ during initialization, a ConnectionError will be raised.</p>
 <li><code><a title="egse.proxy.Proxy.send" href="proxy.html#egse.proxy.BaseProxy.send">send</a></code></li>
 </ul>
 </li>
+<li><code><b><a title="egse.listener.EventInterface" href="listener.html#egse.listener.EventInterface">EventInterface</a></b></code>:
+<ul class="hlist">
+<li><code><a title="egse.listener.EventInterface.handle_event" href="listener.html#egse.listener.EventInterface.handle_event">handle_event</a></code></li>
+</ul>
+</li>
 </ul>
 </dd>
 </dl>
@@ -595,6 +902,11 @@ during initialization, a ConnectionError will be raised.</p>
 <li><code><a title="egse" href="index.html">egse</a></code></li>
 </ul>
 </li>
+<li><h3><a href="#header-functions">Functions</a></h3>
+<ul class="">
+<li><code><a title="egse.dummy.is_dummy_cs_active" href="#egse.dummy.is_dummy_cs_active">is_dummy_cs_active</a></code></li>
+</ul>
+</li>
 <li><h3><a href="#header-classes">Classes</a></h3>
 <ul>
 <li>
@@ -603,10 +915,12 @@ during initialization, a ConnectionError will be raised.</p>
 <li>
 <h4><code><a title="egse.dummy.DummyControlServer" href="#egse.dummy.DummyControlServer">DummyControlServer</a></code></h4>
 <ul class="">
+<li><code><a title="egse.dummy.DummyControlServer.after_serve" href="#egse.dummy.DummyControlServer.after_serve">after_serve</a></code></li>
 <li><code><a title="egse.dummy.DummyControlServer.get_commanding_port" href="#egse.dummy.DummyControlServer.get_commanding_port">get_commanding_port</a></code></li>
 <li><code><a title="egse.dummy.DummyControlServer.get_communication_protocol" href="#egse.dummy.DummyControlServer.get_communication_protocol">get_communication_protocol</a></code></li>
 <li><code><a title="egse.dummy.DummyControlServer.get_monitoring_port" href="#egse.dummy.DummyControlServer.get_monitoring_port">get_monitoring_port</a></code></li>
 <li><code><a title="egse.dummy.DummyControlServer.get_service_port" href="#egse.dummy.DummyControlServer.get_service_port">get_service_port</a></code></li>
+<li><code><a title="egse.dummy.DummyControlServer.get_storage_mnemonic" href="#egse.dummy.DummyControlServer.get_storage_mnemonic">get_storage_mnemonic</a></code></li>
 </ul>
 </li>
 <li>
@@ -614,6 +928,13 @@ during initialization, a ConnectionError will be raised.</p>
 <ul class="">
 <li><code><a title="egse.dummy.DummyController.info" href="#egse.dummy.DummyController.info">info</a></code></li>
 <li><code><a title="egse.dummy.DummyController.response" href="#egse.dummy.DummyController.response">response</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="egse.dummy.DummyInterface" href="#egse.dummy.DummyInterface">DummyInterface</a></code></h4>
+<ul class="">
+<li><code><a title="egse.dummy.DummyInterface.info" href="#egse.dummy.DummyInterface.info">info</a></code></li>
+<li><code><a title="egse.dummy.DummyInterface.response" href="#egse.dummy.DummyInterface.response">response</a></code></li>
 </ul>
 </li>
 <li>

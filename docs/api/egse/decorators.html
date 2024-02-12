@@ -35,8 +35,10 @@ import functools
 import logging
 import pstats
 import time
+import types
 import warnings
 from typing import Callable
+from typing import List
 from typing import Optional
 
 from egse.settings import Settings
@@ -46,7 +48,16 @@ MODULE_LOGGER = logging.getLogger(__name__)
 
 
 def static_vars(**kwargs):
-    &#34;&#34;&#34;Define static variables in a function.&#34;&#34;&#34;
+    &#34;&#34;&#34;
+    Define static variables in a function.
+
+    The static variable can be accessed with &lt;function name&gt;.&lt;variable name&gt; inside the function body.
+
+        @static_vars(count=0)
+        def special_count():
+            return special_count.count += 2
+
+    &#34;&#34;&#34;
     def decorator(func):
         for kw in kwargs:
             setattr(func, kw, kwargs[kw])
@@ -280,6 +291,36 @@ def profile(func):
     return wrapper_profile
 
 
+class Profiler:
+
+    @classmethod
+    def count(cls):
+        return CountCalls
+
+
+class CountCalls:
+    def __init__(self, func):
+        self.func = func
+        self.count = 0
+
+    def __call__(self, *args, **kwargs):
+        self.count += 1
+        return self.func(*args, **kwargs)
+
+    def get_count(self):
+        return self.count
+
+    # The __get__ method is here to make the decorator work with instance methods (methods inside a class)
+    # as well. It ensures that when the decorated method is called on an instance, the self argument is
+    # correctly passed to the method.
+
+    def __get__(self, instance, owner):
+        if instance is None:
+            return self
+        else:
+            return types.MethodType(self, instance)
+
+
 def to_be_implemented(func):
     &#34;&#34;&#34;Print a warning message that this function/method has to be implemented.&#34;&#34;&#34;
 
@@ -441,7 +482,65 @@ def spy_on_attr_change(obj: object, obj_name: str = None) -&gt; None:
 
     class_name = obj.__class__.__name__
     obj.__class__ = Wrapper
-    obj.__class__.__name__ = class_name</code></pre>
+    obj.__class__.__name__ = class_name
+
+
+def retry(times: int = 3, wait: float = 10.0, exceptions: List = None):
+    &#34;&#34;&#34;
+    Decorator that retries a function multiple times with a delay between attempts.
+
+    This decorator can be applied to a function to handle specified exceptions by
+    retrying the function execution. It will make up to &#39;times&#39; attempts with a
+    waiting period of &#39;wait&#39; seconds between each attempt. Any exception from the
+    list provided in the `exceptions` argument will be ignored for the given `times`.
+
+    If after times attempts still an exception is raised, it will be passed through the
+    calling function, otherwise the functions return value will be returned.
+
+    Args:
+        times (int, optional): The number of retry attempts. Defaults to 3.
+        wait (float, optional): The waiting period between retries in seconds. Defaults to 10.0.
+        exceptions (List[Exception] or None, optional): List of exception types to catch and retry.
+            Defaults to None, which catches all exceptions.
+
+    Returns:
+        Callable: The decorated function.
+
+    Example:
+        Apply the retry decorator to a function with specific retry settings:
+
+            @retry(times=5, wait=15.0, exceptions=[ConnectionError, TimeoutError])
+            def my_function():
+                # Function logic here
+
+    Note:
+        The decorator catches specified exceptions and retries the function, logging
+        information about each retry attempt.
+
+    &#34;&#34;&#34;
+
+    exceptions = [Exception] if exceptions is None else exceptions
+
+    def actual_decorator(func: Callable) -&gt; Callable:
+
+        @functools.wraps(func)
+        def decorated_func(*args, **kwargs):
+            previous_exception = None
+            for n in range(times):
+                try:
+                    return func(*args, **kwargs)
+                except tuple(exceptions) as exc:
+                    previous_exception = exc
+                if n &lt; times:
+                    MODULE_LOGGER.info(
+                        f&#34;Retry {n + 1}: {func.__name__} will be executing again in {wait}s. &#34;
+                        f&#34;Received a {previous_exception!r}.&#34;
+                    )
+                    time.sleep(wait)
+            raise previous_exception
+        return decorated_func
+
+    return actual_decorator</code></pre>
 </details>
 </section>
 <section>
@@ -760,6 +859,103 @@ This is also useful in reducing the size of the printout</dd>
     return func</code></pre>
 </details>
 </dd>
+<dt id="egse.decorators.retry"><code class="name flex">
+<span>def <span class="ident">retry</span></span>(<span>times: int = 3, wait: float = 10.0, exceptions: List[~T] = None)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Decorator that retries a function multiple times with a delay between attempts.</p>
+<p>This decorator can be applied to a function to handle specified exceptions by
+retrying the function execution. It will make up to 'times' attempts with a
+waiting period of 'wait' seconds between each attempt. Any exception from the
+list provided in the <code>exceptions</code> argument will be ignored for the given <code>times</code>.</p>
+<p>If after times attempts still an exception is raised, it will be passed through the
+calling function, otherwise the functions return value will be returned.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>times</code></strong> :&ensp;<code>int</code>, optional</dt>
+<dd>The number of retry attempts. Defaults to 3.</dd>
+<dt><strong><code>wait</code></strong> :&ensp;<code>float</code>, optional</dt>
+<dd>The waiting period between retries in seconds. Defaults to 10.0.</dd>
+<dt><strong><code>exceptions</code></strong> :&ensp;<code>List[Exception]</code> or <code>None</code>, optional</dt>
+<dd>List of exception types to catch and retry.
+Defaults to None, which catches all exceptions.</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<dl>
+<dt><code>Callable</code></dt>
+<dd>The decorated function.</dd>
+</dl>
+<h2 id="example">Example</h2>
+<p>Apply the retry decorator to a function with specific retry settings:</p>
+<pre><code>@retry(times=5, wait=15.0, exceptions=[ConnectionError, TimeoutError])
+def my_function():
+    # Function logic here
+</code></pre>
+<h2 id="note">Note</h2>
+<p>The decorator catches specified exceptions and retries the function, logging
+information about each retry attempt.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def retry(times: int = 3, wait: float = 10.0, exceptions: List = None):
+    &#34;&#34;&#34;
+    Decorator that retries a function multiple times with a delay between attempts.
+
+    This decorator can be applied to a function to handle specified exceptions by
+    retrying the function execution. It will make up to &#39;times&#39; attempts with a
+    waiting period of &#39;wait&#39; seconds between each attempt. Any exception from the
+    list provided in the `exceptions` argument will be ignored for the given `times`.
+
+    If after times attempts still an exception is raised, it will be passed through the
+    calling function, otherwise the functions return value will be returned.
+
+    Args:
+        times (int, optional): The number of retry attempts. Defaults to 3.
+        wait (float, optional): The waiting period between retries in seconds. Defaults to 10.0.
+        exceptions (List[Exception] or None, optional): List of exception types to catch and retry.
+            Defaults to None, which catches all exceptions.
+
+    Returns:
+        Callable: The decorated function.
+
+    Example:
+        Apply the retry decorator to a function with specific retry settings:
+
+            @retry(times=5, wait=15.0, exceptions=[ConnectionError, TimeoutError])
+            def my_function():
+                # Function logic here
+
+    Note:
+        The decorator catches specified exceptions and retries the function, logging
+        information about each retry attempt.
+
+    &#34;&#34;&#34;
+
+    exceptions = [Exception] if exceptions is None else exceptions
+
+    def actual_decorator(func: Callable) -&gt; Callable:
+
+        @functools.wraps(func)
+        def decorated_func(*args, **kwargs):
+            previous_exception = None
+            for n in range(times):
+                try:
+                    return func(*args, **kwargs)
+                except tuple(exceptions) as exc:
+                    previous_exception = exc
+                if n &lt; times:
+                    MODULE_LOGGER.info(
+                        f&#34;Retry {n + 1}: {func.__name__} will be executing again in {wait}s. &#34;
+                        f&#34;Received a {previous_exception!r}.&#34;
+                    )
+                    time.sleep(wait)
+            raise previous_exception
+        return decorated_func
+
+    return actual_decorator</code></pre>
+</details>
+</dd>
 <dt id="egse.decorators.singleton"><code class="name flex">
 <span>def <span class="ident">singleton</span></span>(<span>cls)</span>
 </code></dt>
@@ -867,13 +1063,27 @@ the class name will be printed.</dd>
 <span>def <span class="ident">static_vars</span></span>(<span>**kwargs)</span>
 </code></dt>
 <dd>
-<div class="desc"><p>Define static variables in a function.</p></div>
+<div class="desc"><p>Define static variables in a function.</p>
+<p>The static variable can be accessed with <function name>.<variable name> inside the function body.</p>
+<pre><code>@static_vars(count=0)
+def special_count():
+    return special_count.count += 2
+</code></pre></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def static_vars(**kwargs):
-    &#34;&#34;&#34;Define static variables in a function.&#34;&#34;&#34;
+    &#34;&#34;&#34;
+    Define static variables in a function.
+
+    The static variable can be accessed with &lt;function name&gt;.&lt;variable name&gt; inside the function body.
+
+        @static_vars(count=0)
+        def special_count():
+            return special_count.count += 2
+
+    &#34;&#34;&#34;
     def decorator(func):
         for kw in kwargs:
             setattr(func, kw, kwargs[kw])
@@ -1062,6 +1272,55 @@ pass</p>
 <section>
 <h2 class="section-title" id="header-classes">Classes</h2>
 <dl>
+<dt id="egse.decorators.CountCalls"><code class="flex name class">
+<span>class <span class="ident">CountCalls</span></span>
+<span>(</span><span>func)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class CountCalls:
+    def __init__(self, func):
+        self.func = func
+        self.count = 0
+
+    def __call__(self, *args, **kwargs):
+        self.count += 1
+        return self.func(*args, **kwargs)
+
+    def get_count(self):
+        return self.count
+
+    # The __get__ method is here to make the decorator work with instance methods (methods inside a class)
+    # as well. It ensures that when the decorated method is called on an instance, the self argument is
+    # correctly passed to the method.
+
+    def __get__(self, instance, owner):
+        if instance is None:
+            return self
+        else:
+            return types.MethodType(self, instance)</code></pre>
+</details>
+<h3>Methods</h3>
+<dl>
+<dt id="egse.decorators.CountCalls.get_count"><code class="name flex">
+<span>def <span class="ident">get_count</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_count(self):
+    return self.count</code></pre>
+</details>
+</dd>
+</dl>
+</dd>
 <dt id="egse.decorators.Nothing"><code class="flex name class">
 <span>class <span class="ident">Nothing</span></span>
 </code></dt>
@@ -1076,6 +1335,39 @@ pass</p>
     def __repr__(self):
         return &#34;&lt;Nothing&gt;&#34;</code></pre>
 </details>
+</dd>
+<dt id="egse.decorators.Profiler"><code class="flex name class">
+<span>class <span class="ident">Profiler</span></span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Profiler:
+
+    @classmethod
+    def count(cls):
+        return CountCalls</code></pre>
+</details>
+<h3>Static methods</h3>
+<dl>
+<dt id="egse.decorators.Profiler.count"><code class="name flex">
+<span>def <span class="ident">count</span></span>(<span>)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@classmethod
+def count(cls):
+    return CountCalls</code></pre>
+</details>
+</dd>
+</dl>
 </dd>
 <dt id="egse.decorators.classproperty"><code class="flex name class">
 <span>class <span class="ident">classproperty</span></span>
@@ -1151,6 +1443,7 @@ pass</p>
 <li><code><a title="egse.decorators.profile_func" href="#egse.decorators.profile_func">profile_func</a></code></li>
 <li><code><a title="egse.decorators.query_command" href="#egse.decorators.query_command">query_command</a></code></li>
 <li><code><a title="egse.decorators.read_command" href="#egse.decorators.read_command">read_command</a></code></li>
+<li><code><a title="egse.decorators.retry" href="#egse.decorators.retry">retry</a></code></li>
 <li><code><a title="egse.decorators.singleton" href="#egse.decorators.singleton">singleton</a></code></li>
 <li><code><a title="egse.decorators.spy_on_attr_change" href="#egse.decorators.spy_on_attr_change">spy_on_attr_change</a></code></li>
 <li><code><a title="egse.decorators.static_vars" href="#egse.decorators.static_vars">static_vars</a></code></li>
@@ -1164,7 +1457,19 @@ pass</p>
 <li><h3><a href="#header-classes">Classes</a></h3>
 <ul>
 <li>
+<h4><code><a title="egse.decorators.CountCalls" href="#egse.decorators.CountCalls">CountCalls</a></code></h4>
+<ul class="">
+<li><code><a title="egse.decorators.CountCalls.get_count" href="#egse.decorators.CountCalls.get_count">get_count</a></code></li>
+</ul>
+</li>
+<li>
 <h4><code><a title="egse.decorators.Nothing" href="#egse.decorators.Nothing">Nothing</a></code></h4>
+</li>
+<li>
+<h4><code><a title="egse.decorators.Profiler" href="#egse.decorators.Profiler">Profiler</a></code></h4>
+<ul class="">
+<li><code><a title="egse.decorators.Profiler.count" href="#egse.decorators.Profiler.count">count</a></code></li>
+</ul>
 </li>
 <li>
 <h4><code><a title="egse.decorators.classproperty" href="#egse.decorators.classproperty">classproperty</a></code></h4>

@@ -27,22 +27,12 @@
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">import logging
-import struct
-import time
-import json
-import socket
-import errno
 import os
-import zmq
 from threading import Timer
-from types import LambdaType
 
 from egse.command import ClientServerCommand
-from egse.confman import ConfigurationManagerProxy
-from egse.exceptions import DeviceNotFoundError
 from egse.settings import Settings
-from egse.confman import ConfigurationManagerProxy
-from egse.state import GlobalState
+from egse.setup import load_setup
 
 WATCHDOG = 7
     
@@ -61,6 +51,8 @@ class BeagleboneDeviceInterface:
     
     def __init__(self):
 
+        setup = load_setup()
+
         # Perform SRON gssw imports here to avoid issues at other THs
         from gssw.config.configclient import ConfigClient
         from gssw.common import addLoggingLevel
@@ -76,7 +68,7 @@ class BeagleboneDeviceInterface:
         config = configClient.config
         addLoggingLevel(&#39;data&#39;, 15)
 
-        self._availability = GlobalState.setup.gse.beaglebone_heater.availability
+        self._availability = setup.gse.beaglebone_heater.availability
 
         hal = Hal()
         hal_client = HalClient(hal, config)
@@ -265,6 +257,8 @@ Arguments can be positional or keyword arguments, not both.</p></div>
     
     def __init__(self):
 
+        setup = load_setup()
+
         # Perform SRON gssw imports here to avoid issues at other THs
         from gssw.config.configclient import ConfigClient
         from gssw.common import addLoggingLevel
@@ -280,7 +274,7 @@ Arguments can be positional or keyword arguments, not both.</p></div>
         config = configClient.config
         addLoggingLevel(&#39;data&#39;, 15)
 
-        self._availability = GlobalState.setup.gse.beaglebone_heater.availability
+        self._availability = setup.gse.beaglebone_heater.availability
 
         hal = Hal()
         hal_client = HalClient(hal, config)

@@ -214,7 +214,6 @@ from __future__ import annotations
 
 import logging
 import operator
-import os
 import subprocess
 import textwrap
 import threading
@@ -223,9 +222,10 @@ from typing import NamedTuple
 from typing import Optional
 from typing import Union
 
-import rich
 import git
+import rich
 from git import GitCommandError
+from prometheus_client import Gauge
 
 from egse.command import ClientServerCommand
 from egse.command import stringify_function_call
@@ -240,6 +240,7 @@ from egse.control import is_control_server_active
 from egse.decorators import dynamic_interface
 from egse.decorators import static_vars
 from egse.exceptions import InternalError
+from egse.listener import EVENT_ID
 from egse.obsid import ObservationIdentifier
 from egse.protocol import CommandProtocol
 from egse.proxy import Proxy
@@ -248,16 +249,15 @@ from egse.settings import SettingsError
 from egse.setup import Setup
 from egse.setup import load_last_setup_id
 from egse.setup import save_last_setup_id
-from egse.storage import StorageProxy
-from egse.storage import is_storage_manager_active
-from egse.storage.persistence import TXT
+from egse.system import Timer
 from egse.system import filter_by_attr
 from egse.system import format_datetime
+from egse.system import duration
+from egse.system import humanize_seconds
 from egse.system import replace_environment_variable
 from egse.version import VERSION
 from egse.zmq_ser import bind_address
 from egse.zmq_ser import connect_address
-from prometheus_client import Gauge
 
 LOGGER = logging.getLogger(__name__)
 
@@ -268,6 +268,9 @@ REPO = Settings.load(&#34;REPO&#34;)
 
 CM_SETUP_ID = Gauge(&#34;CM_SETUP_ID&#34;, &#39;Setup ID&#39;)
 CM_TEST_ID = Gauge(&#34;CM_TEST_ID&#34;, &#39;Test ID&#39;)
+
+PROXY_TIMEOUT = 10_000  # don&#39;t wait longer than 10s by default
+
 
 def _push_setup_to_repo(filename: str, commit_msg: str) -&gt; Failure | Success:
     &#34;&#34;&#34;
@@ -615,6 +618,10 @@ class ConfigurationManagerInterface:
     def get_setup_for_obsid(self, obsid):
         raise NotImplementedError
 
+    @dynamic_interface
+    def get_listener_names(self):
+        raise NotImplementedError
+
 
 class ConfigurationManagerController(ConfigurationManagerInterface):
     &#34;&#34;&#34;Handles the commands that are sent to the configuration manager.
@@ -623,12 +630,24 @@ class ConfigurationManagerController(ConfigurationManagerInterface):
         The docstrings for each of the commands are in the `ConfigurationManagerInterface`.
     &#34;&#34;&#34;
 
-    def __init__(self):
+    def __init__(self, control_server: ControlServer | None = None):
+
+        # Import these modules here as to optimize the import of classes and functions in other parts of the CGSE.
+        # The CongifurationManagerController is only used by the CM CS and these Storage imports are only used in
+        # this class and take too much loading time...
+
+        from egse.storage import StorageProxy
+        from egse.storage import is_storage_manager_active
+        from egse.storage.persistence import TXT
+
         self._obsid: ObservationIdentifier | None = None
+        self._obsid_start_dt: str | None = None
+        self._setup: Setup | None = None
         self._setup_id: int | None = None
         self._camera_name: str | None = None
+        self._control_server: ControlServer | None = control_server
 
-        if is_storage_manager_active():
+        if is_storage_manager_active(timeout=2.0):
             self._storage = StorageProxy()
             response = self._storage.register(
                 {
@@ -687,6 +706,7 @@ class ConfigurationManagerController(ConfigurationManagerInterface):
             last_obsid = last_obsid.return_code if isinstance(last_obsid, Success) else None
 
         self._obsid = create_obsid(last_obsid, SITE.ID, self._setup_id)
+        self._obsid_start_dt = format_datetime()
 
         if self._storage:
             response = self._storage.start_observation(self._obsid, self._camera_name)
@@ -714,7 +734,7 @@ class ConfigurationManagerController(ConfigurationManagerInterface):
                 &#34;data&#34;: f&#34;{self._obsid.test_id:05d} &#34;
                 f&#34;{self._obsid.lab_id} &#34;
                 f&#34;{self._obsid.setup_id:05d} &#34;
-                f&#34;{format_datetime()} &#34;
+                f&#34;{self._obsid_start_dt} &#34;
                 f&#34;{cmd}&#34;,
             }
         )
@@ -747,9 +767,15 @@ class ConfigurationManagerController(ConfigurationManagerInterface):
                 response,
             )
 
-        LOGGER.info(f&#34;Successfully ended observation with obsid={self._obsid}.&#34;)
+        obsid_end_dt = format_datetime()
+        obs_duration = humanize_seconds(
+            duration(self._obsid_start_dt, obsid_end_dt).total_seconds(),
+            include_micro_seconds=False
+        )
+        LOGGER.info(f&#34;Successfully ended observation with obsid={self._obsid}, duration={obs_duration}.&#34;)
 
         self._obsid = None
+        self._obsid_start_dt = None
 
         return Success(&#34;Successfully ended the observation.&#34;)
 
@@ -811,6 +837,14 @@ class ConfigurationManagerController(ConfigurationManagerInterface):
             self._camera_name = self._setup.camera.ID.lower()
             LOGGER.info(f&#34;New Setup loaded from {setup_file}&#34;)
             save_last_setup_id(self._setup_id)
+            if self._control_server:
+                LOGGER.info(&#34;Notifying listeners for a new Setup!&#34;)
+                with Timer(f&#34;Notify Listeners for Setup change, Setup={self._setup_id}&#34;):
+                    self._control_server.notify_listeners(
+                        EVENT_ID.SETUP,
+                        {&#39;event_type&#39;: &#39;new_setup&#39;, &#39;setup_id&#39;: self._setup_id}
+                    )
+
             return self._setup
         except SettingsError as exc:
             return Failure(f&#34;The Setup file can not be loaded from {setup_file}.&#34;, exc)
@@ -987,7 +1021,16 @@ class ConfigurationManagerController(ConfigurationManagerInterface):
         if replace:
             self._setup = setup
             self._setup_id = setup_id
+            LOGGER.info(f&#34;New Setup was submitted and loaded: {setup_id=}&#34;)
+            self._camera_name = self._setup.camera.ID.lower()
             save_last_setup_id(setup_id)
+            if self._control_server:
+                LOGGER.info(&#34;Notifying listeners for a new Setup!&#34;)
+                with Timer(f&#34;Notify Listeners for Setup change, Setup={self._setup_id}&#34;):
+                    self._control_server.notify_listeners(
+                        EVENT_ID.SETUP,
+                        {&#39;event_type&#39;: &#39;new_setup&#39;, &#39;setup_id&#39;: setup_id}
+                    )
 
         return setup
 
@@ -1003,6 +1046,10 @@ class ConfigurationManagerController(ConfigurationManagerInterface):
         setup_id = last_file.name.split(&#34;_&#34;)[2]
 
         return int(setup_id) + 1
+
+    def get_listener_names(self):
+        &#34;&#34;&#34;Returns the names of the control servers that are listening for a new Setup.&#34;&#34;&#34;
+        return self._control_server.get_listener_names()
 
 
 class ConfigurationManagerCommand(ClientServerCommand):
@@ -1020,6 +1067,7 @@ class ConfigurationManagerProxy(Proxy, ConfigurationManagerInterface):
         protocol=CTRL_SETTINGS.PROTOCOL,
         hostname=CTRL_SETTINGS.HOSTNAME,
         port=CTRL_SETTINGS.COMMANDING_PORT,
+        timeout=PROXY_TIMEOUT,
     ):
         &#34;&#34;&#34;
         Args:
@@ -1029,7 +1077,7 @@ class ConfigurationManagerProxy(Proxy, ConfigurationManagerInterface):
             port: TCP port on which the control server is listening for commands
                 [default is taken from settings file]
         &#34;&#34;&#34;
-        super().__init__(connect_address(protocol, hostname, port))
+        super().__init__(connect_address(protocol, hostname, port), timeout=timeout)
 
 
 class ConfigurationManagerProtocol(CommandProtocol):
@@ -1037,7 +1085,7 @@ class ConfigurationManagerProtocol(CommandProtocol):
         super().__init__()
         self.control_server = control_server
 
-        self.controller = ConfigurationManagerController()
+        self.controller = ConfigurationManagerController(control_server)
 
         self.load_commands(
             COMMAND_SETTINGS.Commands,
@@ -1266,6 +1314,7 @@ Arguments can be positional or keyword arguments, not both.</p></div>
 </dd>
 <dt id="egse.confman.ConfigurationManagerController"><code class="flex name class">
 <span>class <span class="ident">ConfigurationManagerController</span></span>
+<span>(</span><span>control_server: ControlServer | None = None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Handles the commands that are sent to the configuration manager.</p>
@@ -1284,12 +1333,24 @@ Arguments can be positional or keyword arguments, not both.</p></div>
         The docstrings for each of the commands are in the `ConfigurationManagerInterface`.
     &#34;&#34;&#34;
 
-    def __init__(self):
+    def __init__(self, control_server: ControlServer | None = None):
+
+        # Import these modules here as to optimize the import of classes and functions in other parts of the CGSE.
+        # The CongifurationManagerController is only used by the CM CS and these Storage imports are only used in
+        # this class and take too much loading time...
+
+        from egse.storage import StorageProxy
+        from egse.storage import is_storage_manager_active
+        from egse.storage.persistence import TXT
+
         self._obsid: ObservationIdentifier | None = None
+        self._obsid_start_dt: str | None = None
+        self._setup: Setup | None = None
         self._setup_id: int | None = None
         self._camera_name: str | None = None
+        self._control_server: ControlServer | None = control_server
 
-        if is_storage_manager_active():
+        if is_storage_manager_active(timeout=2.0):
             self._storage = StorageProxy()
             response = self._storage.register(
                 {
@@ -1348,6 +1409,7 @@ Arguments can be positional or keyword arguments, not both.</p></div>
             last_obsid = last_obsid.return_code if isinstance(last_obsid, Success) else None
 
         self._obsid = create_obsid(last_obsid, SITE.ID, self._setup_id)
+        self._obsid_start_dt = format_datetime()
 
         if self._storage:
             response = self._storage.start_observation(self._obsid, self._camera_name)
@@ -1375,7 +1437,7 @@ Arguments can be positional or keyword arguments, not both.</p></div>
                 &#34;data&#34;: f&#34;{self._obsid.test_id:05d} &#34;
                 f&#34;{self._obsid.lab_id} &#34;
                 f&#34;{self._obsid.setup_id:05d} &#34;
-                f&#34;{format_datetime()} &#34;
+                f&#34;{self._obsid_start_dt} &#34;
                 f&#34;{cmd}&#34;,
             }
         )
@@ -1408,9 +1470,15 @@ Arguments can be positional or keyword arguments, not both.</p></div>
                 response,
             )
 
-        LOGGER.info(f&#34;Successfully ended observation with obsid={self._obsid}.&#34;)
+        obsid_end_dt = format_datetime()
+        obs_duration = humanize_seconds(
+            duration(self._obsid_start_dt, obsid_end_dt).total_seconds(),
+            include_micro_seconds=False
+        )
+        LOGGER.info(f&#34;Successfully ended observation with obsid={self._obsid}, duration={obs_duration}.&#34;)
 
         self._obsid = None
+        self._obsid_start_dt = None
 
         return Success(&#34;Successfully ended the observation.&#34;)
 
@@ -1472,6 +1540,14 @@ Arguments can be positional or keyword arguments, not both.</p></div>
             self._camera_name = self._setup.camera.ID.lower()
             LOGGER.info(f&#34;New Setup loaded from {setup_file}&#34;)
             save_last_setup_id(self._setup_id)
+            if self._control_server:
+                LOGGER.info(&#34;Notifying listeners for a new Setup!&#34;)
+                with Timer(f&#34;Notify Listeners for Setup change, Setup={self._setup_id}&#34;):
+                    self._control_server.notify_listeners(
+                        EVENT_ID.SETUP,
+                        {&#39;event_type&#39;: &#39;new_setup&#39;, &#39;setup_id&#39;: self._setup_id}
+                    )
+
             return self._setup
         except SettingsError as exc:
             return Failure(f&#34;The Setup file can not be loaded from {setup_file}.&#34;, exc)
@@ -1648,7 +1724,16 @@ Arguments can be positional or keyword arguments, not both.</p></div>
         if replace:
             self._setup = setup
             self._setup_id = setup_id
+            LOGGER.info(f&#34;New Setup was submitted and loaded: {setup_id=}&#34;)
+            self._camera_name = self._setup.camera.ID.lower()
             save_last_setup_id(setup_id)
+            if self._control_server:
+                LOGGER.info(&#34;Notifying listeners for a new Setup!&#34;)
+                with Timer(f&#34;Notify Listeners for Setup change, Setup={self._setup_id}&#34;):
+                    self._control_server.notify_listeners(
+                        EVENT_ID.SETUP,
+                        {&#39;event_type&#39;: &#39;new_setup&#39;, &#39;setup_id&#39;: setup_id}
+                    )
 
         return setup
 
@@ -1663,7 +1748,11 @@ Arguments can be positional or keyword arguments, not both.</p></div>
         last_file = files[-1]
         setup_id = last_file.name.split(&#34;_&#34;)[2]
 
-        return int(setup_id) + 1</code></pre>
+        return int(setup_id) + 1
+
+    def get_listener_names(self):
+        &#34;&#34;&#34;Returns the names of the control servers that are listening for a new Setup.&#34;&#34;&#34;
+        return self._control_server.get_listener_names()</code></pre>
 </details>
 <h3>Ancestors</h3>
 <ul class="hlist">
@@ -1687,6 +1776,20 @@ def data_location(self) -&gt; Path:
 </dl>
 <h3>Methods</h3>
 <dl>
+<dt id="egse.confman.ConfigurationManagerController.get_listener_names"><code class="name flex">
+<span>def <span class="ident">get_listener_names</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Returns the names of the control servers that are listening for a new Setup.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_listener_names(self):
+    &#34;&#34;&#34;Returns the names of the control servers that are listening for a new Setup.&#34;&#34;&#34;
+    return self._control_server.get_listener_names()</code></pre>
+</details>
+</dd>
 <dt id="egse.confman.ConfigurationManagerController.get_next_setup_id_for_site"><code class="name flex">
 <span>def <span class="ident">get_next_setup_id_for_site</span></span>(<span>self, site: str) ‑> int</span>
 </code></dt>
@@ -1968,6 +2071,14 @@ tuples with the following content: setup_id, site_id, description, cam_id.</p>
         self._camera_name = self._setup.camera.ID.lower()
         LOGGER.info(f&#34;New Setup loaded from {setup_file}&#34;)
         save_last_setup_id(self._setup_id)
+        if self._control_server:
+            LOGGER.info(&#34;Notifying listeners for a new Setup!&#34;)
+            with Timer(f&#34;Notify Listeners for Setup change, Setup={self._setup_id}&#34;):
+                self._control_server.notify_listeners(
+                    EVENT_ID.SETUP,
+                    {&#39;event_type&#39;: &#39;new_setup&#39;, &#39;setup_id&#39;: self._setup_id}
+                )
+
         return self._setup
     except SettingsError as exc:
         return Failure(f&#34;The Setup file can not be loaded from {setup_file}.&#34;, exc)
@@ -2065,7 +2176,16 @@ tuples with the following content: setup_id, site_id, description, cam_id.</p>
     if replace:
         self._setup = setup
         self._setup_id = setup_id
+        LOGGER.info(f&#34;New Setup was submitted and loaded: {setup_id=}&#34;)
+        self._camera_name = self._setup.camera.ID.lower()
         save_last_setup_id(setup_id)
+        if self._control_server:
+            LOGGER.info(&#34;Notifying listeners for a new Setup!&#34;)
+            with Timer(f&#34;Notify Listeners for Setup change, Setup={self._setup_id}&#34;):
+                self._control_server.notify_listeners(
+                    EVENT_ID.SETUP,
+                    {&#39;event_type&#39;: &#39;new_setup&#39;, &#39;setup_id&#39;: setup_id}
+                )
 
     return setup</code></pre>
 </details>
@@ -2163,6 +2283,10 @@ need that e.g. for testing purposes).</p></div>
 
     @dynamic_interface
     def get_setup_for_obsid(self, obsid):
+        raise NotImplementedError
+
+    @dynamic_interface
+    def get_listener_names(self):
         raise NotImplementedError</code></pre>
 </details>
 <h3>Subclasses</h3>
@@ -2192,6 +2316,20 @@ def end_observation(self) -&gt; Response:
         `Success` when the observation could be closed properly and the Storage CS was notified
         or `Failure` otherwise.
     &#34;&#34;&#34;
+    raise NotImplementedError</code></pre>
+</details>
+</dd>
+<dt id="egse.confman.ConfigurationManagerInterface.get_listener_names"><code class="name flex">
+<span>def <span class="ident">get_listener_names</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@dynamic_interface
+def get_listener_names(self):
     raise NotImplementedError</code></pre>
 </details>
 </dd>
@@ -2365,7 +2503,7 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
         super().__init__()
         self.control_server = control_server
 
-        self.controller = ConfigurationManagerController()
+        self.controller = ConfigurationManagerController(control_server)
 
         self.load_commands(
             COMMAND_SETTINGS.Commands,
@@ -2455,7 +2593,7 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
 </dd>
 <dt id="egse.confman.ConfigurationManagerProxy"><code class="flex name class">
 <span>class <span class="ident">ConfigurationManagerProxy</span></span>
-<span>(</span><span>protocol='tcp', hostname='localhost', port=6000)</span>
+<span>(</span><span>protocol='tcp', hostname='localhost', port=6000, timeout=10000)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>The Configuration Manager Proxy class is used to connect to the Configuration Manager
@@ -2486,6 +2624,7 @@ from settings file]</dd>
         protocol=CTRL_SETTINGS.PROTOCOL,
         hostname=CTRL_SETTINGS.HOSTNAME,
         port=CTRL_SETTINGS.COMMANDING_PORT,
+        timeout=PROXY_TIMEOUT,
     ):
         &#34;&#34;&#34;
         Args:
@@ -2495,7 +2634,7 @@ from settings file]</dd>
             port: TCP port on which the control server is listening for commands
                 [default is taken from settings file]
         &#34;&#34;&#34;
-        super().__init__(connect_address(protocol, hostname, port))</code></pre>
+        super().__init__(connect_address(protocol, hostname, port), timeout=timeout)</code></pre>
 </details>
 <h3>Ancestors</h3>
 <ul class="hlist">
@@ -2631,6 +2770,7 @@ from settings file]</dd>
 <h4><code><a title="egse.confman.ConfigurationManagerController" href="#egse.confman.ConfigurationManagerController">ConfigurationManagerController</a></code></h4>
 <ul class="">
 <li><code><a title="egse.confman.ConfigurationManagerController.data_location" href="#egse.confman.ConfigurationManagerController.data_location">data_location</a></code></li>
+<li><code><a title="egse.confman.ConfigurationManagerController.get_listener_names" href="#egse.confman.ConfigurationManagerController.get_listener_names">get_listener_names</a></code></li>
 <li><code><a title="egse.confman.ConfigurationManagerController.get_next_setup_id_for_site" href="#egse.confman.ConfigurationManagerController.get_next_setup_id_for_site">get_next_setup_id_for_site</a></code></li>
 <li><code><a title="egse.confman.ConfigurationManagerController.get_setup" href="#egse.confman.ConfigurationManagerController.get_setup">get_setup</a></code></li>
 <li><code><a title="egse.confman.ConfigurationManagerController.get_setup_for_obsid" href="#egse.confman.ConfigurationManagerController.get_setup_for_obsid">get_setup_for_obsid</a></code></li>
@@ -2647,6 +2787,7 @@ from settings file]</dd>
 <h4><code><a title="egse.confman.ConfigurationManagerInterface" href="#egse.confman.ConfigurationManagerInterface">ConfigurationManagerInterface</a></code></h4>
 <ul class="two-column">
 <li><code><a title="egse.confman.ConfigurationManagerInterface.end_observation" href="#egse.confman.ConfigurationManagerInterface.end_observation">end_observation</a></code></li>
+<li><code><a title="egse.confman.ConfigurationManagerInterface.get_listener_names" href="#egse.confman.ConfigurationManagerInterface.get_listener_names">get_listener_names</a></code></li>
 <li><code><a title="egse.confman.ConfigurationManagerInterface.get_obsid" href="#egse.confman.ConfigurationManagerInterface.get_obsid">get_obsid</a></code></li>
 <li><code><a title="egse.confman.ConfigurationManagerInterface.get_setup" href="#egse.confman.ConfigurationManagerInterface.get_setup">get_setup</a></code></li>
 <li><code><a title="egse.confman.ConfigurationManagerInterface.get_setup_for_obsid" href="#egse.confman.ConfigurationManagerInterface.get_setup_for_obsid">get_setup_for_obsid</a></code></li>

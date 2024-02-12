@@ -31,19 +31,26 @@
 This module defines the abstract class for any control server and some convenience functions.
 &#34;&#34;&#34;
 import abc
+import datetime
 import logging
 import pickle
 import threading
 import time
+from functools import partial
 from typing import Any
+from typing import Callable
+from typing import Type
 
 import zmq
 
+from egse.decorators import retry
+from egse.listener import Listeners
 from egse.logger import close_all_zmq_handlers
 from egse.process import ProcessStatus
 from egse.settings import Settings
 from egse.system import do_every
 from egse.system import get_average_execution_time
+from egse.system import get_average_execution_times
 from egse.system import get_full_classname
 from egse.system import get_host_ip
 from egse.system import save_average_execution_time
@@ -205,6 +212,9 @@ class ControlServer(metaclass=abc.ABCMeta):
 
         self.logger = logging.getLogger(get_full_classname(self))
 
+        self.listeners = Listeners()
+        self.scheduled_tasks = []
+
         self.interrupted = False
         self.delay = 1000  # delay between publish status information [milliseconds]
         self.hk_delay = 1000  # delay between saving housekeeping information [milliseconds]
@@ -261,6 +271,9 @@ class ControlServer(metaclass=abc.ABCMeta):
     def get_process_status(self):
         return self._process_status.as_dict()
 
+    def get_average_execution_times(self):
+        return get_average_execution_times()
+
     def set_delay(self, seconds: float) -&gt; float:
         &#34;&#34;&#34;
         Sets the delay time for monitoring. The delay time is the time between two successive executions of the
@@ -308,6 +321,73 @@ class ControlServer(metaclass=abc.ABCMeta):
 
     def after_serve(self):
         pass
+
+    def handle_scheduled_tasks(self):
+        &#34;&#34;&#34;
+        Executes or reschedules tasks in the `serve()` event loop.
+        &#34;&#34;&#34;
+        self.scheduled_tasks.reverse()
+        rescheduled_tasks = []
+        while self.scheduled_tasks:
+            task_info = self.scheduled_tasks.pop()
+            task = task_info[&#34;task&#34;]
+            task_name = task_info.get(&#34;name&#34;)
+
+            at = task_info.get(&#34;after&#34;)
+            if at and at &gt; datetime.datetime.now(tz=datetime.timezone.utc):
+                rescheduled_tasks.append(task_info)
+                continue
+
+            condition = task_info.get(&#34;condition&#34;)
+            if condition and not condition():
+                rescheduled_tasks.append(task_info)
+                continue
+
+            self.logger.debug(f&#34;Running scheduled task: {task_name}&#34;)
+            try:
+                task()
+            except Exception as exc:
+                self.logger.exception(exc, exc_info=True, stack_info=True)
+                self.logger.warning(f&#34;Task {task_name} has failed: {exc!r}&#34;)
+            else:
+                self.logger.debug(f&#34;Scheduled task finished: {task_name}&#34;)
+
+        if self.scheduled_tasks:
+            self.logger.warning(f&#34;There are still {len(self.scheduled_tasks)} scheduled tasks.&#34;)
+
+        if rescheduled_tasks:
+            self.scheduled_tasks.append(*rescheduled_tasks)
+
+    def schedule_task(self, callback: Callable, after: float = 0.0, when: Callable = None):
+        &#34;&#34;&#34;
+        Schedules a task to run in the control server event loop.
+
+        The `callback` function will be executed as soon as possible in the `serve()` event loop.
+
+        Some simple scheduling options are available:
+
+        * after: the task will only execute &#39;x&#39; seconds after the time of scheduling. I.e.
+          the task will be rescheduled until time &gt; scheduled time + &#39;x&#39; seconds.
+        * when: the task will only execute when the condition is True.
+
+        The `after` and the `when` arguments can be combined.
+
+        Note:
+            * This function is intended to be used in order to prevent a deadlock.
+            * Since the `callback` function is executed in the `serve()` event loop, it shall not block!
+
+        &#34;&#34;&#34;
+        try:
+            name = callback.func.__name__ if isinstance(callback, partial) else callback.__name__
+        except AttributeError:
+            name = &#34;unknown&#34;
+
+        current_time = datetime.datetime.now(tz=datetime.timezone.utc)
+        scheduled_time = current_time + datetime.timedelta(seconds=after)
+
+        self.logger.info(f&#34;Task {name} scheduled&#34;)
+
+        self.scheduled_tasks.append({&#39;task&#39;: callback, &#34;name&#34;: name, &#34;after&#34;: scheduled_time, &#34;when&#34;: when})
 
     def serve(self):
 
@@ -363,6 +443,10 @@ class ControlServer(metaclass=abc.ABCMeta):
                     self.store_housekeeping_information(
                         save_average_execution_time(self.device_protocol.get_housekeeping)
                     )
+
+            # Handle scheduled tasks/callback functions
+
+            self.handle_scheduled_tasks()
 
             if self.interrupted:
                 self.logger.info(
@@ -464,7 +548,117 @@ class ControlServer(metaclass=abc.ABCMeta):
         except ConnectionError as exc:
             self.logger.warning(
                 f&#34;Couldn&#39;t connect to the Storage manager for de-registration: {exc}&#34;
-            )</code></pre>
+            )
+
+    def notify_listeners(self, event_id: int = 0, context: dict = None):
+        &#34;&#34;&#34;
+        Notifies registered listeners about an event.
+
+        This function creates an Event object with the provided `event_id` and `context`
+        and notifies all registered listeners with the created event.
+
+        Args:
+            event_id (int, optional): The identifier for the event. Defaults to 0.
+            context (dict, optional): Additional context information associated with the event.
+                Defaults to None.
+
+        Note:
+            The notification is performed by the `notify_listeners` method of the `listeners` object
+            associated with this instance.
+            The notification is executed in a daemon thread to avoid blocking the commanding
+            chain.
+
+        &#34;&#34;&#34;
+        from egse.listener import Event, EVENT_ID
+
+        self.logger.info(f&#34;Notifying listeners for {EVENT_ID(event_id).name}&#34;)
+
+        retry_thread = threading.Thread(target=self.listeners.notify_listeners,
+                                        args=(Event(event_id=event_id, context=context),))
+        retry_thread.daemon = True
+        retry_thread.start()
+
+    def get_listener_names(self):
+        return self.listeners.get_listener_names()
+
+    def register_as_listener(self, proxy: Type, listener: dict):
+        &#34;&#34;&#34;
+        Registers a listener with the specified proxy.
+
+        This function attempts to add the provided listener to the specified proxy.
+        It employs a retry mechanism to handle potential ConnectionError exceptions,
+        making up to 5 attempts to add the listener.
+
+        Args:
+            proxy: A callable object representing the proxy to which the listener will be added.
+            listener (dict): The listener to be registered. Should be a dictionary containing
+                listener details.
+
+        Raises:
+            ConnectionError: If the connection to the proxy encounters issues even after
+                multiple retry attempts.
+
+        Note:
+            The function runs in a separate daemon thread to avoid blocking the main thread.
+
+        &#34;&#34;&#34;
+        @retry(times=5, exceptions=[ConnectionError])
+        def _add_listener(proxy, listener):
+            with proxy() as x, x.get_service_proxy() as srv:
+                rc = srv.add_listener(listener)
+                MODULE_LOGGER.debug(f&#34;Response from service add_listener: {rc}&#34;)
+
+        MODULE_LOGGER.info(f&#34;Registering {self.__class__.__name__} to {proxy}&#34;)
+
+        retry_thread = threading.Thread(target=_add_listener, args=(proxy, listener))
+        retry_thread.daemon = True
+        retry_thread.start()
+
+    def unregister_as_listener(self, proxy: Type, listener: dict):
+        &#34;&#34;&#34;
+        Removes a registered listener from the specified proxy.
+
+        This function attempts to remove the provided listener from the specified proxy.
+        It employs a retry mechanism to handle potential ConnectionError exceptions,
+        making up to 5 attempts to add the listener.
+
+        Args:
+            proxy: A callable object representing the proxy from which the listener will be removed.
+            listener (dict): The listener to be removed. Should be a dictionary containing
+                listener details.
+
+        Raises:
+            ConnectionError: If the connection to the proxy encounters issues even after
+                multiple retry attempts.
+
+        Note:
+            The function runs in a separate thread but will block until the de-registration is finished.
+            The reason being that this method is usually called in a `after_serve` block so it needs to
+            finish before the ZeroMQ context is destroyed.
+
+        &#34;&#34;&#34;
+        @retry(times=5, exceptions=[ConnectionError])
+        def _remove_listener(proxy, listener):
+            with proxy() as x, x.get_service_proxy() as srv:
+                rc = srv.remove_listener(listener)
+
+        endpoint = proxy().get_endpoint()
+        if not is_control_server_active(endpoint, timeout=0.5):
+            MODULE_LOGGER.warning(f&#34;The {endpoint} endpoint is not responding, {listener[&#39;name&#39;]} not un-registered.&#34;)
+            return
+
+        MODULE_LOGGER.info(f&#34;Removing {self.__class__.__name__} from {proxy}&#34;)
+
+        retry_thread = threading.Thread(target=_remove_listener, args=(proxy, listener))
+        retry_thread.daemon = False
+        retry_thread.start()
+
+        # Block until the listener has been removed. This is needed because this unregister function will usually
+        # be called in the `after_server()` method of the control server (which is the listener) and if we do not
+        # wait until the thread is finished the ZeroMQ Context will be destroyed before the reply can be sent.
+        # Note: we could probably do without the thread, and directly call the `_remove_listener()` function.
+
+        retry_thread.join()</code></pre>
 </details>
 </section>
 <section>
@@ -606,6 +800,9 @@ calling the <code>execute()</code> method of the commanding protocol class.</p>
 
         self.logger = logging.getLogger(get_full_classname(self))
 
+        self.listeners = Listeners()
+        self.scheduled_tasks = []
+
         self.interrupted = False
         self.delay = 1000  # delay between publish status information [milliseconds]
         self.hk_delay = 1000  # delay between saving housekeeping information [milliseconds]
@@ -662,6 +859,9 @@ calling the <code>execute()</code> method of the commanding protocol class.</p>
     def get_process_status(self):
         return self._process_status.as_dict()
 
+    def get_average_execution_times(self):
+        return get_average_execution_times()
+
     def set_delay(self, seconds: float) -&gt; float:
         &#34;&#34;&#34;
         Sets the delay time for monitoring. The delay time is the time between two successive executions of the
@@ -709,6 +909,73 @@ calling the <code>execute()</code> method of the commanding protocol class.</p>
 
     def after_serve(self):
         pass
+
+    def handle_scheduled_tasks(self):
+        &#34;&#34;&#34;
+        Executes or reschedules tasks in the `serve()` event loop.
+        &#34;&#34;&#34;
+        self.scheduled_tasks.reverse()
+        rescheduled_tasks = []
+        while self.scheduled_tasks:
+            task_info = self.scheduled_tasks.pop()
+            task = task_info[&#34;task&#34;]
+            task_name = task_info.get(&#34;name&#34;)
+
+            at = task_info.get(&#34;after&#34;)
+            if at and at &gt; datetime.datetime.now(tz=datetime.timezone.utc):
+                rescheduled_tasks.append(task_info)
+                continue
+
+            condition = task_info.get(&#34;condition&#34;)
+            if condition and not condition():
+                rescheduled_tasks.append(task_info)
+                continue
+
+            self.logger.debug(f&#34;Running scheduled task: {task_name}&#34;)
+            try:
+                task()
+            except Exception as exc:
+                self.logger.exception(exc, exc_info=True, stack_info=True)
+                self.logger.warning(f&#34;Task {task_name} has failed: {exc!r}&#34;)
+            else:
+                self.logger.debug(f&#34;Scheduled task finished: {task_name}&#34;)
+
+        if self.scheduled_tasks:
+            self.logger.warning(f&#34;There are still {len(self.scheduled_tasks)} scheduled tasks.&#34;)
+
+        if rescheduled_tasks:
+            self.scheduled_tasks.append(*rescheduled_tasks)
+
+    def schedule_task(self, callback: Callable, after: float = 0.0, when: Callable = None):
+        &#34;&#34;&#34;
+        Schedules a task to run in the control server event loop.
+
+        The `callback` function will be executed as soon as possible in the `serve()` event loop.
+
+        Some simple scheduling options are available:
+
+        * after: the task will only execute &#39;x&#39; seconds after the time of scheduling. I.e.
+          the task will be rescheduled until time &gt; scheduled time + &#39;x&#39; seconds.
+        * when: the task will only execute when the condition is True.
+
+        The `after` and the `when` arguments can be combined.
+
+        Note:
+            * This function is intended to be used in order to prevent a deadlock.
+            * Since the `callback` function is executed in the `serve()` event loop, it shall not block!
+
+        &#34;&#34;&#34;
+        try:
+            name = callback.func.__name__ if isinstance(callback, partial) else callback.__name__
+        except AttributeError:
+            name = &#34;unknown&#34;
+
+        current_time = datetime.datetime.now(tz=datetime.timezone.utc)
+        scheduled_time = current_time + datetime.timedelta(seconds=after)
+
+        self.logger.info(f&#34;Task {name} scheduled&#34;)
+
+        self.scheduled_tasks.append({&#39;task&#39;: callback, &#34;name&#34;: name, &#34;after&#34;: scheduled_time, &#34;when&#34;: when})
 
     def serve(self):
 
@@ -764,6 +1031,10 @@ calling the <code>execute()</code> method of the commanding protocol class.</p>
                     self.store_housekeeping_information(
                         save_average_execution_time(self.device_protocol.get_housekeeping)
                     )
+
+            # Handle scheduled tasks/callback functions
+
+            self.handle_scheduled_tasks()
 
             if self.interrupted:
                 self.logger.info(
@@ -865,12 +1136,122 @@ calling the <code>execute()</code> method of the commanding protocol class.</p>
         except ConnectionError as exc:
             self.logger.warning(
                 f&#34;Couldn&#39;t connect to the Storage manager for de-registration: {exc}&#34;
-            )</code></pre>
+            )
+
+    def notify_listeners(self, event_id: int = 0, context: dict = None):
+        &#34;&#34;&#34;
+        Notifies registered listeners about an event.
+
+        This function creates an Event object with the provided `event_id` and `context`
+        and notifies all registered listeners with the created event.
+
+        Args:
+            event_id (int, optional): The identifier for the event. Defaults to 0.
+            context (dict, optional): Additional context information associated with the event.
+                Defaults to None.
+
+        Note:
+            The notification is performed by the `notify_listeners` method of the `listeners` object
+            associated with this instance.
+            The notification is executed in a daemon thread to avoid blocking the commanding
+            chain.
+
+        &#34;&#34;&#34;
+        from egse.listener import Event, EVENT_ID
+
+        self.logger.info(f&#34;Notifying listeners for {EVENT_ID(event_id).name}&#34;)
+
+        retry_thread = threading.Thread(target=self.listeners.notify_listeners,
+                                        args=(Event(event_id=event_id, context=context),))
+        retry_thread.daemon = True
+        retry_thread.start()
+
+    def get_listener_names(self):
+        return self.listeners.get_listener_names()
+
+    def register_as_listener(self, proxy: Type, listener: dict):
+        &#34;&#34;&#34;
+        Registers a listener with the specified proxy.
+
+        This function attempts to add the provided listener to the specified proxy.
+        It employs a retry mechanism to handle potential ConnectionError exceptions,
+        making up to 5 attempts to add the listener.
+
+        Args:
+            proxy: A callable object representing the proxy to which the listener will be added.
+            listener (dict): The listener to be registered. Should be a dictionary containing
+                listener details.
+
+        Raises:
+            ConnectionError: If the connection to the proxy encounters issues even after
+                multiple retry attempts.
+
+        Note:
+            The function runs in a separate daemon thread to avoid blocking the main thread.
+
+        &#34;&#34;&#34;
+        @retry(times=5, exceptions=[ConnectionError])
+        def _add_listener(proxy, listener):
+            with proxy() as x, x.get_service_proxy() as srv:
+                rc = srv.add_listener(listener)
+                MODULE_LOGGER.debug(f&#34;Response from service add_listener: {rc}&#34;)
+
+        MODULE_LOGGER.info(f&#34;Registering {self.__class__.__name__} to {proxy}&#34;)
+
+        retry_thread = threading.Thread(target=_add_listener, args=(proxy, listener))
+        retry_thread.daemon = True
+        retry_thread.start()
+
+    def unregister_as_listener(self, proxy: Type, listener: dict):
+        &#34;&#34;&#34;
+        Removes a registered listener from the specified proxy.
+
+        This function attempts to remove the provided listener from the specified proxy.
+        It employs a retry mechanism to handle potential ConnectionError exceptions,
+        making up to 5 attempts to add the listener.
+
+        Args:
+            proxy: A callable object representing the proxy from which the listener will be removed.
+            listener (dict): The listener to be removed. Should be a dictionary containing
+                listener details.
+
+        Raises:
+            ConnectionError: If the connection to the proxy encounters issues even after
+                multiple retry attempts.
+
+        Note:
+            The function runs in a separate thread but will block until the de-registration is finished.
+            The reason being that this method is usually called in a `after_serve` block so it needs to
+            finish before the ZeroMQ context is destroyed.
+
+        &#34;&#34;&#34;
+        @retry(times=5, exceptions=[ConnectionError])
+        def _remove_listener(proxy, listener):
+            with proxy() as x, x.get_service_proxy() as srv:
+                rc = srv.remove_listener(listener)
+
+        endpoint = proxy().get_endpoint()
+        if not is_control_server_active(endpoint, timeout=0.5):
+            MODULE_LOGGER.warning(f&#34;The {endpoint} endpoint is not responding, {listener[&#39;name&#39;]} not un-registered.&#34;)
+            return
+
+        MODULE_LOGGER.info(f&#34;Removing {self.__class__.__name__} from {proxy}&#34;)
+
+        retry_thread = threading.Thread(target=_remove_listener, args=(proxy, listener))
+        retry_thread.daemon = False
+        retry_thread.start()
+
+        # Block until the listener has been removed. This is needed because this unregister function will usually
+        # be called in the `after_server()` method of the control server (which is the listener) and if we do not
+        # wait until the thread is finished the ZeroMQ Context will be destroyed before the reply can be sent.
+        # Note: we could probably do without the thread, and directly call the `_remove_listener()` function.
+
+        retry_thread.join()</code></pre>
 </details>
 <h3>Subclasses</h3>
 <ul class="hlist">
 <li><a title="egse.aeu.aeu_cs.AEUControlServer" href="aeu/aeu_cs.html#egse.aeu.aeu_cs.AEUControlServer">AEUControlServer</a></li>
-<li><a title="egse.alert.alert_manager_cs.AlertManagerControlServer" href="alert/alert_manager_cs.html#egse.alert.alert_manager_cs.AlertManagerControlServer">AlertManagerControlServer</a></li>
+<li><a title="egse.alert.alertman_cs.AlertManagerControlServer" href="alert/alertman_cs.html#egse.alert.alertman_cs.AlertManagerControlServer">AlertManagerControlServer</a></li>
 <li><a title="egse.alert.gsm.beaglebone_cs.BeagleBoneControlServer" href="alert/gsm/beaglebone_cs.html#egse.alert.gsm.beaglebone_cs.BeagleBoneControlServer">BeagleBoneControlServer</a></li>
 <li><a title="egse.collimator.fcul.ogse_cs.OGSEControlServer" href="collimator/fcul/ogse_cs.html#egse.collimator.fcul.ogse_cs.OGSEControlServer">OGSEControlServer</a></li>
 <li><a title="egse.confman.confman_cs.ConfigurationManagerControlServer" href="confman/confman_cs.html#egse.confman.confman_cs.ConfigurationManagerControlServer">ConfigurationManagerControlServer</a></li>
@@ -879,13 +1260,13 @@ calling the <code>execute()</code> method of the commanding protocol class.</p>
 <li><a title="egse.dyndummy.DummyControlServer" href="dyndummy.html#egse.dyndummy.DummyControlServer">DummyControlServer</a></li>
 <li><a title="egse.fdir.fdir_manager_cs.FdirManagerControlServer" href="fdir/fdir_manager_cs.html#egse.fdir.fdir_manager_cs.FdirManagerControlServer">FdirManagerControlServer</a></li>
 <li><a title="egse.fdir.fdir_remote_cs.FdirRemoteControlServer" href="fdir/fdir_remote_cs.html#egse.fdir.fdir_remote_cs.FdirRemoteControlServer">FdirRemoteControlServer</a></li>
-<li><a title="egse.filterwheel.eksma.fw8smc4_cs.FilterWheelControlServer" href="filterwheel/eksma/fw8smc4_cs.html#egse.filterwheel.eksma.fw8smc4_cs.FilterWheelControlServer">FilterWheelControlServer</a></li>
 <li><a title="egse.filterwheel.eksma.fw8smc5_cs.Fw8Smc5ControlServer" href="filterwheel/eksma/fw8smc5_cs.html#egse.filterwheel.eksma.fw8smc5_cs.Fw8Smc5ControlServer">Fw8Smc5ControlServer</a></li>
 <li><a title="egse.gimbal.symetrie.gimbal_cs.GimbalControlServer" href="gimbal/symetrie/gimbal_cs.html#egse.gimbal.symetrie.gimbal_cs.GimbalControlServer">GimbalControlServer</a></li>
 <li><a title="egse.hexapod.symetrie.puna_cs.PunaControlServer" href="hexapod/symetrie/puna_cs.html#egse.hexapod.symetrie.puna_cs.PunaControlServer">PunaControlServer</a></li>
 <li><a title="egse.hexapod.symetrie.zonda_cs.ZondaControlServer" href="hexapod/symetrie/zonda_cs.html#egse.hexapod.symetrie.zonda_cs.ZondaControlServer">ZondaControlServer</a></li>
 <li><a title="egse.lampcontrol.beaglebone.beaglebone_cs.BeagleBoneControlServer" href="lampcontrol/beaglebone/beaglebone_cs.html#egse.lampcontrol.beaglebone.beaglebone_cs.BeagleBoneControlServer">BeagleBoneControlServer</a></li>
 <li><a title="egse.lampcontrol.energetiq.lampEQ99_cs.LampControlServer" href="lampcontrol/energetiq/lampEQ99_cs.html#egse.lampcontrol.energetiq.lampEQ99_cs.LampControlServer">LampControlServer</a></li>
+<li><a title="egse.ni.alarms.cdaq9375_cs.cdaq9375ControlServer" href="ni/alarms/cdaq9375_cs.html#egse.ni.alarms.cdaq9375_cs.cdaq9375ControlServer">cdaq9375ControlServer</a></li>
 <li><a title="egse.powermeter.ni.cdaq9184_cs.cdaq9184ControlServer" href="powermeter/ni/cdaq9184_cs.html#egse.powermeter.ni.cdaq9184_cs.cdaq9184ControlServer">cdaq9184ControlServer</a></li>
 <li><a title="egse.powermeter.thorlabs.pm100a_cs.ThorlabsPM100ControlServer" href="powermeter/thorlabs/pm100a_cs.html#egse.powermeter.thorlabs.pm100a_cs.ThorlabsPM100ControlServer">ThorlabsPM100ControlServer</a></li>
 <li><a title="egse.procman.procman_cs.ProcessManagerControlServer" href="procman/procman_cs.html#egse.procman.procman_cs.ProcessManagerControlServer">ProcessManagerControlServer</a></li>
@@ -899,16 +1280,15 @@ calling the <code>execute()</code> method of the commanding protocol class.</p>
 <li><a title="egse.tcs.tcs_cs.TCSControlServer" href="tcs/tcs_cs.html#egse.tcs.tcs_cs.TCSControlServer">TCSControlServer</a></li>
 <li><a title="egse.tempcontrol.agilent.agilent34970_cs.Agilent34970ControlServer" href="tempcontrol/agilent/agilent34970_cs.html#egse.tempcontrol.agilent.agilent34970_cs.Agilent34970ControlServer">Agilent34970ControlServer</a></li>
 <li><a title="egse.tempcontrol.agilent.agilent34972_cs.Agilent34972ControlServer" href="tempcontrol/agilent/agilent34972_cs.html#egse.tempcontrol.agilent.agilent34972_cs.Agilent34972ControlServer">Agilent34972ControlServer</a></li>
-<li><a title="egse.tempcontrol.beaglebone.beaglebone_cs.BeagleBoneControlServer" href="tempcontrol/beaglebone/beaglebone_cs.html#egse.tempcontrol.beaglebone.beaglebone_cs.BeagleBoneControlServer">BeagleBoneControlServer</a></li>
+<li><a title="egse.tempcontrol.digalox.digalox_cs.DigaloxControlServer" href="tempcontrol/digalox/digalox_cs.html#egse.tempcontrol.digalox.digalox_cs.DigaloxControlServer">DigaloxControlServer</a></li>
 <li><a title="egse.tempcontrol.keithley.daq6510_cs.DAQ6510ControlServer" href="tempcontrol/keithley/daq6510_cs.html#egse.tempcontrol.keithley.daq6510_cs.DAQ6510ControlServer">DAQ6510ControlServer</a></li>
-<li><a title="egse.tempcontrol.lakeshore.lsci336_cs.LakeShore336ControlServer" href="tempcontrol/lakeshore/lsci336_cs.html#egse.tempcontrol.lakeshore.lsci336_cs.LakeShore336ControlServer">LakeShore336ControlServer</a></li>
-<li><a title="egse.tempcontrol.spid.spid_cs.PidControlServer" href="tempcontrol/spid/spid_cs.html#egse.tempcontrol.spid.spid_cs.PidControlServer">PidControlServer</a></li>
+<li><a title="egse.tempcontrol.lakeshore.lsci_cs.LakeShoreControlServer" href="tempcontrol/lakeshore/lsci_cs.html#egse.tempcontrol.lakeshore.lsci_cs.LakeShoreControlServer">LakeShoreControlServer</a></li>
 <li><a title="egse.tempcontrol.srs.ptc10_cs.ptc10ControlServer" href="tempcontrol/srs/ptc10_cs.html#egse.tempcontrol.srs.ptc10_cs.ptc10ControlServer">ptc10ControlServer</a></li>
 <li><a title="egse.ups.apc.apc_cs.APCControlServer" href="ups/apc/apc_cs.html#egse.ups.apc.apc_cs.APCControlServer">APCControlServer</a></li>
 <li><a title="egse.vacuum.beaglebone.beaglebone_cs.BeagleBoneControlServer" href="vacuum/beaglebone/beaglebone_cs.html#egse.vacuum.beaglebone.beaglebone_cs.BeagleBoneControlServer">BeagleBoneControlServer</a></li>
 <li><a title="egse.vacuum.instrutech.igm402_cs.Igm402ControlServer" href="vacuum/instrutech/igm402_cs.html#egse.vacuum.instrutech.igm402_cs.Igm402ControlServer">Igm402ControlServer</a></li>
 <li><a title="egse.vacuum.keller.leo3_cs.Leo3ControlServer" href="vacuum/keller/leo3_cs.html#egse.vacuum.keller.leo3_cs.Leo3ControlServer">Leo3ControlServer</a></li>
-<li><a title="egse.vacuum.mks.vacscan_cs.VacscanControlServer" href="vacuum/mks/vacscan_cs.html#egse.vacuum.mks.vacscan_cs.VacscanControlServer">VacscanControlServer</a></li>
+<li><a title="egse.vacuum.mks.evision_cs.EvisionControlServer" href="vacuum/mks/evision_cs.html#egse.vacuum.mks.evision_cs.EvisionControlServer">EvisionControlServer</a></li>
 <li><a title="egse.vacuum.pfeiffer.acp40_cs.Acp40ControlServer" href="vacuum/pfeiffer/acp40_cs.html#egse.vacuum.pfeiffer.acp40_cs.Acp40ControlServer">Acp40ControlServer</a></li>
 <li><a title="egse.vacuum.pfeiffer.tc400_cs.Tc400ControlServer" href="vacuum/pfeiffer/tc400_cs.html#egse.vacuum.pfeiffer.tc400_cs.Tc400ControlServer">Tc400ControlServer</a></li>
 <li><a title="egse.vacuum.pfeiffer.tpg261_cs.Tpg261ControlServer" href="vacuum/pfeiffer/tpg261_cs.html#egse.vacuum.pfeiffer.tpg261_cs.Tpg261ControlServer">Tpg261ControlServer</a></li>
@@ -939,6 +1319,19 @@ calling the <code>execute()</code> method of the commanding protocol class.</p>
 </summary>
 <pre><code class="python">def before_serve(self):
     pass</code></pre>
+</details>
+</dd>
+<dt id="egse.control.ControlServer.get_average_execution_times"><code class="name flex">
+<span>def <span class="ident">get_average_execution_times</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_average_execution_times(self):
+    return get_average_execution_times()</code></pre>
 </details>
 </dd>
 <dt id="egse.control.ControlServer.get_commanding_port"><code class="name flex">
@@ -980,6 +1373,19 @@ def get_communication_protocol(self):
 </summary>
 <pre><code class="python">def get_ip_address(self):
     return get_host_ip()</code></pre>
+</details>
+</dd>
+<dt id="egse.control.ControlServer.get_listener_names"><code class="name flex">
+<span>def <span class="ident">get_listener_names</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_listener_names(self):
+    return self.listeners.get_listener_names()</code></pre>
 </details>
 </dd>
 <dt id="egse.control.ControlServer.get_monitoring_port"><code class="name flex">
@@ -1036,6 +1442,105 @@ def get_service_port(self):
     return self.__class__.__name__</code></pre>
 </details>
 </dd>
+<dt id="egse.control.ControlServer.handle_scheduled_tasks"><code class="name flex">
+<span>def <span class="ident">handle_scheduled_tasks</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Executes or reschedules tasks in the <code>serve()</code> event loop.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def handle_scheduled_tasks(self):
+    &#34;&#34;&#34;
+    Executes or reschedules tasks in the `serve()` event loop.
+    &#34;&#34;&#34;
+    self.scheduled_tasks.reverse()
+    rescheduled_tasks = []
+    while self.scheduled_tasks:
+        task_info = self.scheduled_tasks.pop()
+        task = task_info[&#34;task&#34;]
+        task_name = task_info.get(&#34;name&#34;)
+
+        at = task_info.get(&#34;after&#34;)
+        if at and at &gt; datetime.datetime.now(tz=datetime.timezone.utc):
+            rescheduled_tasks.append(task_info)
+            continue
+
+        condition = task_info.get(&#34;condition&#34;)
+        if condition and not condition():
+            rescheduled_tasks.append(task_info)
+            continue
+
+        self.logger.debug(f&#34;Running scheduled task: {task_name}&#34;)
+        try:
+            task()
+        except Exception as exc:
+            self.logger.exception(exc, exc_info=True, stack_info=True)
+            self.logger.warning(f&#34;Task {task_name} has failed: {exc!r}&#34;)
+        else:
+            self.logger.debug(f&#34;Scheduled task finished: {task_name}&#34;)
+
+    if self.scheduled_tasks:
+        self.logger.warning(f&#34;There are still {len(self.scheduled_tasks)} scheduled tasks.&#34;)
+
+    if rescheduled_tasks:
+        self.scheduled_tasks.append(*rescheduled_tasks)</code></pre>
+</details>
+</dd>
+<dt id="egse.control.ControlServer.notify_listeners"><code class="name flex">
+<span>def <span class="ident">notify_listeners</span></span>(<span>self, event_id: int = 0, context: dict = None)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Notifies registered listeners about an event.</p>
+<p>This function creates an Event object with the provided <code>event_id</code> and <code>context</code>
+and notifies all registered listeners with the created event.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>event_id</code></strong> :&ensp;<code>int</code>, optional</dt>
+<dd>The identifier for the event. Defaults to 0.</dd>
+<dt><strong><code>context</code></strong> :&ensp;<code>dict</code>, optional</dt>
+<dd>Additional context information associated with the event.
+Defaults to None.</dd>
+</dl>
+<h2 id="note">Note</h2>
+<p>The notification is performed by the <code>notify_listeners</code> method of the <code>listeners</code> object
+associated with this instance.
+The notification is executed in a daemon thread to avoid blocking the commanding
+chain.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def notify_listeners(self, event_id: int = 0, context: dict = None):
+    &#34;&#34;&#34;
+    Notifies registered listeners about an event.
+
+    This function creates an Event object with the provided `event_id` and `context`
+    and notifies all registered listeners with the created event.
+
+    Args:
+        event_id (int, optional): The identifier for the event. Defaults to 0.
+        context (dict, optional): Additional context information associated with the event.
+            Defaults to None.
+
+    Note:
+        The notification is performed by the `notify_listeners` method of the `listeners` object
+        associated with this instance.
+        The notification is executed in a daemon thread to avoid blocking the commanding
+        chain.
+
+    &#34;&#34;&#34;
+    from egse.listener import Event, EVENT_ID
+
+    self.logger.info(f&#34;Notifying listeners for {EVENT_ID(event_id).name}&#34;)
+
+    retry_thread = threading.Thread(target=self.listeners.notify_listeners,
+                                    args=(Event(event_id=event_id, context=context),))
+    retry_thread.daemon = True
+    retry_thread.start()</code></pre>
+</details>
+</dd>
 <dt id="egse.control.ControlServer.quit"><code class="name flex">
 <span>def <span class="ident">quit</span></span>(<span>self)</span>
 </code></dt>
@@ -1047,6 +1552,68 @@ def get_service_port(self):
 </summary>
 <pre><code class="python">def quit(self):
     self.interrupted = True</code></pre>
+</details>
+</dd>
+<dt id="egse.control.ControlServer.register_as_listener"><code class="name flex">
+<span>def <span class="ident">register_as_listener</span></span>(<span>self, proxy: Type[+CT_co], listener: dict)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Registers a listener with the specified proxy.</p>
+<p>This function attempts to add the provided listener to the specified proxy.
+It employs a retry mechanism to handle potential ConnectionError exceptions,
+making up to 5 attempts to add the listener.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>proxy</code></strong></dt>
+<dd>A callable object representing the proxy to which the listener will be added.</dd>
+<dt><strong><code>listener</code></strong> :&ensp;<code>dict</code></dt>
+<dd>The listener to be registered. Should be a dictionary containing
+listener details.</dd>
+</dl>
+<h2 id="raises">Raises</h2>
+<dl>
+<dt><code>ConnectionError</code></dt>
+<dd>If the connection to the proxy encounters issues even after
+multiple retry attempts.</dd>
+</dl>
+<h2 id="note">Note</h2>
+<p>The function runs in a separate daemon thread to avoid blocking the main thread.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def register_as_listener(self, proxy: Type, listener: dict):
+    &#34;&#34;&#34;
+    Registers a listener with the specified proxy.
+
+    This function attempts to add the provided listener to the specified proxy.
+    It employs a retry mechanism to handle potential ConnectionError exceptions,
+    making up to 5 attempts to add the listener.
+
+    Args:
+        proxy: A callable object representing the proxy to which the listener will be added.
+        listener (dict): The listener to be registered. Should be a dictionary containing
+            listener details.
+
+    Raises:
+        ConnectionError: If the connection to the proxy encounters issues even after
+            multiple retry attempts.
+
+    Note:
+        The function runs in a separate daemon thread to avoid blocking the main thread.
+
+    &#34;&#34;&#34;
+    @retry(times=5, exceptions=[ConnectionError])
+    def _add_listener(proxy, listener):
+        with proxy() as x, x.get_service_proxy() as srv:
+            rc = srv.add_listener(listener)
+            MODULE_LOGGER.debug(f&#34;Response from service add_listener: {rc}&#34;)
+
+    MODULE_LOGGER.info(f&#34;Registering {self.__class__.__name__} to {proxy}&#34;)
+
+    retry_thread = threading.Thread(target=_add_listener, args=(proxy, listener))
+    retry_thread.daemon = True
+    retry_thread.start()</code></pre>
 </details>
 </dd>
 <dt id="egse.control.ControlServer.register_to_storage_manager"><code class="name flex">
@@ -1084,6 +1651,60 @@ def get_service_port(self):
                 self.logger.warning(f&#34;Couldn&#39;t register to the Storage manager: {rc}&#34;)
     except ConnectionError as exc:
         self.logger.warning(f&#34;Couldn&#39;t connect to the Storage manager for registration: {exc}&#34;)</code></pre>
+</details>
+</dd>
+<dt id="egse.control.ControlServer.schedule_task"><code class="name flex">
+<span>def <span class="ident">schedule_task</span></span>(<span>self, callback: Callable, after: float = 0.0, when: Callable = None)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Schedules a task to run in the control server event loop.</p>
+<p>The <code>callback</code> function will be executed as soon as possible in the <code>serve()</code> event loop.</p>
+<p>Some simple scheduling options are available:</p>
+<ul>
+<li>after: the task will only execute 'x' seconds after the time of scheduling. I.e.
+the task will be rescheduled until time &gt; scheduled time + 'x' seconds.</li>
+<li>when: the task will only execute when the condition is True.</li>
+</ul>
+<p>The <code>after</code> and the <code>when</code> arguments can be combined.</p>
+<h2 id="note">Note</h2>
+<ul>
+<li>This function is intended to be used in order to prevent a deadlock.</li>
+<li>Since the <code>callback</code> function is executed in the <code>serve()</code> event loop, it shall not block!</li>
+</ul></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def schedule_task(self, callback: Callable, after: float = 0.0, when: Callable = None):
+    &#34;&#34;&#34;
+    Schedules a task to run in the control server event loop.
+
+    The `callback` function will be executed as soon as possible in the `serve()` event loop.
+
+    Some simple scheduling options are available:
+
+    * after: the task will only execute &#39;x&#39; seconds after the time of scheduling. I.e.
+      the task will be rescheduled until time &gt; scheduled time + &#39;x&#39; seconds.
+    * when: the task will only execute when the condition is True.
+
+    The `after` and the `when` arguments can be combined.
+
+    Note:
+        * This function is intended to be used in order to prevent a deadlock.
+        * Since the `callback` function is executed in the `serve()` event loop, it shall not block!
+
+    &#34;&#34;&#34;
+    try:
+        name = callback.func.__name__ if isinstance(callback, partial) else callback.__name__
+    except AttributeError:
+        name = &#34;unknown&#34;
+
+    current_time = datetime.datetime.now(tz=datetime.timezone.utc)
+    scheduled_time = current_time + datetime.timedelta(seconds=after)
+
+    self.logger.info(f&#34;Task {name} scheduled&#34;)
+
+    self.scheduled_tasks.append({&#39;task&#39;: callback, &#34;name&#34;: name, &#34;after&#34;: scheduled_time, &#34;when&#34;: when})</code></pre>
 </details>
 </dd>
 <dt id="egse.control.ControlServer.serve"><code class="name flex">
@@ -1149,6 +1770,10 @@ def get_service_port(self):
                 self.store_housekeeping_information(
                     save_average_execution_time(self.device_protocol.get_housekeeping)
                 )
+
+        # Handle scheduled tasks/callback functions
+
+        self.handle_scheduled_tasks()
 
         if self.interrupted:
             self.logger.info(
@@ -1305,6 +1930,83 @@ prevent the server from blocking when a too short delay time is requested.</p>
         self.logger.warning(
             f&#34;Couldn&#39;t connect to the Storage manager to store housekeeping: {exc}&#34;
         )</code></pre>
+</details>
+</dd>
+<dt id="egse.control.ControlServer.unregister_as_listener"><code class="name flex">
+<span>def <span class="ident">unregister_as_listener</span></span>(<span>self, proxy: Type[+CT_co], listener: dict)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Removes a registered listener from the specified proxy.</p>
+<p>This function attempts to remove the provided listener from the specified proxy.
+It employs a retry mechanism to handle potential ConnectionError exceptions,
+making up to 5 attempts to add the listener.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>proxy</code></strong></dt>
+<dd>A callable object representing the proxy from which the listener will be removed.</dd>
+<dt><strong><code>listener</code></strong> :&ensp;<code>dict</code></dt>
+<dd>The listener to be removed. Should be a dictionary containing
+listener details.</dd>
+</dl>
+<h2 id="raises">Raises</h2>
+<dl>
+<dt><code>ConnectionError</code></dt>
+<dd>If the connection to the proxy encounters issues even after
+multiple retry attempts.</dd>
+</dl>
+<h2 id="note">Note</h2>
+<p>The function runs in a separate thread but will block until the de-registration is finished.
+The reason being that this method is usually called in a <code>after_serve</code> block so it needs to
+finish before the ZeroMQ context is destroyed.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def unregister_as_listener(self, proxy: Type, listener: dict):
+    &#34;&#34;&#34;
+    Removes a registered listener from the specified proxy.
+
+    This function attempts to remove the provided listener from the specified proxy.
+    It employs a retry mechanism to handle potential ConnectionError exceptions,
+    making up to 5 attempts to add the listener.
+
+    Args:
+        proxy: A callable object representing the proxy from which the listener will be removed.
+        listener (dict): The listener to be removed. Should be a dictionary containing
+            listener details.
+
+    Raises:
+        ConnectionError: If the connection to the proxy encounters issues even after
+            multiple retry attempts.
+
+    Note:
+        The function runs in a separate thread but will block until the de-registration is finished.
+        The reason being that this method is usually called in a `after_serve` block so it needs to
+        finish before the ZeroMQ context is destroyed.
+
+    &#34;&#34;&#34;
+    @retry(times=5, exceptions=[ConnectionError])
+    def _remove_listener(proxy, listener):
+        with proxy() as x, x.get_service_proxy() as srv:
+            rc = srv.remove_listener(listener)
+
+    endpoint = proxy().get_endpoint()
+    if not is_control_server_active(endpoint, timeout=0.5):
+        MODULE_LOGGER.warning(f&#34;The {endpoint} endpoint is not responding, {listener[&#39;name&#39;]} not un-registered.&#34;)
+        return
+
+    MODULE_LOGGER.info(f&#34;Removing {self.__class__.__name__} from {proxy}&#34;)
+
+    retry_thread = threading.Thread(target=_remove_listener, args=(proxy, listener))
+    retry_thread.daemon = False
+    retry_thread.start()
+
+    # Block until the listener has been removed. This is needed because this unregister function will usually
+    # be called in the `after_server()` method of the control server (which is the listener) and if we do not
+    # wait until the thread is finished the ZeroMQ Context will be destroyed before the reply can be sent.
+    # Note: we could probably do without the thread, and directly call the `_remove_listener()` function.
+
+    retry_thread.join()</code></pre>
 </details>
 </dd>
 <dt id="egse.control.ControlServer.unregister_from_storage_manager"><code class="name flex">
@@ -1573,20 +2275,27 @@ client shall be added.</p>
 <ul class="">
 <li><code><a title="egse.control.ControlServer.after_serve" href="#egse.control.ControlServer.after_serve">after_serve</a></code></li>
 <li><code><a title="egse.control.ControlServer.before_serve" href="#egse.control.ControlServer.before_serve">before_serve</a></code></li>
+<li><code><a title="egse.control.ControlServer.get_average_execution_times" href="#egse.control.ControlServer.get_average_execution_times">get_average_execution_times</a></code></li>
 <li><code><a title="egse.control.ControlServer.get_commanding_port" href="#egse.control.ControlServer.get_commanding_port">get_commanding_port</a></code></li>
 <li><code><a title="egse.control.ControlServer.get_communication_protocol" href="#egse.control.ControlServer.get_communication_protocol">get_communication_protocol</a></code></li>
 <li><code><a title="egse.control.ControlServer.get_ip_address" href="#egse.control.ControlServer.get_ip_address">get_ip_address</a></code></li>
+<li><code><a title="egse.control.ControlServer.get_listener_names" href="#egse.control.ControlServer.get_listener_names">get_listener_names</a></code></li>
 <li><code><a title="egse.control.ControlServer.get_monitoring_port" href="#egse.control.ControlServer.get_monitoring_port">get_monitoring_port</a></code></li>
 <li><code><a title="egse.control.ControlServer.get_process_status" href="#egse.control.ControlServer.get_process_status">get_process_status</a></code></li>
 <li><code><a title="egse.control.ControlServer.get_service_port" href="#egse.control.ControlServer.get_service_port">get_service_port</a></code></li>
 <li><code><a title="egse.control.ControlServer.get_storage_mnemonic" href="#egse.control.ControlServer.get_storage_mnemonic">get_storage_mnemonic</a></code></li>
+<li><code><a title="egse.control.ControlServer.handle_scheduled_tasks" href="#egse.control.ControlServer.handle_scheduled_tasks">handle_scheduled_tasks</a></code></li>
+<li><code><a title="egse.control.ControlServer.notify_listeners" href="#egse.control.ControlServer.notify_listeners">notify_listeners</a></code></li>
 <li><code><a title="egse.control.ControlServer.quit" href="#egse.control.ControlServer.quit">quit</a></code></li>
+<li><code><a title="egse.control.ControlServer.register_as_listener" href="#egse.control.ControlServer.register_as_listener">register_as_listener</a></code></li>
 <li><code><a title="egse.control.ControlServer.register_to_storage_manager" href="#egse.control.ControlServer.register_to_storage_manager">register_to_storage_manager</a></code></li>
+<li><code><a title="egse.control.ControlServer.schedule_task" href="#egse.control.ControlServer.schedule_task">schedule_task</a></code></li>
 <li><code><a title="egse.control.ControlServer.serve" href="#egse.control.ControlServer.serve">serve</a></code></li>
 <li><code><a title="egse.control.ControlServer.set_delay" href="#egse.control.ControlServer.set_delay">set_delay</a></code></li>
 <li><code><a title="egse.control.ControlServer.set_hk_delay" href="#egse.control.ControlServer.set_hk_delay">set_hk_delay</a></code></li>
 <li><code><a title="egse.control.ControlServer.set_logging_level" href="#egse.control.ControlServer.set_logging_level">set_logging_level</a></code></li>
 <li><code><a title="egse.control.ControlServer.store_housekeeping_information" href="#egse.control.ControlServer.store_housekeeping_information">store_housekeeping_information</a></code></li>
+<li><code><a title="egse.control.ControlServer.unregister_as_listener" href="#egse.control.ControlServer.unregister_as_listener">unregister_as_listener</a></code></li>
 <li><code><a title="egse.control.ControlServer.unregister_from_storage_manager" href="#egse.control.ControlServer.unregister_from_storage_manager">unregister_from_storage_manager</a></code></li>
 </ul>
 </li>

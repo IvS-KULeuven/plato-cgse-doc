@@ -48,9 +48,9 @@ from egse.mixin import add_cr_lf
 from egse.mixin import dynamic_command
 from egse.proxy import DynamicProxy
 from egse.settings import Settings
+from egse.setup import load_setup
 from egse.stages.huber.smc9300_devif import HuberError
 from egse.stages.huber.smc9300_devif import HuberSMC9300EthernetInterface
-from egse.state import GlobalState
 from egse.zmq_ser import connect_address
 
 # Explicitly set the module name instead of __name__. When module is executed instead of imported
@@ -224,6 +224,14 @@ class HuberSMC9300Interface(DeviceInterface):
     Interface definition for the Controller, Simulator and Proxy classes for this device.
     &#34;&#34;&#34;
 
+    def __init__(self):
+
+        super().__init__()
+
+        setup = load_setup()
+        self.avoidance = setup.gse.stages.big_rotation_stage.avoidance
+        self.hardstop = setup.gse.stages.big_rotation_stage.hardstop
+
     @dynamic_command(
         cmd_type=&#34;query&#34;, cmd_string=&#34;?&#34;,
         process_cmd_string=process_cmd_string,
@@ -294,7 +302,7 @@ class HuberSMC9300Interface(DeviceInterface):
 
         if axis == HC_SETTINGS.BIG_ROTATION_STAGE:
             current = self.get_current_position(axis)
-            movement = calculate_relative_movement(current, position)
+            movement = calculate_relative_movement(current, position, avoidance=self.avoidance, hardstop=self.hardstop)
             self.move_direct(axis, movement)
         else:
             self.goto_direct(axis, position)
@@ -799,7 +807,9 @@ class HuberSMC9300Proxy(DynamicProxy, HuberSMC9300Interface):
                 [default is taken from settings file]
             timeout: time out on the response from the control server [milliseconds]
         &#34;&#34;&#34;
-        super().__init__(connect_address(protocol, hostname, port), timeout=timeout)
+
+        DynamicProxy.__init__(self, connect_address(protocol, hostname, port), timeout=timeout)  # explicit calls without super
+        HuberSMC9300Interface.__init__(self)
 
 
 def calculate_relative_movement(current, setpoint, hardstop=None, avoidance=None):
@@ -822,6 +832,7 @@ def calculate_relative_movement(current, setpoint, hardstop=None, avoidance=None
         setpoint (float): the target position of the rotation stage
         hardstop (float): the location of the hardstop
         avoidance (float): angle of avoidance
+        setup: Setup
     Returns:
         The angle to move relative from current position to setpoint.
     Raises:
@@ -829,10 +840,14 @@ def calculate_relative_movement(current, setpoint, hardstop=None, avoidance=None
         [-180 + avoidance, +180 - avoidance].
     &#34;&#34;&#34;
 
-    setup = GlobalState.setup
+    if not avoidance or not hardstop:
+        setup = load_setup()
 
-    avoidance = avoidance if avoidance is not None else setup.gse.stages.big_rotation_stage.avoidance
-    hardstop = hardstop if hardstop is not None else setup.gse.stages.big_rotation_stage.hardstop
+        avoidance = avoidance or setup.gse.stages.big_rotation_stage.avoidance
+        hardstop = hardstop or setup.gse.stages.big_rotation_stage.hardstop
+
+    # avoidance = avoidance if avoidance is not None else setup.gse.stages.big_rotation_stage.avoidance
+    # hardstop = hardstop if hardstop is not None else setup.gse.stages.big_rotation_stage.hardstop
 
     # MODULE_LOGGER.debug(f&#34;@entry: {current=}, {setpoint=}, {hardstop=}, {avoidance=}&#34;)
 
@@ -846,6 +861,7 @@ def calculate_relative_movement(current, setpoint, hardstop=None, avoidance=None
     # Check if the setpoint falls in the avoidance range
 
     if hardstop - avoidance &lt; setpoint &lt; hardstop + avoidance:
+        print(f&#34;{hardstop - avoidance} &lt; {setpoint} &lt; {hardstop + avoidance}&#34;)
         raise ValueError(
             f&#34;setpoint argument shall NOT be between {hardstop - avoidance} and &#34;
             f&#34;{hardstop + avoidance}, given value {setpoint = }&#34;)
@@ -963,6 +979,8 @@ the avoidance range.</p>
 <dd>the location of the hardstop</dd>
 <dt><strong><code>avoidance</code></strong> :&ensp;<code>float</code></dt>
 <dd>angle of avoidance</dd>
+<dt><strong><code>setup</code></strong></dt>
+<dd>Setup</dd>
 </dl>
 <h2 id="returns">Returns</h2>
 <p>The angle to move relative from current position to setpoint.</p>
@@ -993,6 +1011,7 @@ the avoidance range.</p>
         setpoint (float): the target position of the rotation stage
         hardstop (float): the location of the hardstop
         avoidance (float): angle of avoidance
+        setup: Setup
     Returns:
         The angle to move relative from current position to setpoint.
     Raises:
@@ -1000,10 +1019,14 @@ the avoidance range.</p>
         [-180 + avoidance, +180 - avoidance].
     &#34;&#34;&#34;
 
-    setup = GlobalState.setup
+    if not avoidance or not hardstop:
+        setup = load_setup()
 
-    avoidance = avoidance if avoidance is not None else setup.gse.stages.big_rotation_stage.avoidance
-    hardstop = hardstop if hardstop is not None else setup.gse.stages.big_rotation_stage.hardstop
+        avoidance = avoidance or setup.gse.stages.big_rotation_stage.avoidance
+        hardstop = hardstop or setup.gse.stages.big_rotation_stage.hardstop
+
+    # avoidance = avoidance if avoidance is not None else setup.gse.stages.big_rotation_stage.avoidance
+    # hardstop = hardstop if hardstop is not None else setup.gse.stages.big_rotation_stage.hardstop
 
     # MODULE_LOGGER.debug(f&#34;@entry: {current=}, {setpoint=}, {hardstop=}, {avoidance=}&#34;)
 
@@ -1017,6 +1040,7 @@ the avoidance range.</p>
     # Check if the setpoint falls in the avoidance range
 
     if hardstop - avoidance &lt; setpoint &lt; hardstop + avoidance:
+        print(f&#34;{hardstop - avoidance} &lt; {setpoint} &lt; {hardstop + avoidance}&#34;)
         raise ValueError(
             f&#34;setpoint argument shall NOT be between {hardstop - avoidance} and &#34;
             f&#34;{hardstop + avoidance}, given value {setpoint = }&#34;)
@@ -1490,6 +1514,14 @@ configuration file.</dd>
     Interface definition for the Controller, Simulator and Proxy classes for this device.
     &#34;&#34;&#34;
 
+    def __init__(self):
+
+        super().__init__()
+
+        setup = load_setup()
+        self.avoidance = setup.gse.stages.big_rotation_stage.avoidance
+        self.hardstop = setup.gse.stages.big_rotation_stage.hardstop
+
     @dynamic_command(
         cmd_type=&#34;query&#34;, cmd_string=&#34;?&#34;,
         process_cmd_string=process_cmd_string,
@@ -1560,7 +1592,7 @@ configuration file.</dd>
 
         if axis == HC_SETTINGS.BIG_ROTATION_STAGE:
             current = self.get_current_position(axis)
-            movement = calculate_relative_movement(current, position)
+            movement = calculate_relative_movement(current, position, avoidance=self.avoidance, hardstop=self.hardstop)
             self.move_direct(axis, movement)
         else:
             self.goto_direct(axis, position)
@@ -2333,7 +2365,7 @@ was hit, and -1 is returned when the LIMIT- switch was hit.</p></div>
 
     if axis == HC_SETTINGS.BIG_ROTATION_STAGE:
         current = self.get_current_position(axis)
-        movement = calculate_relative_movement(current, position)
+        movement = calculate_relative_movement(current, position, avoidance=self.avoidance, hardstop=self.hardstop)
         self.move_direct(axis, movement)
     else:
         self.goto_direct(axis, position)
@@ -2910,7 +2942,9 @@ to the HUBER Hardware Controller remotely.</p>
                 [default is taken from settings file]
             timeout: time out on the response from the control server [milliseconds]
         &#34;&#34;&#34;
-        super().__init__(connect_address(protocol, hostname, port), timeout=timeout)</code></pre>
+
+        DynamicProxy.__init__(self, connect_address(protocol, hostname, port), timeout=timeout)  # explicit calls without super
+        HuberSMC9300Interface.__init__(self)</code></pre>
 </details>
 <h3>Ancestors</h3>
 <ul class="hlist">

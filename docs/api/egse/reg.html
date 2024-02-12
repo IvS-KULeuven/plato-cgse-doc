@@ -467,10 +467,11 @@ class RegisterMap:
                 set_bit(temp, start + bit) if value &amp; (1 &lt;&lt; bit) else clear_bit(temp, start + bit)
             )
         self._memory_map[reg.address : reg.address + 4] = temp.to_bytes(4, &#34;big&#34;)
-        LOGGER.debug(
-            f&#34;set new value for register {reg_name}:{var_name}: &#34;
-            f&#34;0b{beautify_binary(temp, size=32)} (was 0b{beautify_binary(orig_value, size=32)})&#34;
-        )
+        if temp != orig_value:
+            LOGGER.debug(
+                f&#34;set new value for register {reg_name}:{var_name}: &#34;
+                f&#34;0b{beautify_binary(temp, size=32)} (was 0b{beautify_binary(orig_value, size=32)})&#34;
+            )
 
     def add_register(self, reg: Register):
         &#34;&#34;&#34;
@@ -1153,10 +1154,11 @@ The type of the memory_map can be a bytearray or a Numpy ndarray.</dd>
                 set_bit(temp, start + bit) if value &amp; (1 &lt;&lt; bit) else clear_bit(temp, start + bit)
             )
         self._memory_map[reg.address : reg.address + 4] = temp.to_bytes(4, &#34;big&#34;)
-        LOGGER.debug(
-            f&#34;set new value for register {reg_name}:{var_name}: &#34;
-            f&#34;0b{beautify_binary(temp, size=32)} (was 0b{beautify_binary(orig_value, size=32)})&#34;
-        )
+        if temp != orig_value:
+            LOGGER.debug(
+                f&#34;set new value for register {reg_name}:{var_name}: &#34;
+                f&#34;0b{beautify_binary(temp, size=32)} (was 0b{beautify_binary(orig_value, size=32)})&#34;
+            )
 
     def add_register(self, reg: Register):
         &#34;&#34;&#34;
@@ -1668,10 +1670,11 @@ By default, one single register will be set, i.e. 4 bytes.</p>
             set_bit(temp, start + bit) if value &amp; (1 &lt;&lt; bit) else clear_bit(temp, start + bit)
         )
     self._memory_map[reg.address : reg.address + 4] = temp.to_bytes(4, &#34;big&#34;)
-    LOGGER.debug(
-        f&#34;set new value for register {reg_name}:{var_name}: &#34;
-        f&#34;0b{beautify_binary(temp, size=32)} (was 0b{beautify_binary(orig_value, size=32)})&#34;
-    )</code></pre>
+    if temp != orig_value:
+        LOGGER.debug(
+            f&#34;set new value for register {reg_name}:{var_name}: &#34;
+            f&#34;0b{beautify_binary(temp, size=32)} (was 0b{beautify_binary(orig_value, size=32)})&#34;
+        )</code></pre>
 </details>
 </dd>
 </dl>

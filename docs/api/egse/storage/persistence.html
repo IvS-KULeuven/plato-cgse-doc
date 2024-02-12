@@ -32,11 +32,15 @@ This module handles the persistence storage for the Common-EGSE.
 &#34;&#34;&#34;
 import csv
 import logging
+import os
 import re
 import sqlite3
 import warnings
 from abc import ABC
 from abc import abstractmethod
+from math import cos
+from math import radians
+from math import sin
 from pathlib import Path
 from sqlite3 import Connection
 from typing import Optional
@@ -47,13 +51,12 @@ import natsort
 import numpy as np
 from astropy.io import fits
 from astropy.io.ascii.cparser import AstropyWarning
-from math import cos
-from math import radians
-from math import sin
 
 from egse.fee import n_fee_mode
+from egse.fee.nfee import HousekeepingData
 from egse.settings import Settings
-from egse.setup import Setup, SetupError
+from egse.setup import Setup
+from egse.setup import SetupError
 from egse.spw import DataDataPacket
 from egse.spw import DataPacket
 from egse.spw import DataPacketType
@@ -62,12 +65,21 @@ from egse.spw import OverscanDataPacket
 from egse.spw import PacketType
 from egse.spw import TimecodePacket
 from egse.state import GlobalState
-from egse.system import read_last_line, time_since_epoch_1958
+from egse.system import read_last_line
+from egse.system import time_since_epoch_1958
 
 logger = logging.getLogger(__name__)
 
 FOV_SETTINGS = Settings.load(&#34;Field-Of-View&#34;)
 CCD_SETTINGS = Settings.load(&#34;CCD&#34;)
+INT_SYNC_TIMING_OFFSET = 0.4   # See https://github.com/IvS-KULeuven/plato-common-egse/issues/2475
+
+try:
+    _ = os.environ[&#34;PLATO_CAMERA_IS_EM&#34;]
+    PLATO_CAMERA_IS_EM = True if _.capitalize() in (&#34;1&#34;, &#34;True&#34;, &#34;Yes&#34;) else 0
+except KeyError:
+    PLATO_CAMERA_IS_EM = False
+
 
 
 class PersistenceLayer(ABC):
@@ -226,7 +238,6 @@ class FITS(PersistenceLayer):
 
         # Define the values of the WCS keywords
 
-        self.site_name = Settings.load().SITE[&#34;ID&#34;]
 
         self.v_start = prep[&#34;v_start&#34;]                              # First transmitted row
         self.v_end = prep[&#34;v_end&#34;]                                  # Last transmitted row
@@ -237,11 +248,12 @@ class FITS(PersistenceLayer):
         self.obsid = prep[&#34;obsid&#34;]
 
         self.register_map = prep[&#34;register_map&#34;]                    # Register map
-        
+
         # Read information from the setup
 
         self.setup: Setup = prep[&#34;setup&#34;]
 
+        self.site_name = self.setup[&#34;site_id&#34;]           # Site ID
         self.setup_id = self.setup.get_id()              # Setup ID
         self.camera_id = self.setup.camera.get(&#34;ID&#34;)     # Camera ID (None if not present in the setup)
 
@@ -299,12 +311,29 @@ class FITS(PersistenceLayer):
         return ((vgd_20 &lt;&lt; 4) + vgd_19) / 1000 * 5.983
 
     def get_ccd2_vrd(self):
-        &#34;&#34;&#34; Extract the VRD voltage for CCD2 from the register map.
+        &#34;&#34;&#34;
+        Extract the VRD voltage for CCD2 from the register map.
+
+        NOTE: Use this function only for the FM cameras.
 
         Return: Configured VRD voltage.
         &#34;&#34;&#34;
         vrd_18 = self.register_map[(&#39;reg_18_config&#39;, &#39;ccd2_vrd_config&#39;)]
         vrd_19 = self.register_map[(&#39;reg_19_config&#39;, &#39;ccd2_vrd_config&#39;)]
+
+        return int(f&#39;0x{vrd_19:x}{vrd_18:x}&#39;, 16)
+
+
+    def get_ccd3_vrd(self):
+        &#34;&#34;&#34;
+        Extract the VRD voltage for CCD3 from the register map.
+
+        NOTE: Use this function only for the EM camera.
+
+        Return: Configured VRD voltage.
+        &#34;&#34;&#34;
+        vrd_18 = self.register_map[(&#39;reg_18_config&#39;, &#39;ccd3_vrd_config&#39;)]
+        vrd_19 = self.register_map[(&#39;reg_19_config&#39;, &#39;ccd3_vrd_config&#39;)]
 
         return int(f&#39;0x{vrd_19:x}{vrd_18:x}&#39;, 16)
 
@@ -547,8 +576,13 @@ class FITS(PersistenceLayer):
         primary_header[&#34;CCD_VOD&#34;] = (self.register_map[&#34;ccd_vod_config&#34;], &#34;Configured VOD&#34;)
 
         primary_header[&#34;CCD1_VRD&#34;] = (self.register_map[&#34;ccd1_vrd_config&#34;], &#34;Configured VRD for CCD1&#34;)
-        primary_header[&#34;CCD2_VRD&#34;] = (self.get_ccd2_vrd(), &#34;Configured VRD for CCD2&#34;)
-        primary_header[&#34;CCD3_VRD&#34;] = (self.register_map[&#34;ccd3_vrd_config&#34;], &#34;Configured VRD for CCD3&#34;)
+        if PLATO_CAMERA_IS_EM:
+            primary_header[&#34;CCD2_VRD&#34;] = (self.register_map[&#34;ccd2_vrd_config&#34;], &#34;Configured VRD for CCD2&#34;)
+            primary_header[&#34;CCD3_VRD&#34;] = (self.get_ccd3_vrd(), &#34;Configured VRD for CCD3&#34;)
+        else:
+            primary_header[&#34;CCD2_VRD&#34;] = (self.get_ccd2_vrd(), &#34;Configured VRD for CCD2&#34;)
+            primary_header[&#34;CCD3_VRD&#34;] = (self.register_map[&#34;ccd3_vrd_config&#34;], &#34;Configured VRD for CCD3&#34;)
+
         primary_header[&#34;CCD4_VRD&#34;] = (self.register_map[&#34;ccd4_vrd_config&#34;], &#34;Configured VRD for CCD4&#34;)
         primary_header[&#34;CCD_VOG&#34;] = (self.register_map[&#34;ccd_vog_config&#34;], &#34;Configured VOG&#34;)
         primary_header[&#34;CCD_VGD&#34;] = (self.get_vgd(), &#34;Configured VGD [V]&#34;)
@@ -558,18 +592,20 @@ class FITS(PersistenceLayer):
         primary_header[&#34;TRK_HLD_LO&#34;] = (self.register_map[&#34;trk_hld_lo&#34;], &#34;Track and hold low&#34;)
         primary_header[&#34;CONT_RST_ON&#34;] = (self.register_map[&#34;cont_rst_on&#34;],
                                          &#34;When 1, FPGA generates continuous reset clock during readout&#34;)
-        primary_header[&#34;CONT_CDSCLP_ON&#34;] = (self.register_map[&#34;cont_cdsclp_on&#34;],
-                                            &#34;When 1, FPGA generates continuous CDS clamp during readout&#34;)
-        primary_header[&#34;CONT_ROWCLP_ON&#34;] = (self.register_map[&#34;cont_rowclp_on&#34;],
-                                            &#34;When 1, FPGA generates continuous row clamp during readout&#34;)
+        if not PLATO_CAMERA_IS_EM:
+            primary_header[&#34;CONT_CDSCLP_ON&#34;] = (self.register_map[&#34;cont_cdsclp_on&#34;],
+                                                &#34;When 1, FPGA generates continuous CDS clamp during readout&#34;)
+            primary_header[&#34;CONT_ROWCLP_ON&#34;] = (self.register_map[&#34;cont_rowclp_on&#34;],
+                                                &#34;When 1, FPGA generates continuous row clamp during readout&#34;)
         primary_header[&#34;R_CFG1&#34;] = (self.register_map[&#34;r_cfg1&#34;], &#34;Clock cycle for Rph3-low, Rph1-high&#34;)
         primary_header[&#34;R_CFG2&#34;] = (self.register_map[&#34;r_cfg2&#34;], &#34;Clock cycle for Rph1-low, Rph2-high&#34;)
         primary_header[&#34;CDSCLP_LO&#34;] = (self.register_map[&#34;cdsclp_lo&#34;], &#34;Clock cycle for cdsclp low&#34;)
-        primary_header[&#34;ADC_PWRDN_EN&#34;] = (self.register_map[&#34;adc_pwrdn_en&#34;],
-                                          &#34;ADC power-down enabled (0) / disabled (1)&#34;)
-        primary_header[&#34;CDSCLP_HI&#34;] = (self.register_map[&#34;cdsclp_hi&#34;], &#34;Clock cycle for cdsclp high&#34;)
-        primary_header[&#34;ROWCLP_HI&#34;] = (self.register_map[&#34;rowclp_hi&#34;], &#34;Clock cycle for rowclp high&#34;)
-        primary_header[&#34;ROWCLP_LO&#34;] = (self.register_map[&#34;rowclp_lo&#34;], &#34;Clock cycle for rowclp low&#34;)
+        if not PLATO_CAMERA_IS_EM:
+            primary_header[&#34;ADC_PWRDN_EN&#34;] = (self.register_map[&#34;adc_pwrdn_en&#34;],
+                                              &#34;ADC power-down enabled (0) / disabled (1)&#34;)
+            primary_header[&#34;CDSCLP_HI&#34;] = (self.register_map[&#34;cdsclp_hi&#34;], &#34;Clock cycle for cdsclp high&#34;)
+            primary_header[&#34;ROWCLP_HI&#34;] = (self.register_map[&#34;rowclp_hi&#34;], &#34;Clock cycle for rowclp high&#34;)
+            primary_header[&#34;ROWCLP_LO&#34;] = (self.register_map[&#34;rowclp_lo&#34;], &#34;Clock cycle for rowclp low&#34;)
         # primary_header[&#34;SURFACE_INV_CTR&#34;] = (self.register_map[&#34;Surface_Inversion_counter&#34;],
         #                                      &#34;Surface inversion counter&#34;)
         primary_header[&#34;READOUT_PAUSE_CTR&#34;] = (self.register_map[&#34;Readout_pause_counter&#34;], &#34;Readout pause counter&#34;)
@@ -589,6 +625,15 @@ class FITS(PersistenceLayer):
         primary_header[&#34;CYCLETIME&#34;] = (self.cycle_time, &#34;Image cycle time [s]&#34;)
         primary_header[&#34;READTIME&#34;] = (self.readout_time,
                                       &#34;Time needed to read out the requested part for a single CCD side [s]&#34;)
+
+        if self.register_map[&#34;sync_sel&#34;] == 1:  # See https://github.com/IvS-KULeuven/plato-common-egse/issues/2475
+            primary_header[&#34;READPERIOD&#34;] = (self.cycle_time + INT_SYNC_TIMING_OFFSET, &#34;Time between frames [s] &#34;
+                                                                                       &#34;(internal sync)&#34;)
+            texp_cmd = self.cycle_time - self.readout_time
+            primary_header[&#34;TEXP_CMD&#34;] = (texp_cmd, &#34;Commanded exposure time [s] (internal sync)&#34;)
+            primary_header[&#34;TEXP_EFF&#34;] = (texp_cmd + INT_SYNC_TIMING_OFFSET, &#34;Effective exposure time [s] (internal &#34;
+                                                                              &#34;sync)&#34;)
+
         primary_header[&#34;CGSE&#34;] = (self.cgse_version, &#34;Version of the Common EGSE&#34;)
 
         logger.info(f&#34;Obsid in FITS persistence layer: {self.obsid}&#34;)
@@ -1327,7 +1372,7 @@ class HDF5(PersistenceLayer):
     def open(self, mode=None):
         self._mode = mode or self._mode
         logger.debug(f&#34;Opening file {self._filepath} in mode &#39;{self._mode}&#39;&#34;)
-        self._h5file = h5py.File(self._filepath, mode=self._mode)
+        self._h5file = h5py.File(self._filepath, mode=self._mode, driver=&#39;core&#39;)
 
         # File &#34;h5py/h5f.pyx&#34;, line 554, in h5py.h5f.FileID.start_swmr_write
         # RuntimeError: Unable to start swmr writing (file superblock version - should be at least 3)
@@ -1375,6 +1420,8 @@ class HDF5(PersistenceLayer):
                 self._h5file[key] = value.timecode
             if isinstance(value, HousekeepingPacket):
                 self._h5file[key] = value.packet_as_ndarray
+            if isinstance(value, HousekeepingData):
+                self._h5file[key] = value.data_as_ndarray
             if isinstance(value, DataDataPacket):
                 self._h5file[key] = value.packet_as_ndarray
             if isinstance(value, OverscanDataPacket):
@@ -3367,7 +3414,6 @@ CCD side it applies to.</p>
 
         # Define the values of the WCS keywords
 
-        self.site_name = Settings.load().SITE[&#34;ID&#34;]
 
         self.v_start = prep[&#34;v_start&#34;]                              # First transmitted row
         self.v_end = prep[&#34;v_end&#34;]                                  # Last transmitted row
@@ -3378,11 +3424,12 @@ CCD side it applies to.</p>
         self.obsid = prep[&#34;obsid&#34;]
 
         self.register_map = prep[&#34;register_map&#34;]                    # Register map
-        
+
         # Read information from the setup
 
         self.setup: Setup = prep[&#34;setup&#34;]
 
+        self.site_name = self.setup[&#34;site_id&#34;]           # Site ID
         self.setup_id = self.setup.get_id()              # Setup ID
         self.camera_id = self.setup.camera.get(&#34;ID&#34;)     # Camera ID (None if not present in the setup)
 
@@ -3440,12 +3487,29 @@ CCD side it applies to.</p>
         return ((vgd_20 &lt;&lt; 4) + vgd_19) / 1000 * 5.983
 
     def get_ccd2_vrd(self):
-        &#34;&#34;&#34; Extract the VRD voltage for CCD2 from the register map.
+        &#34;&#34;&#34;
+        Extract the VRD voltage for CCD2 from the register map.
+
+        NOTE: Use this function only for the FM cameras.
 
         Return: Configured VRD voltage.
         &#34;&#34;&#34;
         vrd_18 = self.register_map[(&#39;reg_18_config&#39;, &#39;ccd2_vrd_config&#39;)]
         vrd_19 = self.register_map[(&#39;reg_19_config&#39;, &#39;ccd2_vrd_config&#39;)]
+
+        return int(f&#39;0x{vrd_19:x}{vrd_18:x}&#39;, 16)
+
+
+    def get_ccd3_vrd(self):
+        &#34;&#34;&#34;
+        Extract the VRD voltage for CCD3 from the register map.
+
+        NOTE: Use this function only for the EM camera.
+
+        Return: Configured VRD voltage.
+        &#34;&#34;&#34;
+        vrd_18 = self.register_map[(&#39;reg_18_config&#39;, &#39;ccd3_vrd_config&#39;)]
+        vrd_19 = self.register_map[(&#39;reg_19_config&#39;, &#39;ccd3_vrd_config&#39;)]
 
         return int(f&#39;0x{vrd_19:x}{vrd_18:x}&#39;, 16)
 
@@ -3688,8 +3752,13 @@ CCD side it applies to.</p>
         primary_header[&#34;CCD_VOD&#34;] = (self.register_map[&#34;ccd_vod_config&#34;], &#34;Configured VOD&#34;)
 
         primary_header[&#34;CCD1_VRD&#34;] = (self.register_map[&#34;ccd1_vrd_config&#34;], &#34;Configured VRD for CCD1&#34;)
-        primary_header[&#34;CCD2_VRD&#34;] = (self.get_ccd2_vrd(), &#34;Configured VRD for CCD2&#34;)
-        primary_header[&#34;CCD3_VRD&#34;] = (self.register_map[&#34;ccd3_vrd_config&#34;], &#34;Configured VRD for CCD3&#34;)
+        if PLATO_CAMERA_IS_EM:
+            primary_header[&#34;CCD2_VRD&#34;] = (self.register_map[&#34;ccd2_vrd_config&#34;], &#34;Configured VRD for CCD2&#34;)
+            primary_header[&#34;CCD3_VRD&#34;] = (self.get_ccd3_vrd(), &#34;Configured VRD for CCD3&#34;)
+        else:
+            primary_header[&#34;CCD2_VRD&#34;] = (self.get_ccd2_vrd(), &#34;Configured VRD for CCD2&#34;)
+            primary_header[&#34;CCD3_VRD&#34;] = (self.register_map[&#34;ccd3_vrd_config&#34;], &#34;Configured VRD for CCD3&#34;)
+
         primary_header[&#34;CCD4_VRD&#34;] = (self.register_map[&#34;ccd4_vrd_config&#34;], &#34;Configured VRD for CCD4&#34;)
         primary_header[&#34;CCD_VOG&#34;] = (self.register_map[&#34;ccd_vog_config&#34;], &#34;Configured VOG&#34;)
         primary_header[&#34;CCD_VGD&#34;] = (self.get_vgd(), &#34;Configured VGD [V]&#34;)
@@ -3699,18 +3768,20 @@ CCD side it applies to.</p>
         primary_header[&#34;TRK_HLD_LO&#34;] = (self.register_map[&#34;trk_hld_lo&#34;], &#34;Track and hold low&#34;)
         primary_header[&#34;CONT_RST_ON&#34;] = (self.register_map[&#34;cont_rst_on&#34;],
                                          &#34;When 1, FPGA generates continuous reset clock during readout&#34;)
-        primary_header[&#34;CONT_CDSCLP_ON&#34;] = (self.register_map[&#34;cont_cdsclp_on&#34;],
-                                            &#34;When 1, FPGA generates continuous CDS clamp during readout&#34;)
-        primary_header[&#34;CONT_ROWCLP_ON&#34;] = (self.register_map[&#34;cont_rowclp_on&#34;],
-                                            &#34;When 1, FPGA generates continuous row clamp during readout&#34;)
+        if not PLATO_CAMERA_IS_EM:
+            primary_header[&#34;CONT_CDSCLP_ON&#34;] = (self.register_map[&#34;cont_cdsclp_on&#34;],
+                                                &#34;When 1, FPGA generates continuous CDS clamp during readout&#34;)
+            primary_header[&#34;CONT_ROWCLP_ON&#34;] = (self.register_map[&#34;cont_rowclp_on&#34;],
+                                                &#34;When 1, FPGA generates continuous row clamp during readout&#34;)
         primary_header[&#34;R_CFG1&#34;] = (self.register_map[&#34;r_cfg1&#34;], &#34;Clock cycle for Rph3-low, Rph1-high&#34;)
         primary_header[&#34;R_CFG2&#34;] = (self.register_map[&#34;r_cfg2&#34;], &#34;Clock cycle for Rph1-low, Rph2-high&#34;)
         primary_header[&#34;CDSCLP_LO&#34;] = (self.register_map[&#34;cdsclp_lo&#34;], &#34;Clock cycle for cdsclp low&#34;)
-        primary_header[&#34;ADC_PWRDN_EN&#34;] = (self.register_map[&#34;adc_pwrdn_en&#34;],
-                                          &#34;ADC power-down enabled (0) / disabled (1)&#34;)
-        primary_header[&#34;CDSCLP_HI&#34;] = (self.register_map[&#34;cdsclp_hi&#34;], &#34;Clock cycle for cdsclp high&#34;)
-        primary_header[&#34;ROWCLP_HI&#34;] = (self.register_map[&#34;rowclp_hi&#34;], &#34;Clock cycle for rowclp high&#34;)
-        primary_header[&#34;ROWCLP_LO&#34;] = (self.register_map[&#34;rowclp_lo&#34;], &#34;Clock cycle for rowclp low&#34;)
+        if not PLATO_CAMERA_IS_EM:
+            primary_header[&#34;ADC_PWRDN_EN&#34;] = (self.register_map[&#34;adc_pwrdn_en&#34;],
+                                              &#34;ADC power-down enabled (0) / disabled (1)&#34;)
+            primary_header[&#34;CDSCLP_HI&#34;] = (self.register_map[&#34;cdsclp_hi&#34;], &#34;Clock cycle for cdsclp high&#34;)
+            primary_header[&#34;ROWCLP_HI&#34;] = (self.register_map[&#34;rowclp_hi&#34;], &#34;Clock cycle for rowclp high&#34;)
+            primary_header[&#34;ROWCLP_LO&#34;] = (self.register_map[&#34;rowclp_lo&#34;], &#34;Clock cycle for rowclp low&#34;)
         # primary_header[&#34;SURFACE_INV_CTR&#34;] = (self.register_map[&#34;Surface_Inversion_counter&#34;],
         #                                      &#34;Surface inversion counter&#34;)
         primary_header[&#34;READOUT_PAUSE_CTR&#34;] = (self.register_map[&#34;Readout_pause_counter&#34;], &#34;Readout pause counter&#34;)
@@ -3730,6 +3801,15 @@ CCD side it applies to.</p>
         primary_header[&#34;CYCLETIME&#34;] = (self.cycle_time, &#34;Image cycle time [s]&#34;)
         primary_header[&#34;READTIME&#34;] = (self.readout_time,
                                       &#34;Time needed to read out the requested part for a single CCD side [s]&#34;)
+
+        if self.register_map[&#34;sync_sel&#34;] == 1:  # See https://github.com/IvS-KULeuven/plato-common-egse/issues/2475
+            primary_header[&#34;READPERIOD&#34;] = (self.cycle_time + INT_SYNC_TIMING_OFFSET, &#34;Time between frames [s] &#34;
+                                                                                       &#34;(internal sync)&#34;)
+            texp_cmd = self.cycle_time - self.readout_time
+            primary_header[&#34;TEXP_CMD&#34;] = (texp_cmd, &#34;Commanded exposure time [s] (internal sync)&#34;)
+            primary_header[&#34;TEXP_EFF&#34;] = (texp_cmd + INT_SYNC_TIMING_OFFSET, &#34;Effective exposure time [s] (internal &#34;
+                                                                              &#34;sync)&#34;)
+
         primary_header[&#34;CGSE&#34;] = (self.cgse_version, &#34;Version of the Common EGSE&#34;)
 
         logger.info(f&#34;Obsid in FITS persistence layer: {self.obsid}&#34;)
@@ -5306,8 +5386,13 @@ done at the moment the serial pre-scan will be written to file.</p>
     primary_header[&#34;CCD_VOD&#34;] = (self.register_map[&#34;ccd_vod_config&#34;], &#34;Configured VOD&#34;)
 
     primary_header[&#34;CCD1_VRD&#34;] = (self.register_map[&#34;ccd1_vrd_config&#34;], &#34;Configured VRD for CCD1&#34;)
-    primary_header[&#34;CCD2_VRD&#34;] = (self.get_ccd2_vrd(), &#34;Configured VRD for CCD2&#34;)
-    primary_header[&#34;CCD3_VRD&#34;] = (self.register_map[&#34;ccd3_vrd_config&#34;], &#34;Configured VRD for CCD3&#34;)
+    if PLATO_CAMERA_IS_EM:
+        primary_header[&#34;CCD2_VRD&#34;] = (self.register_map[&#34;ccd2_vrd_config&#34;], &#34;Configured VRD for CCD2&#34;)
+        primary_header[&#34;CCD3_VRD&#34;] = (self.get_ccd3_vrd(), &#34;Configured VRD for CCD3&#34;)
+    else:
+        primary_header[&#34;CCD2_VRD&#34;] = (self.get_ccd2_vrd(), &#34;Configured VRD for CCD2&#34;)
+        primary_header[&#34;CCD3_VRD&#34;] = (self.register_map[&#34;ccd3_vrd_config&#34;], &#34;Configured VRD for CCD3&#34;)
+
     primary_header[&#34;CCD4_VRD&#34;] = (self.register_map[&#34;ccd4_vrd_config&#34;], &#34;Configured VRD for CCD4&#34;)
     primary_header[&#34;CCD_VOG&#34;] = (self.register_map[&#34;ccd_vog_config&#34;], &#34;Configured VOG&#34;)
     primary_header[&#34;CCD_VGD&#34;] = (self.get_vgd(), &#34;Configured VGD [V]&#34;)
@@ -5317,18 +5402,20 @@ done at the moment the serial pre-scan will be written to file.</p>
     primary_header[&#34;TRK_HLD_LO&#34;] = (self.register_map[&#34;trk_hld_lo&#34;], &#34;Track and hold low&#34;)
     primary_header[&#34;CONT_RST_ON&#34;] = (self.register_map[&#34;cont_rst_on&#34;],
                                      &#34;When 1, FPGA generates continuous reset clock during readout&#34;)
-    primary_header[&#34;CONT_CDSCLP_ON&#34;] = (self.register_map[&#34;cont_cdsclp_on&#34;],
-                                        &#34;When 1, FPGA generates continuous CDS clamp during readout&#34;)
-    primary_header[&#34;CONT_ROWCLP_ON&#34;] = (self.register_map[&#34;cont_rowclp_on&#34;],
-                                        &#34;When 1, FPGA generates continuous row clamp during readout&#34;)
+    if not PLATO_CAMERA_IS_EM:
+        primary_header[&#34;CONT_CDSCLP_ON&#34;] = (self.register_map[&#34;cont_cdsclp_on&#34;],
+                                            &#34;When 1, FPGA generates continuous CDS clamp during readout&#34;)
+        primary_header[&#34;CONT_ROWCLP_ON&#34;] = (self.register_map[&#34;cont_rowclp_on&#34;],
+                                            &#34;When 1, FPGA generates continuous row clamp during readout&#34;)
     primary_header[&#34;R_CFG1&#34;] = (self.register_map[&#34;r_cfg1&#34;], &#34;Clock cycle for Rph3-low, Rph1-high&#34;)
     primary_header[&#34;R_CFG2&#34;] = (self.register_map[&#34;r_cfg2&#34;], &#34;Clock cycle for Rph1-low, Rph2-high&#34;)
     primary_header[&#34;CDSCLP_LO&#34;] = (self.register_map[&#34;cdsclp_lo&#34;], &#34;Clock cycle for cdsclp low&#34;)
-    primary_header[&#34;ADC_PWRDN_EN&#34;] = (self.register_map[&#34;adc_pwrdn_en&#34;],
-                                      &#34;ADC power-down enabled (0) / disabled (1)&#34;)
-    primary_header[&#34;CDSCLP_HI&#34;] = (self.register_map[&#34;cdsclp_hi&#34;], &#34;Clock cycle for cdsclp high&#34;)
-    primary_header[&#34;ROWCLP_HI&#34;] = (self.register_map[&#34;rowclp_hi&#34;], &#34;Clock cycle for rowclp high&#34;)
-    primary_header[&#34;ROWCLP_LO&#34;] = (self.register_map[&#34;rowclp_lo&#34;], &#34;Clock cycle for rowclp low&#34;)
+    if not PLATO_CAMERA_IS_EM:
+        primary_header[&#34;ADC_PWRDN_EN&#34;] = (self.register_map[&#34;adc_pwrdn_en&#34;],
+                                          &#34;ADC power-down enabled (0) / disabled (1)&#34;)
+        primary_header[&#34;CDSCLP_HI&#34;] = (self.register_map[&#34;cdsclp_hi&#34;], &#34;Clock cycle for cdsclp high&#34;)
+        primary_header[&#34;ROWCLP_HI&#34;] = (self.register_map[&#34;rowclp_hi&#34;], &#34;Clock cycle for rowclp high&#34;)
+        primary_header[&#34;ROWCLP_LO&#34;] = (self.register_map[&#34;rowclp_lo&#34;], &#34;Clock cycle for rowclp low&#34;)
     # primary_header[&#34;SURFACE_INV_CTR&#34;] = (self.register_map[&#34;Surface_Inversion_counter&#34;],
     #                                      &#34;Surface inversion counter&#34;)
     primary_header[&#34;READOUT_PAUSE_CTR&#34;] = (self.register_map[&#34;Readout_pause_counter&#34;], &#34;Readout pause counter&#34;)
@@ -5348,6 +5435,15 @@ done at the moment the serial pre-scan will be written to file.</p>
     primary_header[&#34;CYCLETIME&#34;] = (self.cycle_time, &#34;Image cycle time [s]&#34;)
     primary_header[&#34;READTIME&#34;] = (self.readout_time,
                                   &#34;Time needed to read out the requested part for a single CCD side [s]&#34;)
+
+    if self.register_map[&#34;sync_sel&#34;] == 1:  # See https://github.com/IvS-KULeuven/plato-common-egse/issues/2475
+        primary_header[&#34;READPERIOD&#34;] = (self.cycle_time + INT_SYNC_TIMING_OFFSET, &#34;Time between frames [s] &#34;
+                                                                                   &#34;(internal sync)&#34;)
+        texp_cmd = self.cycle_time - self.readout_time
+        primary_header[&#34;TEXP_CMD&#34;] = (texp_cmd, &#34;Commanded exposure time [s] (internal sync)&#34;)
+        primary_header[&#34;TEXP_EFF&#34;] = (texp_cmd + INT_SYNC_TIMING_OFFSET, &#34;Effective exposure time [s] (internal &#34;
+                                                                          &#34;sync)&#34;)
+
     primary_header[&#34;CGSE&#34;] = (self.cgse_version, &#34;Version of the Common EGSE&#34;)
 
     logger.info(f&#34;Obsid in FITS persistence layer: {self.obsid}&#34;)
@@ -5454,18 +5550,47 @@ done at the moment the serial pre-scan will be written to file.</p>
 </code></dt>
 <dd>
 <div class="desc"><p>Extract the VRD voltage for CCD2 from the register map.</p>
+<p>NOTE: Use this function only for the FM cameras.</p>
 <p>Return: Configured VRD voltage.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def get_ccd2_vrd(self):
-    &#34;&#34;&#34; Extract the VRD voltage for CCD2 from the register map.
+    &#34;&#34;&#34;
+    Extract the VRD voltage for CCD2 from the register map.
+
+    NOTE: Use this function only for the FM cameras.
 
     Return: Configured VRD voltage.
     &#34;&#34;&#34;
     vrd_18 = self.register_map[(&#39;reg_18_config&#39;, &#39;ccd2_vrd_config&#39;)]
     vrd_19 = self.register_map[(&#39;reg_19_config&#39;, &#39;ccd2_vrd_config&#39;)]
+
+    return int(f&#39;0x{vrd_19:x}{vrd_18:x}&#39;, 16)</code></pre>
+</details>
+</dd>
+<dt id="egse.storage.persistence.FITS.get_ccd3_vrd"><code class="name flex">
+<span>def <span class="ident">get_ccd3_vrd</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Extract the VRD voltage for CCD3 from the register map.</p>
+<p>NOTE: Use this function only for the EM camera.</p>
+<p>Return: Configured VRD voltage.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_ccd3_vrd(self):
+    &#34;&#34;&#34;
+    Extract the VRD voltage for CCD3 from the register map.
+
+    NOTE: Use this function only for the EM camera.
+
+    Return: Configured VRD voltage.
+    &#34;&#34;&#34;
+    vrd_18 = self.register_map[(&#39;reg_18_config&#39;, &#39;ccd3_vrd_config&#39;)]
+    vrd_19 = self.register_map[(&#39;reg_19_config&#39;, &#39;ccd3_vrd_config&#39;)]
 
     return int(f&#39;0x{vrd_19:x}{vrd_18:x}&#39;, 16)</code></pre>
 </details>
@@ -5752,7 +5877,7 @@ Returns: List or generator for all entries in the persistence store.</li>
     def open(self, mode=None):
         self._mode = mode or self._mode
         logger.debug(f&#34;Opening file {self._filepath} in mode &#39;{self._mode}&#39;&#34;)
-        self._h5file = h5py.File(self._filepath, mode=self._mode)
+        self._h5file = h5py.File(self._filepath, mode=self._mode, driver=&#39;core&#39;)
 
         # File &#34;h5py/h5f.pyx&#34;, line 554, in h5py.h5f.FileID.start_swmr_write
         # RuntimeError: Unable to start swmr writing (file superblock version - should be at least 3)
@@ -5800,6 +5925,8 @@ Returns: List or generator for all entries in the persistence store.</li>
                 self._h5file[key] = value.timecode
             if isinstance(value, HousekeepingPacket):
                 self._h5file[key] = value.packet_as_ndarray
+            if isinstance(value, HousekeepingData):
+                self._h5file[key] = value.data_as_ndarray
             if isinstance(value, DataDataPacket):
                 self._h5file[key] = value.packet_as_ndarray
             if isinstance(value, OverscanDataPacket):
@@ -5938,6 +6065,8 @@ the "/10/command" group and finally adds a register memory map (an np.ndarray) i
             self._h5file[key] = value.timecode
         if isinstance(value, HousekeepingPacket):
             self._h5file[key] = value.packet_as_ndarray
+        if isinstance(value, HousekeepingData):
+            self._h5file[key] = value.data_as_ndarray
         if isinstance(value, DataDataPacket):
             self._h5file[key] = value.packet_as_ndarray
         if isinstance(value, OverscanDataPacket):
@@ -6854,6 +6983,7 @@ persistence layer. The TXT initialisation uses the following:</p>
 <li><code><a title="egse.storage.persistence.FITS.create_primary_header" href="#egse.storage.persistence.FITS.create_primary_header">create_primary_header</a></code></li>
 <li><code><a title="egse.storage.persistence.FITS.extract_full_image_mode" href="#egse.storage.persistence.FITS.extract_full_image_mode">extract_full_image_mode</a></code></li>
 <li><code><a title="egse.storage.persistence.FITS.get_ccd2_vrd" href="#egse.storage.persistence.FITS.get_ccd2_vrd">get_ccd2_vrd</a></code></li>
+<li><code><a title="egse.storage.persistence.FITS.get_ccd3_vrd" href="#egse.storage.persistence.FITS.get_ccd3_vrd">get_ccd3_vrd</a></code></li>
 <li><code><a title="egse.storage.persistence.FITS.get_vgd" href="#egse.storage.persistence.FITS.get_vgd">get_vgd</a></code></li>
 <li><code><a title="egse.storage.persistence.FITS.got_all_last_packets" href="#egse.storage.persistence.FITS.got_all_last_packets">got_all_last_packets</a></code></li>
 <li><code><a title="egse.storage.persistence.FITS.init_data_arrays" href="#egse.storage.persistence.FITS.init_data_arrays">init_data_arrays</a></code></li>

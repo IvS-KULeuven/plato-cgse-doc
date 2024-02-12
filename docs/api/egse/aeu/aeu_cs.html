@@ -135,7 +135,7 @@ import multiprocessing
 
 import sys
 
-from egse.state import GlobalState
+from egse.setup import load_setup
 from egse.system import SignalCatcher
 
 multiprocessing.current_process().name = &#34;aeu_cs&#34;
@@ -459,7 +459,8 @@ def start_awg_cs(simulator, index):
     if index == 2:
 
         try:
-            GlobalState.setup.gse.aeu.awg2.calibration
+            setup = load_setup()
+            setup.gse.aeu.awg2.calibration
         except AttributeError:
             logger.exception(&#34;Starting AWG2 Control Server failed because no setup was loaded &#34; +
                              &#34;or the loaded setup does not contain AWG2 calibration data&#34;)
@@ -1050,10 +1051,15 @@ AEU device is used.</p>
 <ul class="hlist">
 <li><code><b><a title="egse.control.ControlServer" href="../control.html#egse.control.ControlServer">ControlServer</a></b></code>:
 <ul class="hlist">
+<li><code><a title="egse.control.ControlServer.handle_scheduled_tasks" href="../control.html#egse.control.ControlServer.handle_scheduled_tasks">handle_scheduled_tasks</a></code></li>
+<li><code><a title="egse.control.ControlServer.notify_listeners" href="../control.html#egse.control.ControlServer.notify_listeners">notify_listeners</a></code></li>
+<li><code><a title="egse.control.ControlServer.register_as_listener" href="../control.html#egse.control.ControlServer.register_as_listener">register_as_listener</a></code></li>
 <li><code><a title="egse.control.ControlServer.register_to_storage_manager" href="../control.html#egse.control.ControlServer.register_to_storage_manager">register_to_storage_manager</a></code></li>
+<li><code><a title="egse.control.ControlServer.schedule_task" href="../control.html#egse.control.ControlServer.schedule_task">schedule_task</a></code></li>
 <li><code><a title="egse.control.ControlServer.set_delay" href="../control.html#egse.control.ControlServer.set_delay">set_delay</a></code></li>
 <li><code><a title="egse.control.ControlServer.set_hk_delay" href="../control.html#egse.control.ControlServer.set_hk_delay">set_hk_delay</a></code></li>
 <li><code><a title="egse.control.ControlServer.store_housekeeping_information" href="../control.html#egse.control.ControlServer.store_housekeeping_information">store_housekeeping_information</a></code></li>
+<li><code><a title="egse.control.ControlServer.unregister_as_listener" href="../control.html#egse.control.ControlServer.unregister_as_listener">unregister_as_listener</a></code></li>
 <li><code><a title="egse.control.ControlServer.unregister_from_storage_manager" href="../control.html#egse.control.ControlServer.unregister_from_storage_manager">unregister_from_storage_manager</a></code></li>
 </ul>
 </li>
@@ -1129,10 +1135,15 @@ AEU device is used.</p>
 <li><code><a title="egse.aeu.aeu_cs.AEUControlServer.get_monitoring_port" href="#egse.aeu.aeu_cs.AEUControlServer.get_monitoring_port">get_monitoring_port</a></code></li>
 <li><code><a title="egse.aeu.aeu_cs.AEUControlServer.get_service_port" href="#egse.aeu.aeu_cs.AEUControlServer.get_service_port">get_service_port</a></code></li>
 <li><code><a title="egse.aeu.aeu_cs.AEUControlServer.get_storage_mnemonic" href="#egse.aeu.aeu_cs.AEUControlServer.get_storage_mnemonic">get_storage_mnemonic</a></code></li>
+<li><code><a title="egse.aeu.aeu_cs.AEUControlServer.handle_scheduled_tasks" href="../control.html#egse.control.ControlServer.handle_scheduled_tasks">handle_scheduled_tasks</a></code></li>
+<li><code><a title="egse.aeu.aeu_cs.AEUControlServer.notify_listeners" href="../control.html#egse.control.ControlServer.notify_listeners">notify_listeners</a></code></li>
+<li><code><a title="egse.aeu.aeu_cs.AEUControlServer.register_as_listener" href="../control.html#egse.control.ControlServer.register_as_listener">register_as_listener</a></code></li>
 <li><code><a title="egse.aeu.aeu_cs.AEUControlServer.register_to_storage_manager" href="../control.html#egse.control.ControlServer.register_to_storage_manager">register_to_storage_manager</a></code></li>
+<li><code><a title="egse.aeu.aeu_cs.AEUControlServer.schedule_task" href="../control.html#egse.control.ControlServer.schedule_task">schedule_task</a></code></li>
 <li><code><a title="egse.aeu.aeu_cs.AEUControlServer.set_delay" href="../control.html#egse.control.ControlServer.set_delay">set_delay</a></code></li>
 <li><code><a title="egse.aeu.aeu_cs.AEUControlServer.set_hk_delay" href="../control.html#egse.control.ControlServer.set_hk_delay">set_hk_delay</a></code></li>
 <li><code><a title="egse.aeu.aeu_cs.AEUControlServer.store_housekeeping_information" href="../control.html#egse.control.ControlServer.store_housekeeping_information">store_housekeeping_information</a></code></li>
+<li><code><a title="egse.aeu.aeu_cs.AEUControlServer.unregister_as_listener" href="../control.html#egse.control.ControlServer.unregister_as_listener">unregister_as_listener</a></code></li>
 <li><code><a title="egse.aeu.aeu_cs.AEUControlServer.unregister_from_storage_manager" href="../control.html#egse.control.ControlServer.unregister_from_storage_manager">unregister_from_storage_manager</a></code></li>
 </ul>
 </li>
@@ -1195,10 +1206,15 @@ AEU device is used.</p>
 <li><code><a title="egse.aeu.aeu_cs.AEUControlServer.get_monitoring_port" href="#egse.aeu.aeu_cs.AEUControlServer.get_monitoring_port">get_monitoring_port</a></code></li>
 <li><code><a title="egse.aeu.aeu_cs.AEUControlServer.get_service_port" href="#egse.aeu.aeu_cs.AEUControlServer.get_service_port">get_service_port</a></code></li>
 <li><code><a title="egse.aeu.aeu_cs.AEUControlServer.get_storage_mnemonic" href="#egse.aeu.aeu_cs.AEUControlServer.get_storage_mnemonic">get_storage_mnemonic</a></code></li>
+<li><code><a title="egse.aeu.aeu_cs.AEUControlServer.handle_scheduled_tasks" href="../control.html#egse.control.ControlServer.handle_scheduled_tasks">handle_scheduled_tasks</a></code></li>
+<li><code><a title="egse.aeu.aeu_cs.AEUControlServer.notify_listeners" href="../control.html#egse.control.ControlServer.notify_listeners">notify_listeners</a></code></li>
+<li><code><a title="egse.aeu.aeu_cs.AEUControlServer.register_as_listener" href="../control.html#egse.control.ControlServer.register_as_listener">register_as_listener</a></code></li>
 <li><code><a title="egse.aeu.aeu_cs.AEUControlServer.register_to_storage_manager" href="../control.html#egse.control.ControlServer.register_to_storage_manager">register_to_storage_manager</a></code></li>
+<li><code><a title="egse.aeu.aeu_cs.AEUControlServer.schedule_task" href="../control.html#egse.control.ControlServer.schedule_task">schedule_task</a></code></li>
 <li><code><a title="egse.aeu.aeu_cs.AEUControlServer.set_delay" href="../control.html#egse.control.ControlServer.set_delay">set_delay</a></code></li>
 <li><code><a title="egse.aeu.aeu_cs.AEUControlServer.set_hk_delay" href="../control.html#egse.control.ControlServer.set_hk_delay">set_hk_delay</a></code></li>
 <li><code><a title="egse.aeu.aeu_cs.AEUControlServer.store_housekeeping_information" href="../control.html#egse.control.ControlServer.store_housekeeping_information">store_housekeeping_information</a></code></li>
+<li><code><a title="egse.aeu.aeu_cs.AEUControlServer.unregister_as_listener" href="../control.html#egse.control.ControlServer.unregister_as_listener">unregister_as_listener</a></code></li>
 <li><code><a title="egse.aeu.aeu_cs.AEUControlServer.unregister_from_storage_manager" href="../control.html#egse.control.ControlServer.unregister_from_storage_manager">unregister_from_storage_manager</a></code></li>
 </ul>
 </li>
@@ -1272,10 +1288,15 @@ AEU device is used.</p>
 <li><code><a title="egse.aeu.aeu_cs.AEUControlServer.get_monitoring_port" href="#egse.aeu.aeu_cs.AEUControlServer.get_monitoring_port">get_monitoring_port</a></code></li>
 <li><code><a title="egse.aeu.aeu_cs.AEUControlServer.get_service_port" href="#egse.aeu.aeu_cs.AEUControlServer.get_service_port">get_service_port</a></code></li>
 <li><code><a title="egse.aeu.aeu_cs.AEUControlServer.get_storage_mnemonic" href="#egse.aeu.aeu_cs.AEUControlServer.get_storage_mnemonic">get_storage_mnemonic</a></code></li>
+<li><code><a title="egse.aeu.aeu_cs.AEUControlServer.handle_scheduled_tasks" href="../control.html#egse.control.ControlServer.handle_scheduled_tasks">handle_scheduled_tasks</a></code></li>
+<li><code><a title="egse.aeu.aeu_cs.AEUControlServer.notify_listeners" href="../control.html#egse.control.ControlServer.notify_listeners">notify_listeners</a></code></li>
+<li><code><a title="egse.aeu.aeu_cs.AEUControlServer.register_as_listener" href="../control.html#egse.control.ControlServer.register_as_listener">register_as_listener</a></code></li>
 <li><code><a title="egse.aeu.aeu_cs.AEUControlServer.register_to_storage_manager" href="../control.html#egse.control.ControlServer.register_to_storage_manager">register_to_storage_manager</a></code></li>
+<li><code><a title="egse.aeu.aeu_cs.AEUControlServer.schedule_task" href="../control.html#egse.control.ControlServer.schedule_task">schedule_task</a></code></li>
 <li><code><a title="egse.aeu.aeu_cs.AEUControlServer.set_delay" href="../control.html#egse.control.ControlServer.set_delay">set_delay</a></code></li>
 <li><code><a title="egse.aeu.aeu_cs.AEUControlServer.set_hk_delay" href="../control.html#egse.control.ControlServer.set_hk_delay">set_hk_delay</a></code></li>
 <li><code><a title="egse.aeu.aeu_cs.AEUControlServer.store_housekeeping_information" href="../control.html#egse.control.ControlServer.store_housekeeping_information">store_housekeeping_information</a></code></li>
+<li><code><a title="egse.aeu.aeu_cs.AEUControlServer.unregister_as_listener" href="../control.html#egse.control.ControlServer.unregister_as_listener">unregister_as_listener</a></code></li>
 <li><code><a title="egse.aeu.aeu_cs.AEUControlServer.unregister_from_storage_manager" href="../control.html#egse.control.ControlServer.unregister_from_storage_manager">unregister_from_storage_manager</a></code></li>
 </ul>
 </li>

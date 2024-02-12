@@ -35,12 +35,11 @@ from egse.protocol import CommandProtocol
 from egse.command import ClientServerCommand
 from egse.proxy import Proxy
 from egse.settings import Settings
-from egse.state import GlobalState
+from egse.setup import load_setup
 from egse.synoptics import SynopticsManagerProxy
 from egse.zmq_ser import bind_address
 from egse.system import format_datetime
 from egse.filterwheel.eksma.fw8smc5_interface import Fw8Smc5Interface
-from egse.filterwheel.eksma.fw8smc5_controller import Fw8Smc5Controller
 from egse.filterwheel.eksma.fw8smc5_simulator import Fw8Smc5Simulator
 from egse.zmq_ser import connect_address
 
@@ -65,10 +64,15 @@ class Fw8Smc5Protocol(CommandProtocol):
 
     def __init__(self, control_server: ControlServer):
 
+        from egse.filterwheel.eksma.fw8smc5_controller import Fw8Smc5Controller
+
         super().__init__()
+
+        setup = load_setup()
+
         self.control_server = control_server
 
-        self.fwc_calibration = GlobalState.setup.gse.ogse.calibration.fwc_calibration
+        self.fwc_calibration = setup.gse.ogse.calibration.fwc_calibration
 
         if Settings.simulation_mode():
             self.dev = Fw8Smc5Simulator()
@@ -202,10 +206,15 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
 
     def __init__(self, control_server: ControlServer):
 
+        from egse.filterwheel.eksma.fw8smc5_controller import Fw8Smc5Controller
+
         super().__init__()
+
+        setup = load_setup()
+
         self.control_server = control_server
 
-        self.fwc_calibration = GlobalState.setup.gse.ogse.calibration.fwc_calibration
+        self.fwc_calibration = setup.gse.ogse.calibration.fwc_calibration
 
         if Settings.simulation_mode():
             self.dev = Fw8Smc5Simulator()
@@ -324,7 +333,7 @@ can fix the problem with the control server and call <code>connect_cs()</code>, 
 <li><a title="egse.proxy.Proxy" href="../../proxy.html#egse.proxy.Proxy">Proxy</a></li>
 <li><a title="egse.proxy.BaseProxy" href="../../proxy.html#egse.proxy.BaseProxy">BaseProxy</a></li>
 <li><a title="egse.proxy.ControlServerConnectionInterface" href="../../proxy.html#egse.proxy.ControlServerConnectionInterface">ControlServerConnectionInterface</a></li>
-<li><a title="egse.filterwheel.eksma.fw8smc5_interface.Fw8Smc5Interface" href="fw8smc5_interface.html#egse.filterwheel.eksma.fw8smc5_interface.Fw8Smc5Interface">Fw8Smc5Interface</a></li>
+<li>egse.filterwheel.eksma.fw8smc5_interface.Fw8Smc5Interface</li>
 <li><a title="egse.device.DeviceInterface" href="../../device.html#egse.device.DeviceInterface">DeviceInterface</a></li>
 <li><a title="egse.device.DeviceConnectionInterface" href="../../device.html#egse.device.DeviceConnectionInterface">DeviceConnectionInterface</a></li>
 <li><a title="egse.device.DeviceConnectionObservable" href="../../device.html#egse.device.DeviceConnectionObservable">DeviceConnectionObservable</a></li>
@@ -350,15 +359,15 @@ can fix the problem with the control server and call <code>connect_cs()</code>, 
 <li><code><a title="egse.proxy.Proxy.send" href="../../proxy.html#egse.proxy.BaseProxy.send">send</a></code></li>
 </ul>
 </li>
-<li><code><b><a title="egse.filterwheel.eksma.fw8smc5_interface.Fw8Smc5Interface" href="fw8smc5_interface.html#egse.filterwheel.eksma.fw8smc5_interface.Fw8Smc5Interface">Fw8Smc5Interface</a></b></code>:
+<li><code><b><a title="egse.device.DeviceInterface" href="../../device.html#egse.device.DeviceInterface">DeviceInterface</a></b></code>:
 <ul class="hlist">
-<li><code><a title="egse.filterwheel.eksma.fw8smc5_interface.Fw8Smc5Interface.add_observer" href="../../device.html#egse.device.DeviceConnectionObservable.add_observer">add_observer</a></code></li>
-<li><code><a title="egse.filterwheel.eksma.fw8smc5_interface.Fw8Smc5Interface.connect" href="../../device.html#egse.device.DeviceConnectionInterface.connect">connect</a></code></li>
-<li><code><a title="egse.filterwheel.eksma.fw8smc5_interface.Fw8Smc5Interface.disconnect" href="../../device.html#egse.device.DeviceConnectionInterface.disconnect">disconnect</a></code></li>
-<li><code><a title="egse.filterwheel.eksma.fw8smc5_interface.Fw8Smc5Interface.is_connected" href="../../device.html#egse.device.DeviceConnectionInterface.is_connected">is_connected</a></code></li>
-<li><code><a title="egse.filterwheel.eksma.fw8smc5_interface.Fw8Smc5Interface.is_simulator" href="../../device.html#egse.device.DeviceInterface.is_simulator">is_simulator</a></code></li>
-<li><code><a title="egse.filterwheel.eksma.fw8smc5_interface.Fw8Smc5Interface.notify_observers" href="../../device.html#egse.device.DeviceConnectionObservable.notify_observers">notify_observers</a></code></li>
-<li><code><a title="egse.filterwheel.eksma.fw8smc5_interface.Fw8Smc5Interface.reconnect" href="../../device.html#egse.device.DeviceConnectionInterface.reconnect">reconnect</a></code></li>
+<li><code><a title="egse.device.DeviceInterface.add_observer" href="../../device.html#egse.device.DeviceConnectionObservable.add_observer">add_observer</a></code></li>
+<li><code><a title="egse.device.DeviceInterface.connect" href="../../device.html#egse.device.DeviceConnectionInterface.connect">connect</a></code></li>
+<li><code><a title="egse.device.DeviceInterface.disconnect" href="../../device.html#egse.device.DeviceConnectionInterface.disconnect">disconnect</a></code></li>
+<li><code><a title="egse.device.DeviceInterface.is_connected" href="../../device.html#egse.device.DeviceConnectionInterface.is_connected">is_connected</a></code></li>
+<li><code><a title="egse.device.DeviceInterface.is_simulator" href="../../device.html#egse.device.DeviceInterface.is_simulator">is_simulator</a></code></li>
+<li><code><a title="egse.device.DeviceInterface.notify_observers" href="../../device.html#egse.device.DeviceConnectionObservable.notify_observers">notify_observers</a></code></li>
+<li><code><a title="egse.device.DeviceInterface.reconnect" href="../../device.html#egse.device.DeviceConnectionInterface.reconnect">reconnect</a></code></li>
 </ul>
 </li>
 </ul>

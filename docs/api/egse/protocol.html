@@ -41,6 +41,8 @@ The protocol also knows how to load the commands from the YAML file that contain
 command definitions.
 
 &#34;&#34;&#34;
+from __future__ import annotations
+
 import abc
 import inspect
 import logging
@@ -351,8 +353,9 @@ class CommandProtocol(DeviceConnectionObserver, metaclass=abc.ABCMeta):
     def __init__(self):
         super().__init__()
         self.__socket = None
-        self._commands = dict()  # variable is used by sub classes
-        self._method_lookup = dict()  # lookup table for device methods
+        self._commands = {}  # variable is used by sub classes
+        self.control_server: ControlServer | None = None  # variable set by the sub-class
+        self._method_lookup = {}  # lookup table for device methods
 
     def bind(self, socket):
         &#34;&#34;&#34;Bind to a socket to listen for commands.&#34;&#34;&#34;
@@ -403,6 +406,8 @@ class CommandProtocol(DeviceConnectionObserver, metaclass=abc.ABCMeta):
             self.send(self.control_server.get_commanding_port())
         elif cmd_name == &#34;get_ip_address&#34;:
             self.send(self.control_server.get_ip_address())
+        elif cmd_name == &#34;get_storage_mnemonic&#34;:
+            self.send(self.control_server.get_storage_mnemonic())
         elif cmd:
             COMMAND_REQUESTS.labels(target=&#34;device&#34;).inc()
             cmd.server_call(self, *args, **kwargs)
@@ -573,7 +578,7 @@ class CommandProtocol(DeviceConnectionObserver, metaclass=abc.ABCMeta):
                 f&#34;cmd=&#39;{cmd}&#39;, &#34;
                 f&#34;response={response_method}, device_method={device_method})&#34;,
             )
-            logger.debug(f&#34;Creating {command_class.__name__} command with {name=}, {cmd=}, {device_method=}&#34;)
+            # logger.debug(f&#34;Creating {command_class.__name__} command with {name=}, {cmd=}, {device_method=}&#34;)
 
             self._commands[name] = command_class(
                 name=name,
@@ -766,7 +771,7 @@ instance, i.e. self, when you call this as a function.</p>
 <dl>
 <dt id="egse.protocol.BaseCommandProtocol"><code class="flex name class">
 <span>class <span class="ident">BaseCommandProtocol</span></span>
-<span>(</span><span>control_server: <a title="egse.control.ControlServer" href="control.html#egse.control.ControlServer">ControlServer</a>)</span>
+<span>(</span><span>control_server: ControlServer)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>An observer for the connection state of a device. Add the sub-class of this class to
@@ -1282,8 +1287,9 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
     def __init__(self):
         super().__init__()
         self.__socket = None
-        self._commands = dict()  # variable is used by sub classes
-        self._method_lookup = dict()  # lookup table for device methods
+        self._commands = {}  # variable is used by sub classes
+        self.control_server: ControlServer | None = None  # variable set by the sub-class
+        self._method_lookup = {}  # lookup table for device methods
 
     def bind(self, socket):
         &#34;&#34;&#34;Bind to a socket to listen for commands.&#34;&#34;&#34;
@@ -1334,6 +1340,8 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
             self.send(self.control_server.get_commanding_port())
         elif cmd_name == &#34;get_ip_address&#34;:
             self.send(self.control_server.get_ip_address())
+        elif cmd_name == &#34;get_storage_mnemonic&#34;:
+            self.send(self.control_server.get_storage_mnemonic())
         elif cmd:
             COMMAND_REQUESTS.labels(target=&#34;device&#34;).inc()
             cmd.server_call(self, *args, **kwargs)
@@ -1504,7 +1512,7 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
                 f&#34;cmd=&#39;{cmd}&#39;, &#34;
                 f&#34;response={response_method}, device_method={device_method})&#34;,
             )
-            logger.debug(f&#34;Creating {command_class.__name__} command with {name=}, {cmd=}, {device_method=}&#34;)
+            # logger.debug(f&#34;Creating {command_class.__name__} command with {name=}, {cmd=}, {device_method=}&#34;)
 
             self._commands[name] = command_class(
                 name=name,
@@ -1571,14 +1579,13 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
 <h3>Subclasses</h3>
 <ul class="hlist">
 <li><a title="egse.aeu.aeu_protocol.AEUProtocol" href="aeu/aeu_protocol.html#egse.aeu.aeu_protocol.AEUProtocol">AEUProtocol</a></li>
-<li><a title="egse.alert.alert_manager.AlertManagerProtocol" href="alert/alert_manager.html#egse.alert.alert_manager.AlertManagerProtocol">AlertManagerProtocol</a></li>
+<li><a title="egse.alert.AlertManagerProtocol" href="alert/index.html#egse.alert.AlertManagerProtocol">AlertManagerProtocol</a></li>
 <li><a title="egse.alert.gsm.beaglebone_protocol.BeagleboneProtocol" href="alert/gsm/beaglebone_protocol.html#egse.alert.gsm.beaglebone_protocol.BeagleboneProtocol">BeagleboneProtocol</a></li>
 <li><a title="egse.confman.ConfigurationManagerProtocol" href="confman/index.html#egse.confman.ConfigurationManagerProtocol">ConfigurationManagerProtocol</a></li>
 <li><a title="egse.dpu.DPUProtocol" href="dpu/index.html#egse.dpu.DPUProtocol">DPUProtocol</a></li>
 <li><a title="egse.dummy.DummyProtocol" href="dummy.html#egse.dummy.DummyProtocol">DummyProtocol</a></li>
 <li><a title="egse.fdir.fdir_manager.FdirManagerProtocol" href="fdir/fdir_manager.html#egse.fdir.fdir_manager.FdirManagerProtocol">FdirManagerProtocol</a></li>
 <li><a title="egse.fdir.fdir_remote.FdirRemoteProtocol" href="fdir/fdir_remote.html#egse.fdir.fdir_remote.FdirRemoteProtocol">FdirRemoteProtocol</a></li>
-<li><a title="egse.filterwheel.eksma.fw8smc4_protocol.FilterWheel8SMC4Protocol" href="filterwheel/eksma/fw8smc4_protocol.html#egse.filterwheel.eksma.fw8smc4_protocol.FilterWheel8SMC4Protocol">FilterWheel8SMC4Protocol</a></li>
 <li><a title="egse.filterwheel.eksma.fw8smc5.Fw8Smc5Protocol" href="filterwheel/eksma/fw8smc5.html#egse.filterwheel.eksma.fw8smc5.Fw8Smc5Protocol">Fw8Smc5Protocol</a></li>
 <li><a title="egse.gimbal.symetrie.gimbal_protocol.GimbalProtocol" href="gimbal/symetrie/gimbal_protocol.html#egse.gimbal.symetrie.gimbal_protocol.GimbalProtocol">GimbalProtocol</a></li>
 <li><a title="egse.hexapod.symetrie.puna_protocol.PunaProtocol" href="hexapod/symetrie/puna_protocol.html#egse.hexapod.symetrie.puna_protocol.PunaProtocol">PunaProtocol</a></li>
@@ -1586,6 +1593,7 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
 <li><a title="egse.lampcontrol.beaglebone.beaglebone_protocol.BeagleboneProtocol" href="lampcontrol/beaglebone/beaglebone_protocol.html#egse.lampcontrol.beaglebone.beaglebone_protocol.BeagleboneProtocol">BeagleboneProtocol</a></li>
 <li><a title="egse.lampcontrol.energetiq.lampEQ99_protocol.LampEQ99Protocol" href="lampcontrol/energetiq/lampEQ99_protocol.html#egse.lampcontrol.energetiq.lampEQ99_protocol.LampEQ99Protocol">LampEQ99Protocol</a></li>
 <li><a title="egse.monitoring.MonitoringProtocol" href="monitoring.html#egse.monitoring.MonitoringProtocol">MonitoringProtocol</a></li>
+<li><a title="egse.ni.alarms.cdaq9375_protocol.cdaq9375Protocol" href="ni/alarms/cdaq9375_protocol.html#egse.ni.alarms.cdaq9375_protocol.cdaq9375Protocol">cdaq9375Protocol</a></li>
 <li><a title="egse.powermeter.ni.cdaq9184_protocol.cdaq9184Protocol" href="powermeter/ni/cdaq9184_protocol.html#egse.powermeter.ni.cdaq9184_protocol.cdaq9184Protocol">cdaq9184Protocol</a></li>
 <li><a title="egse.powermeter.thorlabs.pm100a_protocol.ThorlabsPM100Protocol" href="powermeter/thorlabs/pm100a_protocol.html#egse.powermeter.thorlabs.pm100a_protocol.ThorlabsPM100Protocol">ThorlabsPM100Protocol</a></li>
 <li><a title="egse.procman.ProcessManagerProtocol" href="procman/index.html#egse.procman.ProcessManagerProtocol">ProcessManagerProtocol</a></li>
@@ -1598,16 +1606,15 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
 <li><a title="egse.synoptics.SynopticsManagerProtocol" href="synoptics/index.html#egse.synoptics.SynopticsManagerProtocol">SynopticsManagerProtocol</a></li>
 <li><a title="egse.tempcontrol.agilent.agilent34970_protocol.Agilent34970Protocol" href="tempcontrol/agilent/agilent34970_protocol.html#egse.tempcontrol.agilent.agilent34970_protocol.Agilent34970Protocol">Agilent34970Protocol</a></li>
 <li><a title="egse.tempcontrol.agilent.agilent34972_protocol.Agilent34972Protocol" href="tempcontrol/agilent/agilent34972_protocol.html#egse.tempcontrol.agilent.agilent34972_protocol.Agilent34972Protocol">Agilent34972Protocol</a></li>
-<li><a title="egse.tempcontrol.beaglebone.beaglebone_protocol.BeagleboneProtocol" href="tempcontrol/beaglebone/beaglebone_protocol.html#egse.tempcontrol.beaglebone.beaglebone_protocol.BeagleboneProtocol">BeagleboneProtocol</a></li>
+<li><a title="egse.tempcontrol.digalox.digalox_protocol.DigaloxProtocol" href="tempcontrol/digalox/digalox_protocol.html#egse.tempcontrol.digalox.digalox_protocol.DigaloxProtocol">DigaloxProtocol</a></li>
 <li><a title="egse.tempcontrol.keithley.daq6510_protocol.DAQ6510Protocol" href="tempcontrol/keithley/daq6510_protocol.html#egse.tempcontrol.keithley.daq6510_protocol.DAQ6510Protocol">DAQ6510Protocol</a></li>
-<li><a title="egse.tempcontrol.lakeshore.lsci336_protocol.LakeShore336Protocol" href="tempcontrol/lakeshore/lsci336_protocol.html#egse.tempcontrol.lakeshore.lsci336_protocol.LakeShore336Protocol">LakeShore336Protocol</a></li>
-<li><a title="egse.tempcontrol.spid.spid_protocol.PidProtocol" href="tempcontrol/spid/spid_protocol.html#egse.tempcontrol.spid.spid_protocol.PidProtocol">PidProtocol</a></li>
+<li><a title="egse.tempcontrol.lakeshore.lsci_protocol.LakeShoreProtocol" href="tempcontrol/lakeshore/lsci_protocol.html#egse.tempcontrol.lakeshore.lsci_protocol.LakeShoreProtocol">LakeShoreProtocol</a></li>
 <li><a title="egse.tempcontrol.srs.ptc10_protocol.ptc10Protocol" href="tempcontrol/srs/ptc10_protocol.html#egse.tempcontrol.srs.ptc10_protocol.ptc10Protocol">ptc10Protocol</a></li>
 <li><a title="egse.ups.apc.apc_protocol.APCProtocol" href="ups/apc/apc_protocol.html#egse.ups.apc.apc_protocol.APCProtocol">APCProtocol</a></li>
 <li><a title="egse.vacuum.beaglebone.beaglebone_protocol.BeagleboneProtocol" href="vacuum/beaglebone/beaglebone_protocol.html#egse.vacuum.beaglebone.beaglebone_protocol.BeagleboneProtocol">BeagleboneProtocol</a></li>
 <li><a title="egse.vacuum.instrutech.igm402.Igm402Protocol" href="vacuum/instrutech/igm402.html#egse.vacuum.instrutech.igm402.Igm402Protocol">Igm402Protocol</a></li>
 <li><a title="egse.vacuum.keller.leo3.Leo3Protocol" href="vacuum/keller/leo3.html#egse.vacuum.keller.leo3.Leo3Protocol">Leo3Protocol</a></li>
-<li><a title="egse.vacuum.mks.vacscan.VacscanProtocol" href="vacuum/mks/vacscan.html#egse.vacuum.mks.vacscan.VacscanProtocol">VacscanProtocol</a></li>
+<li><a title="egse.vacuum.mks.evision.EvisionProtocol" href="vacuum/mks/evision.html#egse.vacuum.mks.evision.EvisionProtocol">EvisionProtocol</a></li>
 <li><a title="egse.vacuum.pfeiffer.acp40.Acp40Protocol" href="vacuum/pfeiffer/acp40.html#egse.vacuum.pfeiffer.acp40.Acp40Protocol">Acp40Protocol</a></li>
 <li><a title="egse.vacuum.pfeiffer.tc400.Tc400Protocol" href="vacuum/pfeiffer/tc400.html#egse.vacuum.pfeiffer.tc400.Tc400Protocol">Tc400Protocol</a></li>
 <li><a title="egse.vacuum.pfeiffer.tpg261.Tpg261Protocol" href="vacuum/pfeiffer/tpg261.html#egse.vacuum.pfeiffer.tpg261.Tpg261Protocol">Tpg261Protocol</a></li>
@@ -1705,6 +1712,8 @@ def execute(self):
         self.send(self.control_server.get_commanding_port())
     elif cmd_name == &#34;get_ip_address&#34;:
         self.send(self.control_server.get_ip_address())
+    elif cmd_name == &#34;get_storage_mnemonic&#34;:
+        self.send(self.control_server.get_storage_mnemonic())
     elif cmd:
         COMMAND_REQUESTS.labels(target=&#34;device&#34;).inc()
         cmd.server_call(self, *args, **kwargs)
@@ -1827,7 +1836,7 @@ def get_status(self):
 </details>
 </dd>
 <dt id="egse.protocol.CommandProtocol.handle_device_method"><code class="name flex">
-<span>def <span class="ident">handle_device_method</span></span>(<span>self, cmd: <a title="egse.command.Command" href="command.html#egse.command.Command">Command</a>, *args, **kwargs)</span>
+<span>def <span class="ident">handle_device_method</span></span>(<span>self, cmd: Command, *args, **kwargs)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Call the device method with the given arguments.</p>
@@ -1986,7 +1995,7 @@ command definitions for the device.</p>
             f&#34;cmd=&#39;{cmd}&#39;, &#34;
             f&#34;response={response_method}, device_method={device_method})&#34;,
         )
-        logger.debug(f&#34;Creating {command_class.__name__} command with {name=}, {cmd=}, {device_method=}&#34;)
+        # logger.debug(f&#34;Creating {command_class.__name__} command with {name=}, {cmd=}, {device_method=}&#34;)
 
         self._commands[name] = command_class(
             name=name,
@@ -2091,7 +2100,7 @@ to implement retries as with Proxy?</p></div>
 </dd>
 <dt id="egse.protocol.DynamicCommandProtocol"><code class="flex name class">
 <span>class <span class="ident">DynamicCommandProtocol</span></span>
-<span>(</span><span>control_server: <a title="egse.control.ControlServer" href="control.html#egse.control.ControlServer">ControlServer</a>)</span>
+<span>(</span><span>control_server: ControlServer)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>An observer for the connection state of a device. Add the sub-class of this class to
@@ -2157,7 +2166,7 @@ update of its state by calling the <code>update_connection_state()</code> method
 <h3>Methods</h3>
 <dl>
 <dt id="egse.protocol.DynamicCommandProtocol.handle_device_method"><code class="name flex">
-<span>def <span class="ident">handle_device_method</span></span>(<span>self, cmd: <a title="egse.command.Command" href="command.html#egse.command.Command">Command</a>, *args, **kwargs)</span>
+<span>def <span class="ident">handle_device_method</span></span>(<span>self, cmd: Command, *args, **kwargs)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Call the device method with the given arguments.</p>

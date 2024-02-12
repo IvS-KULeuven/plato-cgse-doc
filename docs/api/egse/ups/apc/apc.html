@@ -27,20 +27,46 @@
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">import logging
+import socket
+from collections import OrderedDict
 
 from egse.decorators import dynamic_interface
 from egse.device import DeviceInterface
 from egse.proxy import Proxy
 from egse.settings import Settings
-from egse.ups.apc.apc_devif import APCError
-from egse.ups.apc.apc_devif import APCDeviceInterface
 from egse.zmq_ser import connect_address
+from egse.command import ClientServerCommand
 
 logger = logging.getLogger(__name__)
 
 CTRL_SETTINGS = Settings.load(&#34;APC Control Server&#34;)
 DEVICE_SETTINGS = Settings.load(filename=&#39;apc.yaml&#39;)
 
+CMD_STATUS = &#34;\x00\x06status&#34;.encode()
+EOF = &#34;  \n\x00\x00&#34;
+SEP = &#34;:&#34;
+BUFFER_SIZE = 1024
+ALL_UNITS = (
+    &#34;Minutes&#34;,
+    &#34;Seconds&#34;,
+    &#34;Percent&#34;,
+    &#34;Volts&#34;,
+    &#34;Watts&#34;,
+    &#34;Amps&#34;,
+    &#34;Hz&#34;,
+    &#34;C&#34;,
+    &#34;VA&#34;,
+    &#34;Percent Load Capacity&#34;
+)
+
+class APCError(Exception):
+    pass
+
+
+class APCCommand(ClientServerCommand):
+    def get_cmd_string(self, *args, **kwargs):
+        out = super().get_cmd_string(*args, **kwargs)
+        return out + &#39;\n&#39;
 
 class APCInterface(DeviceInterface):
     &#34;&#34;&#34; APC base class.&#34;&#34;&#34;
@@ -98,43 +124,138 @@ class APCController(APCInterface):
 
     def __init__(self):
         super().__init__()
-
-        logger.debug(&#39;Initalizing APC Controller&#39;)
-
-        try:
-            self.apc = APCDeviceInterface()
-            self.apc.connect()
-        except APCError as exc:
-            logger.warning(f&#34;APCError caught: Couldn&#39;t establish connectin ({exc})&#34;)
-            raise APCError(
-                &#34;Couldn&#39;t establish a connection with APC controller.&#34;
-            ) from exc
+        self._is_connected = True
 
     def is_simulator(self):
         return False
 
     def is_connected(self):
-        return self.apc.is_connected()
+        return self._is_connected
 
     def connect(self):
-        if not self.apc.is_connected():
-            self.apc.connect()
+        self._is_connected = True
 
     def disconnect(self):
-        self.apc.disconnect()
+        self._is_connected = False
+
 
     def reconnect(self):
-        self.apc.reconnect()
+        self._is_connected = True
+
+    def get_linev(self):
+        dct = self._parse(self._get(), True)
+        return float(dct[&#39;LINEV&#39;])
+    
+    def get_loadpct(self):
+        dct = self._parse(self._get(), True)
+        return float(dct[&#39;LOADPCT&#39;])
 
     def get_bcharge(self):
-        return self.apc.get_bcharge()
-
-    def get_onbatt(self):
-        return self.apc.get_onbatt()
+        dct = self._parse(self._get(), True)
+        return float(dct[&#39;BCHARGE&#39;])
 
     def get_timeleft(self):
-        return self.apc.get_timeleft()
+        dct = self._parse(self._get(), True)
+        return float(dct[&#39;TIMELEFT&#39;])
 
+    def get_onbatt(self):
+        dct = self._parse(self._get(), True)
+        return &#39;ONBATT&#39; in dct[&#39;STATUS&#39;]
+    
+    def get_mbattchg(self):
+        dct = self._parse(self._get(), True)
+        return float(dct[&#39;MBATTCHG&#39;])
+    
+    def get_mintimel(self):
+        dct = self._parse(self._get(), True)
+        return float(dct[&#39;MINTIMEL&#39;])
+    
+    def get_maxtime(self):
+        dct = self._parse(self._get(), True)
+        return float(dct[&#39;MAXTIME&#39;])
+    
+    def get_maxlinev(self):
+        dct = self._parse(self._get(), True)
+        return float(dct[&#39;MAXLINEV&#39;])
+    
+    def get_minlinev(self):
+        dct = self._parse(self._get(), True)
+        return float(dct[&#39;MINLINEV&#39;])
+    
+    def get_outputv(self):
+        dct = self._parse(self._get(), True)
+        return float(dct[&#39;OUTPUTV&#39;])
+
+    def get_dlowbatt(self):
+        dct = self._parse(self._get(), True)
+        return float(dct[&#39;DLOWBATT&#39;])
+
+    def get_lotrans(self):
+        dct = self._parse(self._get(), True)
+        return float(dct[&#39;LOTRANS&#39;])
+    
+    def get_hitrans(self):
+        dct = self._parse(self._get(), True)
+        return float(dct[&#39;HITRANS&#39;])
+    
+    def get_itemp(self):
+        dct = self._parse(self._get(), True)
+        return float(dct[&#39;ITEMP&#39;])
+    
+    def get_alarmdel(self):
+        dct = self._parse(self._get(), True)
+        return float(dct[&#39;ALARMDEL&#39;])
+    
+    def get_status_dict(self):
+        return self._parse(self._get(), True)
+
+    def _get(self, host=&#34;localhost&#34;, port=3551, timeout=30):
+        &#34;&#34;&#34;
+        Connect to the APCUPSd NIS and request its status.
+        &#34;&#34;&#34;
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(timeout)
+        sock.connect((host, port))
+        sock.send(CMD_STATUS)
+        buffr = &#34;&#34;
+        while not buffr.endswith(EOF):
+            buffr += sock.recv(BUFFER_SIZE).decode()
+        sock.close()
+        return buffr
+
+
+    def _split(self, raw_status):
+        &#34;&#34;&#34;
+        Split the output from get_status() into lines, removing the length and
+        newline chars.
+        &#34;&#34;&#34;
+        # Remove the EOF string, split status on the line endings (\x00), strip the
+        # length byte and newline chars off the beginning and end respectively.
+        return [x[1:-1] for x in raw_status[:-len(EOF)].split(&#34;\x00&#34;) if x]
+
+
+    def _parse(self, raw_status, strip_units=False):
+        &#34;&#34;&#34;
+        Split the output from get_status() into lines, clean it up and return it as
+        an OrderedDict.
+        &#34;&#34;&#34;
+        lines = self._split(raw_status)
+        if strip_units:
+            lines = self._strip_units_from_lines(lines)
+        # Split each line on the SEP character, strip extraneous whitespace and
+        # create an OrderedDict out of the keys/values.
+        return OrderedDict([[x.strip() for x in x.split(SEP, 1)] for x in lines])
+
+
+    def _strip_units_from_lines(self, lines):
+        &#34;&#34;&#34;
+        Removes all units from the ends of the lines.
+        &#34;&#34;&#34;
+        for line in lines:
+            for unit in ALL_UNITS:
+                if line.endswith(&#34; %s&#34; % unit):
+                    line = line[:-1-len(unit)]
+            yield line
 
 class APCProxy(Proxy, APCInterface):
     def __init__(self, protocol=CTRL_SETTINGS.PROTOCOL,
@@ -152,6 +273,58 @@ class APCProxy(Proxy, APCInterface):
 <section>
 <h2 class="section-title" id="header-classes">Classes</h2>
 <dl>
+<dt id="egse.ups.apc.apc.APCCommand"><code class="flex name class">
+<span>class <span class="ident">APCCommand</span></span>
+<span>(</span><span>name, cmd, response=None, wait=None, check=None, description=None, device_method=None)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>A Command is basically a string that is send to a device and for which the
+device returns a response.</p>
+<p>The command string can contain placeholders that will be filled when the
+command is 'called'.</p>
+<p>The arguments that are given will be filled into the formatted string.
+Arguments can be positional or keyword arguments, not both.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class APCCommand(ClientServerCommand):
+    def get_cmd_string(self, *args, **kwargs):
+        out = super().get_cmd_string(*args, **kwargs)
+        return out + &#39;\n&#39;</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="egse.command.ClientServerCommand" href="../../command.html#egse.command.ClientServerCommand">ClientServerCommand</a></li>
+<li><a title="egse.command.Command" href="../../command.html#egse.command.Command">Command</a></li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="egse.ups.apc.apc.APCCommand.get_cmd_string"><code class="name flex">
+<span>def <span class="ident">get_cmd_string</span></span>(<span>self, *args, **kwargs)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_cmd_string(self, *args, **kwargs):
+    out = super().get_cmd_string(*args, **kwargs)
+    return out + &#39;\n&#39;</code></pre>
+</details>
+</dd>
+</dl>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="egse.command.ClientServerCommand" href="../../command.html#egse.command.ClientServerCommand">ClientServerCommand</a></b></code>:
+<ul class="hlist">
+<li><code><a title="egse.command.ClientServerCommand.client_call" href="../../command.html#egse.command.ClientServerCommand.client_call">client_call</a></code></li>
+<li><code><a title="egse.command.ClientServerCommand.server_call" href="../../command.html#egse.command.ClientServerCommand.server_call">server_call</a></code></li>
+</ul>
+</li>
+</ul>
+</dd>
 <dt id="egse.ups.apc.apc.APCController"><code class="flex name class">
 <span>class <span class="ident">APCController</span></span>
 </code></dt>
@@ -165,42 +338,138 @@ class APCProxy(Proxy, APCInterface):
 
     def __init__(self):
         super().__init__()
-
-        logger.debug(&#39;Initalizing APC Controller&#39;)
-
-        try:
-            self.apc = APCDeviceInterface()
-            self.apc.connect()
-        except APCError as exc:
-            logger.warning(f&#34;APCError caught: Couldn&#39;t establish connectin ({exc})&#34;)
-            raise APCError(
-                &#34;Couldn&#39;t establish a connection with APC controller.&#34;
-            ) from exc
+        self._is_connected = True
 
     def is_simulator(self):
         return False
 
     def is_connected(self):
-        return self.apc.is_connected()
+        return self._is_connected
 
     def connect(self):
-        if not self.apc.is_connected():
-            self.apc.connect()
+        self._is_connected = True
 
     def disconnect(self):
-        self.apc.disconnect()
+        self._is_connected = False
+
 
     def reconnect(self):
-        self.apc.reconnect()
+        self._is_connected = True
+
+    def get_linev(self):
+        dct = self._parse(self._get(), True)
+        return float(dct[&#39;LINEV&#39;])
+    
+    def get_loadpct(self):
+        dct = self._parse(self._get(), True)
+        return float(dct[&#39;LOADPCT&#39;])
 
     def get_bcharge(self):
-        return self.apc.get_bcharge()
-
-    def get_onbatt(self):
-        return self.apc.get_onbatt()
+        dct = self._parse(self._get(), True)
+        return float(dct[&#39;BCHARGE&#39;])
 
     def get_timeleft(self):
-        return self.apc.get_timeleft()</code></pre>
+        dct = self._parse(self._get(), True)
+        return float(dct[&#39;TIMELEFT&#39;])
+
+    def get_onbatt(self):
+        dct = self._parse(self._get(), True)
+        return &#39;ONBATT&#39; in dct[&#39;STATUS&#39;]
+    
+    def get_mbattchg(self):
+        dct = self._parse(self._get(), True)
+        return float(dct[&#39;MBATTCHG&#39;])
+    
+    def get_mintimel(self):
+        dct = self._parse(self._get(), True)
+        return float(dct[&#39;MINTIMEL&#39;])
+    
+    def get_maxtime(self):
+        dct = self._parse(self._get(), True)
+        return float(dct[&#39;MAXTIME&#39;])
+    
+    def get_maxlinev(self):
+        dct = self._parse(self._get(), True)
+        return float(dct[&#39;MAXLINEV&#39;])
+    
+    def get_minlinev(self):
+        dct = self._parse(self._get(), True)
+        return float(dct[&#39;MINLINEV&#39;])
+    
+    def get_outputv(self):
+        dct = self._parse(self._get(), True)
+        return float(dct[&#39;OUTPUTV&#39;])
+
+    def get_dlowbatt(self):
+        dct = self._parse(self._get(), True)
+        return float(dct[&#39;DLOWBATT&#39;])
+
+    def get_lotrans(self):
+        dct = self._parse(self._get(), True)
+        return float(dct[&#39;LOTRANS&#39;])
+    
+    def get_hitrans(self):
+        dct = self._parse(self._get(), True)
+        return float(dct[&#39;HITRANS&#39;])
+    
+    def get_itemp(self):
+        dct = self._parse(self._get(), True)
+        return float(dct[&#39;ITEMP&#39;])
+    
+    def get_alarmdel(self):
+        dct = self._parse(self._get(), True)
+        return float(dct[&#39;ALARMDEL&#39;])
+    
+    def get_status_dict(self):
+        return self._parse(self._get(), True)
+
+    def _get(self, host=&#34;localhost&#34;, port=3551, timeout=30):
+        &#34;&#34;&#34;
+        Connect to the APCUPSd NIS and request its status.
+        &#34;&#34;&#34;
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(timeout)
+        sock.connect((host, port))
+        sock.send(CMD_STATUS)
+        buffr = &#34;&#34;
+        while not buffr.endswith(EOF):
+            buffr += sock.recv(BUFFER_SIZE).decode()
+        sock.close()
+        return buffr
+
+
+    def _split(self, raw_status):
+        &#34;&#34;&#34;
+        Split the output from get_status() into lines, removing the length and
+        newline chars.
+        &#34;&#34;&#34;
+        # Remove the EOF string, split status on the line endings (\x00), strip the
+        # length byte and newline chars off the beginning and end respectively.
+        return [x[1:-1] for x in raw_status[:-len(EOF)].split(&#34;\x00&#34;) if x]
+
+
+    def _parse(self, raw_status, strip_units=False):
+        &#34;&#34;&#34;
+        Split the output from get_status() into lines, clean it up and return it as
+        an OrderedDict.
+        &#34;&#34;&#34;
+        lines = self._split(raw_status)
+        if strip_units:
+            lines = self._strip_units_from_lines(lines)
+        # Split each line on the SEP character, strip extraneous whitespace and
+        # create an OrderedDict out of the keys/values.
+        return OrderedDict([[x.strip() for x in x.split(SEP, 1)] for x in lines])
+
+
+    def _strip_units_from_lines(self, lines):
+        &#34;&#34;&#34;
+        Removes all units from the ends of the lines.
+        &#34;&#34;&#34;
+        for line in lines:
+            for unit in ALL_UNITS:
+                if line.endswith(&#34; %s&#34; % unit):
+                    line = line[:-1-len(unit)]
+            yield line</code></pre>
 </details>
 <h3>Ancestors</h3>
 <ul class="hlist">
@@ -209,6 +478,204 @@ class APCProxy(Proxy, APCInterface):
 <li><a title="egse.device.DeviceConnectionInterface" href="../../device.html#egse.device.DeviceConnectionInterface">DeviceConnectionInterface</a></li>
 <li><a title="egse.device.DeviceConnectionObservable" href="../../device.html#egse.device.DeviceConnectionObservable">DeviceConnectionObservable</a></li>
 </ul>
+<h3>Methods</h3>
+<dl>
+<dt id="egse.ups.apc.apc.APCController.get_alarmdel"><code class="name flex">
+<span>def <span class="ident">get_alarmdel</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_alarmdel(self):
+    dct = self._parse(self._get(), True)
+    return float(dct[&#39;ALARMDEL&#39;])</code></pre>
+</details>
+</dd>
+<dt id="egse.ups.apc.apc.APCController.get_dlowbatt"><code class="name flex">
+<span>def <span class="ident">get_dlowbatt</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_dlowbatt(self):
+    dct = self._parse(self._get(), True)
+    return float(dct[&#39;DLOWBATT&#39;])</code></pre>
+</details>
+</dd>
+<dt id="egse.ups.apc.apc.APCController.get_hitrans"><code class="name flex">
+<span>def <span class="ident">get_hitrans</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_hitrans(self):
+    dct = self._parse(self._get(), True)
+    return float(dct[&#39;HITRANS&#39;])</code></pre>
+</details>
+</dd>
+<dt id="egse.ups.apc.apc.APCController.get_itemp"><code class="name flex">
+<span>def <span class="ident">get_itemp</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_itemp(self):
+    dct = self._parse(self._get(), True)
+    return float(dct[&#39;ITEMP&#39;])</code></pre>
+</details>
+</dd>
+<dt id="egse.ups.apc.apc.APCController.get_linev"><code class="name flex">
+<span>def <span class="ident">get_linev</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_linev(self):
+    dct = self._parse(self._get(), True)
+    return float(dct[&#39;LINEV&#39;])</code></pre>
+</details>
+</dd>
+<dt id="egse.ups.apc.apc.APCController.get_loadpct"><code class="name flex">
+<span>def <span class="ident">get_loadpct</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_loadpct(self):
+    dct = self._parse(self._get(), True)
+    return float(dct[&#39;LOADPCT&#39;])</code></pre>
+</details>
+</dd>
+<dt id="egse.ups.apc.apc.APCController.get_lotrans"><code class="name flex">
+<span>def <span class="ident">get_lotrans</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_lotrans(self):
+    dct = self._parse(self._get(), True)
+    return float(dct[&#39;LOTRANS&#39;])</code></pre>
+</details>
+</dd>
+<dt id="egse.ups.apc.apc.APCController.get_maxlinev"><code class="name flex">
+<span>def <span class="ident">get_maxlinev</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_maxlinev(self):
+    dct = self._parse(self._get(), True)
+    return float(dct[&#39;MAXLINEV&#39;])</code></pre>
+</details>
+</dd>
+<dt id="egse.ups.apc.apc.APCController.get_maxtime"><code class="name flex">
+<span>def <span class="ident">get_maxtime</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_maxtime(self):
+    dct = self._parse(self._get(), True)
+    return float(dct[&#39;MAXTIME&#39;])</code></pre>
+</details>
+</dd>
+<dt id="egse.ups.apc.apc.APCController.get_mbattchg"><code class="name flex">
+<span>def <span class="ident">get_mbattchg</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_mbattchg(self):
+    dct = self._parse(self._get(), True)
+    return float(dct[&#39;MBATTCHG&#39;])</code></pre>
+</details>
+</dd>
+<dt id="egse.ups.apc.apc.APCController.get_minlinev"><code class="name flex">
+<span>def <span class="ident">get_minlinev</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_minlinev(self):
+    dct = self._parse(self._get(), True)
+    return float(dct[&#39;MINLINEV&#39;])</code></pre>
+</details>
+</dd>
+<dt id="egse.ups.apc.apc.APCController.get_mintimel"><code class="name flex">
+<span>def <span class="ident">get_mintimel</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_mintimel(self):
+    dct = self._parse(self._get(), True)
+    return float(dct[&#39;MINTIMEL&#39;])</code></pre>
+</details>
+</dd>
+<dt id="egse.ups.apc.apc.APCController.get_outputv"><code class="name flex">
+<span>def <span class="ident">get_outputv</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_outputv(self):
+    dct = self._parse(self._get(), True)
+    return float(dct[&#39;OUTPUTV&#39;])</code></pre>
+</details>
+</dd>
+<dt id="egse.ups.apc.apc.APCController.get_status_dict"><code class="name flex">
+<span>def <span class="ident">get_status_dict</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_status_dict(self):
+    return self._parse(self._get(), True)</code></pre>
+</details>
+</dd>
+</dl>
 <h3>Inherited members</h3>
 <ul class="hlist">
 <li><code><b><a title="egse.ups.apc.apc.APCInterface" href="#egse.ups.apc.apc.APCInterface">APCInterface</a></b></code>:
@@ -225,6 +692,25 @@ class APCProxy(Proxy, APCInterface):
 <li><code><a title="egse.ups.apc.apc.APCInterface.reconnect" href="../../device.html#egse.device.DeviceConnectionInterface.reconnect">reconnect</a></code></li>
 </ul>
 </li>
+</ul>
+</dd>
+<dt id="egse.ups.apc.apc.APCError"><code class="flex name class">
+<span>class <span class="ident">APCError</span></span>
+<span>(</span><span>*args, **kwargs)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Common base class for all non-exit exceptions.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class APCError(Exception):
+    pass</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>builtins.Exception</li>
+<li>builtins.BaseException</li>
 </ul>
 </dd>
 <dt id="egse.ups.apc.apc.APCInterface"><code class="flex name class">
@@ -484,7 +970,32 @@ can fix the problem with the control server and call <code>connect_cs()</code>, 
 <li><h3><a href="#header-classes">Classes</a></h3>
 <ul>
 <li>
+<h4><code><a title="egse.ups.apc.apc.APCCommand" href="#egse.ups.apc.apc.APCCommand">APCCommand</a></code></h4>
+<ul class="">
+<li><code><a title="egse.ups.apc.apc.APCCommand.get_cmd_string" href="#egse.ups.apc.apc.APCCommand.get_cmd_string">get_cmd_string</a></code></li>
+</ul>
+</li>
+<li>
 <h4><code><a title="egse.ups.apc.apc.APCController" href="#egse.ups.apc.apc.APCController">APCController</a></code></h4>
+<ul class="two-column">
+<li><code><a title="egse.ups.apc.apc.APCController.get_alarmdel" href="#egse.ups.apc.apc.APCController.get_alarmdel">get_alarmdel</a></code></li>
+<li><code><a title="egse.ups.apc.apc.APCController.get_dlowbatt" href="#egse.ups.apc.apc.APCController.get_dlowbatt">get_dlowbatt</a></code></li>
+<li><code><a title="egse.ups.apc.apc.APCController.get_hitrans" href="#egse.ups.apc.apc.APCController.get_hitrans">get_hitrans</a></code></li>
+<li><code><a title="egse.ups.apc.apc.APCController.get_itemp" href="#egse.ups.apc.apc.APCController.get_itemp">get_itemp</a></code></li>
+<li><code><a title="egse.ups.apc.apc.APCController.get_linev" href="#egse.ups.apc.apc.APCController.get_linev">get_linev</a></code></li>
+<li><code><a title="egse.ups.apc.apc.APCController.get_loadpct" href="#egse.ups.apc.apc.APCController.get_loadpct">get_loadpct</a></code></li>
+<li><code><a title="egse.ups.apc.apc.APCController.get_lotrans" href="#egse.ups.apc.apc.APCController.get_lotrans">get_lotrans</a></code></li>
+<li><code><a title="egse.ups.apc.apc.APCController.get_maxlinev" href="#egse.ups.apc.apc.APCController.get_maxlinev">get_maxlinev</a></code></li>
+<li><code><a title="egse.ups.apc.apc.APCController.get_maxtime" href="#egse.ups.apc.apc.APCController.get_maxtime">get_maxtime</a></code></li>
+<li><code><a title="egse.ups.apc.apc.APCController.get_mbattchg" href="#egse.ups.apc.apc.APCController.get_mbattchg">get_mbattchg</a></code></li>
+<li><code><a title="egse.ups.apc.apc.APCController.get_minlinev" href="#egse.ups.apc.apc.APCController.get_minlinev">get_minlinev</a></code></li>
+<li><code><a title="egse.ups.apc.apc.APCController.get_mintimel" href="#egse.ups.apc.apc.APCController.get_mintimel">get_mintimel</a></code></li>
+<li><code><a title="egse.ups.apc.apc.APCController.get_outputv" href="#egse.ups.apc.apc.APCController.get_outputv">get_outputv</a></code></li>
+<li><code><a title="egse.ups.apc.apc.APCController.get_status_dict" href="#egse.ups.apc.apc.APCController.get_status_dict">get_status_dict</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="egse.ups.apc.apc.APCError" href="#egse.ups.apc.apc.APCError">APCError</a></code></h4>
 </li>
 <li>
 <h4><code><a title="egse.ups.apc.apc.APCInterface" href="#egse.ups.apc.apc.APCInterface">APCInterface</a></code></h4>

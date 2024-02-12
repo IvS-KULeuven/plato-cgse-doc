@@ -38,11 +38,12 @@ Created on Wed Sep  9 17:19:47 2020
 @author: pierre
 &#34;&#34;&#34;
 import numpy as np
-from egse.state import GlobalState
+
 from egse.coordinates.point import Points
+from egse.setup import Setup, load_setup
 
 
-def is_avoidance_ok(hexusr,hexobj,setup=None,verbose=False):
+def is_avoidance_ok(hexusr, hexobj, setup: Setup = None, verbose=False):
     &#34;&#34;&#34;
     is_avoidance_ok(hexusr,hexobj,setup=None)
     
@@ -59,11 +60,11 @@ def is_avoidance_ok(hexusr,hexobj,setup=None,verbose=False):
              if not provided, GlobalState.setup is used
     
     
-    OUTPUT :  Boolean indicating wheather or not the FPA is outside of the avoidance volume around L6
+    OUTPUT :  Boolean indicating whether the FPA is outside the avoidance volume around L6
     &#34;&#34;&#34;
         
     if setup is None:
-        setup = GlobalState.setup
+        setup = load_setup()
     
     &#34;&#34;&#34;
     A. HORIZONTAL AVOIDANCE
@@ -77,10 +78,10 @@ def is_avoidance_ok(hexusr,hexobj,setup=None,verbose=False):
     # l6xy = the projection of the origin of HEX_USR on the X-Y plane of FPA_SEN
     l6xy = hexusr.getOrigin().expressIn(hexobj)[:2]
     
-    # !! This is a verification of the current situation --&gt; need to replace by a simulation of the forthcoming movement in the building block
+    # !! This is a verification of the current situation --&gt; need to replace by a simulation of the forthcoming
+    # movement in the building block
     horizontal_check = ((l6xy[0]**2.+l6xy[1]**2.) &lt; clearance_xy*clearance_xy)
-    
-    
+
     &#34;&#34;&#34;
     B. VERTICAL AVOIDANCE
     Ensure that the CCD never hits L6.
@@ -93,26 +94,25 @@ def is_avoidance_ok(hexusr,hexobj,setup=None,verbose=False):
     clearance_z = setup.camera.fpa.avoidance.clearance_z
     
     # Vertices = Points representing the vertices of the avoidance volume above the FPA (60)
-    vertices_nb     = setup.camera.fpa.avoidance.vertices_nb
+    vertices_nb = setup.camera.fpa.avoidance.vertices_nb
     # All vertices are on a circle of radius &#39;vertices_radius&#39; (100 mm)
     vertices_radius = setup.camera.fpa.avoidance.vertices_radius
     
-    angles = np.linspace(0,np.pi * 2,vertices_nb,endpoint=False)
+    angles = np.linspace(0, np.pi * 2, vertices_nb, endpoint=False)
     vertices_x = np.cos(angles) * vertices_radius
     vertices_y = np.sin(angles) * vertices_radius
     vertices_z = np.ones_like(angles) * clearance_z
     
     # The collection of Points defining the avoidance volume around FPA_SEN
-    vert_obj = Points(coordinates=np.array([vertices_x,vertices_y,vertices_z]),ref=hexobj,name=&#34;vert_obj&#34;)
+    vert_obj = Points(coordinates=np.array([vertices_x, vertices_y, vertices_z]), ref=hexobj, name=&#34;vert_obj&#34;)
     
     # Their coordinates in HEX_USR
     # NB: vert_obj is a Points, vert_usr is an array
     vert_usr = vert_obj.expressIn(hexusr)
-    
-    
+
     # !! Same as above : this is verifying the current situation, not the one after a planned movement
     # Verify that all vertices (&#34;protecting&#34; FPA_SEN) are below the x-y plane of HEX_USR (&#34;protecting&#34; L6)
-    vertical_check = (np.all(vert_usr[2,:] &lt; 0.))
+    vertical_check = (np.all(vert_usr[2, :] &lt; 0.))
     
     if verbose:
         printdict = {True:&#34;OK&#34;, False:&#34;NOT OK&#34;}
@@ -124,8 +124,8 @@ def is_avoidance_ok(hexusr,hexobj,setup=None,verbose=False):
         coobj = vert_obj.coordinates
         for i in range(vertices_nb):
             print(f&#34;{i} OBJ {np.round(coobj[:3,i],6)} --&gt; USR {np.round(vert_usr[:3,i],6)}&#34;)
-        vert_z = vert_usr[2,:]
-        vert_zi = np.where(vert_z==np.max(vert_z))
+        vert_z = vert_usr[2, :]
+        vert_zi = np.where(vert_z == np.max(vert_z))
         print(f&#34;#vertices at max z : {len(vert_zi[0])}&#34;)
         print(f&#34;First one: vertex {vert_zi[0][0]} : {np.round(vert_usr[:3,vert_zi[0][0]],6)}&#34;)
 
@@ -140,7 +140,7 @@ def is_avoidance_ok(hexusr,hexobj,setup=None,verbose=False):
 <h2 class="section-title" id="header-functions">Functions</h2>
 <dl>
 <dt id="egse.coordinates.avoidance.is_avoidance_ok"><code class="name flex">
-<span>def <span class="ident">is_avoidance_ok</span></span>(<span>hexusr, hexobj, setup=None, verbose=False)</span>
+<span>def <span class="ident">is_avoidance_ok</span></span>(<span>hexusr, hexobj, setup: <a title="egse.setup.Setup" href="../setup.html#egse.setup.Setup">Setup</a> = None, verbose=False)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>is_avoidance_ok(hexusr,hexobj,setup=None)</p>
@@ -156,12 +156,12 @@ z axis pointing towards L6</p>
 : GlobalSetup.setup, optional
 if not provided, GlobalState.setup is used</p>
 <p>OUTPUT :
-Boolean indicating wheather or not the FPA is outside of the avoidance volume around L6</p></div>
+Boolean indicating whether the FPA is outside the avoidance volume around L6</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def is_avoidance_ok(hexusr,hexobj,setup=None,verbose=False):
+<pre><code class="python">def is_avoidance_ok(hexusr, hexobj, setup: Setup = None, verbose=False):
     &#34;&#34;&#34;
     is_avoidance_ok(hexusr,hexobj,setup=None)
     
@@ -178,11 +178,11 @@ Boolean indicating wheather or not the FPA is outside of the avoidance volume ar
              if not provided, GlobalState.setup is used
     
     
-    OUTPUT :  Boolean indicating wheather or not the FPA is outside of the avoidance volume around L6
+    OUTPUT :  Boolean indicating whether the FPA is outside the avoidance volume around L6
     &#34;&#34;&#34;
         
     if setup is None:
-        setup = GlobalState.setup
+        setup = load_setup()
     
     &#34;&#34;&#34;
     A. HORIZONTAL AVOIDANCE
@@ -196,10 +196,10 @@ Boolean indicating wheather or not the FPA is outside of the avoidance volume ar
     # l6xy = the projection of the origin of HEX_USR on the X-Y plane of FPA_SEN
     l6xy = hexusr.getOrigin().expressIn(hexobj)[:2]
     
-    # !! This is a verification of the current situation --&gt; need to replace by a simulation of the forthcoming movement in the building block
+    # !! This is a verification of the current situation --&gt; need to replace by a simulation of the forthcoming
+    # movement in the building block
     horizontal_check = ((l6xy[0]**2.+l6xy[1]**2.) &lt; clearance_xy*clearance_xy)
-    
-    
+
     &#34;&#34;&#34;
     B. VERTICAL AVOIDANCE
     Ensure that the CCD never hits L6.
@@ -212,26 +212,25 @@ Boolean indicating wheather or not the FPA is outside of the avoidance volume ar
     clearance_z = setup.camera.fpa.avoidance.clearance_z
     
     # Vertices = Points representing the vertices of the avoidance volume above the FPA (60)
-    vertices_nb     = setup.camera.fpa.avoidance.vertices_nb
+    vertices_nb = setup.camera.fpa.avoidance.vertices_nb
     # All vertices are on a circle of radius &#39;vertices_radius&#39; (100 mm)
     vertices_radius = setup.camera.fpa.avoidance.vertices_radius
     
-    angles = np.linspace(0,np.pi * 2,vertices_nb,endpoint=False)
+    angles = np.linspace(0, np.pi * 2, vertices_nb, endpoint=False)
     vertices_x = np.cos(angles) * vertices_radius
     vertices_y = np.sin(angles) * vertices_radius
     vertices_z = np.ones_like(angles) * clearance_z
     
     # The collection of Points defining the avoidance volume around FPA_SEN
-    vert_obj = Points(coordinates=np.array([vertices_x,vertices_y,vertices_z]),ref=hexobj,name=&#34;vert_obj&#34;)
+    vert_obj = Points(coordinates=np.array([vertices_x, vertices_y, vertices_z]), ref=hexobj, name=&#34;vert_obj&#34;)
     
     # Their coordinates in HEX_USR
     # NB: vert_obj is a Points, vert_usr is an array
     vert_usr = vert_obj.expressIn(hexusr)
-    
-    
+
     # !! Same as above : this is verifying the current situation, not the one after a planned movement
     # Verify that all vertices (&#34;protecting&#34; FPA_SEN) are below the x-y plane of HEX_USR (&#34;protecting&#34; L6)
-    vertical_check = (np.all(vert_usr[2,:] &lt; 0.))
+    vertical_check = (np.all(vert_usr[2, :] &lt; 0.))
     
     if verbose:
         printdict = {True:&#34;OK&#34;, False:&#34;NOT OK&#34;}
@@ -243,8 +242,8 @@ Boolean indicating wheather or not the FPA is outside of the avoidance volume ar
         coobj = vert_obj.coordinates
         for i in range(vertices_nb):
             print(f&#34;{i} OBJ {np.round(coobj[:3,i],6)} --&gt; USR {np.round(vert_usr[:3,i],6)}&#34;)
-        vert_z = vert_usr[2,:]
-        vert_zi = np.where(vert_z==np.max(vert_z))
+        vert_z = vert_usr[2, :]
+        vert_zi = np.where(vert_z == np.max(vert_z))
         print(f&#34;#vertices at max z : {len(vert_zi[0])}&#34;)
         print(f&#34;First one: vertex {vert_zi[0][0]} : {np.round(vert_usr[:3,vert_zi[0][0]],6)}&#34;)
 

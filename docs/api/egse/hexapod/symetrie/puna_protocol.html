@@ -38,6 +38,7 @@ from egse.hexapod.symetrie import get_hexapod_controller_pars
 from egse.hk import read_conversion_dict, convert_hk_names
 from egse.protocol import CommandProtocol
 from egse.settings import Settings
+from egse.setup import load_setup
 from egse.system import format_datetime
 from egse.zmq_ser import bind_address
 
@@ -56,8 +57,10 @@ class PunaProtocol(CommandProtocol):
     def __init__(self, control_server: ControlServer):
         super().__init__()
         self.control_server = control_server
+        setup = load_setup()
 
-        self.hk_conversion_table = read_conversion_dict(self.control_server.get_storage_mnemonic(), use_site=True)
+        self.hk_conversion_table = read_conversion_dict(self.control_server.get_storage_mnemonic(), use_site=True,
+                                                        setup=setup)
 
         if Settings.simulation_mode():
             self.hexapod = PunaSimulator()
@@ -222,8 +225,10 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
     def __init__(self, control_server: ControlServer):
         super().__init__()
         self.control_server = control_server
+        setup = load_setup()
 
-        self.hk_conversion_table = read_conversion_dict(self.control_server.get_storage_mnemonic(), use_site=True)
+        self.hk_conversion_table = read_conversion_dict(self.control_server.get_storage_mnemonic(), use_site=True,
+                                                        setup=setup)
 
         if Settings.simulation_mode():
             self.hexapod = PunaSimulator()

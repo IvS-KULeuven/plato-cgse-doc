@@ -30,19 +30,18 @@
 
 from prometheus_client import Gauge
 
-from egse.control import ControlServer
 from egse.command import ClientServerCommand
+from egse.control import ControlServer
 from egse.protocol import CommandProtocol
 from egse.proxy import Proxy
 from egse.settings import Settings
-from egse.setup import get_setup
-from egse.zmq_ser import bind_address
+from egse.setup import load_setup
 from egse.system import format_datetime
-from egse.vacuum.instrutech.igm402_interface import Igm402Interface
 from egse.vacuum.instrutech.igm402_controller import Igm402Controller
+from egse.vacuum.instrutech.igm402_interface import Igm402Interface
 from egse.vacuum.instrutech.igm402_simulator import Igm402Simulator
+from egse.zmq_ser import bind_address
 from egse.zmq_ser import connect_address
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -75,7 +74,7 @@ class Igm402Protocol(CommandProtocol):
         self.build_device_method_lookup_table(self.dev)
 
         # Get calibration from setup
-        self.setup = get_setup()
+        self.setup = load_setup()
 
 
     # move to parent class?
@@ -195,7 +194,7 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
         self.build_device_method_lookup_table(self.dev)
 
         # Get calibration from setup
-        self.setup = get_setup()
+        self.setup = load_setup()
 
 
     # move to parent class?

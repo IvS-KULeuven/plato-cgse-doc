@@ -49,7 +49,7 @@ from numpy.polynomial import Polynomial
 from egse.coordinates.referenceFrame import ReferenceFrame
 from egse.settings import Settings
 from egse.state import GlobalState
-from egse.setup import NavigableDict
+from egse.setup import NavigableDict, load_setup, Setup
 
 logger = logging.getLogger(__name__)
 
@@ -175,19 +175,22 @@ def distorted_to_undistorted_focal_plane_coordinates(
     return x_undistorted, y_undistorted
 
 
-def focal_plane_to_ccd_coordinates(x_fp, y_fp):
+def focal_plane_to_ccd_coordinates(x_fp, y_fp, setup: Setup = None):
     &#34;&#34;&#34;
     Conversion from focal-plane to pixel coordinates on the appropriate CCD.
 
     Args:
         x_fp: Focal-plane x-coordinate [mm].
         y_fp: Focal-plane y-coordinate [mm].
+        setup: Setup
     Returns:
         Pixel coordinates (row, column) and the corresponding CCD.  If the given
         focal-plane coordinates do not fall on any CCD, (None, None, None) is
         returned.
     &#34;&#34;&#34;
-    setup = GlobalState.setup
+
+    if setup is None:
+        setup = load_setup()
 
     if setup is not None:
         num_rows = setup.camera.ccd.num_rows
@@ -1044,7 +1047,7 @@ the in-field angle.</p>
 </details>
 </dd>
 <dt id="egse.coordinates.focal_plane_to_ccd_coordinates"><code class="name flex">
-<span>def <span class="ident">focal_plane_to_ccd_coordinates</span></span>(<span>x_fp, y_fp)</span>
+<span>def <span class="ident">focal_plane_to_ccd_coordinates</span></span>(<span>x_fp, y_fp, setup: <a title="egse.setup.Setup" href="../setup.html#egse.setup.Setup">Setup</a> = None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Conversion from focal-plane to pixel coordinates on the appropriate CCD.</p>
@@ -1054,6 +1057,8 @@ the in-field angle.</p>
 <dd>Focal-plane x-coordinate [mm].</dd>
 <dt><strong><code>y_fp</code></strong></dt>
 <dd>Focal-plane y-coordinate [mm].</dd>
+<dt><strong><code>setup</code></strong></dt>
+<dd>Setup</dd>
 </dl>
 <h2 id="returns">Returns</h2>
 <p>Pixel coordinates (row, column) and the corresponding CCD.
@@ -1064,19 +1069,22 @@ returned.</p></div>
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def focal_plane_to_ccd_coordinates(x_fp, y_fp):
+<pre><code class="python">def focal_plane_to_ccd_coordinates(x_fp, y_fp, setup: Setup = None):
     &#34;&#34;&#34;
     Conversion from focal-plane to pixel coordinates on the appropriate CCD.
 
     Args:
         x_fp: Focal-plane x-coordinate [mm].
         y_fp: Focal-plane y-coordinate [mm].
+        setup: Setup
     Returns:
         Pixel coordinates (row, column) and the corresponding CCD.  If the given
         focal-plane coordinates do not fall on any CCD, (None, None, None) is
         returned.
     &#34;&#34;&#34;
-    setup = GlobalState.setup
+
+    if setup is None:
+        setup = load_setup()
 
     if setup is not None:
         num_rows = setup.camera.ccd.num_rows

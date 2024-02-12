@@ -35,8 +35,8 @@ from rich.table import Table
 from egse import h5
 from egse.dpu.fitsgen import get_hdf5_filenames_for_obsid
 from egse.fee.nfee import HousekeepingData
+from egse.setup import load_setup
 from egse.spw import DataPacket, HousekeepingPacket
-from egse.state import GlobalState
 
 
 def parse_arguments():
@@ -63,8 +63,10 @@ def print_table(obsid: str, location: str):
     num_hdf5_files = len(obs_hdf5_filenames)
     print(f&#34;Found {num_hdf5_files} HDF5 files for obsid {obsid}&#34;)
 
-    ccd_bin_to_id = GlobalState.setup.camera.fee.ccd_numbering.CCD_BIN_TO_ID
-    n_fee_side = GlobalState.setup.camera.fee.ccd_sides.enum
+    setup = load_setup()
+
+    ccd_bin_to_id = setup.camera.fee.ccd_numbering.CCD_BIN_TO_ID
+    n_fee_side = setup.camera.fee.ccd_sides.enum
     
     table = Table(title=f&#34;Report for obsid {obsid}&#34;, expand=False)
     table.add_column(&#34;HDF5&#34;, justify=&#34;right&#34;)
@@ -239,8 +241,10 @@ if __name__ == &#34;__main__&#34;:
     num_hdf5_files = len(obs_hdf5_filenames)
     print(f&#34;Found {num_hdf5_files} HDF5 files for obsid {obsid}&#34;)
 
-    ccd_bin_to_id = GlobalState.setup.camera.fee.ccd_numbering.CCD_BIN_TO_ID
-    n_fee_side = GlobalState.setup.camera.fee.ccd_sides.enum
+    setup = load_setup()
+
+    ccd_bin_to_id = setup.camera.fee.ccd_numbering.CCD_BIN_TO_ID
+    n_fee_side = setup.camera.fee.ccd_sides.enum
     
     table = Table(title=f&#34;Report for obsid {obsid}&#34;, expand=False)
     table.add_column(&#34;HDF5&#34;, justify=&#34;right&#34;)

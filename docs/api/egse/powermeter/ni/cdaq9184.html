@@ -144,6 +144,12 @@ class cdaq9184Simulator(cdaq9184Interface):
     def read_values(self):
         pass
 
+    def read_photodiodes(self):
+        pass
+
+    def read_temperatures(self):
+        pass
+
 
 class cdaq9184Controller(cdaq9184Interface):
     &#34;&#34;&#34;The cdaq9184Controller allows controlling a NI CDAQ 9184 photodiode measurement device.&#34;&#34;&#34;
@@ -209,25 +215,23 @@ class cdaq9184Controller(cdaq9184Interface):
 
     def read_values(self) -&gt; list:
         data = self.cdaq.trans(&#34;get_value&#34;)
-
-        # The 3 last elements of data are expected not to be a number but the position of the filter wheel
-        # (wheel 1 and 2) and the position of the shutter.
-        # As we don&#39;t need these info, I delete them.
-        # But to avoid to delete a relevant value I check if the element is a number or not before deleting.
-        b = True
-        while b:
-            b = False
-            try:
-                float(data[-1])
-            except ValueError:
-                del data[-1]
-                b = True
-
-        # The 2 first elements of data are date as str type. I leave them as str type. I convert the other elements of
-        # data (which are relevant values) from str to float.
-        data = data[:2] + [float(value) for value in data[2:]]
-
         return data
+
+    def read_temperatures(self) -&gt; dict:
+        values = self.read_values()
+        all_temp = values[14:26]
+
+        temp_mean = [all_temp[i] for i in range(0, len(all_temp), 2)]
+        temp_mean = values[2:] + temp_mean # c&#39;est pas plutôt values[:2] ?
+        temp_std = [all_temp[i] for i in range(1, len(all_temp), 2)]
+        temp_std = values[2:] + temp_std # c&#39;est pas plutôt values[:2] ?
+
+        temperatures = {&#34;temp_mean&#34;: temp_mean, &#34;temp_std&#34;: temp_std}
+
+        return temperatures
+
+    def read_photodiodes(self):
+        pass
 
 
 class cdaq9184Proxy(Proxy, cdaq9184Interface):
@@ -333,25 +337,23 @@ class cdaq9184Proxy(Proxy, cdaq9184Interface):
 
     def read_values(self) -&gt; list:
         data = self.cdaq.trans(&#34;get_value&#34;)
+        return data
 
-        # The 3 last elements of data are expected not to be a number but the position of the filter wheel
-        # (wheel 1 and 2) and the position of the shutter.
-        # As we don&#39;t need these info, I delete them.
-        # But to avoid to delete a relevant value I check if the element is a number or not before deleting.
-        b = True
-        while b:
-            b = False
-            try:
-                float(data[-1])
-            except ValueError:
-                del data[-1]
-                b = True
+    def read_temperatures(self) -&gt; dict:
+        values = self.read_values()
+        all_temp = values[14:26]
 
-        # The 2 first elements of data are date as str type. I leave them as str type. I convert the other elements of
-        # data (which are relevant values) from str to float.
-        data = data[:2] + [float(value) for value in data[2:]]
+        temp_mean = [all_temp[i] for i in range(0, len(all_temp), 2)]
+        temp_mean = values[2:] + temp_mean # c&#39;est pas plutôt values[:2] ?
+        temp_std = [all_temp[i] for i in range(1, len(all_temp), 2)]
+        temp_std = values[2:] + temp_std # c&#39;est pas plutôt values[:2] ?
 
-        return data</code></pre>
+        temperatures = {&#34;temp_mean&#34;: temp_mean, &#34;temp_std&#34;: temp_std}
+
+        return temperatures
+
+    def read_photodiodes(self):
+        pass</code></pre>
 </details>
 <h3>Ancestors</h3>
 <ul class="hlist">
@@ -762,6 +764,12 @@ the NI CDAQ 9184 device remotely.</p>
         pass
 
     def read_values(self):
+        pass
+
+    def read_photodiodes(self):
+        pass
+
+    def read_temperatures(self):
         pass</code></pre>
 </details>
 <h3>Ancestors</h3>

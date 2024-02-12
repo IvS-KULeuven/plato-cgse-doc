@@ -37,8 +37,10 @@ from egse.gimbal.symetrie.gimbal import GimbalSimulator
 from egse.hk import read_conversion_dict, convert_hk_names
 from egse.protocol import CommandProtocol
 from egse.settings import Settings
+from egse.setup import load_setup
 from egse.system import format_datetime
 from egse.zmq_ser import bind_address
+from egse.metrics import define_metrics
 
 logger = logging.getLogger(__name__)
 
@@ -54,8 +56,10 @@ class GimbalProtocol(CommandProtocol):
     def __init__(self, control_server: ControlServer):
         super().__init__()
         self.control_server = control_server
+        setup = load_setup()
 
-        self.hk_conversion_table = read_conversion_dict(self.control_server.get_storage_mnemonic(), use_site=True)
+        self.hk_conversion_table = read_conversion_dict(self.control_server.get_storage_mnemonic(), use_site=True,
+                                                        setup=setup)
 
         if Settings.simulation_mode():
             self.gimbal = GimbalSimulator()
@@ -71,6 +75,8 @@ class GimbalProtocol(CommandProtocol):
 
         self.load_commands(gimbal_settings.Commands, GimbalCommand, GimbalInterface)
         self.build_device_method_lookup_table(self.gimbal)
+
+        self.metrics = define_metrics(origin=&#34;GIMBAL&#34;, use_site=True, setup=setup)
 
     def get_bind_address(self):
         return bind_address(
@@ -94,6 +100,8 @@ class GimbalProtocol(CommandProtocol):
         return status
 
     def get_housekeeping(self) -&gt; dict:
+
+        metrics_dict = self.metrics
 
         result = dict()
         result[&#34;timestamp&#34;] = format_datetime()
@@ -138,9 +146,16 @@ class GimbalProtocol(CommandProtocol):
 
         result[&#34;Homing done&#34;] = self.gimbal.is_homing_done()
         result[&#34;In position&#34;] = self.gimbal.is_in_position()
+        temperatures = self.gimbal.get_motor_temperatures()
+        result[&#34;Temp_X&#34;] = temperatures[0]
+        result[&#34;Temp_Y&#34;] = temperatures[1]
+        hk_dict = convert_hk_names(result, self.hk_conversion_table)
 
-        return convert_hk_names(result, self.hk_conversion_table)
-
+        for hk_name in metrics_dict.keys():
+            metrics_dict[hk_name].set(hk_dict[hk_name])    
+            
+        return hk_dict
+    
     def is_device_connected(self):
         # FIXME(rik): There must be another way to check if the socket is still alive...
         #             This will send way too many VERSION requests to the controllers.
@@ -214,8 +229,10 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
     def __init__(self, control_server: ControlServer):
         super().__init__()
         self.control_server = control_server
+        setup = load_setup()
 
-        self.hk_conversion_table = read_conversion_dict(self.control_server.get_storage_mnemonic(), use_site=True)
+        self.hk_conversion_table = read_conversion_dict(self.control_server.get_storage_mnemonic(), use_site=True,
+                                                        setup=setup)
 
         if Settings.simulation_mode():
             self.gimbal = GimbalSimulator()
@@ -231,6 +248,8 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
 
         self.load_commands(gimbal_settings.Commands, GimbalCommand, GimbalInterface)
         self.build_device_method_lookup_table(self.gimbal)
+
+        self.metrics = define_metrics(origin=&#34;GIMBAL&#34;, use_site=True, setup=setup)
 
     def get_bind_address(self):
         return bind_address(
@@ -254,6 +273,8 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
         return status
 
     def get_housekeeping(self) -&gt; dict:
+
+        metrics_dict = self.metrics
 
         result = dict()
         result[&#34;timestamp&#34;] = format_datetime()
@@ -298,9 +319,16 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
 
         result[&#34;Homing done&#34;] = self.gimbal.is_homing_done()
         result[&#34;In position&#34;] = self.gimbal.is_in_position()
+        temperatures = self.gimbal.get_motor_temperatures()
+        result[&#34;Temp_X&#34;] = temperatures[0]
+        result[&#34;Temp_Y&#34;] = temperatures[1]
+        hk_dict = convert_hk_names(result, self.hk_conversion_table)
 
-        return convert_hk_names(result, self.hk_conversion_table)
-
+        for hk_name in metrics_dict.keys():
+            metrics_dict[hk_name].set(hk_dict[hk_name])    
+            
+        return hk_dict
+    
     def is_device_connected(self):
         # FIXME(rik): There must be another way to check if the socket is still alive...
         #             This will send way too many VERSION requests to the controllers.

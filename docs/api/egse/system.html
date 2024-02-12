@@ -44,12 +44,13 @@ The module has external dependencies to:
 * __psutil__: for system statistics
 
 &#34;&#34;&#34;
-import collections
-import math
+from __future__ import annotations
 
 import builtins
+import collections
 import contextlib
 import datetime
+import functools
 import importlib
 import inspect
 import itertools
@@ -65,24 +66,23 @@ import sys
 import time
 from collections import namedtuple
 from pathlib import Path
+from types import FunctionType
+from types import ModuleType
 from typing import Any
 from typing import Callable
 from typing import Iterable
 from typing import List
-from typing import NamedTuple
 from typing import Optional
 from typing import Tuple
 from typing import Union
 
 import distro  # For determining the Linux distribution
 import psutil
-import rich
 from rich.text import Text
 from rich.tree import Tree
 
-
 EPOCH_1958_1970 = 378691200
-TIME_FORMAT = &#39;%Y-%m-%dT%H:%M:%S.%f%z&#39;
+TIME_FORMAT = &#34;%Y-%m-%dT%H:%M:%S.%f%z&#34;
 
 logger = logging.getLogger(__name__)
 
@@ -92,16 +92,28 @@ import logging
 
 # Code below is copied from https://gist.github.com/simon-weber/7853144
 
+
 @contextmanager
 def all_logging_disabled(highest_level=logging.CRITICAL, flag=True):
     &#34;&#34;&#34;
-    A context manager that will prevent any logging messages triggered during the body from being processed.
+    Context manager to temporarily disable logging messages during its execution.
 
     Args:
-        highest_level: the maximum logging level in use.
-            This would only need to be changed if a custom level greater than CRITICAL is defined.
-        flag: True to disable all logging [default=True]
+        highest_level (int, optional): The maximum logging level to be disabled.
+            Defaults to logging.CRITICAL.
+            Note: Adjust this only if a custom level greater than CRITICAL is defined.
+        flag (bool, optional): If True, disables all logging; if False, no changes are made.
+            Defaults to True.
+
+    Example:
+        &gt;&gt;&gt; with all_logging_disabled():
+        ...     # Your code with logging messages disabled
+
+    Note:
+        This context manager is designed to prevent any logging messages triggered during its body
+        from being processed. It temporarily disables logging and restores the previous state afterward.
     &#34;&#34;&#34;
+
     # two kind-of hacks here:
     #    * can&#39;t get the highest logging level in effect =&gt; delegate to the user
     #    * can&#39;t get the current module-level override =&gt; use an undocumented
@@ -119,20 +131,35 @@ def all_logging_disabled(highest_level=logging.CRITICAL, flag=True):
 
 
 def get_active_loggers() -&gt; dict:
+    &#34;&#34;&#34;
+    Retrieves information about active loggers and their respective log levels.
+
+    Returns a dictionary where keys are the names of active loggers, and values
+    are the corresponding log levels in string format.
+
+    Returns:
+        dict: A dictionary mapping logger names to their log levels.
+
+    Note:
+        This function provides a snapshot of the currently active loggers and
+        their log levels at the time of the function call.
+
+    &#34;&#34;&#34;
+
     return {
-        name: logging.getLevelName(logging.getLogger(name).level)
-        for name in sorted(logging.Logger.manager.loggerDict)
+        name: logging.getLevelName(logging.getLogger(name).level) for name in sorted(logging.Logger.manager.loggerDict)
     }
 
 
 # The code below was taken from https://stackoverflow.com/a/69639238/4609203
+
 
 def ignore_m_warning(modules=None):
     &#34;&#34;&#34;
     Ignore RuntimeWarning by `runpy` that occurs when executing a module with `python -m package.module`,
     while that module is also imported.
 
-    The original warning mssage is:
+    The original warning message is:
 
         &#39;&lt;package.module&gt;&#39; found in sys.modules after import of package &#39;&lt;package&#39;&gt;,
         but prior to execution of &#39;&lt;package.module&gt;&#39;
@@ -147,12 +174,20 @@ def ignore_m_warning(modules=None):
         msg = &#34;&#39;{module}&#39; found in sys.modules after import of package&#34;
         for module in modules:
             module_msg = re.escape(msg.format(module=module))
-            warnings.filterwarnings(&#34;ignore&#34;, message=module_msg, category=RuntimeWarning, module=&#39;runpy&#39;)  # ignore -m
+            warnings.filterwarnings(&#34;ignore&#34;, message=module_msg, category=RuntimeWarning, module=&#34;runpy&#34;)  # ignore -m
     except (ImportError, KeyError, AttributeError, Exception):
         pass
 
 
-def format_datetime(dt: Union[str,datetime.datetime] = None, fmt: str = None, width: int = 6, precision: int = 3):
+def now(utc: bool = True):
+    &#34;&#34;&#34;Returns a datetime object for the current time in UTC or local time.&#34;&#34;&#34;
+    if utc:
+        return datetime.datetime.now(tz=datetime.timezone.utc)
+    else:
+        return datetime.datetime.now()
+
+
+def format_datetime(dt: Union[str, datetime.datetime] = None, fmt: str = None, width: int = 6, precision: int = 3):
     &#34;&#34;&#34;Format a datetime as YYYY-mm-ddTHH:MM:SS.μs+0000.
 
     If the given argument is not timezone aware, the last part, i.e. `+0000` will not be there.
@@ -224,7 +259,7 @@ SECONDS_IN_AN_HOUR = 60 * 60
 SECONDS_IN_A_MINUTE = 60
 
 
-def humanize_seconds(seconds: float):
+def humanize_seconds(seconds: float, include_micro_seconds: bool = True):
     &#34;&#34;&#34;
     The number of seconds is represented as &#34;[#D]d [#H]h[#M]m[#S]s.MS&#34; where:
 
@@ -241,6 +276,8 @@ def humanize_seconds(seconds: float):
         &#39;10d 00s.000&#39;
         &gt;&gt;&gt; humanize_seconds(10*86400 + 3*3600 + 42.023)
         &#39;10d 03h00m42s.023&#39;
+        &gt;&gt;&gt; humanize_seconds(10*86400 + 3*3600 + 42.023, include_micro_seconds=False)
+        &#39;10d 03h00m42s&#39;
 
     Returns:
          a string representation for the number of seconds.
@@ -270,13 +307,14 @@ def humanize_seconds(seconds: float):
         result += f&#34;{minutes:02d}m&#34;
 
     result += f&#34;{seconds:02d}s&#34;
-    result += f&#34;.{micro_seconds:03d}&#34;
+    if include_micro_seconds:
+        result += f&#34;.{micro_seconds:03d}&#34;
 
     return result
 
 
 def str_to_datetime(datetime_string: str):
-    &#34;&#34;&#34; Convert the given string to a datetime object.
+    &#34;&#34;&#34;Convert the given string to a datetime object.
 
     Args:
         - datatime_string: String representing a datetime, in the format %Y-%m-%dT%H:%M:%S.%f%z.
@@ -287,8 +325,34 @@ def str_to_datetime(datetime_string: str):
     return datetime.datetime.strptime(datetime_string.strip(&#34;\r&#34;), TIME_FORMAT)
 
 
+def duration(dt_start: str | datetime.datetime, dt_end: str | datetime.datetime) -&gt; datetime.timedelta:
+    &#34;&#34;&#34;
+    Returns a `timedelta` object with the duration, i.e. time difference between dt_start and dt_end.
+
+    Notes:
+        If you need the number of seconds of your measurement, use the `total_seconds()` method of
+        the timedelta object.
+
+        Even if you —by accident— switch the start and end time arguments, the duration will
+        be calculated as expected.
+
+    Args:
+        dt_start: start time of the measurement
+        dt_end: end time of the measurement
+
+    Returns:
+        The time difference (duration) between dt_start and dt_end.
+    &#34;&#34;&#34;
+    if isinstance(dt_start, str):
+        dt_start = str_to_datetime(dt_start)
+    if isinstance(dt_end, str):
+        dt_end = str_to_datetime(dt_end)
+
+    return dt_end - dt_start if dt_end &gt; dt_start else dt_start - dt_end
+
+
 def time_since_epoch_1958(datetime_string: str):
-    &#34;&#34;&#34; Calculate the time since epoch 1958 for the given string representation of a datetime.
+    &#34;&#34;&#34;Calculate the time since epoch 1958 for the given string representation of a datetime.
 
     Args:
         - datetime_string: String representing a datetime, in the format %Y-%m-%dT%H:%M:%S.%f%z.
@@ -296,7 +360,7 @@ def time_since_epoch_1958(datetime_string: str):
     Returns: Time since the 1958 epoch [s].
     &#34;&#34;&#34;
 
-    time_since_epoch_1970 = str_to_datetime(datetime_string).timestamp()        # Since Jan 1st, 1970, midnight
+    time_since_epoch_1970 = str_to_datetime(datetime_string).timestamp()  # Since Jan 1st, 1970, midnight
 
     return time_since_epoch_1970 + EPOCH_1958_1970
 
@@ -336,6 +400,10 @@ class Timer(object):
         self.name = name
         self.precision = precision
         self.log_level = log_level
+        caller_info = get_caller_info(level=2)
+        self.filename = caller_info.filename
+        self.func = caller_info.function
+        self.lineno = caller_info.lineno
 
     def __enter__(self):
         # start is a value containing the start time in fractional seconds
@@ -351,8 +419,8 @@ class Timer(object):
         # Overwrite self.end() so that it always returns the fixed end time
         self.end = self._end
 
-        logger.log(self.log_level,
-                   f&#34;{self.name}: {self.end() - self.start:0.{self.precision}f} seconds&#34;)
+        logger.log(self.log_level, f&#34;{self.name} [{self.filename}:{self.func}:{self.lineno}]: &#34;
+                                   f&#34;{self.end() - self.start:0.{self.precision}f} seconds&#34;)
         return False
 
     def __call__(self):
@@ -360,8 +428,8 @@ class Timer(object):
 
     def log_elapsed(self):
         &#34;&#34;&#34;Sends the elapsed time info to the default logger.&#34;&#34;&#34;
-        logger.log(self.log_level,
-                   f&#34;{self.name}: {self.end() - self.start:0.{self.precision}f} seconds elapsed&#34;)
+        logger.log(self.log_level, f&#34;{self.name} [{self.func}:{self.lineno}]: &#34;
+                                   f&#34;{self.end() - self.start:0.{self.precision}f} seconds elapsed&#34;)
 
     def get_elapsed(self) -&gt; float:
         &#34;&#34;&#34;Returns the elapsed time for this timer as a float in seconds.&#34;&#34;&#34;
@@ -410,8 +478,8 @@ def get_host_ip() -&gt; Optional[str]:
 
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        #sock.connect((&#34;8.8.8.8&#34;, 80))
-        sock.connect((&#39;10.255.255.255&#39;, 1))
+        # sock.connect((&#34;8.8.8.8&#34;, 80))
+        sock.connect((&#34;10.255.255.255&#34;, 1))
         host_ip = sock.getsockname()[0]
         sock.close()
     except Exception as exc:
@@ -425,11 +493,14 @@ def get_host_ip() -&gt; Optional[str]:
         host_name = socket.gethostname()
         host_ip = socket.gethostbyname(host_name)
         return host_ip
-    except (Exception, ):
+    except (Exception,):
         return None
 
 
-def get_caller_info(level=1) -&gt; NamedTuple:
+CallerInfo = namedtuple(&#34;CallerInfo&#34;, &#34;filename function lineno&#34;)
+
+
+def get_caller_info(level=1) -&gt; CallerInfo:
     &#34;&#34;&#34;
     Returns the filename, function name and lineno of the caller.
 
@@ -452,9 +523,7 @@ def get_caller_info(level=1) -&gt; NamedTuple:
         frame = frame.f_back
     frame_info = inspect.getframeinfo(frame)
 
-    caller_info = namedtuple(&#34;CallerInfo&#34;, &#34;filename function lineno&#34;)
-
-    return caller_info(frame_info.filename, frame_info.function, frame_info.lineno)
+    return CallerInfo(frame_info.filename, frame_info.function, frame_info.lineno)
 
 
 def get_referenced_var_name(obj: Any) -&gt; List[str]:
@@ -515,7 +584,6 @@ class AttributeDict(dict):
         return tree
 
     def __repr__(self):
-
         # We only want the first 10 key:value pairs
 
         count = 10
@@ -660,9 +728,9 @@ def get_system_stats():
 
     boot_time = psutil.boot_time()
     statistics[&#34;boot_time&#34;] = boot_time
-    statistics[&#34;since&#34;] = datetime.datetime.fromtimestamp(
-        boot_time, tz=datetime.timezone.utc
-    ).strftime(&#34;%Y-%m-%d %H:%M:%S&#34;)
+    statistics[&#34;since&#34;] = datetime.datetime.fromtimestamp(boot_time, tz=datetime.timezone.utc).strftime(
+        &#34;%Y-%m-%d %H:%M:%S&#34;
+    )
 
     return statistics
 
@@ -776,6 +844,64 @@ def wait_until(condition, *args, interval=0.1, timeout=1, verbose=False, **kwarg
         logger.debug(f&#34;wait_until finished successfully, {func_name}{args}{kwargs} is met.&#34;)
 
     return False
+
+
+def waiting_for(condition, *args, interval=0.1, timeout=1, verbose=False, **kwargs):
+    &#34;&#34;&#34;
+    Sleep until the given condition is fulfilled. The arguments are passed into the condition
+    callable which is called in a while loop until the condition is met or the timeout is reached.
+
+    Note that the condition can be a function, method or callable class object.
+    An example of the latter is:
+
+        class SleepUntilCount:
+            def __init__(self, end):
+                self._end = end
+                self._count = 0
+
+            def __call__(self, *args, **kwargs):
+                self._count += 1
+                if self._count &gt;= self._end:
+                    return True
+                else:
+                    return False
+
+
+    Args:
+        condition: a callable that returns True when the condition is met, False otherwise
+        interval: the sleep interval between condition checks [s, default=0.1]
+        timeout: the period after which the function returns, even when the condition is
+            not met [s, default=1]
+        verbose: log debugging messages if True
+        *args: any arguments that will be passed into the condition function
+
+    Raises:
+        A TimeoutError when the condition was not fulfilled within the timeout period.
+    &#34;&#34;&#34;
+
+    if inspect.isfunction(condition) or inspect.ismethod(condition):
+        func_name = condition.__name__
+    else:
+        func_name = condition.__class__.__name__
+
+    caller = get_caller_info(level=2)
+
+    start = time.time()
+
+    while not condition(*args, **kwargs):
+        if time.time() - start &gt; timeout:
+            raise TimeoutError(
+                f&#34;Timeout after {timeout} sec, from {caller.filename} at {caller.lineno},&#34;
+                f&#34; {func_name}{args} not met.&#34;
+            )
+        time.sleep(interval)
+
+    duration = time.time() - start
+
+    if verbose:
+        logger.debug(f&#34;waiting_for finished successfully after {duration:.3f}s, {func_name}{args}{kwargs} is met.&#34;)
+
+    return duration
 
 
 def has_internet(host=&#34;8.8.8.8&#34;, port=53, timeout=3):
@@ -959,11 +1085,7 @@ def filter_by_attr(elements: Iterable, **attrs) -&gt; List:
             value = (operator.eq, value)
         attr_func_values.append((attr.replace(&#34;__&#34;, &#34;.&#34;), *value))
 
-    return [
-        el
-        for el in elements
-        if all(check(attr, func, value, el) for attr, func, value in attr_func_values)
-    ]
+    return [el for el in elements if all(check(attr, func, value, el) for attr, func, value in attr_func_values)]
 
 
 def replace_environment_variable(input_string: str):
@@ -1007,7 +1129,6 @@ def read_last_line(filename: str, max_line_length=5000):
     filename = Path(filename)
 
     if not filename.exists():
-
         return None
 
     with filename.open(&#34;rb&#34;) as file:
@@ -1021,7 +1142,7 @@ def read_last_line(filename: str, max_line_length=5000):
 
 
 def read_last_lines(filename: str, num_lines: int):
-    &#34;&#34;&#34; Return the last lines of a text file.
+    &#34;&#34;&#34;Return the last lines of a text file.
 
     Args:
         - filename: Filename.
@@ -1038,7 +1159,6 @@ def read_last_lines(filename: str, num_lines: int):
     assert num_lines &gt; 1
 
     if not filename.exists():
-
         return None
 
     assert num_lines &gt;= 0
@@ -1052,20 +1172,15 @@ def read_last_lines(filename: str, num_lines: int):
     lines = []
 
     with open(filename) as f:
-
         while len(lines) &lt;= num_lines:
-
             try:
-
                 f.seek(-pos, 2)
 
             except IOError:
-
                 f.seek(0)
                 break
 
             finally:
-
                 lines = list(f)
 
             # Increasing value of variable exponentially
@@ -1075,11 +1190,141 @@ def read_last_lines(filename: str, num_lines: int):
     return lines[-num_lines:]
 
 
-def get_full_classname(obj: object) -&gt; str:
-    &#34;&#34;&#34;Returns the fully qualified class name for this object.&#34;&#34;&#34;
+def is_namespace(module) -&gt; bool:
+    &#34;&#34;&#34;
+    Checks if a module represents a namespace package.
 
-    # Take into account that obj might be a class or a builtin or even a
-    # literal like an int or a float or a complex number
+    A namespace package is defined as a module that has a &#39;__path__&#39; attribute
+    and no &#39;__file__&#39; attribute.
+
+    Args:
+        module: The module to be checked.
+
+    Returns:
+        bool: True if the module is a namespace package, False otherwise.
+
+    Note:
+        A namespace package is a special kind of package that does not contain
+        an actual implementation but serves as a container for other packages
+        or modules.
+
+    &#34;&#34;&#34;
+
+    if hasattr(module, &#39;__path__&#39;) and getattr(module, &#39;__file__&#39;, None) is None:
+        return True
+    else:
+        return False
+
+
+def get_package_location(module) -&gt; List[Path]:
+    &#34;&#34;&#34;
+    Retrieves the file system locations associated with a Python package.
+
+    This function takes a module, module name, or fully qualified module path,
+    and returns a list of Path objects representing the file system locations
+    associated with the package. If the module is a namespace package, it returns
+    the paths of all namespaces; otherwise, it returns the location of the module.
+
+    Args:
+        module (Union[FunctionType, ModuleType, str]): The module or module name to
+            retrieve locations for.
+
+    Returns:
+        List[Path]: A list of Path objects representing the file system locations.
+
+    Note:
+        If the module is not found or is not a valid module, an empty list is returned.
+
+    &#34;&#34;&#34;
+
+    if isinstance(module, FunctionType):
+        module_name = module.__module__
+    elif isinstance(module, ModuleType):
+        module_name = module.__name__
+    elif isinstance(module, str):
+        module_name = module
+    else:
+        return []
+
+    try:
+        module = importlib.import_module(module)
+    except TypeError as exc:
+        return []
+
+    if is_namespace(module):
+        return [
+            Path(location)
+            for location in module.__path__
+        ]
+    else:
+        location = get_module_location(module)
+        return [] if location is None else [location]
+
+
+def get_module_location(arg) -&gt; Optional[Path]:
+    &#34;&#34;&#34;
+    Returns the location of the module as a Path object.
+
+    The function accepts a string (module name), a function, or a module.
+    For functions and modules, the module name is determined internally.
+
+    Args:
+        arg (Union[FunctionType, ModuleType, str]): The function, module, or module name.
+
+    Returns:
+        Optional[Path]: The location of the module as a Path object, or None if the location
+        cannot be determined or an invalid argument is provided.
+
+    Example:
+        &gt;&gt;&gt; get_module_location(&#39;egse&#39;)
+        Path(&#39;/path/to/egse&#39;)
+
+        &gt;&gt;&gt; get_module_location(egse.system)
+        Path(&#39;/path/to/egse/system&#39;)
+
+    Note:
+        If the module is not found or is not a valid module, None is returned.
+
+    &#34;&#34;&#34;
+    if isinstance(arg, FunctionType):
+        module_name = arg.__module__
+    elif isinstance(arg, ModuleType):
+        module_name = arg.__name__
+    elif isinstance(arg, str):
+        module_name = arg
+    else:
+        return None
+
+    try:
+        module = importlib.import_module(module_name)
+    except TypeError as exc:
+        return None
+
+    return Path(module.__file__).parent.resolve()
+
+
+def get_full_classname(obj: object) -&gt; str:
+    &#34;&#34;&#34;
+    Returns the fully qualified class name for the given object.
+
+    Args:
+        obj (object): The object for which to retrieve the fully qualified class name.
+
+    Returns:
+        str: The fully qualified class name, including the module.
+
+    Example:
+        &gt;&gt;&gt; get_full_classname(&#34;example&#34;)
+        &#39;builtins.str&#39;
+
+        &gt;&gt;&gt; get_full_classname(42)
+        &#39;builtins.int&#39;
+
+    Note:
+        The function considers various scenarios, such as objects being classes,
+        built-ins, or literals like int, float, or complex numbers.
+
+    &#34;&#34;&#34;
 
     if type(obj) is type or obj.__class__.__module__ == str.__module__:
         try:
@@ -1092,7 +1337,7 @@ def get_full_classname(obj: object) -&gt; str:
         module = obj.__class__.__module__
         name = obj.__class__.__qualname__
 
-    return module + &#39;.&#39; + name
+    return module + &#34;.&#34; + name
 
 
 def find_class(class_name: str):
@@ -1119,12 +1364,11 @@ def find_class(class_name: str):
 
 
 def type_name(var):
-    &#34;&#34;&#34; Returns the name of the type of var.&#34;&#34;&#34;
+    &#34;&#34;&#34;Returns the name of the type of var.&#34;&#34;&#34;
     return type(var).__name__
 
 
-def check_argument_type(
-        obj: object, name: str, target_class: Union[type, Tuple[type]], allow_none: bool = False):
+def check_argument_type(obj: object, name: str, target_class: Union[type, Tuple[type]], allow_none: bool = False):
     &#34;&#34;&#34;Check that the given object is of a specific (sub)type of the given target_class.
 
     The target_class can be a tuple of types.
@@ -1143,12 +1387,31 @@ def check_argument_type(
 def check_str_for_slash(arg: str):
     &#34;&#34;&#34;Check if there is a slash in the given string, and raise a ValueError if so.&#34;&#34;&#34;
 
-    if &#39;/&#39; in arg:
+    if &#34;/&#34; in arg:
         ValueError(f&#34;The given argument can not contain slashes, {arg=}.&#34;)
 
 
 def check_is_a_string(var, allow_none=False):
-    &#34;&#34;&#34; Calls is_a_string and raises a type error if the check fails.&#34;&#34;&#34;
+    &#34;&#34;&#34;
+    Checks if the given variable is a string and raises a TypeError if the check fails.
+
+    Args:
+        var: The variable to be checked.
+        allow_none (bool, optional): If True, allows the variable to be None without raising an error.
+            Defaults to False.
+
+    Raises:
+        TypeError: If the variable is not a string or is None (when allow_none is False).
+
+    Example:
+        &gt;&gt;&gt; check_is_a_string(&#34;example&#34;)
+
+    Note:
+        This function is designed to validate that the input variable is a string.
+        If `allow_none` is set to True, it allows the variable to be None without raising an error.
+
+    &#34;&#34;&#34;
+
     if var is None and allow_none:
         return
     if var is None and not allow_none:
@@ -1159,27 +1422,44 @@ def check_is_a_string(var, allow_none=False):
 
 def sanity_check(flag: bool, msg: str):
     &#34;&#34;&#34;
-    This is a replacement for the &#39;assert&#39; statement. Use this in production code
-    such that your checks are not removed during optimisations.
+    Checks a boolean flag and raises an AssertionError with the provided message if the check fails.
+
+    This function serves as a replacement for the &#39;assert&#39; statement in production code.
+    Using this ensures that your checks are not removed during optimizations.
+
+    Args:
+        flag (bool): The boolean flag to be checked.
+        msg (str): The message to be included in the AssertionError if the check fails.
+
+    Raises:
+        AssertionError: If the flag is False.
+
+    Example:
+        &gt;&gt;&gt; sanity_check(x &gt; 0, &#34;x must be greater than 0&#34;)
+
+    Note:
+        This function is designed for production code to perform runtime checks
+        that won&#39;t be removed during optimizations.
+
     &#34;&#34;&#34;
+
     if not flag:
         raise AssertionError(msg)
 
 
 class NotSpecified:
-    &#34;&#34;&#34; Class for NOT_SPECIFIED constant.
-        Is used so that a parameter can have a default value other than None.
+    &#34;&#34;&#34;Class for NOT_SPECIFIED constant.
+    Is used so that a parameter can have a default value other than None.
 
-        Evaluate to False when converted to boolean.
+    Evaluate to False when converted to boolean.
     &#34;&#34;&#34;
+
     def __nonzero__(self):
-        &#34;&#34;&#34; Always returns False. Called when to converting to bool in Python 2.
-        &#34;&#34;&#34;
+        &#34;&#34;&#34;Always returns False. Called when to converting to bool in Python 2.&#34;&#34;&#34;
         return False
 
     def __bool__(self):
-        &#34;&#34;&#34; Always returns False. Called when to converting to bool in Python 3.
-        &#34;&#34;&#34;
+        &#34;&#34;&#34;Always returns False. Called when to converting to bool in Python 3.&#34;&#34;&#34;
         return False
 
 
@@ -1271,6 +1551,23 @@ def is_in_ipython():
 _function_timing = {}
 
 
+def execution_time(func):
+    &#34;&#34;&#34;
+    A decorator to save the execution time of the function. Use this decorator
+    if you want —by default and always— have an idea of the average execution time
+    of the given function.
+
+    Use this in conjunction with the `get_average_execution_time()` function to
+    retrieve the average execution time for the given function.
+    &#34;&#34;&#34;
+
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        return save_average_execution_time(func, *args, **kwargs)
+
+    return wrapper
+
+
 def save_average_execution_time(func: Callable, *args, **kwargs):
     &#34;&#34;&#34;
     Executes the function &#39;func&#39; with the given arguments and saves the execution time. All positional
@@ -1294,6 +1591,7 @@ def get_average_execution_time(func: Callable) -&gt; float:
     &#34;&#34;&#34;
     Returns the average execution time of the given function. The function &#39;func&#39; shall be previously executed using
     the `save_average_execution_time()` function which remembers the last 100 execution times of the function.
+    You can also decorate your function with `@execution_time` to permanently monitor it.
     The average time is a moving average over the last 100 times. If the function was never called before, 0.0 is
     returned.
 
@@ -1302,6 +1600,12 @@ def get_average_execution_time(func: Callable) -&gt; float:
     stalled.
     &#34;&#34;&#34;
 
+    # If the function was previously wrapped with the `@execution_time` wrapper, we need to get
+    # to the original function object because that&#39;s the one that is saved.
+
+    with contextlib.suppress(AttributeError):
+        func = func.__wrapped__
+
     try:
         d = _function_timing[func]
         return sum(d) / len(d)
@@ -1309,14 +1613,36 @@ def get_average_execution_time(func: Callable) -&gt; float:
         return 0.0
 
 
-ignore_m_warning(&#39;egse.system&#39;)
+def get_average_execution_times() -&gt; dict:
+    &#34;&#34;&#34;
+    Returns a dictionary with &#34;function name&#34;: average execution time, for all function that have been
+    monitored in this process.
+    &#34;&#34;&#34;
+    return {func.__name__: get_average_execution_time(func) for func in _function_timing}
+
+
+def clear_average_execution_times():
+    &#34;&#34;&#34;Clear out all function timing for this process.&#34;&#34;&#34;
+    _function_timing.clear()
+
+
+def get_system_architecture() -&gt; str:
+    &#34;&#34;&#34;
+    Returns the machine type. This is a string describing the processor architecture,
+    like i386 or arm64, but the exact string is not defined. An empty string can be returned when
+    the type cannot be determined.
+    &#34;&#34;&#34;
+    return platform.machine()
+
+
+ignore_m_warning(&#34;egse.system&#34;)
 
 if __name__ == &#34;__main__&#34;:
-
     print(f&#34;Host IP: {get_host_ip()}&#34;)
     print(f&#34;System name: {get_system_name()}&#34;)
     print(f&#34;OS name: {get_os_name()}&#34;)
     print(f&#34;OS version: {get_os_version()}&#34;)
+    print(f&#34;Architecture: {get_system_architecture()}&#34;)
     print(f&#34;Python version: {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}&#34;)
     print(&#34;Running in IPython&#34;) if is_in_ipython() else None</code></pre>
 </details>
@@ -1332,15 +1658,24 @@ if __name__ == &#34;__main__&#34;:
 <span>def <span class="ident">all_logging_disabled</span></span>(<span>highest_level=50, flag=True)</span>
 </code></dt>
 <dd>
-<div class="desc"><p>A context manager that will prevent any logging messages triggered during the body from being processed.</p>
+<div class="desc"><p>Context manager to temporarily disable logging messages during its execution.</p>
 <h2 id="args">Args</h2>
 <dl>
-<dt><strong><code>highest_level</code></strong></dt>
-<dd>the maximum logging level in use.
-This would only need to be changed if a custom level greater than CRITICAL is defined.</dd>
-<dt><strong><code>flag</code></strong></dt>
-<dd>True to disable all logging [default=True]</dd>
-</dl></div>
+<dt><strong><code>highest_level</code></strong> :&ensp;<code>int</code>, optional</dt>
+<dd>The maximum logging level to be disabled.
+Defaults to logging.CRITICAL.
+Note: Adjust this only if a custom level greater than CRITICAL is defined.</dd>
+<dt><strong><code>flag</code></strong> :&ensp;<code>bool</code>, optional</dt>
+<dd>If True, disables all logging; if False, no changes are made.
+Defaults to True.</dd>
+</dl>
+<h2 id="example">Example</h2>
+<pre><code class="language-python-repl">&gt;&gt;&gt; with all_logging_disabled():
+...     # Your code with logging messages disabled
+</code></pre>
+<h2 id="note">Note</h2>
+<p>This context manager is designed to prevent any logging messages triggered during its body
+from being processed. It temporarily disables logging and restores the previous state afterward.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
@@ -1348,13 +1683,24 @@ This would only need to be changed if a custom level greater than CRITICAL is de
 <pre><code class="python">@contextmanager
 def all_logging_disabled(highest_level=logging.CRITICAL, flag=True):
     &#34;&#34;&#34;
-    A context manager that will prevent any logging messages triggered during the body from being processed.
+    Context manager to temporarily disable logging messages during its execution.
 
     Args:
-        highest_level: the maximum logging level in use.
-            This would only need to be changed if a custom level greater than CRITICAL is defined.
-        flag: True to disable all logging [default=True]
+        highest_level (int, optional): The maximum logging level to be disabled.
+            Defaults to logging.CRITICAL.
+            Note: Adjust this only if a custom level greater than CRITICAL is defined.
+        flag (bool, optional): If True, disables all logging; if False, no changes are made.
+            Defaults to True.
+
+    Example:
+        &gt;&gt;&gt; with all_logging_disabled():
+        ...     # Your code with logging messages disabled
+
+    Note:
+        This context manager is designed to prevent any logging messages triggered during its body
+        from being processed. It temporarily disables logging and restores the previous state afterward.
     &#34;&#34;&#34;
+
     # two kind-of hacks here:
     #    * can&#39;t get the highest logging level in effect =&gt; delegate to the user
     #    * can&#39;t get the current module-level override =&gt; use an undocumented
@@ -1426,8 +1772,7 @@ def chdir(dirname=None):
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def check_argument_type(
-        obj: object, name: str, target_class: Union[type, Tuple[type]], allow_none: bool = False):
+<pre><code class="python">def check_argument_type(obj: object, name: str, target_class: Union[type, Tuple[type]], allow_none: bool = False):
     &#34;&#34;&#34;Check that the given object is of a specific (sub)type of the given target_class.
 
     The target_class can be a tuple of types.
@@ -1447,13 +1792,51 @@ def chdir(dirname=None):
 <span>def <span class="ident">check_is_a_string</span></span>(<span>var, allow_none=False)</span>
 </code></dt>
 <dd>
-<div class="desc"><p>Calls is_a_string and raises a type error if the check fails.</p></div>
+<div class="desc"><p>Checks if the given variable is a string and raises a TypeError if the check fails.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>var</code></strong></dt>
+<dd>The variable to be checked.</dd>
+<dt><strong><code>allow_none</code></strong> :&ensp;<code>bool</code>, optional</dt>
+<dd>If True, allows the variable to be None without raising an error.
+Defaults to False.</dd>
+</dl>
+<h2 id="raises">Raises</h2>
+<dl>
+<dt><code>TypeError</code></dt>
+<dd>If the variable is not a string or is None (when allow_none is False).</dd>
+</dl>
+<h2 id="example">Example</h2>
+<pre><code class="language-python-repl">&gt;&gt;&gt; check_is_a_string(&quot;example&quot;)
+</code></pre>
+<h2 id="note">Note</h2>
+<p>This function is designed to validate that the input variable is a string.
+If <code>allow_none</code> is set to True, it allows the variable to be None without raising an error.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def check_is_a_string(var, allow_none=False):
-    &#34;&#34;&#34; Calls is_a_string and raises a type error if the check fails.&#34;&#34;&#34;
+    &#34;&#34;&#34;
+    Checks if the given variable is a string and raises a TypeError if the check fails.
+
+    Args:
+        var: The variable to be checked.
+        allow_none (bool, optional): If True, allows the variable to be None without raising an error.
+            Defaults to False.
+
+    Raises:
+        TypeError: If the variable is not a string or is None (when allow_none is False).
+
+    Example:
+        &gt;&gt;&gt; check_is_a_string(&#34;example&#34;)
+
+    Note:
+        This function is designed to validate that the input variable is a string.
+        If `allow_none` is set to True, it allows the variable to be None without raising an error.
+
+    &#34;&#34;&#34;
+
     if var is None and allow_none:
         return
     if var is None and not allow_none:
@@ -1474,12 +1857,26 @@ def chdir(dirname=None):
 <pre><code class="python">def check_str_for_slash(arg: str):
     &#34;&#34;&#34;Check if there is a slash in the given string, and raise a ValueError if so.&#34;&#34;&#34;
 
-    if &#39;/&#39; in arg:
+    if &#34;/&#34; in arg:
         ValueError(f&#34;The given argument can not contain slashes, {arg=}.&#34;)</code></pre>
 </details>
 </dd>
+<dt id="egse.system.clear_average_execution_times"><code class="name flex">
+<span>def <span class="ident">clear_average_execution_times</span></span>(<span>)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Clear out all function timing for this process.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def clear_average_execution_times():
+    &#34;&#34;&#34;Clear out all function timing for this process.&#34;&#34;&#34;
+    _function_timing.clear()</code></pre>
+</details>
+</dd>
 <dt id="egse.system.do_every"><code class="name flex">
-<span>def <span class="ident">do_every</span></span>(<span>period: float, func: <built-in function callable>, *args) ‑> None</span>
+<span>def <span class="ident">do_every</span></span>(<span>period: float, func: callable, *args) ‑> None</span>
 </code></dt>
 <dd>
 <div class="desc"><p>This method executes a function periodically, taking into account
@@ -1543,6 +1940,55 @@ timer_thread.start()
         func(*args)</code></pre>
 </details>
 </dd>
+<dt id="egse.system.duration"><code class="name flex">
+<span>def <span class="ident">duration</span></span>(<span>dt_start: str | datetime.datetime, dt_end: str | datetime.datetime) ‑> datetime.timedelta</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Returns a <code>timedelta</code> object with the duration, i.e. time difference between dt_start and dt_end.</p>
+<h2 id="notes">Notes</h2>
+<p>If you need the number of seconds of your measurement, use the <code>total_seconds()</code> method of
+the timedelta object.</p>
+<p>Even if you —by accident— switch the start and end time arguments, the duration will
+be calculated as expected.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>dt_start</code></strong></dt>
+<dd>start time of the measurement</dd>
+<dt><strong><code>dt_end</code></strong></dt>
+<dd>end time of the measurement</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<p>The time difference (duration) between dt_start and dt_end.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def duration(dt_start: str | datetime.datetime, dt_end: str | datetime.datetime) -&gt; datetime.timedelta:
+    &#34;&#34;&#34;
+    Returns a `timedelta` object with the duration, i.e. time difference between dt_start and dt_end.
+
+    Notes:
+        If you need the number of seconds of your measurement, use the `total_seconds()` method of
+        the timedelta object.
+
+        Even if you —by accident— switch the start and end time arguments, the duration will
+        be calculated as expected.
+
+    Args:
+        dt_start: start time of the measurement
+        dt_end: end time of the measurement
+
+    Returns:
+        The time difference (duration) between dt_start and dt_end.
+    &#34;&#34;&#34;
+    if isinstance(dt_start, str):
+        dt_start = str_to_datetime(dt_start)
+    if isinstance(dt_end, str):
+        dt_end = str_to_datetime(dt_end)
+
+    return dt_end - dt_start if dt_end &gt; dt_start else dt_start - dt_end</code></pre>
+</details>
+</dd>
 <dt id="egse.system.env_var"><code class="name flex">
 <span>def <span class="ident">env_var</span></span>(<span>**kwargs)</span>
 </code></dt>
@@ -1591,8 +2037,38 @@ def env_var(**kwargs):
                 del os.environ[k]</code></pre>
 </details>
 </dd>
+<dt id="egse.system.execution_time"><code class="name flex">
+<span>def <span class="ident">execution_time</span></span>(<span>func)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>A decorator to save the execution time of the function. Use this decorator
+if you want —by default and always— have an idea of the average execution time
+of the given function.</p>
+<p>Use this in conjunction with the <code><a title="egse.system.get_average_execution_time" href="#egse.system.get_average_execution_time">get_average_execution_time()</a></code> function to
+retrieve the average execution time for the given function.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def execution_time(func):
+    &#34;&#34;&#34;
+    A decorator to save the execution time of the function. Use this decorator
+    if you want —by default and always— have an idea of the average execution time
+    of the given function.
+
+    Use this in conjunction with the `get_average_execution_time()` function to
+    retrieve the average execution time for the given function.
+    &#34;&#34;&#34;
+
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        return save_average_execution_time(func, *args, **kwargs)
+
+    return wrapper</code></pre>
+</details>
+</dd>
 <dt id="egse.system.filter_by_attr"><code class="name flex">
-<span>def <span class="ident">filter_by_attr</span></span>(<span>elements: Iterable[+T_co], **attrs) ‑> List[~T]</span>
+<span>def <span class="ident">filter_by_attr</span></span>(<span>elements: Iterable, **attrs) ‑> List[~T]</span>
 </code></dt>
 <dd>
 <div class="desc"><p>A helper that returns the elements from the iterable that meet all the traits passed in <code>attrs</code>.</p>
@@ -1689,11 +2165,7 @@ pass in <code>gse__hexapod__ID</code> as the keyword argument.</p>
             value = (operator.eq, value)
         attr_func_values.append((attr.replace(&#34;__&#34;, &#34;.&#34;), *value))
 
-    return [
-        el
-        for el in elements
-        if all(check(attr, func, value, el) for attr, func, value in attr_func_values)
-    ]</code></pre>
+    return [el for el in elements if all(check(attr, func, value, el) for attr, func, value in attr_func_values)]</code></pre>
 </details>
 </dd>
 <dt id="egse.system.find_class"><code class="name flex">
@@ -1847,7 +2319,7 @@ This format string will be used with the <code>strftime()</code> method and shou
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def format_datetime(dt: Union[str,datetime.datetime] = None, fmt: str = None, width: int = 6, precision: int = 3):
+<pre><code class="python">def format_datetime(dt: Union[str, datetime.datetime] = None, fmt: str = None, width: int = 6, precision: int = 3):
     &#34;&#34;&#34;Format a datetime as YYYY-mm-ddTHH:MM:SS.μs+0000.
 
     If the given argument is not timezone aware, the last part, i.e. `+0000` will not be there.
@@ -1918,15 +2390,39 @@ This format string will be used with the <code>strftime()</code> method and shou
 <span>def <span class="ident">get_active_loggers</span></span>(<span>) ‑> dict</span>
 </code></dt>
 <dd>
-<div class="desc"></div>
+<div class="desc"><p>Retrieves information about active loggers and their respective log levels.</p>
+<p>Returns a dictionary where keys are the names of active loggers, and values
+are the corresponding log levels in string format.</p>
+<h2 id="returns">Returns</h2>
+<dl>
+<dt><code>dict</code></dt>
+<dd>A dictionary mapping logger names to their log levels.</dd>
+</dl>
+<h2 id="note">Note</h2>
+<p>This function provides a snapshot of the currently active loggers and
+their log levels at the time of the function call.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def get_active_loggers() -&gt; dict:
+    &#34;&#34;&#34;
+    Retrieves information about active loggers and their respective log levels.
+
+    Returns a dictionary where keys are the names of active loggers, and values
+    are the corresponding log levels in string format.
+
+    Returns:
+        dict: A dictionary mapping logger names to their log levels.
+
+    Note:
+        This function provides a snapshot of the currently active loggers and
+        their log levels at the time of the function call.
+
+    &#34;&#34;&#34;
+
     return {
-        name: logging.getLevelName(logging.getLogger(name).level)
-        for name in sorted(logging.Logger.manager.loggerDict)
+        name: logging.getLevelName(logging.getLogger(name).level) for name in sorted(logging.Logger.manager.loggerDict)
     }</code></pre>
 </details>
 </dd>
@@ -1936,6 +2432,7 @@ This format string will be used with the <code>strftime()</code> method and shou
 <dd>
 <div class="desc"><p>Returns the average execution time of the given function. The function 'func' shall be previously executed using
 the <code><a title="egse.system.save_average_execution_time" href="#egse.system.save_average_execution_time">save_average_execution_time()</a></code> function which remembers the last 100 execution times of the function.
+You can also decorate your function with <code>@execution_time</code> to permanently monitor it.
 The average time is a moving average over the last 100 times. If the function was never called before, 0.0 is
 returned.</p>
 <p>This function can be used when setting a frequency to execute a certain function. When the average execution time
@@ -1949,6 +2446,7 @@ stalled.</p></div>
     &#34;&#34;&#34;
     Returns the average execution time of the given function. The function &#39;func&#39; shall be previously executed using
     the `save_average_execution_time()` function which remembers the last 100 execution times of the function.
+    You can also decorate your function with `@execution_time` to permanently monitor it.
     The average time is a moving average over the last 100 times. If the function was never called before, 0.0 is
     returned.
 
@@ -1957,6 +2455,12 @@ stalled.</p></div>
     stalled.
     &#34;&#34;&#34;
 
+    # If the function was previously wrapped with the `@execution_time` wrapper, we need to get
+    # to the original function object because that&#39;s the one that is saved.
+
+    with contextlib.suppress(AttributeError):
+        func = func.__wrapped__
+
     try:
         d = _function_timing[func]
         return sum(d) / len(d)
@@ -1964,8 +2468,26 @@ stalled.</p></div>
         return 0.0</code></pre>
 </details>
 </dd>
+<dt id="egse.system.get_average_execution_times"><code class="name flex">
+<span>def <span class="ident">get_average_execution_times</span></span>(<span>) ‑> dict</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Returns a dictionary with "function name": average execution time, for all function that have been
+monitored in this process.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_average_execution_times() -&gt; dict:
+    &#34;&#34;&#34;
+    Returns a dictionary with &#34;function name&#34;: average execution time, for all function that have been
+    monitored in this process.
+    &#34;&#34;&#34;
+    return {func.__name__: get_average_execution_time(func) for func in _function_timing}</code></pre>
+</details>
+</dd>
 <dt id="egse.system.get_caller_info"><code class="name flex">
-<span>def <span class="ident">get_caller_info</span></span>(<span>level=1) ‑> <class 'NamedTuple'></span>
+<span>def <span class="ident">get_caller_info</span></span>(<span>level=1) ‑> <a title="egse.system.CallerInfo" href="#egse.system.CallerInfo">CallerInfo</a></span>
 </code></dt>
 <dd>
 <div class="desc"><p>Returns the filename, function name and lineno of the caller.</p>
@@ -1988,7 +2510,7 @@ where the call to <code><a title="egse.system.get_caller_info" href="#egse.syste
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def get_caller_info(level=1) -&gt; NamedTuple:
+<pre><code class="python">def get_caller_info(level=1) -&gt; CallerInfo:
     &#34;&#34;&#34;
     Returns the filename, function name and lineno of the caller.
 
@@ -2011,25 +2533,60 @@ where the call to <code><a title="egse.system.get_caller_info" href="#egse.syste
         frame = frame.f_back
     frame_info = inspect.getframeinfo(frame)
 
-    caller_info = namedtuple(&#34;CallerInfo&#34;, &#34;filename function lineno&#34;)
-
-    return caller_info(frame_info.filename, frame_info.function, frame_info.lineno)</code></pre>
+    return CallerInfo(frame_info.filename, frame_info.function, frame_info.lineno)</code></pre>
 </details>
 </dd>
 <dt id="egse.system.get_full_classname"><code class="name flex">
 <span>def <span class="ident">get_full_classname</span></span>(<span>obj: object) ‑> str</span>
 </code></dt>
 <dd>
-<div class="desc"><p>Returns the fully qualified class name for this object.</p></div>
+<div class="desc"><p>Returns the fully qualified class name for the given object.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>obj</code></strong> :&ensp;<code>object</code></dt>
+<dd>The object for which to retrieve the fully qualified class name.</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<dl>
+<dt><code>str</code></dt>
+<dd>The fully qualified class name, including the module.</dd>
+</dl>
+<h2 id="example">Example</h2>
+<pre><code class="language-python-repl">&gt;&gt;&gt; get_full_classname(&quot;example&quot;)
+'builtins.str'
+</code></pre>
+<pre><code class="language-python-repl">&gt;&gt;&gt; get_full_classname(42)
+'builtins.int'
+</code></pre>
+<h2 id="note">Note</h2>
+<p>The function considers various scenarios, such as objects being classes,
+built-ins, or literals like int, float, or complex numbers.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def get_full_classname(obj: object) -&gt; str:
-    &#34;&#34;&#34;Returns the fully qualified class name for this object.&#34;&#34;&#34;
+    &#34;&#34;&#34;
+    Returns the fully qualified class name for the given object.
 
-    # Take into account that obj might be a class or a builtin or even a
-    # literal like an int or a float or a complex number
+    Args:
+        obj (object): The object for which to retrieve the fully qualified class name.
+
+    Returns:
+        str: The fully qualified class name, including the module.
+
+    Example:
+        &gt;&gt;&gt; get_full_classname(&#34;example&#34;)
+        &#39;builtins.str&#39;
+
+        &gt;&gt;&gt; get_full_classname(42)
+        &#39;builtins.int&#39;
+
+    Note:
+        The function considers various scenarios, such as objects being classes,
+        built-ins, or literals like int, float, or complex numbers.
+
+    &#34;&#34;&#34;
 
     if type(obj) is type or obj.__class__.__module__ == str.__module__:
         try:
@@ -2042,7 +2599,7 @@ where the call to <code><a title="egse.system.get_caller_info" href="#egse.syste
         module = obj.__class__.__module__
         name = obj.__class__.__qualname__
 
-    return module + &#39;.&#39; + name</code></pre>
+    return module + &#34;.&#34; + name</code></pre>
 </details>
 </dd>
 <dt id="egse.system.get_host_ip"><code class="name flex">
@@ -2063,8 +2620,8 @@ where the call to <code><a title="egse.system.get_caller_info" href="#egse.syste
 
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        #sock.connect((&#34;8.8.8.8&#34;, 80))
-        sock.connect((&#39;10.255.255.255&#39;, 1))
+        # sock.connect((&#34;8.8.8.8&#34;, 80))
+        sock.connect((&#34;10.255.255.255&#34;, 1))
         host_ip = sock.getsockname()[0]
         sock.close()
     except Exception as exc:
@@ -2078,8 +2635,81 @@ where the call to <code><a title="egse.system.get_caller_info" href="#egse.syste
         host_name = socket.gethostname()
         host_ip = socket.gethostbyname(host_name)
         return host_ip
-    except (Exception, ):
+    except (Exception,):
         return None</code></pre>
+</details>
+</dd>
+<dt id="egse.system.get_module_location"><code class="name flex">
+<span>def <span class="ident">get_module_location</span></span>(<span>arg) ‑> Optional[pathlib.Path]</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Returns the location of the module as a Path object.</p>
+<p>The function accepts a string (module name), a function, or a module.
+For functions and modules, the module name is determined internally.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>arg</code></strong> :&ensp;<code>Union[FunctionType, ModuleType, str]</code></dt>
+<dd>The function, module, or module name.</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<dl>
+<dt><code>Optional[Path]</code></dt>
+<dd>The location of the module as a Path object, or None if the location</dd>
+</dl>
+<p>cannot be determined or an invalid argument is provided.</p>
+<h2 id="example">Example</h2>
+<pre><code class="language-python-repl">&gt;&gt;&gt; get_module_location('egse')
+Path('/path/to/egse')
+</code></pre>
+<pre><code class="language-python-repl">&gt;&gt;&gt; get_module_location(egse.system)
+Path('/path/to/egse/system')
+</code></pre>
+<h2 id="note">Note</h2>
+<p>If the module is not found or is not a valid module, None is returned.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_module_location(arg) -&gt; Optional[Path]:
+    &#34;&#34;&#34;
+    Returns the location of the module as a Path object.
+
+    The function accepts a string (module name), a function, or a module.
+    For functions and modules, the module name is determined internally.
+
+    Args:
+        arg (Union[FunctionType, ModuleType, str]): The function, module, or module name.
+
+    Returns:
+        Optional[Path]: The location of the module as a Path object, or None if the location
+        cannot be determined or an invalid argument is provided.
+
+    Example:
+        &gt;&gt;&gt; get_module_location(&#39;egse&#39;)
+        Path(&#39;/path/to/egse&#39;)
+
+        &gt;&gt;&gt; get_module_location(egse.system)
+        Path(&#39;/path/to/egse/system&#39;)
+
+    Note:
+        If the module is not found or is not a valid module, None is returned.
+
+    &#34;&#34;&#34;
+    if isinstance(arg, FunctionType):
+        module_name = arg.__module__
+    elif isinstance(arg, ModuleType):
+        module_name = arg.__name__
+    elif isinstance(arg, str):
+        module_name = arg
+    else:
+        return None
+
+    try:
+        module = importlib.import_module(module_name)
+    except TypeError as exc:
+        return None
+
+    return Path(module.__file__).parent.resolve()</code></pre>
 </details>
 </dd>
 <dt id="egse.system.get_os_name"><code class="name flex">
@@ -2157,6 +2787,77 @@ where the call to <code><a title="egse.system.get_caller_info" href="#egse.syste
     return &#34;unknown&#34;</code></pre>
 </details>
 </dd>
+<dt id="egse.system.get_package_location"><code class="name flex">
+<span>def <span class="ident">get_package_location</span></span>(<span>module) ‑> List[pathlib.Path]</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Retrieves the file system locations associated with a Python package.</p>
+<p>This function takes a module, module name, or fully qualified module path,
+and returns a list of Path objects representing the file system locations
+associated with the package. If the module is a namespace package, it returns
+the paths of all namespaces; otherwise, it returns the location of the module.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>module</code></strong> :&ensp;<code>Union[FunctionType, ModuleType, str]</code></dt>
+<dd>The module or module name to
+retrieve locations for.</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<dl>
+<dt><code>List[Path]</code></dt>
+<dd>A list of Path objects representing the file system locations.</dd>
+</dl>
+<h2 id="note">Note</h2>
+<p>If the module is not found or is not a valid module, an empty list is returned.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_package_location(module) -&gt; List[Path]:
+    &#34;&#34;&#34;
+    Retrieves the file system locations associated with a Python package.
+
+    This function takes a module, module name, or fully qualified module path,
+    and returns a list of Path objects representing the file system locations
+    associated with the package. If the module is a namespace package, it returns
+    the paths of all namespaces; otherwise, it returns the location of the module.
+
+    Args:
+        module (Union[FunctionType, ModuleType, str]): The module or module name to
+            retrieve locations for.
+
+    Returns:
+        List[Path]: A list of Path objects representing the file system locations.
+
+    Note:
+        If the module is not found or is not a valid module, an empty list is returned.
+
+    &#34;&#34;&#34;
+
+    if isinstance(module, FunctionType):
+        module_name = module.__module__
+    elif isinstance(module, ModuleType):
+        module_name = module.__name__
+    elif isinstance(module, str):
+        module_name = module
+    else:
+        return []
+
+    try:
+        module = importlib.import_module(module)
+    except TypeError as exc:
+        return []
+
+    if is_namespace(module):
+        return [
+            Path(location)
+            for location in module.__path__
+        ]
+    else:
+        location = get_module_location(module)
+        return [] if location is None else [location]</code></pre>
+</details>
+</dd>
 <dt id="egse.system.get_referenced_var_name"><code class="name flex">
 <span>def <span class="ident">get_referenced_var_name</span></span>(<span>obj: Any) ‑> List[str]</span>
 </code></dt>
@@ -2192,6 +2893,26 @@ The names can be both in the local and global namespace of the object.</p>
         f_locals = frame.f_back.f_locals
     name_set = [k for k, v in {**f_locals, **f_globals}.items() if v is obj]
     return name_set or []</code></pre>
+</details>
+</dd>
+<dt id="egse.system.get_system_architecture"><code class="name flex">
+<span>def <span class="ident">get_system_architecture</span></span>(<span>) ‑> str</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Returns the machine type. This is a string describing the processor architecture,
+like i386 or arm64, but the exact string is not defined. An empty string can be returned when
+the type cannot be determined.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_system_architecture() -&gt; str:
+    &#34;&#34;&#34;
+    Returns the machine type. This is a string describing the processor architecture,
+    like i386 or arm64, but the exact string is not defined. An empty string can be returned when
+    the type cannot be determined.
+    &#34;&#34;&#34;
+    return platform.machine()</code></pre>
 </details>
 </dd>
 <dt id="egse.system.get_system_name"><code class="name flex">
@@ -2290,9 +3011,9 @@ into swap. This is calculated by summing different memory values depending on th
 
     boot_time = psutil.boot_time()
     statistics[&#34;boot_time&#34;] = boot_time
-    statistics[&#34;since&#34;] = datetime.datetime.fromtimestamp(
-        boot_time, tz=datetime.timezone.utc
-    ).strftime(&#34;%Y-%m-%d %H:%M:%S&#34;)
+    statistics[&#34;since&#34;] = datetime.datetime.fromtimestamp(boot_time, tz=datetime.timezone.utc).strftime(
+        &#34;%Y-%m-%d %H:%M:%S&#34;
+    )
 
     return statistics</code></pre>
 </details>
@@ -2350,7 +3071,7 @@ Service: domain (DNS/TCP)</p>
 </details>
 </dd>
 <dt id="egse.system.humanize_seconds"><code class="name flex">
-<span>def <span class="ident">humanize_seconds</span></span>(<span>seconds: float)</span>
+<span>def <span class="ident">humanize_seconds</span></span>(<span>seconds: float, include_micro_seconds: bool = True)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>The number of seconds is represented as "[#D]d [#H]h[#M]m[#S]s.MS" where:</p>
@@ -2368,6 +3089,8 @@ Service: domain (DNS/TCP)</p>
 '10d 00s.000'
 &gt;&gt;&gt; humanize_seconds(10*86400 + 3*3600 + 42.023)
 '10d 03h00m42s.023'
+&gt;&gt;&gt; humanize_seconds(10*86400 + 3*3600 + 42.023, include_micro_seconds=False)
+'10d 03h00m42s'
 </code></pre>
 <h2 id="returns">Returns</h2>
 <p>a string representation for the number of seconds.</p></div>
@@ -2375,7 +3098,7 @@ Service: domain (DNS/TCP)</p>
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def humanize_seconds(seconds: float):
+<pre><code class="python">def humanize_seconds(seconds: float, include_micro_seconds: bool = True):
     &#34;&#34;&#34;
     The number of seconds is represented as &#34;[#D]d [#H]h[#M]m[#S]s.MS&#34; where:
 
@@ -2392,6 +3115,8 @@ Service: domain (DNS/TCP)</p>
         &#39;10d 00s.000&#39;
         &gt;&gt;&gt; humanize_seconds(10*86400 + 3*3600 + 42.023)
         &#39;10d 03h00m42s.023&#39;
+        &gt;&gt;&gt; humanize_seconds(10*86400 + 3*3600 + 42.023, include_micro_seconds=False)
+        &#39;10d 03h00m42s&#39;
 
     Returns:
          a string representation for the number of seconds.
@@ -2421,7 +3146,8 @@ Service: domain (DNS/TCP)</p>
         result += f&#34;{minutes:02d}m&#34;
 
     result += f&#34;{seconds:02d}s&#34;
-    result += f&#34;.{micro_seconds:03d}&#34;
+    if include_micro_seconds:
+        result += f&#34;.{micro_seconds:03d}&#34;
 
     return result</code></pre>
 </details>
@@ -2432,7 +3158,7 @@ Service: domain (DNS/TCP)</p>
 <dd>
 <div class="desc"><p>Ignore RuntimeWarning by <code>runpy</code> that occurs when executing a module with <code>python -m package.module</code>,
 while that module is also imported.</p>
-<p>The original warning mssage is:</p>
+<p>The original warning message is:</p>
 <pre><code>'&lt;package.module&gt;' found in sys.modules after import of package '&lt;package'&gt;,
 but prior to execution of '&lt;package.module&gt;'
 </code></pre></div>
@@ -2445,7 +3171,7 @@ but prior to execution of '&lt;package.module&gt;'
     Ignore RuntimeWarning by `runpy` that occurs when executing a module with `python -m package.module`,
     while that module is also imported.
 
-    The original warning mssage is:
+    The original warning message is:
 
         &#39;&lt;package.module&gt;&#39; found in sys.modules after import of package &#39;&lt;package&#39;&gt;,
         but prior to execution of &#39;&lt;package.module&gt;&#39;
@@ -2460,7 +3186,7 @@ but prior to execution of '&lt;package.module&gt;'
         msg = &#34;&#39;{module}&#39; found in sys.modules after import of package&#34;
         for module in modules:
             module_msg = re.escape(msg.format(module=module))
-            warnings.filterwarnings(&#34;ignore&#34;, message=module_msg, category=RuntimeWarning, module=&#39;runpy&#39;)  # ignore -m
+            warnings.filterwarnings(&#34;ignore&#34;, message=module_msg, category=RuntimeWarning, module=&#34;runpy&#34;)  # ignore -m
     except (ImportError, KeyError, AttributeError, Exception):
         pass</code></pre>
 </details>
@@ -2493,6 +3219,57 @@ but prior to execution of '&lt;package.module&gt;'
     return hasattr(builtins, &#34;__IPYTHON__&#34;)</code></pre>
 </details>
 </dd>
+<dt id="egse.system.is_namespace"><code class="name flex">
+<span>def <span class="ident">is_namespace</span></span>(<span>module) ‑> bool</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Checks if a module represents a namespace package.</p>
+<p>A namespace package is defined as a module that has a '<strong>path</strong>' attribute
+and no '<strong>file</strong>' attribute.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>module</code></strong></dt>
+<dd>The module to be checked.</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<dl>
+<dt><code>bool</code></dt>
+<dd>True if the module is a namespace package, False otherwise.</dd>
+</dl>
+<h2 id="note">Note</h2>
+<p>A namespace package is a special kind of package that does not contain
+an actual implementation but serves as a container for other packages
+or modules.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def is_namespace(module) -&gt; bool:
+    &#34;&#34;&#34;
+    Checks if a module represents a namespace package.
+
+    A namespace package is defined as a module that has a &#39;__path__&#39; attribute
+    and no &#39;__file__&#39; attribute.
+
+    Args:
+        module: The module to be checked.
+
+    Returns:
+        bool: True if the module is a namespace package, False otherwise.
+
+    Note:
+        A namespace package is a special kind of package that does not contain
+        an actual implementation but serves as a container for other packages
+        or modules.
+
+    &#34;&#34;&#34;
+
+    if hasattr(module, &#39;__path__&#39;) and getattr(module, &#39;__file__&#39;, None) is None:
+        return True
+    else:
+        return False</code></pre>
+</details>
+</dd>
 <dt id="egse.system.is_not_in"><code class="name flex">
 <span>def <span class="ident">is_not_in</span></span>(<span>a, b)</span>
 </code></dt>
@@ -2505,6 +3282,23 @@ but prior to execution of '&lt;package.module&gt;'
 <pre><code class="python">def is_not_in(a, b):
     &#34;&#34;&#34;Returns result of `a not in b`.&#34;&#34;&#34;
     return a not in b</code></pre>
+</details>
+</dd>
+<dt id="egse.system.now"><code class="name flex">
+<span>def <span class="ident">now</span></span>(<span>utc: bool = True)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Returns a datetime object for the current time in UTC or local time.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def now(utc: bool = True):
+    &#34;&#34;&#34;Returns a datetime object for the current time in UTC or local time.&#34;&#34;&#34;
+    if utc:
+        return datetime.datetime.now(tz=datetime.timezone.utc)
+    else:
+        return datetime.datetime.now()</code></pre>
 </details>
 </dd>
 <dt id="egse.system.ping"><code class="name flex">
@@ -2595,7 +3389,6 @@ when the file is empty, <code>None</code> is returned when the file doesn't exis
     filename = Path(filename)
 
     if not filename.exists():
-
         return None
 
     with filename.open(&#34;rb&#34;) as file:
@@ -2624,7 +3417,7 @@ Returns: Last lines of a text file.</li>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def read_last_lines(filename: str, num_lines: int):
-    &#34;&#34;&#34; Return the last lines of a text file.
+    &#34;&#34;&#34;Return the last lines of a text file.
 
     Args:
         - filename: Filename.
@@ -2641,7 +3434,6 @@ Returns: Last lines of a text file.</li>
     assert num_lines &gt; 1
 
     if not filename.exists():
-
         return None
 
     assert num_lines &gt;= 0
@@ -2655,20 +3447,15 @@ Returns: Last lines of a text file.</li>
     lines = []
 
     with open(filename) as f:
-
         while len(lines) &lt;= num_lines:
-
             try:
-
                 f.seek(-pos, 2)
 
             except IOError:
-
                 f.seek(0)
                 break
 
             finally:
-
                 lines = list(f)
 
             # Increasing value of variable exponentially
@@ -2809,17 +3596,54 @@ doesn't exists.</p></div>
 <span>def <span class="ident">sanity_check</span></span>(<span>flag: bool, msg: str)</span>
 </code></dt>
 <dd>
-<div class="desc"><p>This is a replacement for the 'assert' statement. Use this in production code
-such that your checks are not removed during optimisations.</p></div>
+<div class="desc"><p>Checks a boolean flag and raises an AssertionError with the provided message if the check fails.</p>
+<p>This function serves as a replacement for the 'assert' statement in production code.
+Using this ensures that your checks are not removed during optimizations.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>flag</code></strong> :&ensp;<code>bool</code></dt>
+<dd>The boolean flag to be checked.</dd>
+<dt><strong><code>msg</code></strong> :&ensp;<code>str</code></dt>
+<dd>The message to be included in the AssertionError if the check fails.</dd>
+</dl>
+<h2 id="raises">Raises</h2>
+<dl>
+<dt><code>AssertionError</code></dt>
+<dd>If the flag is False.</dd>
+</dl>
+<h2 id="example">Example</h2>
+<pre><code class="language-python-repl">&gt;&gt;&gt; sanity_check(x &gt; 0, &quot;x must be greater than 0&quot;)
+</code></pre>
+<h2 id="note">Note</h2>
+<p>This function is designed for production code to perform runtime checks
+that won't be removed during optimizations.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def sanity_check(flag: bool, msg: str):
     &#34;&#34;&#34;
-    This is a replacement for the &#39;assert&#39; statement. Use this in production code
-    such that your checks are not removed during optimisations.
+    Checks a boolean flag and raises an AssertionError with the provided message if the check fails.
+
+    This function serves as a replacement for the &#39;assert&#39; statement in production code.
+    Using this ensures that your checks are not removed during optimizations.
+
+    Args:
+        flag (bool): The boolean flag to be checked.
+        msg (str): The message to be included in the AssertionError if the check fails.
+
+    Raises:
+        AssertionError: If the flag is False.
+
+    Example:
+        &gt;&gt;&gt; sanity_check(x &gt; 0, &#34;x must be greater than 0&#34;)
+
+    Note:
+        This function is designed for production code to perform runtime checks
+        that won&#39;t be removed during optimizations.
+
     &#34;&#34;&#34;
+
     if not flag:
         raise AssertionError(msg)</code></pre>
 </details>
@@ -2870,7 +3694,7 @@ Returns: Datetime object.</li>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def str_to_datetime(datetime_string: str):
-    &#34;&#34;&#34; Convert the given string to a datetime object.
+    &#34;&#34;&#34;Convert the given string to a datetime object.
 
     Args:
         - datatime_string: String representing a datetime, in the format %Y-%m-%dT%H:%M:%S.%f%z.
@@ -2896,7 +3720,7 @@ Returns: Time since the 1958 epoch [s].</li>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def time_since_epoch_1958(datetime_string: str):
-    &#34;&#34;&#34; Calculate the time since epoch 1958 for the given string representation of a datetime.
+    &#34;&#34;&#34;Calculate the time since epoch 1958 for the given string representation of a datetime.
 
     Args:
         - datetime_string: String representing a datetime, in the format %Y-%m-%dT%H:%M:%S.%f%z.
@@ -2904,7 +3728,7 @@ Returns: Time since the 1958 epoch [s].</li>
     Returns: Time since the 1958 epoch [s].
     &#34;&#34;&#34;
 
-    time_since_epoch_1970 = str_to_datetime(datetime_string).timestamp()        # Since Jan 1st, 1970, midnight
+    time_since_epoch_1970 = str_to_datetime(datetime_string).timestamp()  # Since Jan 1st, 1970, midnight
 
     return time_since_epoch_1970 + EPOCH_1958_1970</code></pre>
 </details>
@@ -2919,7 +3743,7 @@ Returns: Time since the 1958 epoch [s].</li>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def type_name(var):
-    &#34;&#34;&#34; Returns the name of the type of var.&#34;&#34;&#34;
+    &#34;&#34;&#34;Returns the name of the type of var.&#34;&#34;&#34;
     return type(var).__name__</code></pre>
 </details>
 </dd>
@@ -3020,8 +3844,106 @@ not met [s, default=1]</dd>
     return False</code></pre>
 </details>
 </dd>
+<dt id="egse.system.waiting_for"><code class="name flex">
+<span>def <span class="ident">waiting_for</span></span>(<span>condition, *args, interval=0.1, timeout=1, verbose=False, **kwargs)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Sleep until the given condition is fulfilled. The arguments are passed into the condition
+callable which is called in a while loop until the condition is met or the timeout is reached.</p>
+<p>Note that the condition can be a function, method or callable class object.
+An example of the latter is:</p>
+<pre><code>class SleepUntilCount:
+    def __init__(self, end):
+        self._end = end
+        self._count = 0
+
+    def __call__(self, *args, **kwargs):
+        self._count += 1
+        if self._count &gt;= self._end:
+            return True
+        else:
+            return False
+</code></pre>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>condition</code></strong></dt>
+<dd>a callable that returns True when the condition is met, False otherwise</dd>
+<dt><strong><code>interval</code></strong></dt>
+<dd>the sleep interval between condition checks [s, default=0.1]</dd>
+<dt><strong><code>timeout</code></strong></dt>
+<dd>the period after which the function returns, even when the condition is
+not met [s, default=1]</dd>
+<dt><strong><code>verbose</code></strong></dt>
+<dd>log debugging messages if True</dd>
+<dt><strong><code>*args</code></strong></dt>
+<dd>any arguments that will be passed into the condition function</dd>
+</dl>
+<h2 id="raises">Raises</h2>
+<p>A TimeoutError when the condition was not fulfilled within the timeout period.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def waiting_for(condition, *args, interval=0.1, timeout=1, verbose=False, **kwargs):
+    &#34;&#34;&#34;
+    Sleep until the given condition is fulfilled. The arguments are passed into the condition
+    callable which is called in a while loop until the condition is met or the timeout is reached.
+
+    Note that the condition can be a function, method or callable class object.
+    An example of the latter is:
+
+        class SleepUntilCount:
+            def __init__(self, end):
+                self._end = end
+                self._count = 0
+
+            def __call__(self, *args, **kwargs):
+                self._count += 1
+                if self._count &gt;= self._end:
+                    return True
+                else:
+                    return False
+
+
+    Args:
+        condition: a callable that returns True when the condition is met, False otherwise
+        interval: the sleep interval between condition checks [s, default=0.1]
+        timeout: the period after which the function returns, even when the condition is
+            not met [s, default=1]
+        verbose: log debugging messages if True
+        *args: any arguments that will be passed into the condition function
+
+    Raises:
+        A TimeoutError when the condition was not fulfilled within the timeout period.
+    &#34;&#34;&#34;
+
+    if inspect.isfunction(condition) or inspect.ismethod(condition):
+        func_name = condition.__name__
+    else:
+        func_name = condition.__class__.__name__
+
+    caller = get_caller_info(level=2)
+
+    start = time.time()
+
+    while not condition(*args, **kwargs):
+        if time.time() - start &gt; timeout:
+            raise TimeoutError(
+                f&#34;Timeout after {timeout} sec, from {caller.filename} at {caller.lineno},&#34;
+                f&#34; {func_name}{args} not met.&#34;
+            )
+        time.sleep(interval)
+
+    duration = time.time() - start
+
+    if verbose:
+        logger.debug(f&#34;waiting_for finished successfully after {duration:.3f}s, {func_name}{args}{kwargs} is met.&#34;)
+
+    return duration</code></pre>
+</details>
+</dd>
 <dt id="egse.system.walk_dict_tree"><code class="name flex">
-<span>def <span class="ident">walk_dict_tree</span></span>(<span>dictionary: dict, tree: rich.tree.Tree, text_style: str = 'green')</span>
+<span>def <span class="ident">walk_dict_tree</span></span>(<span>dictionary: dict, tree: Tree, text_style: str = 'green')</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -3104,7 +4026,6 @@ that all keys in the dictionary are also accessible as instance attributes.</p>
         return tree
 
     def __repr__(self):
-
         # We only want the first 10 key:value pairs
 
         count = 10
@@ -3119,6 +4040,32 @@ that all keys in the dictionary are also accessible as instance attributes.</p>
 <li>builtins.dict</li>
 </ul>
 </dd>
+<dt id="egse.system.CallerInfo"><code class="flex name class">
+<span>class <span class="ident">CallerInfo</span></span>
+<span>(</span><span>filename, function, lineno)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>CallerInfo(filename, function, lineno)</p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>builtins.tuple</li>
+</ul>
+<h3>Instance variables</h3>
+<dl>
+<dt id="egse.system.CallerInfo.filename"><code class="name">var <span class="ident">filename</span></code></dt>
+<dd>
+<div class="desc"><p>Alias for field number 0</p></div>
+</dd>
+<dt id="egse.system.CallerInfo.function"><code class="name">var <span class="ident">function</span></code></dt>
+<dd>
+<div class="desc"><p>Alias for field number 1</p></div>
+</dd>
+<dt id="egse.system.CallerInfo.lineno"><code class="name">var <span class="ident">lineno</span></code></dt>
+<dd>
+<div class="desc"><p>Alias for field number 2</p></div>
+</dd>
+</dl>
+</dd>
 <dt id="egse.system.NotSpecified"><code class="flex name class">
 <span>class <span class="ident">NotSpecified</span></span>
 </code></dt>
@@ -3131,19 +4078,18 @@ Is used so that a parameter can have a default value other than None.</p>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">class NotSpecified:
-    &#34;&#34;&#34; Class for NOT_SPECIFIED constant.
-        Is used so that a parameter can have a default value other than None.
+    &#34;&#34;&#34;Class for NOT_SPECIFIED constant.
+    Is used so that a parameter can have a default value other than None.
 
-        Evaluate to False when converted to boolean.
+    Evaluate to False when converted to boolean.
     &#34;&#34;&#34;
+
     def __nonzero__(self):
-        &#34;&#34;&#34; Always returns False. Called when to converting to bool in Python 2.
-        &#34;&#34;&#34;
+        &#34;&#34;&#34;Always returns False. Called when to converting to bool in Python 2.&#34;&#34;&#34;
         return False
 
     def __bool__(self):
-        &#34;&#34;&#34; Always returns False. Called when to converting to bool in Python 3.
-        &#34;&#34;&#34;
+        &#34;&#34;&#34;Always returns False. Called when to converting to bool in Python 3.&#34;&#34;&#34;
         return False</code></pre>
 </details>
 </dd>
@@ -3362,6 +4308,10 @@ Elapsed seconds: ...
         self.name = name
         self.precision = precision
         self.log_level = log_level
+        caller_info = get_caller_info(level=2)
+        self.filename = caller_info.filename
+        self.func = caller_info.function
+        self.lineno = caller_info.lineno
 
     def __enter__(self):
         # start is a value containing the start time in fractional seconds
@@ -3377,8 +4327,8 @@ Elapsed seconds: ...
         # Overwrite self.end() so that it always returns the fixed end time
         self.end = self._end
 
-        logger.log(self.log_level,
-                   f&#34;{self.name}: {self.end() - self.start:0.{self.precision}f} seconds&#34;)
+        logger.log(self.log_level, f&#34;{self.name} [{self.filename}:{self.func}:{self.lineno}]: &#34;
+                                   f&#34;{self.end() - self.start:0.{self.precision}f} seconds&#34;)
         return False
 
     def __call__(self):
@@ -3386,8 +4336,8 @@ Elapsed seconds: ...
 
     def log_elapsed(self):
         &#34;&#34;&#34;Sends the elapsed time info to the default logger.&#34;&#34;&#34;
-        logger.log(self.log_level,
-                   f&#34;{self.name}: {self.end() - self.start:0.{self.precision}f} seconds elapsed&#34;)
+        logger.log(self.log_level, f&#34;{self.name} [{self.func}:{self.lineno}]: &#34;
+                                   f&#34;{self.end() - self.start:0.{self.precision}f} seconds elapsed&#34;)
 
     def get_elapsed(self) -&gt; float:
         &#34;&#34;&#34;Returns the elapsed time for this timer as a float in seconds.&#34;&#34;&#34;
@@ -3423,8 +4373,8 @@ Elapsed seconds: ...
 </summary>
 <pre><code class="python">def log_elapsed(self):
     &#34;&#34;&#34;Sends the elapsed time info to the default logger.&#34;&#34;&#34;
-    logger.log(self.log_level,
-               f&#34;{self.name}: {self.end() - self.start:0.{self.precision}f} seconds elapsed&#34;)</code></pre>
+    logger.log(self.log_level, f&#34;{self.name} [{self.func}:{self.lineno}]: &#34;
+                               f&#34;{self.end() - self.start:0.{self.precision}f} seconds elapsed&#34;)</code></pre>
 </details>
 </dd>
 </dl>
@@ -3450,20 +4400,27 @@ Elapsed seconds: ...
 <li><code><a title="egse.system.check_argument_type" href="#egse.system.check_argument_type">check_argument_type</a></code></li>
 <li><code><a title="egse.system.check_is_a_string" href="#egse.system.check_is_a_string">check_is_a_string</a></code></li>
 <li><code><a title="egse.system.check_str_for_slash" href="#egse.system.check_str_for_slash">check_str_for_slash</a></code></li>
+<li><code><a title="egse.system.clear_average_execution_times" href="#egse.system.clear_average_execution_times">clear_average_execution_times</a></code></li>
 <li><code><a title="egse.system.do_every" href="#egse.system.do_every">do_every</a></code></li>
+<li><code><a title="egse.system.duration" href="#egse.system.duration">duration</a></code></li>
 <li><code><a title="egse.system.env_var" href="#egse.system.env_var">env_var</a></code></li>
+<li><code><a title="egse.system.execution_time" href="#egse.system.execution_time">execution_time</a></code></li>
 <li><code><a title="egse.system.filter_by_attr" href="#egse.system.filter_by_attr">filter_by_attr</a></code></li>
 <li><code><a title="egse.system.find_class" href="#egse.system.find_class">find_class</a></code></li>
 <li><code><a title="egse.system.flatten_dict" href="#egse.system.flatten_dict">flatten_dict</a></code></li>
 <li><code><a title="egse.system.format_datetime" href="#egse.system.format_datetime">format_datetime</a></code></li>
 <li><code><a title="egse.system.get_active_loggers" href="#egse.system.get_active_loggers">get_active_loggers</a></code></li>
 <li><code><a title="egse.system.get_average_execution_time" href="#egse.system.get_average_execution_time">get_average_execution_time</a></code></li>
+<li><code><a title="egse.system.get_average_execution_times" href="#egse.system.get_average_execution_times">get_average_execution_times</a></code></li>
 <li><code><a title="egse.system.get_caller_info" href="#egse.system.get_caller_info">get_caller_info</a></code></li>
 <li><code><a title="egse.system.get_full_classname" href="#egse.system.get_full_classname">get_full_classname</a></code></li>
 <li><code><a title="egse.system.get_host_ip" href="#egse.system.get_host_ip">get_host_ip</a></code></li>
+<li><code><a title="egse.system.get_module_location" href="#egse.system.get_module_location">get_module_location</a></code></li>
 <li><code><a title="egse.system.get_os_name" href="#egse.system.get_os_name">get_os_name</a></code></li>
 <li><code><a title="egse.system.get_os_version" href="#egse.system.get_os_version">get_os_version</a></code></li>
+<li><code><a title="egse.system.get_package_location" href="#egse.system.get_package_location">get_package_location</a></code></li>
 <li><code><a title="egse.system.get_referenced_var_name" href="#egse.system.get_referenced_var_name">get_referenced_var_name</a></code></li>
+<li><code><a title="egse.system.get_system_architecture" href="#egse.system.get_system_architecture">get_system_architecture</a></code></li>
 <li><code><a title="egse.system.get_system_name" href="#egse.system.get_system_name">get_system_name</a></code></li>
 <li><code><a title="egse.system.get_system_stats" href="#egse.system.get_system_stats">get_system_stats</a></code></li>
 <li><code><a title="egse.system.has_internet" href="#egse.system.has_internet">has_internet</a></code></li>
@@ -3471,7 +4428,9 @@ Elapsed seconds: ...
 <li><code><a title="egse.system.ignore_m_warning" href="#egse.system.ignore_m_warning">ignore_m_warning</a></code></li>
 <li><code><a title="egse.system.is_in" href="#egse.system.is_in">is_in</a></code></li>
 <li><code><a title="egse.system.is_in_ipython" href="#egse.system.is_in_ipython">is_in_ipython</a></code></li>
+<li><code><a title="egse.system.is_namespace" href="#egse.system.is_namespace">is_namespace</a></code></li>
 <li><code><a title="egse.system.is_not_in" href="#egse.system.is_not_in">is_not_in</a></code></li>
+<li><code><a title="egse.system.now" href="#egse.system.now">now</a></code></li>
 <li><code><a title="egse.system.ping" href="#egse.system.ping">ping</a></code></li>
 <li><code><a title="egse.system.read_last_line" href="#egse.system.read_last_line">read_last_line</a></code></li>
 <li><code><a title="egse.system.read_last_lines" href="#egse.system.read_last_lines">read_last_lines</a></code></li>
@@ -3483,6 +4442,7 @@ Elapsed seconds: ...
 <li><code><a title="egse.system.time_since_epoch_1958" href="#egse.system.time_since_epoch_1958">time_since_epoch_1958</a></code></li>
 <li><code><a title="egse.system.type_name" href="#egse.system.type_name">type_name</a></code></li>
 <li><code><a title="egse.system.wait_until" href="#egse.system.wait_until">wait_until</a></code></li>
+<li><code><a title="egse.system.waiting_for" href="#egse.system.waiting_for">waiting_for</a></code></li>
 <li><code><a title="egse.system.walk_dict_tree" href="#egse.system.walk_dict_tree">walk_dict_tree</a></code></li>
 </ul>
 </li>
@@ -3490,6 +4450,14 @@ Elapsed seconds: ...
 <ul>
 <li>
 <h4><code><a title="egse.system.AttributeDict" href="#egse.system.AttributeDict">AttributeDict</a></code></h4>
+</li>
+<li>
+<h4><code><a title="egse.system.CallerInfo" href="#egse.system.CallerInfo">CallerInfo</a></code></h4>
+<ul class="">
+<li><code><a title="egse.system.CallerInfo.filename" href="#egse.system.CallerInfo.filename">filename</a></code></li>
+<li><code><a title="egse.system.CallerInfo.function" href="#egse.system.CallerInfo.function">function</a></code></li>
+<li><code><a title="egse.system.CallerInfo.lineno" href="#egse.system.CallerInfo.lineno">lineno</a></code></li>
+</ul>
 </li>
 <li>
 <h4><code><a title="egse.system.NotSpecified" href="#egse.system.NotSpecified">NotSpecified</a></code></h4>

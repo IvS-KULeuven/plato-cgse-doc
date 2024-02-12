@@ -36,15 +36,11 @@ import zmq
 
 from egse.control import ControlServer
 from egse.protocol import CommandProtocol
-from egse.settings import Settings
-from egse.storage.persistence import CSV
 from egse.system import format_datetime
 from egse.zmq import MessageIdentifier
 from egse.zmq_ser import bind_address
 
-logging.basicConfig(level=logging.INFO, format= Settings.LOG_FORMAT_FULL)
-logger = logging.getLogger(&#34;monitoring&#34;)
-
+logger = logging.getLogger(&#34;egse.monitoring&#34;)
 
 class MonitoringProtocol(CommandProtocol):
     def __init__(self, control_server: ControlServer):
@@ -68,17 +64,15 @@ class MonitoringProtocol(CommandProtocol):
         }
 
 
-@click.group()
-def cli():
-    pass
 
-
-@cli.command()
+@click.command()
 @click.argument(&#39;hostname&#39;)
 @click.argument(&#39;port&#39;)
-@click.option(&#39;--subscribe&#39;, &#39;-s&#39;, default=&#39;ALL&#39;, help=&#34;subscribe to a sync identifier&#34;)
+@click.option(&#39;--subscribe&#39;, &#39;-s&#39;, default=(&#39;ALL&#39;,), multiple=True,
+              help=&#34;subscribe to a sync identifier, can appear multiple times&#34;)
 @click.option(&#39;--multipart&#39;, &#39;-m&#39;, is_flag=True, default=False, help=&#34;use multipart messages&#34;)
-def monitoring(hostname: str, port: int, subscribe: str, multipart: bool):
+@click.option(&#39;--pickle/--no-pickle&#39;, &#39;use_pickle&#39;, default=True)
+def monitoring(hostname: str, port: int, subscribe: str, multipart: bool, use_pickle: bool):
     &#34;&#34;&#34;Monitor the status of a control server on hostname:port.
 
     The port number shall correspond to the port number on which the control server is publishing
@@ -89,44 +83,44 @@ def monitoring(hostname: str, port: int, subscribe: str, multipart: bool):
     receiver = context.socket(zmq.SUB)
     receiver.connect(f&#34;tcp://{hostname}:{port}&#34;)
 
-    sync_id = 0
-    try:
-        sync_id = MessageIdentifier[subscribe.upper()]
-    except KeyError:
-        rich.print(f&#34;[red]ERROR: incorrect subscribe identifier, &#34;
-                   f&#34;use one of {[x.name for x in MessageIdentifier]}&#34;)
-        ctx = click.get_current_context()
-        rich.print(ctx.get_help())
-        ctx.exit()
+    for item in subscribe:
+        sync_id = 0
+        try:
+            sync_id = MessageIdentifier[item.upper()]
+        except KeyError:
+            rich.print(f&#34;[red]ERROR: incorrect subscribe identifier, &#34;
+                       f&#34;use one of {[x.name for x in MessageIdentifier]}&#34;)
+            ctx = click.get_current_context()
+            rich.print(ctx.get_help())
+            ctx.exit()
 
-    if sync_id == MessageIdentifier.ALL:
-        subscribe_string = b&#39;&#39;
-    else:
-        subscribe_string = sync_id.to_bytes(1, byteorder=&#39;big&#39;)
+        if sync_id == MessageIdentifier.ALL:
+            subscribe_string = b&#39;&#39;
+        else:
+            subscribe_string = sync_id.to_bytes(1, byteorder=&#39;big&#39;)
 
-    receiver.subscribe(subscribe_string)
+        receiver.subscribe(subscribe_string)
 
-    with CSV(filename=f&#34;monitoring-{format_datetime()}-{port}.csv&#34;,
-             prep={&#34;column_names&#34;: [&#34;timestamp&#34;, &#34;Up&#34;, &#34;RSS&#34;, &#34;USS&#34;], &#34;mode&#34;: &#39;w&#39;}) as csv:
-        while True:
-            try:
-                if multipart:
-                    sync_id, pickle_string = receiver.recv_multipart()
-                    sync_id = int.from_bytes(sync_id, byteorder=&#39;big&#39;)
-                else:
-                    sync_id = MessageIdentifier.ALL
-                    pickle_string = receiver.recv()
-                status = pickle.loads(pickle_string)
-                logger.debug(f&#34;{MessageIdentifier(sync_id).name}, {status}&#34;)
-                csv.create(status)
-            except KeyboardInterrupt:
-                logger.info(&#34;KeyboardInterrupt caught!&#34;)
-                break
+    while True:
+        try:
+            if multipart:
+                sync_id, message = receiver.recv_multipart()
+                sync_id = int.from_bytes(sync_id, byteorder=&#39;big&#39;)
+            else:
+                sync_id = MessageIdentifier.ALL
+                message = receiver.recv()
+            response = pickle.loads(message) if use_pickle else message
+            rich.print(f&#34;{MessageIdentifier(sync_id).name}, {response}&#34;, flush=True)
+        except KeyboardInterrupt:
+            logger.info(&#34;KeyboardInterrupt caught!&#34;)
+            break
 
+    receiver.close(linger=0)
+    context.term()
 
 if __name__ == &#34;__main__&#34;:
     multiprocessing.current_process().name = &#34;Monitoring&#34;
-    cli()</code></pre>
+    monitoring()</code></pre>
 </details>
 </section>
 <section>

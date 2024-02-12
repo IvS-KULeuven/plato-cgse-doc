@@ -88,31 +88,22 @@ the Structure class provided by ctypes.
 import ctypes
 import logging
 import time
+import typing
 from contextlib import contextmanager
-from ctypes import POINTER
-from ctypes import Structure
 from ctypes import c_char_p
 from ctypes import c_int
-from ctypes import c_size_t
-from ctypes import c_ssize_t
-from ctypes import c_uint32
-from ctypes import c_uint64
-from ctypes import c_uint8
-from ctypes import c_void_p
-from ctypes import c_void_p as c_int_p
-from ctypes import cdll
-from pathlib import Path
 from typing import Tuple
 
-from egse.config import find_file
+import egse
 from egse.dsi import constants
 from egse.dsi.constants import esl_error_codes
 from egse.dsi.constants import esl_extension_codes
+from egse.dsi.constants import esl_link_mode
 from egse.dsi.constants import esl_terminator_codes
 from egse.settings import Settings
-from egse.spw import HousekeepingPacket
-from egse.system import get_os_name
-from egse.system import get_os_version
+
+if typing.TYPE_CHECKING:
+    from egse.dsi._libesl import ESL
 
 logger = logging.getLogger(__name__)
 
@@ -123,115 +114,12 @@ dsi_settings = Settings.load(&#34;DSI&#34;)
 rx_buffer = ctypes.create_string_buffer(dsi_settings.RX_BUFFER_LENGTH)
 tx_buffer = ctypes.create_string_buffer(dsi_settings.TX_BUFFER_LENGTH)
 
-# Depending on the OS, and the OS version, we load the dynamic library from a specific location
-# Only some OS/OS-version combinations are supported.
-if get_os_name() == &#39;macos&#39;:
-    in_dir = &#39;lib/macOS&#39;
-elif get_os_name() == &#39;debian&#39;:
-    in_dir = &#39;lib/Debian&#39;
-elif get_os_name() == &#39;centos&#39;:
-    in_dir = &#39;lib/CentOS-7&#39; if get_os_version().startswith(&#39;7&#39;) else &#39;lib/CentOS-8&#39;
-elif get_os_name() == &#39;ubuntu&#39;:
-    in_dir = &#39;lib/Ubuntu-20&#39; if get_os_version().startswith(&#39;20&#39;) else &#39;lib/Linux&#39;
-else:
-    in_dir = None
-
-dylib_filename = Path(dsi_settings.ESL_DYLIB_FILENAME)
-
-logger.debug(f&#34;Locating shared library {dylib_filename} in dir &#39;{in_dir}&#39;&#34;)
-
-dylib_filename = find_file(dylib_filename, in_dir=in_dir)
-
-logger.debug(f&#34;Loading shared library: {dylib_filename}&#34;)
-
-if not dylib_filename:
-    raise FileNotFoundError(f&#34;Could not find dynamic library: {dylib_filename}&#34;)
-libesl = cdll.LoadLibrary(dylib_filename)
-
-
-class ESL(Structure):
-    _fields_ = [
-        (&#34;sock&#34;, c_int),
-        (&#34;tx_buffer&#34;, c_char_p),
-        (&#34;tx_buffer_length&#34;, c_size_t),
-        (&#34;tx_buffer_content&#34;, c_size_t),
-        (&#34;rx_buffer&#34;, c_char_p),
-        (&#34;rx_buffer_length&#34;, c_size_t),
-        (&#34;rx_buffer_content&#34;, c_ssize_t),
-        (&#34;rx_buffer_ptr&#34;, c_int),
-        (&#34;rx_state&#34;, c_int),
-        (&#34;rx_count&#34;, c_int),
-        (&#34;rx_param&#34;, c_int),
-        (&#34;rx_timeout&#34;, c_int),
-        (&#34;rx_final_flags&#34;, c_int),
-        (&#34;extn_count&#34;, c_int),
-        (&#34;extn_size&#34;, c_int),
-        (&#34;extn_cmd&#34;, c_int),
-        (&#34;extn_byte&#34;, c_int),
-        (&#34;extn_link&#34;, c_int),
-        (&#34;cmd_buffer&#34;, c_char_p),
-        (&#34;time_buffer&#34;, c_char_p),
-
-        (&#34;special_cb&#34;, c_void_p),
-        (&#34;extension_cb&#34;, c_void_p),
-
-        (&#34;number_of_links&#34;, c_int),
-        (&#34;number_of_slots&#34;, c_int),
-        (&#34;slot_content&#34;, c_int_p),
-        (&#34;record_file&#34;, c_void_p),
-        (&#34;log_file&#34;, c_void_p),
-        (&#34;max_length&#34;, c_int),
-        (&#34;log_rx_port&#34;, c_int),
-        (&#34;log_tx_port&#34;, c_int),
-
-        (&#34;ram_io&#34;, c_int),
-        (&#34;current_port&#34;, c_int),
-
-        (&#34;check_record_writes&#34;, c_int),
-        (&#34;total_raw_bytes_received&#34;, c_uint64),
-
-        (&#34;options&#34;, c_char_p),
-        (&#34;option&#34;, c_int),
-        (&#34;ESL_error_errno&#34;, c_int),
-
-        (&#34;rx_timeout_returns_error&#34;, c_int),
-
-        (&#34;max_dumps&#34;, c_uint32),
-        (&#34;context&#34;, c_void_p),
-
-        (&#34;rxinfo&#34;, c_uint32),
-
-        (&#34;read_calls&#34;, c_uint64),
-        (&#34;read_io_calls&#34;, c_uint64),
-        (&#34;file&#34;, c_int),
-        (&#34;filesize&#34;, c_uint64),
-        (&#34;recordsize&#34;, c_uint64),
-
-        (&#34;ram_io_int&#34;, c_int),
-
-        (&#34;eintr_enabled&#34;, c_int),
-        (&#34;timezero&#34;, c_size_t),
-        (&#34;timedata&#34;, c_uint64),
-        (&#34;timedata_ns&#34;, c_uint32),
-
-        (&#34;partialframesz&#34;, c_size_t),
-        (&#34;partialframe_offset&#34;, c_size_t),
-        (&#34;system_type&#34;, c_int),
-        (&#34;auto_flush&#34;, c_int),
-        (&#34;live&#34;, c_int),
-
-        (&#34;epollfd&#34;, c_int),
-    ]
-
-
-esl_p = POINTER(ESL)
-
 
 class ESLError(Exception):
     pass
 
 
-def esl_read_packet(esl_link: ESL, timeout: int = None) -&gt; Tuple[int, bytes]:
+def esl_read_packet(esl_link: &#39;ESL&#39;, timeout: int = None) -&gt; Tuple[int, bytes]:
     &#34;&#34;&#34;
     Reads a full packet from the SpaceWire link.
 
@@ -254,7 +142,7 @@ def esl_read_packet(esl_link: ESL, timeout: int = None) -&gt; Tuple[int, bytes]:
         esl_link, rx_buffer, dsi_settings.RX_BUFFER_LENGTH, terminator_p,
         constants.ESL_RETURN_EXTENSION_DATA | constants.ESL_RETURN_SPECIAL_DATA, timeout=timeout)
 
-    logger.log(0, f&#34;Number of bytes received: {bytes_received}&#34;)
+    # logger.debug(f&#34;Number of bytes received: {bytes_received}&#34;)
 
     if bytes_received &lt; 0:
         return bytes_received, bytes()
@@ -263,7 +151,7 @@ def esl_read_packet(esl_link: ESL, timeout: int = None) -&gt; Tuple[int, bytes]:
 
 
 @contextmanager
-def esl_connection(dsi_address: str) -&gt; ESL:
+def esl_connection(dsi_address: str) -&gt; &#39;ESL&#39;:
     &#34;&#34;&#34;
     Context Manager that opens a EtherSpaceLink connection with the DSI (Diagnostic SpaceWire Interface).
 
@@ -282,7 +170,7 @@ def esl_connection(dsi_address: str) -&gt; ESL:
             esl_close_connection(esl_link)
 
 
-def esl_open_connection(dsi_address: str) -&gt; ESL:
+def esl_open_connection(dsi_address: str) -&gt; &#39;ESL&#39;:
     &#34;&#34;&#34;
     Open a connection to the EtherSpaceLink DSI on the given IP address.
     This function will keep trying to connect for 10 seconds before aborting
@@ -301,13 +189,14 @@ def esl_open_connection(dsi_address: str) -&gt; ESL:
     esl_link = None
 
     while retry:
-        esl_link = libesl_open(c_char_p(dsi_address.encode()))
+        esl_link = egse.dsi._libesl.libesl_open(c_char_p(dsi_address.encode()))
         if esl_link:
             break
         else:
             time.sleep(0.5)  # wait half a second before trying again
             logger.info(f&#34;Trying to connect to {dsi_address}, {retry / 2.0} sec before shutdown.&#34;)
             retry -= 1
+
     if not esl_link:
         raise ESLError(f&#34;Couldn&#39;t open connection to DSI on {dsi_address}.&#34;)
 
@@ -328,7 +217,7 @@ def esl_close_connection(esl_link):
     Returns:
         Nothing
     &#34;&#34;&#34;
-    libesl_close(esl_link)
+    egse.dsi._libesl.libesl_close(esl_link)
     logger.info(&#34;EtherSpaceLink connection closed successfully.&#34;)
 
 
@@ -342,7 +231,7 @@ def esl_flush(esl_link) -&gt; int:
     Returns:
         0 on success, !0 otherwise
     &#34;&#34;&#34;
-    result = libesl_flush(esl_link)
+    result = egse.dsi._libesl.libesl_flush(esl_link)
     # We don&#39;t want this to raise an exception, the result value should be checked by the caller instead.
     # if result:
     #     raise ESLError(
@@ -352,7 +241,7 @@ def esl_flush(esl_link) -&gt; int:
     return result
 
 
-def esl_configure(esl_link: ESL,
+def esl_configure(esl_link: &#39;ESL&#39;,
                   active_link: int = 1, speed: int = 50, mode: int = constants.ESL_LINK_MODE_NORMAL,
                   report: int = 0):
     &#34;&#34;&#34;
@@ -378,21 +267,42 @@ def esl_configure(esl_link: ESL,
         Nothing
     &#34;&#34;&#34;
     status = esl_set_active_link(esl_link, active_link)
+    logger.info(f&#34;esl_set_active_link({active_link}) -&gt; {status = }&#34;)
     status = esl_set_speed(esl_link, speed)
-    status = esl_set_mode(esl_link, mode)
+    logger.info(f&#34;esl_set_speed({speed}) -&gt; {status = }&#34;)
+
     if report:
         status = esl_er_enable_reporting(esl_link, report)
+        logger.info(f&#34;esl_er_enable_reporting(0b{report:b}) -&gt; {status = }&#34;)
+
+    status = esl_set_mode(esl_link, mode)
+    logger.info(f&#34;esl_set_mode({esl_link_mode[mode]}={mode}) -&gt; {status = }&#34;)
+
+    status = esl_flush(esl_link)
+    logger.info(f&#34;esl_flush() -&gt; {status = }&#34;)
+
+
+def esl_set_active_link(esl_link, active_link):
+    return egse.dsi._libesl.libesl_set_active_link(esl_link, active_link)
+
+
+def esl_get_active_link(esl_link):
+    return esl_link.contents.current_port
+
+
+def esl_is_link_connected(esl_link):
+    return egse.dsi._libesl.libesl_link_connected(esl_link)
 
 
 def esl_set_speed(esl_link, speed):
-    result = libesl_set_speed(esl_link, speed)
+    result = egse.dsi._libesl.libesl_set_speed(esl_link, speed)
     if result:
         raise ESLError(&#34;Could not set speed to {}, ESL error code={} [{}]&#34;.format(speed, esl_error_codes[
             esl_link.contents.ESL_error], esl_link.contents.ESL_error))
     return result
 
 
-def esl_set_mode(esl_link: ESL, mode: int) -&gt; int:
+def esl_set_mode(esl_link: &#39;ESL&#39;, mode: int) -&gt; int:
     &#34;&#34;&#34;
     Set the operating mode of the currently active SpaceWire link.
 
@@ -408,15 +318,14 @@ def esl_set_mode(esl_link: ESL, mode: int) -&gt; int:
         0 if the request has been queued, not 0 if not.
 
     &#34;&#34;&#34;
-    result = libesl_set_mode(esl_link, mode)
+    result = egse.dsi._libesl.libesl_set_mode(esl_link, mode)
     if result:
-        raise ESLError(
-            &#34;Could not set mode, ESL error code={} [{}]&#34;.format(esl_error_codes[esl_link.contents.ESL_error],
-                                                                esl_link.contents.ESL_error))
+        raise ESLError(f&#34;Could not set mode {esl_link_mode[mode]}.&#34;)
+
     return result
 
 
-def esl_send_timecode(esl_link: ESL, timecode: int) -&gt; int:
+def esl_send_timecode(esl_link: &#39;ESL&#39;, timecode: int) -&gt; int:
     &#34;&#34;&#34;
     Send a timecode over the SpaceWire link.
 
@@ -430,7 +339,7 @@ def esl_send_timecode(esl_link: ESL, timecode: int) -&gt; int:
         0 if the request has been queued, not 0 if not.
 
     &#34;&#34;&#34;
-    result = libesl_send_timecode(esl_link, timecode)
+    result = egse.dsi._libesl.libesl_send_timecode(esl_link, timecode)
 
     if result:
         raise ESLError(
@@ -438,7 +347,7 @@ def esl_send_timecode(esl_link: ESL, timecode: int) -&gt; int:
             f&#34;[{esl_link.contents.ESL_error}]&#34;
         )
 
-    libesl_flush(esl_link)
+    result = egse.dsi._libesl.libesl_flush(esl_link)
 
     return result
 
@@ -447,7 +356,11 @@ def esl_get_rx_timeout(esl_link):
     return esl_link.contents.rx_timeout
 
 
-def esl_get_receive_speed(esl_link: ESL) -&gt; int:
+def esl_set_rx_timeout(esl_link, timeout: int):
+    esl_link.contents.rx_timeout = timeout
+
+
+def esl_get_receive_speed(esl_link: &#39;ESL&#39;) -&gt; int:
     &#34;&#34;&#34;
     Gets the receive speed of the currently active link.
 
@@ -458,43 +371,62 @@ def esl_get_receive_speed(esl_link: ESL) -&gt; int:
         esl_link (ESL): the ESL structure that defines the connection to the DSI
 
     Returns:
-        the speed of the active link in Mbtis/s. In case of an error a value &lt; 0 will be returned.
+        the speed of the active link in Mbits/s. In case of an error a value &lt; 0 will be returned.
     &#34;&#34;&#34;
-    return libesl_get_receive_speed(esl_link)
+    return egse.dsi._libesl.libesl_get_receive_speed(esl_link)
 
 
 def esl_set_log_file(esl_link, filename):
-    result = libesl_set_log_file(esl_link, c_char_p(filename.encode()))
-    if result:
-        raise ESLError(f&#34;Could not write to or open record file {filename}.&#34;)
-    return result
-
-
-def esl_set_record_file(esl_link, filename):
-    result = libesl_set_record_file(esl_link, c_char_p(filename.encode()))
+    result = egse.dsi._libesl.libesl_set_log_file(esl_link, c_char_p(filename.encode()))
     if result:
         raise ESLError(f&#34;Could not write to or open log file {filename}.&#34;)
     return result
 
 
+def esl_set_record_file(esl_link, filename):
+    result = egse.dsi._libesl.libesl_set_record_file(esl_link, c_char_p(filename.encode()))
+    if result:
+        raise ESLError(f&#34;Could not write to or open record file {filename}.&#34;)
+    return result
+
+
 def esl_get_manufacturer_string(esl_link):
-    return libesl_get_manufacturer_string(esl_link).decode()
+    return egse.dsi._libesl.libesl_get_manufacturer_string(esl_link).decode()
 
 
 def esl_get_product_string(esl_link):
-    return libesl_get_product_string(esl_link).decode()
+    return egse.dsi._libesl.libesl_get_product_string(esl_link).decode()
+
+
+def esl_get_esl_error(esl_link):
+    return egse.dsi._libesl.libesl_get_esl_error(esl_link)
+
+
+def esl_get_hwa(esl_link):
+    hwa = b&#39;012345&#39;  # Pre-allocate the character buffer
+    egse.dsi._libesl.libesl_get_hwa(esl_link, hwa)
+    return hwa
+
+
+def esl_get_serial_number(esl_link):
+    hwa = esl_get_hwa(esl_link)
+    return egse.dsi._libesl.libesl_hwa_to_serial_number_string(hwa)
+
+
+def esl_get_number_of_links(esl_link):
+    return egse.dsi._libesl.libesl_get_number_of_links(esl_link)
 
 
 def esl_read_packet_full(esl_link, buffer, buffer_length, rx_terminator, special_data_action, timeout: int = None):
 
     if timeout:
         saved_timeout = esl_get_rx_timeout(esl_link)
-        esl_set_rx_timeout(esl_link, timeout)
+        egse.dsi._libesl.libesl_set_rx_timeout(esl_link, timeout)
 
-    result = libesl_read_packet_full(esl_link, buffer, buffer_length, rx_terminator, special_data_action)
+    result = egse.dsi._libesl.libesl_read_packet_full(esl_link, buffer, buffer_length, rx_terminator, special_data_action)
 
     if timeout:
-        esl_set_rx_timeout(esl_link, saved_timeout)
+        egse.dsi._libesl.libesl_set_rx_timeout(esl_link, saved_timeout)
 
     # This error handling is (or should be) done in the calling application, see for example egse.feesim.py
     # if result == -1:
@@ -506,7 +438,7 @@ def esl_read_packet_full(esl_link, buffer, buffer_length, rx_terminator, special
     return result
 
 
-def esl_write_packet(esl_link: ESL, buffer, buffer_length: int, tx_terminator: int) -&gt; int:
+def esl_write_packet(esl_link: &#39;ESL&#39;, buffer, buffer_length: int, tx_terminator: int) -&gt; int:
     &#34;&#34;&#34;
     Queue data for transmission over the SpaceWire cable. If there is no room left in the buffer,
     the buffer is transmitted.
@@ -521,30 +453,16 @@ def esl_write_packet(esl_link: ESL, buffer, buffer_length: int, tx_terminator: i
         tx_terminator: additional metadata about the frame we are transmitting (EOP, EEP, PART_EOP_EEP, EXTN)
 
     Returns:
-        return_code: 0 on success, &lt; 0 otherwise
+        return_code: 0 on success, &lt; 0 when an error occurred.
     &#34;&#34;&#34;
-    # logger.debug(
-    #     f&#34;Calling esl_write_packet: &#34;
-    #     f&#34;buffer={pp_packet(buffer)}, buffer_length={buffer_length}, tx_terminator=0x{tx_terminator:x} &#34;
-    #     f&#34;[{get_terminator_name(tx_terminator) or get_extension_name(tx_terminator)}].&#34;
-    # )
 
-    result = libesl_write_packet(esl_link, buffer, buffer_length, tx_terminator)
-
-    # This error handling is (or should be) done in the calling application, see for example egse.feesim.py
-    # if result == -1:
-    #     raise ESLError(
-    #         f&#34;Could not write the packet, &#34;
-    #         f&#34;ESL error code = {esl_error_codes[esl_link.contents.ESL_error]} [{esl_link.contents.ESL_error}]&#34;
-    #     )
-
-    # logger.debug(f&#34;Returning from esl_write_packet: buffer={pp_packet(buffer)}, result = {result}.&#34;)
+    result = egse.dsi._libesl.libesl_write_packet(esl_link, buffer, buffer_length, tx_terminator)
 
     return result
 
 
 def esl_er_enable_reporting(esl_link, flags):
-    result = libesl_er_enable_reporting(esl_link, flags)
+    result = egse.dsi._libesl.libesl_er_enable_reporting(esl_link, flags)
     if result:
         raise ESLError(
             f&#34;Could not enable error reporting, &#34;
@@ -553,7 +471,7 @@ def esl_er_enable_reporting(esl_link, flags):
     return result
 
 
-def esl_print_info(esl_link: ESL) -&gt; None:
+def esl_print_info(esl_link: &#39;ESL&#39;) -&gt; None:
     &#34;&#34;&#34;
     Prints information about the connected device to the console.
 
@@ -563,16 +481,12 @@ def esl_print_info(esl_link: ESL) -&gt; None:
     Returns:
         nothing
     &#34;&#34;&#34;
-    print(&#34;Manufacturer        {}&#34;.format(esl_get_manufacturer_string(esl_link)))
-    print(&#34;Product             {}&#34;.format(esl_get_product_string(esl_link)))
-    print(&#34;Number of links     {}&#34;.format(esl_get_number_of_links(esl_link)))
+    print(f&#34;Manufacturer        {esl_get_manufacturer_string(esl_link)}&#34;)
+    print(f&#34;Product             {esl_get_product_string(esl_link)}&#34;)
+    print(f&#34;Number of links     {esl_get_number_of_links(esl_link)} [active port={esl_get_active_link(esl_link)}]&#34;)
 
-    # Pre-allocate the character buffer
-
-    hwa = b&#39;012345&#39;
-
-    esl_get_hwa(esl_link, hwa)
-    serial_number = esl_hwa_to_serial_number_string(hwa)
+    hwa = esl_get_hwa(esl_link)
+    serial_number = esl_get_serial_number(esl_link)
 
     print(f&#34;Serial number       {serial_number}&#34;)
     print(f&#34;Hardware Address    0x{hwa[0]:02X}-{hwa[1]:02X}-{hwa[2]:02X}-{hwa[3]:02X}-{hwa[4]:02X}-{hwa[5]:02X}&#34;)
@@ -594,102 +508,6 @@ def esl_print_summary_of_structure(esl):
     print(&#34;extn_count          {}&#34;.format(esl.contents.extn_count))
     print(&#34;number_of_slots     {}&#34;.format(esl.contents.number_of_slots))
     #print(&#34;id                  {}&#34;.format(esl.contents.id))
-
-
-esl_get_version = libesl.EtherSpaceLink_get_version
-esl_get_version.argtypes = []
-esl_get_version.restype = c_char_p
-
-libesl_open = libesl.EtherSpaceLink_open
-libesl_open.argtypes = [c_char_p]
-libesl_open.restype = esl_p
-
-libesl_close = libesl.EtherSpaceLink_close
-libesl_close.argtypes = [esl_p]
-
-libesl_flush = libesl.EtherSpaceLink_flush
-libesl_flush.argtypes = [esl_p]
-
-esl_shutdown = libesl.EtherSpaceLink_shutdown
-esl_shutdown.argtypes = [esl_p]
-
-esl_link_connected = libesl.EtherSpaceLink_link_connected
-esl_link_connected.argtypes = [esl_p]
-esl_link_connected.restype = c_int
-
-esl_set_active_link = libesl.EtherSpaceLink_set_active_link
-esl_set_active_link.argtypes = [esl_p, c_int]
-esl_set_active_link.restype = c_int
-
-libesl_set_speed = libesl.EtherSpaceLink_set_speed
-libesl_set_speed.argtypes = [esl_p, c_int]
-libesl_set_speed.restype = c_int
-
-libesl_set_mode = libesl.EtherSpaceLink_set_mode
-libesl_set_mode.argtypes = [esl_p, c_int]
-libesl_set_mode.restype = c_int
-
-libesl_send_timecode = libesl.EtherSpaceLink_send_timecode
-libesl_set_mode.argtypes = [esl_p, c_uint8]
-libesl_set_mode.restype = c_int
-
-esl_set_rx_timeout = libesl.EtherSpaceLink_set_rx_timeout
-esl_set_rx_timeout.argtypes = [esl_p, c_int]
-
-esl_set_rx_timeout_action = libesl.EtherSpaceLink_set_rx_timeout_action
-esl_set_rx_timeout_action.argtypes = [esl_p, c_int]
-
-libesl_set_log_file = libesl.EtherSpaceLink_set_log_file
-libesl_set_log_file.argtypes = [esl_p, c_char_p]
-libesl_set_log_file.restype = c_int
-
-libesl_set_record_file = libesl.EtherSpaceLink_set_record_file
-libesl_set_record_file.argtypes = [esl_p, c_char_p]
-libesl_set_record_file.restype = c_int
-
-esl_request_link_status = libesl.EtherSpaceLink_request_link_status
-esl_request_link_status.argtypes = [esl_p]
-esl_request_link_status.restype = c_int
-
-libesl_get_receive_speed = libesl.EtherSpaceLink_get_receive_speed
-libesl_get_receive_speed.argtypes = [esl_p]
-libesl_get_receive_speed.restype = c_int
-
-esl_get_esl_error = libesl.EtherSpaceLink_get_error
-esl_get_esl_error.argtypes = [esl_p]
-esl_get_esl_error.restype = c_int
-
-esl_get_number_of_links = libesl.EtherSpaceLink_get_number_of_links
-esl_get_number_of_links.argtypes = [esl_p]
-esl_get_number_of_links.restype = c_int
-
-libesl_get_manufacturer_string = libesl.EtherSpaceLink_get_manufacturer_string
-libesl_get_manufacturer_string.argtypes = [esl_p]
-libesl_get_manufacturer_string.restype = c_char_p
-
-libesl_get_product_string = libesl.EtherSpaceLink_get_product_string
-libesl_get_product_string.argtypes = [esl_p]
-libesl_get_product_string.restype = c_char_p
-
-esl_get_hwa = libesl.EtherSpaceLink_get_HWA
-esl_get_hwa.argtypes = [esl_p, c_char_p]
-esl_get_hwa.restype = c_int
-
-esl_hwa_to_serial_number_string = libesl.EtherSpaceLink_HWA_to_serial_number_string
-esl_hwa_to_serial_number_string.argtypes = [c_char_p]
-esl_hwa_to_serial_number_string.restype = c_char_p
-
-libesl_read_packet_full = libesl.EtherSpaceLink_read_packet_full
-libesl_read_packet_full.argtypes = [esl_p, c_void_p, c_int, c_int_p, c_int]
-libesl_read_packet_full.restype = c_int
-
-libesl_write_packet = libesl.EtherSpaceLink_write_packet
-libesl_write_packet.argtypes = [esl_p, c_void_p, c_size_t, c_uint32]
-libesl_write_packet.restype = c_int
-
-libesl_er_enable_reporting = libesl.EtherSpaceLink_ER_enable_reporting
-libesl_er_enable_reporting.argtypes = [esl_p, c_int]
-libesl_er_enable_reporting.restype = c_int
 
 
 # Helper Functions ---------------------------------------------------------------------------------
@@ -733,64 +551,6 @@ def is_timecode(packet) -&gt; bool:
 RMAP_PROTOCOL_ID = 0x01
 CCSDS_PROTOCOL_ID = 0x02
 DATA_HK_PROTOCOL_ID = 0xF0
-
-
-def pretty_print_packet(packet) -&gt; str:
-
-    from egse.fee import is_hk_data_packet
-
-    msg = f&#34;packet is of type {type(packet)}, with length {len(packet)}\n&#34;
-
-    # When the packet is of type ctypes.c_char_Array_24 (i.e. ctypes array of c_char)
-    # then convert the packet into a bytes object.
-
-    if hasattr(packet, &#39;raw&#39;):
-        packet = packet.raw
-
-    # First check if this is a timecode packet because this is only 2 bytes long and reading the instruction field
-    # will result in an IndexError otherwise.
-
-    if is_timecode(packet):
-        msg += (
-            f&#34;Time code received: 0x{packet[1]:02x}\n&#34;
-        )
-    elif get_protocol_id(packet) == RMAP_PROTOCOL_ID:
-        import egse.dsi.rmap
-        instruction_field = egse.dsi.rmap.get_instruction_field(packet)
-        if instruction_field == 0x4C:
-            msg += pretty_print_read_request_packet(packet)
-        elif instruction_field == 0x4C &amp; 0x3F:
-            msg += pretty_print_read_request_reply_packet(packet)
-        elif instruction_field == 0x7C:
-            msg += pretty_print_verified_write_request_packet(packet)
-        elif instruction_field == 0x6C:
-            msg += pretty_print_unverified_write_request_packet(packet)
-        elif instruction_field == 0x3C &amp; 0x3F:
-            msg += pretty_print_write_request_reply_packet(packet)
-        else:
-            msg += (
-                f&#34;RMAP packet (to-be-implemented)\n&#34;
-                f&#39;{pp_packet(packet)}&#39;
-            )
-    elif get_protocol_id(packet) == CCSDS_PROTOCOL_ID:
-        msg += (
-            f&#34;CCSDS Packet\n&#34;
-            f&#34;Packet: {&#39; &#39;.join([hex(x) for x in packet[:min(80, len(packet))]])} [max. 80 bytes printed].&#34;
-        )
-    elif get_protocol_id(packet) == DATA_HK_PROTOCOL_ID and is_hk_data_packet(packet):
-        # FIXME: this puts an unnecessary dependency on the esl.py module. The HousekeepingPacket is PLATO specific
-        #        and should not be in the esl.py module
-        msg += (
-            f&#34;HK Packet:\n&#34;
-            f&#34;{HousekeepingPacket(packet)}&#34;
-        )
-    else:
-        msg += (
-            f&#34;Extended Protocol Identifier is not supported.\n&#34;
-            f&#34;Packet: {&#39; &#39;.join([hex(x) for x in packet[:min(80, len(packet))]])} [max. 80 bytes printed].&#34;
-        )
-
-    return msg
 
 
 def pretty_print_read_request_packet(packet):
@@ -938,7 +698,7 @@ def pp_packet(packet) -&gt; str:
 <p>This also flushes and closes the log and record files if they were used.</p>
 <h2 id="args">Args</h2>
 <dl>
-<dt><strong><code>esl_link</code></strong> :&ensp;<code><a title="egse.dsi.esl.ESL" href="#egse.dsi.esl.ESL">ESL</a></code></dt>
+<dt><strong><code>esl_link</code></strong> :&ensp;<code>ESL</code></dt>
 <dd>the ESL structure that defines the connection to the DSI</dd>
 </dl>
 <h2 id="returns">Returns</h2>
@@ -959,12 +719,12 @@ def pp_packet(packet) -&gt; str:
     Returns:
         Nothing
     &#34;&#34;&#34;
-    libesl_close(esl_link)
+    egse.dsi._libesl.libesl_close(esl_link)
     logger.info(&#34;EtherSpaceLink connection closed successfully.&#34;)</code></pre>
 </details>
 </dd>
 <dt id="egse.dsi.esl.esl_configure"><code class="name flex">
-<span>def <span class="ident">esl_configure</span></span>(<span>esl_link: <a title="egse.dsi.esl.ESL" href="#egse.dsi.esl.ESL">ESL</a>, active_link: int = 1, speed: int = 50, mode: int = 2, report: int = 0)</span>
+<span>def <span class="ident">esl_configure</span></span>(<span>esl_link: ESL, active_link: int = 1, speed: int = 50, mode: int = 2, report: int = 0)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Configure the <code>esl_link</code> EtherSpaceWire link to the DSI.</p>
@@ -978,7 +738,7 @@ ESL_ER_REPORT_TIMEOUT
 </code></pre>
 <h2 id="args">Args</h2>
 <dl>
-<dt><strong><code>esl_link</code></strong> :&ensp;<code><a title="egse.dsi.esl.ESL" href="#egse.dsi.esl.ESL">ESL</a></code></dt>
+<dt><strong><code>esl_link</code></strong> :&ensp;<code>ESL</code></dt>
 <dd>the ESL structure that defines the connection to the DSI</dd>
 <dt><strong><code>active_link</code></strong></dt>
 <dd>the port number on the DSI where the SpW link shall be activated (default=1)</dd>
@@ -995,7 +755,7 @@ ESL_ER_REPORT_TIMEOUT
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def esl_configure(esl_link: ESL,
+<pre><code class="python">def esl_configure(esl_link: &#39;ESL&#39;,
                   active_link: int = 1, speed: int = 50, mode: int = constants.ESL_LINK_MODE_NORMAL,
                   report: int = 0):
     &#34;&#34;&#34;
@@ -1021,14 +781,23 @@ ESL_ER_REPORT_TIMEOUT
         Nothing
     &#34;&#34;&#34;
     status = esl_set_active_link(esl_link, active_link)
+    logger.info(f&#34;esl_set_active_link({active_link}) -&gt; {status = }&#34;)
     status = esl_set_speed(esl_link, speed)
-    status = esl_set_mode(esl_link, mode)
+    logger.info(f&#34;esl_set_speed({speed}) -&gt; {status = }&#34;)
+
     if report:
-        status = esl_er_enable_reporting(esl_link, report)</code></pre>
+        status = esl_er_enable_reporting(esl_link, report)
+        logger.info(f&#34;esl_er_enable_reporting(0b{report:b}) -&gt; {status = }&#34;)
+
+    status = esl_set_mode(esl_link, mode)
+    logger.info(f&#34;esl_set_mode({esl_link_mode[mode]}={mode}) -&gt; {status = }&#34;)
+
+    status = esl_flush(esl_link)
+    logger.info(f&#34;esl_flush() -&gt; {status = }&#34;)</code></pre>
 </details>
 </dd>
 <dt id="egse.dsi.esl.esl_connection"><code class="name flex">
-<span>def <span class="ident">esl_connection</span></span>(<span>dsi_address: str) ‑> <a title="egse.dsi.esl.ESL" href="#egse.dsi.esl.ESL">ESL</a></span>
+<span>def <span class="ident">esl_connection</span></span>(<span>dsi_address: str) ‑> ESL</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Context Manager that opens a EtherSpaceLink connection with the DSI (Diagnostic SpaceWire Interface).</p>
@@ -1044,7 +813,7 @@ ESL_ER_REPORT_TIMEOUT
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">@contextmanager
-def esl_connection(dsi_address: str) -&gt; ESL:
+def esl_connection(dsi_address: str) -&gt; &#39;ESL&#39;:
     &#34;&#34;&#34;
     Context Manager that opens a EtherSpaceLink connection with the DSI (Diagnostic SpaceWire Interface).
 
@@ -1073,7 +842,7 @@ def esl_connection(dsi_address: str) -&gt; ESL:
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def esl_er_enable_reporting(esl_link, flags):
-    result = libesl_er_enable_reporting(esl_link, flags)
+    result = egse.dsi._libesl.libesl_er_enable_reporting(esl_link, flags)
     if result:
         raise ESLError(
             f&#34;Could not enable error reporting, &#34;
@@ -1089,7 +858,7 @@ def esl_connection(dsi_address: str) -&gt; ESL:
 <div class="desc"><p>Flush all outstanding data to the destination. This function puts queued data onto the wire.</p>
 <h2 id="args">Args</h2>
 <dl>
-<dt><strong><code>esl_link</code></strong> :&ensp;<code><a title="egse.dsi.esl.ESL" href="#egse.dsi.esl.ESL">ESL</a></code></dt>
+<dt><strong><code>esl_link</code></strong> :&ensp;<code>ESL</code></dt>
 <dd>the ESL structure that defines the connection to the DSI</dd>
 </dl>
 <h2 id="returns">Returns</h2>
@@ -1108,7 +877,7 @@ def esl_connection(dsi_address: str) -&gt; ESL:
     Returns:
         0 on success, !0 otherwise
     &#34;&#34;&#34;
-    result = libesl_flush(esl_link)
+    result = egse.dsi._libesl.libesl_flush(esl_link)
     # We don&#39;t want this to raise an exception, the result value should be checked by the caller instead.
     # if result:
     #     raise ESLError(
@@ -1116,6 +885,47 @@ def esl_connection(dsi_address: str) -&gt; ESL:
     #         f&#34;ESL error code={esl_error_codes[esl_link.contents.ESL_error]} [{esl_link.contents.ESL_error}]&#34;
     #     )
     return result</code></pre>
+</details>
+</dd>
+<dt id="egse.dsi.esl.esl_get_active_link"><code class="name flex">
+<span>def <span class="ident">esl_get_active_link</span></span>(<span>esl_link)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def esl_get_active_link(esl_link):
+    return esl_link.contents.current_port</code></pre>
+</details>
+</dd>
+<dt id="egse.dsi.esl.esl_get_esl_error"><code class="name flex">
+<span>def <span class="ident">esl_get_esl_error</span></span>(<span>esl_link)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def esl_get_esl_error(esl_link):
+    return egse.dsi._libesl.libesl_get_esl_error(esl_link)</code></pre>
+</details>
+</dd>
+<dt id="egse.dsi.esl.esl_get_hwa"><code class="name flex">
+<span>def <span class="ident">esl_get_hwa</span></span>(<span>esl_link)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def esl_get_hwa(esl_link):
+    hwa = b&#39;012345&#39;  # Pre-allocate the character buffer
+    egse.dsi._libesl.libesl_get_hwa(esl_link, hwa)
+    return hwa</code></pre>
 </details>
 </dd>
 <dt id="egse.dsi.esl.esl_get_manufacturer_string"><code class="name flex">
@@ -1128,7 +938,20 @@ def esl_connection(dsi_address: str) -&gt; ESL:
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def esl_get_manufacturer_string(esl_link):
-    return libesl_get_manufacturer_string(esl_link).decode()</code></pre>
+    return egse.dsi._libesl.libesl_get_manufacturer_string(esl_link).decode()</code></pre>
+</details>
+</dd>
+<dt id="egse.dsi.esl.esl_get_number_of_links"><code class="name flex">
+<span>def <span class="ident">esl_get_number_of_links</span></span>(<span>esl_link)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def esl_get_number_of_links(esl_link):
+    return egse.dsi._libesl.libesl_get_number_of_links(esl_link)</code></pre>
 </details>
 </dd>
 <dt id="egse.dsi.esl.esl_get_product_string"><code class="name flex">
@@ -1141,11 +964,11 @@ def esl_connection(dsi_address: str) -&gt; ESL:
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def esl_get_product_string(esl_link):
-    return libesl_get_product_string(esl_link).decode()</code></pre>
+    return egse.dsi._libesl.libesl_get_product_string(esl_link).decode()</code></pre>
 </details>
 </dd>
 <dt id="egse.dsi.esl.esl_get_receive_speed"><code class="name flex">
-<span>def <span class="ident">esl_get_receive_speed</span></span>(<span>esl_link: <a title="egse.dsi.esl.ESL" href="#egse.dsi.esl.ESL">ESL</a>) ‑> int</span>
+<span>def <span class="ident">esl_get_receive_speed</span></span>(<span>esl_link: ESL) ‑> int</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Gets the receive speed of the currently active link.</p>
@@ -1153,16 +976,16 @@ def esl_connection(dsi_address: str) -&gt; ESL:
 should be used instead.</p>
 <h2 id="args">Args</h2>
 <dl>
-<dt><strong><code>esl_link</code></strong> :&ensp;<code><a title="egse.dsi.esl.ESL" href="#egse.dsi.esl.ESL">ESL</a></code></dt>
+<dt><strong><code>esl_link</code></strong> :&ensp;<code>ESL</code></dt>
 <dd>the ESL structure that defines the connection to the DSI</dd>
 </dl>
 <h2 id="returns">Returns</h2>
-<p>the speed of the active link in Mbtis/s. In case of an error a value &lt; 0 will be returned.</p></div>
+<p>the speed of the active link in Mbits/s. In case of an error a value &lt; 0 will be returned.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def esl_get_receive_speed(esl_link: ESL) -&gt; int:
+<pre><code class="python">def esl_get_receive_speed(esl_link: &#39;ESL&#39;) -&gt; int:
     &#34;&#34;&#34;
     Gets the receive speed of the currently active link.
 
@@ -1173,9 +996,9 @@ should be used instead.</p>
         esl_link (ESL): the ESL structure that defines the connection to the DSI
 
     Returns:
-        the speed of the active link in Mbtis/s. In case of an error a value &lt; 0 will be returned.
+        the speed of the active link in Mbits/s. In case of an error a value &lt; 0 will be returned.
     &#34;&#34;&#34;
-    return libesl_get_receive_speed(esl_link)</code></pre>
+    return egse.dsi._libesl.libesl_get_receive_speed(esl_link)</code></pre>
 </details>
 </dd>
 <dt id="egse.dsi.esl.esl_get_rx_timeout"><code class="name flex">
@@ -1191,8 +1014,35 @@ should be used instead.</p>
     return esl_link.contents.rx_timeout</code></pre>
 </details>
 </dd>
+<dt id="egse.dsi.esl.esl_get_serial_number"><code class="name flex">
+<span>def <span class="ident">esl_get_serial_number</span></span>(<span>esl_link)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def esl_get_serial_number(esl_link):
+    hwa = esl_get_hwa(esl_link)
+    return egse.dsi._libesl.libesl_hwa_to_serial_number_string(hwa)</code></pre>
+</details>
+</dd>
+<dt id="egse.dsi.esl.esl_is_link_connected"><code class="name flex">
+<span>def <span class="ident">esl_is_link_connected</span></span>(<span>esl_link)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def esl_is_link_connected(esl_link):
+    return egse.dsi._libesl.libesl_link_connected(esl_link)</code></pre>
+</details>
+</dd>
 <dt id="egse.dsi.esl.esl_open_connection"><code class="name flex">
-<span>def <span class="ident">esl_open_connection</span></span>(<span>dsi_address: str) ‑> <a title="egse.dsi.esl.ESL" href="#egse.dsi.esl.ESL">ESL</a></span>
+<span>def <span class="ident">esl_open_connection</span></span>(<span>dsi_address: str) ‑> ESL</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Open a connection to the EtherSpaceLink DSI on the given IP address.
@@ -1209,7 +1059,7 @@ and throwing an <code><a title="egse.dsi.esl.ESLError" href="#egse.dsi.esl.ESLEr
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def esl_open_connection(dsi_address: str) -&gt; ESL:
+<pre><code class="python">def esl_open_connection(dsi_address: str) -&gt; &#39;ESL&#39;:
     &#34;&#34;&#34;
     Open a connection to the EtherSpaceLink DSI on the given IP address.
     This function will keep trying to connect for 10 seconds before aborting
@@ -1228,13 +1078,14 @@ and throwing an <code><a title="egse.dsi.esl.ESLError" href="#egse.dsi.esl.ESLEr
     esl_link = None
 
     while retry:
-        esl_link = libesl_open(c_char_p(dsi_address.encode()))
+        esl_link = egse.dsi._libesl.libesl_open(c_char_p(dsi_address.encode()))
         if esl_link:
             break
         else:
             time.sleep(0.5)  # wait half a second before trying again
             logger.info(f&#34;Trying to connect to {dsi_address}, {retry / 2.0} sec before shutdown.&#34;)
             retry -= 1
+
     if not esl_link:
         raise ESLError(f&#34;Couldn&#39;t open connection to DSI on {dsi_address}.&#34;)
 
@@ -1244,13 +1095,13 @@ and throwing an <code><a title="egse.dsi.esl.ESLError" href="#egse.dsi.esl.ESLEr
 </details>
 </dd>
 <dt id="egse.dsi.esl.esl_print_info"><code class="name flex">
-<span>def <span class="ident">esl_print_info</span></span>(<span>esl_link: <a title="egse.dsi.esl.ESL" href="#egse.dsi.esl.ESL">ESL</a>) ‑> None</span>
+<span>def <span class="ident">esl_print_info</span></span>(<span>esl_link: ESL)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Prints information about the connected device to the console.</p>
 <h2 id="args">Args</h2>
 <dl>
-<dt><strong><code>esl_link</code></strong> :&ensp;<code><a title="egse.dsi.esl.ESL" href="#egse.dsi.esl.ESL">ESL</a></code></dt>
+<dt><strong><code>esl_link</code></strong> :&ensp;<code>ESL</code></dt>
 <dd>the ESL structure that defines the connection to the DSI</dd>
 </dl>
 <h2 id="returns">Returns</h2>
@@ -1259,7 +1110,7 @@ and throwing an <code><a title="egse.dsi.esl.ESLError" href="#egse.dsi.esl.ESLEr
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def esl_print_info(esl_link: ESL) -&gt; None:
+<pre><code class="python">def esl_print_info(esl_link: &#39;ESL&#39;) -&gt; None:
     &#34;&#34;&#34;
     Prints information about the connected device to the console.
 
@@ -1269,16 +1120,12 @@ and throwing an <code><a title="egse.dsi.esl.ESLError" href="#egse.dsi.esl.ESLEr
     Returns:
         nothing
     &#34;&#34;&#34;
-    print(&#34;Manufacturer        {}&#34;.format(esl_get_manufacturer_string(esl_link)))
-    print(&#34;Product             {}&#34;.format(esl_get_product_string(esl_link)))
-    print(&#34;Number of links     {}&#34;.format(esl_get_number_of_links(esl_link)))
+    print(f&#34;Manufacturer        {esl_get_manufacturer_string(esl_link)}&#34;)
+    print(f&#34;Product             {esl_get_product_string(esl_link)}&#34;)
+    print(f&#34;Number of links     {esl_get_number_of_links(esl_link)} [active port={esl_get_active_link(esl_link)}]&#34;)
 
-    # Pre-allocate the character buffer
-
-    hwa = b&#39;012345&#39;
-
-    esl_get_hwa(esl_link, hwa)
-    serial_number = esl_hwa_to_serial_number_string(hwa)
+    hwa = esl_get_hwa(esl_link)
+    serial_number = esl_get_serial_number(esl_link)
 
     print(f&#34;Serial number       {serial_number}&#34;)
     print(f&#34;Hardware Address    0x{hwa[0]:02X}-{hwa[1]:02X}-{hwa[2]:02X}-{hwa[3]:02X}-{hwa[4]:02X}-{hwa[5]:02X}&#34;)</code></pre>
@@ -1312,7 +1159,7 @@ and throwing an <code><a title="egse.dsi.esl.ESLError" href="#egse.dsi.esl.ESLEr
 </details>
 </dd>
 <dt id="egse.dsi.esl.esl_read_packet"><code class="name flex">
-<span>def <span class="ident">esl_read_packet</span></span>(<span>esl_link: <a title="egse.dsi.esl.ESL" href="#egse.dsi.esl.ESL">ESL</a>, timeout: int = None) ‑> Tuple[int, bytes]</span>
+<span>def <span class="ident">esl_read_packet</span></span>(<span>esl_link: ESL, timeout: int = None) ‑> Tuple[int, bytes]</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Reads a full packet from the SpaceWire link.</p>
@@ -1321,7 +1168,7 @@ and throwing an <code><a title="egse.dsi.esl.ESLError" href="#egse.dsi.esl.ESLEr
 </div>
 <h2 id="args">Args</h2>
 <dl>
-<dt><strong><code>esl_link</code></strong> :&ensp;<code><a title="egse.dsi.esl.ESL" href="#egse.dsi.esl.ESL">ESL</a></code></dt>
+<dt><strong><code>esl_link</code></strong> :&ensp;<code>ESL</code></dt>
 <dd>the ESL structure that defines the connection to the DSI</dd>
 <dt><strong><code>timeout</code></strong> :&ensp;<code>int</code></dt>
 <dd>the maximum timeout that read_packet() will wait for data before returning [milliseconds]</dd>
@@ -1334,7 +1181,7 @@ the second item in the tuple will then be an empty buffer.</p></div>
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def esl_read_packet(esl_link: ESL, timeout: int = None) -&gt; Tuple[int, bytes]:
+<pre><code class="python">def esl_read_packet(esl_link: &#39;ESL&#39;, timeout: int = None) -&gt; Tuple[int, bytes]:
     &#34;&#34;&#34;
     Reads a full packet from the SpaceWire link.
 
@@ -1357,7 +1204,7 @@ the second item in the tuple will then be an empty buffer.</p></div>
         esl_link, rx_buffer, dsi_settings.RX_BUFFER_LENGTH, terminator_p,
         constants.ESL_RETURN_EXTENSION_DATA | constants.ESL_RETURN_SPECIAL_DATA, timeout=timeout)
 
-    logger.log(0, f&#34;Number of bytes received: {bytes_received}&#34;)
+    # logger.debug(f&#34;Number of bytes received: {bytes_received}&#34;)
 
     if bytes_received &lt; 0:
         return bytes_received, bytes()
@@ -1378,12 +1225,12 @@ the second item in the tuple will then be an empty buffer.</p></div>
 
     if timeout:
         saved_timeout = esl_get_rx_timeout(esl_link)
-        esl_set_rx_timeout(esl_link, timeout)
+        egse.dsi._libesl.libesl_set_rx_timeout(esl_link, timeout)
 
-    result = libesl_read_packet_full(esl_link, buffer, buffer_length, rx_terminator, special_data_action)
+    result = egse.dsi._libesl.libesl_read_packet_full(esl_link, buffer, buffer_length, rx_terminator, special_data_action)
 
     if timeout:
-        esl_set_rx_timeout(esl_link, saved_timeout)
+        egse.dsi._libesl.libesl_set_rx_timeout(esl_link, saved_timeout)
 
     # This error handling is (or should be) done in the calling application, see for example egse.feesim.py
     # if result == -1:
@@ -1396,14 +1243,14 @@ the second item in the tuple will then be an empty buffer.</p></div>
 </details>
 </dd>
 <dt id="egse.dsi.esl.esl_send_timecode"><code class="name flex">
-<span>def <span class="ident">esl_send_timecode</span></span>(<span>esl_link: <a title="egse.dsi.esl.ESL" href="#egse.dsi.esl.ESL">ESL</a>, timecode: int) ‑> int</span>
+<span>def <span class="ident">esl_send_timecode</span></span>(<span>esl_link: ESL, timecode: int) ‑> int</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Send a timecode over the SpaceWire link.</p>
 <p>The 8-bit timecode argument contains six-bit of system time (time-field) and two control flags.</p>
 <h2 id="args">Args</h2>
 <dl>
-<dt><strong><code>esl_link</code></strong> :&ensp;<code><a title="egse.dsi.esl.ESL" href="#egse.dsi.esl.ESL">ESL</a></code></dt>
+<dt><strong><code>esl_link</code></strong> :&ensp;<code>ESL</code></dt>
 <dd>the ESL structure that defines the connection to the DSI</dd>
 <dt><strong><code>timecode</code></strong> :&ensp;<code>int</code></dt>
 <dd>an 8-bit timecode field</dd>
@@ -1414,7 +1261,7 @@ the second item in the tuple will then be an empty buffer.</p></div>
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def esl_send_timecode(esl_link: ESL, timecode: int) -&gt; int:
+<pre><code class="python">def esl_send_timecode(esl_link: &#39;ESL&#39;, timecode: int) -&gt; int:
     &#34;&#34;&#34;
     Send a timecode over the SpaceWire link.
 
@@ -1428,7 +1275,7 @@ the second item in the tuple will then be an empty buffer.</p></div>
         0 if the request has been queued, not 0 if not.
 
     &#34;&#34;&#34;
-    result = libesl_send_timecode(esl_link, timecode)
+    result = egse.dsi._libesl.libesl_send_timecode(esl_link, timecode)
 
     if result:
         raise ESLError(
@@ -1436,9 +1283,22 @@ the second item in the tuple will then be an empty buffer.</p></div>
             f&#34;[{esl_link.contents.ESL_error}]&#34;
         )
 
-    libesl_flush(esl_link)
+    result = egse.dsi._libesl.libesl_flush(esl_link)
 
     return result</code></pre>
+</details>
+</dd>
+<dt id="egse.dsi.esl.esl_set_active_link"><code class="name flex">
+<span>def <span class="ident">esl_set_active_link</span></span>(<span>esl_link, active_link)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def esl_set_active_link(esl_link, active_link):
+    return egse.dsi._libesl.libesl_set_active_link(esl_link, active_link)</code></pre>
 </details>
 </dd>
 <dt id="egse.dsi.esl.esl_set_log_file"><code class="name flex">
@@ -1451,14 +1311,14 @@ the second item in the tuple will then be an empty buffer.</p></div>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def esl_set_log_file(esl_link, filename):
-    result = libesl_set_log_file(esl_link, c_char_p(filename.encode()))
+    result = egse.dsi._libesl.libesl_set_log_file(esl_link, c_char_p(filename.encode()))
     if result:
-        raise ESLError(f&#34;Could not write to or open record file {filename}.&#34;)
+        raise ESLError(f&#34;Could not write to or open log file {filename}.&#34;)
     return result</code></pre>
 </details>
 </dd>
 <dt id="egse.dsi.esl.esl_set_mode"><code class="name flex">
-<span>def <span class="ident">esl_set_mode</span></span>(<span>esl_link: <a title="egse.dsi.esl.ESL" href="#egse.dsi.esl.ESL">ESL</a>, mode: int) ‑> int</span>
+<span>def <span class="ident">esl_set_mode</span></span>(<span>esl_link: ESL, mode: int) ‑> int</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Set the operating mode of the currently active SpaceWire link.</p>
@@ -1467,7 +1327,7 @@ be enabled into one of its operational modes before data can
 be transferred.</p>
 <h2 id="args">Args</h2>
 <dl>
-<dt><strong><code>esl_link</code></strong> :&ensp;<code><a title="egse.dsi.esl.ESL" href="#egse.dsi.esl.ESL">ESL</a></code></dt>
+<dt><strong><code>esl_link</code></strong> :&ensp;<code>ESL</code></dt>
 <dd>the ESL structure that defines the connection to the DSI</dd>
 <dt><strong><code>mode</code></strong> :&ensp;<code>int</code></dt>
 <dd>the link mode [DISABLED, NORMAL, LEGACY or MASTER]</dd>
@@ -1478,7 +1338,7 @@ be transferred.</p>
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def esl_set_mode(esl_link: ESL, mode: int) -&gt; int:
+<pre><code class="python">def esl_set_mode(esl_link: &#39;ESL&#39;, mode: int) -&gt; int:
     &#34;&#34;&#34;
     Set the operating mode of the currently active SpaceWire link.
 
@@ -1494,11 +1354,10 @@ be transferred.</p>
         0 if the request has been queued, not 0 if not.
 
     &#34;&#34;&#34;
-    result = libesl_set_mode(esl_link, mode)
+    result = egse.dsi._libesl.libesl_set_mode(esl_link, mode)
     if result:
-        raise ESLError(
-            &#34;Could not set mode, ESL error code={} [{}]&#34;.format(esl_error_codes[esl_link.contents.ESL_error],
-                                                                esl_link.contents.ESL_error))
+        raise ESLError(f&#34;Could not set mode {esl_link_mode[mode]}.&#34;)
+
     return result</code></pre>
 </details>
 </dd>
@@ -1512,10 +1371,23 @@ be transferred.</p>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def esl_set_record_file(esl_link, filename):
-    result = libesl_set_record_file(esl_link, c_char_p(filename.encode()))
+    result = egse.dsi._libesl.libesl_set_record_file(esl_link, c_char_p(filename.encode()))
     if result:
-        raise ESLError(f&#34;Could not write to or open log file {filename}.&#34;)
+        raise ESLError(f&#34;Could not write to or open record file {filename}.&#34;)
     return result</code></pre>
+</details>
+</dd>
+<dt id="egse.dsi.esl.esl_set_rx_timeout"><code class="name flex">
+<span>def <span class="ident">esl_set_rx_timeout</span></span>(<span>esl_link, timeout: int)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def esl_set_rx_timeout(esl_link, timeout: int):
+    esl_link.contents.rx_timeout = timeout</code></pre>
 </details>
 </dd>
 <dt id="egse.dsi.esl.esl_set_speed"><code class="name flex">
@@ -1528,7 +1400,7 @@ be transferred.</p>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def esl_set_speed(esl_link, speed):
-    result = libesl_set_speed(esl_link, speed)
+    result = egse.dsi._libesl.libesl_set_speed(esl_link, speed)
     if result:
         raise ESLError(&#34;Could not set speed to {}, ESL error code={} [{}]&#34;.format(speed, esl_error_codes[
             esl_link.contents.ESL_error], esl_link.contents.ESL_error))
@@ -1536,7 +1408,7 @@ be transferred.</p>
 </details>
 </dd>
 <dt id="egse.dsi.esl.esl_write_packet"><code class="name flex">
-<span>def <span class="ident">esl_write_packet</span></span>(<span>esl_link: <a title="egse.dsi.esl.ESL" href="#egse.dsi.esl.ESL">ESL</a>, buffer, buffer_length: int, tx_terminator: int) ‑> int</span>
+<span>def <span class="ident">esl_write_packet</span></span>(<span>esl_link: ESL, buffer, buffer_length: int, tx_terminator: int) ‑> int</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Queue data for transmission over the SpaceWire cable. If there is no room left in the buffer,
@@ -1545,7 +1417,7 @@ the buffer is transmitted.</p>
 To guarantee transmission of this data you need to call the esl_flush() function.</p>
 <h2 id="args">Args</h2>
 <dl>
-<dt><strong><code>esl_link</code></strong> :&ensp;<code><a title="egse.dsi.esl.ESL" href="#egse.dsi.esl.ESL">ESL</a></code></dt>
+<dt><strong><code>esl_link</code></strong> :&ensp;<code>ESL</code></dt>
 <dd>the ESL structure that defines the connection to the DSI</dd>
 <dt><strong><code>buffer</code></strong></dt>
 <dd>the data to send</dd>
@@ -1557,13 +1429,13 @@ To guarantee transmission of this data you need to call the esl_flush() function
 <h2 id="returns">Returns</h2>
 <dl>
 <dt><code>return_code</code></dt>
-<dd>0 on success, &lt; 0 otherwise</dd>
+<dd>0 on success, &lt; 0 when an error occurred.</dd>
 </dl></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def esl_write_packet(esl_link: ESL, buffer, buffer_length: int, tx_terminator: int) -&gt; int:
+<pre><code class="python">def esl_write_packet(esl_link: &#39;ESL&#39;, buffer, buffer_length: int, tx_terminator: int) -&gt; int:
     &#34;&#34;&#34;
     Queue data for transmission over the SpaceWire cable. If there is no room left in the buffer,
     the buffer is transmitted.
@@ -1578,24 +1450,10 @@ To guarantee transmission of this data you need to call the esl_flush() function
         tx_terminator: additional metadata about the frame we are transmitting (EOP, EEP, PART_EOP_EEP, EXTN)
 
     Returns:
-        return_code: 0 on success, &lt; 0 otherwise
+        return_code: 0 on success, &lt; 0 when an error occurred.
     &#34;&#34;&#34;
-    # logger.debug(
-    #     f&#34;Calling esl_write_packet: &#34;
-    #     f&#34;buffer={pp_packet(buffer)}, buffer_length={buffer_length}, tx_terminator=0x{tx_terminator:x} &#34;
-    #     f&#34;[{get_terminator_name(tx_terminator) or get_extension_name(tx_terminator)}].&#34;
-    # )
 
-    result = libesl_write_packet(esl_link, buffer, buffer_length, tx_terminator)
-
-    # This error handling is (or should be) done in the calling application, see for example egse.feesim.py
-    # if result == -1:
-    #     raise ESLError(
-    #         f&#34;Could not write the packet, &#34;
-    #         f&#34;ESL error code = {esl_error_codes[esl_link.contents.ESL_error]} [{esl_link.contents.ESL_error}]&#34;
-    #     )
-
-    # logger.debug(f&#34;Returning from esl_write_packet: buffer={pp_packet(buffer)}, result = {result}.&#34;)
+    result = egse.dsi._libesl.libesl_write_packet(esl_link, buffer, buffer_length, tx_terminator)
 
     return result</code></pre>
 </details>
@@ -1745,73 +1603,6 @@ To guarantee transmission of this data you need to call the esl_flush() function
     return msg</code></pre>
 </details>
 </dd>
-<dt id="egse.dsi.esl.pretty_print_packet"><code class="name flex">
-<span>def <span class="ident">pretty_print_packet</span></span>(<span>packet) ‑> str</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def pretty_print_packet(packet) -&gt; str:
-
-    from egse.fee import is_hk_data_packet
-
-    msg = f&#34;packet is of type {type(packet)}, with length {len(packet)}\n&#34;
-
-    # When the packet is of type ctypes.c_char_Array_24 (i.e. ctypes array of c_char)
-    # then convert the packet into a bytes object.
-
-    if hasattr(packet, &#39;raw&#39;):
-        packet = packet.raw
-
-    # First check if this is a timecode packet because this is only 2 bytes long and reading the instruction field
-    # will result in an IndexError otherwise.
-
-    if is_timecode(packet):
-        msg += (
-            f&#34;Time code received: 0x{packet[1]:02x}\n&#34;
-        )
-    elif get_protocol_id(packet) == RMAP_PROTOCOL_ID:
-        import egse.dsi.rmap
-        instruction_field = egse.dsi.rmap.get_instruction_field(packet)
-        if instruction_field == 0x4C:
-            msg += pretty_print_read_request_packet(packet)
-        elif instruction_field == 0x4C &amp; 0x3F:
-            msg += pretty_print_read_request_reply_packet(packet)
-        elif instruction_field == 0x7C:
-            msg += pretty_print_verified_write_request_packet(packet)
-        elif instruction_field == 0x6C:
-            msg += pretty_print_unverified_write_request_packet(packet)
-        elif instruction_field == 0x3C &amp; 0x3F:
-            msg += pretty_print_write_request_reply_packet(packet)
-        else:
-            msg += (
-                f&#34;RMAP packet (to-be-implemented)\n&#34;
-                f&#39;{pp_packet(packet)}&#39;
-            )
-    elif get_protocol_id(packet) == CCSDS_PROTOCOL_ID:
-        msg += (
-            f&#34;CCSDS Packet\n&#34;
-            f&#34;Packet: {&#39; &#39;.join([hex(x) for x in packet[:min(80, len(packet))]])} [max. 80 bytes printed].&#34;
-        )
-    elif get_protocol_id(packet) == DATA_HK_PROTOCOL_ID and is_hk_data_packet(packet):
-        # FIXME: this puts an unnecessary dependency on the esl.py module. The HousekeepingPacket is PLATO specific
-        #        and should not be in the esl.py module
-        msg += (
-            f&#34;HK Packet:\n&#34;
-            f&#34;{HousekeepingPacket(packet)}&#34;
-        )
-    else:
-        msg += (
-            f&#34;Extended Protocol Identifier is not supported.\n&#34;
-            f&#34;Packet: {&#39; &#39;.join([hex(x) for x in packet[:min(80, len(packet))]])} [max. 80 bytes printed].&#34;
-        )
-
-    return msg</code></pre>
-</details>
-</dd>
 <dt id="egse.dsi.esl.pretty_print_read_request_packet"><code class="name flex">
 <span>def <span class="ident">pretty_print_read_request_packet</span></span>(<span>packet)</span>
 </code></dt>
@@ -1952,327 +1743,6 @@ To guarantee transmission of this data you need to call the esl_flush() function
 <section>
 <h2 class="section-title" id="header-classes">Classes</h2>
 <dl>
-<dt id="egse.dsi.esl.ESL"><code class="flex name class">
-<span>class <span class="ident">ESL</span></span>
-<span>(</span><span>*args, **kwargs)</span>
-</code></dt>
-<dd>
-<div class="desc"><p>Structure base class</p></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">class ESL(Structure):
-    _fields_ = [
-        (&#34;sock&#34;, c_int),
-        (&#34;tx_buffer&#34;, c_char_p),
-        (&#34;tx_buffer_length&#34;, c_size_t),
-        (&#34;tx_buffer_content&#34;, c_size_t),
-        (&#34;rx_buffer&#34;, c_char_p),
-        (&#34;rx_buffer_length&#34;, c_size_t),
-        (&#34;rx_buffer_content&#34;, c_ssize_t),
-        (&#34;rx_buffer_ptr&#34;, c_int),
-        (&#34;rx_state&#34;, c_int),
-        (&#34;rx_count&#34;, c_int),
-        (&#34;rx_param&#34;, c_int),
-        (&#34;rx_timeout&#34;, c_int),
-        (&#34;rx_final_flags&#34;, c_int),
-        (&#34;extn_count&#34;, c_int),
-        (&#34;extn_size&#34;, c_int),
-        (&#34;extn_cmd&#34;, c_int),
-        (&#34;extn_byte&#34;, c_int),
-        (&#34;extn_link&#34;, c_int),
-        (&#34;cmd_buffer&#34;, c_char_p),
-        (&#34;time_buffer&#34;, c_char_p),
-
-        (&#34;special_cb&#34;, c_void_p),
-        (&#34;extension_cb&#34;, c_void_p),
-
-        (&#34;number_of_links&#34;, c_int),
-        (&#34;number_of_slots&#34;, c_int),
-        (&#34;slot_content&#34;, c_int_p),
-        (&#34;record_file&#34;, c_void_p),
-        (&#34;log_file&#34;, c_void_p),
-        (&#34;max_length&#34;, c_int),
-        (&#34;log_rx_port&#34;, c_int),
-        (&#34;log_tx_port&#34;, c_int),
-
-        (&#34;ram_io&#34;, c_int),
-        (&#34;current_port&#34;, c_int),
-
-        (&#34;check_record_writes&#34;, c_int),
-        (&#34;total_raw_bytes_received&#34;, c_uint64),
-
-        (&#34;options&#34;, c_char_p),
-        (&#34;option&#34;, c_int),
-        (&#34;ESL_error_errno&#34;, c_int),
-
-        (&#34;rx_timeout_returns_error&#34;, c_int),
-
-        (&#34;max_dumps&#34;, c_uint32),
-        (&#34;context&#34;, c_void_p),
-
-        (&#34;rxinfo&#34;, c_uint32),
-
-        (&#34;read_calls&#34;, c_uint64),
-        (&#34;read_io_calls&#34;, c_uint64),
-        (&#34;file&#34;, c_int),
-        (&#34;filesize&#34;, c_uint64),
-        (&#34;recordsize&#34;, c_uint64),
-
-        (&#34;ram_io_int&#34;, c_int),
-
-        (&#34;eintr_enabled&#34;, c_int),
-        (&#34;timezero&#34;, c_size_t),
-        (&#34;timedata&#34;, c_uint64),
-        (&#34;timedata_ns&#34;, c_uint32),
-
-        (&#34;partialframesz&#34;, c_size_t),
-        (&#34;partialframe_offset&#34;, c_size_t),
-        (&#34;system_type&#34;, c_int),
-        (&#34;auto_flush&#34;, c_int),
-        (&#34;live&#34;, c_int),
-
-        (&#34;epollfd&#34;, c_int),
-    ]</code></pre>
-</details>
-<h3>Ancestors</h3>
-<ul class="hlist">
-<li>_ctypes.Structure</li>
-<li>_ctypes._CData</li>
-</ul>
-<h3>Instance variables</h3>
-<dl>
-<dt id="egse.dsi.esl.ESL.ESL_error_errno"><code class="name">var <span class="ident">ESL_error_errno</span></code></dt>
-<dd>
-<div class="desc"><p>Structure/Union member</p></div>
-</dd>
-<dt id="egse.dsi.esl.ESL.auto_flush"><code class="name">var <span class="ident">auto_flush</span></code></dt>
-<dd>
-<div class="desc"><p>Structure/Union member</p></div>
-</dd>
-<dt id="egse.dsi.esl.ESL.check_record_writes"><code class="name">var <span class="ident">check_record_writes</span></code></dt>
-<dd>
-<div class="desc"><p>Structure/Union member</p></div>
-</dd>
-<dt id="egse.dsi.esl.ESL.cmd_buffer"><code class="name">var <span class="ident">cmd_buffer</span></code></dt>
-<dd>
-<div class="desc"><p>Structure/Union member</p></div>
-</dd>
-<dt id="egse.dsi.esl.ESL.context"><code class="name">var <span class="ident">context</span></code></dt>
-<dd>
-<div class="desc"><p>Structure/Union member</p></div>
-</dd>
-<dt id="egse.dsi.esl.ESL.current_port"><code class="name">var <span class="ident">current_port</span></code></dt>
-<dd>
-<div class="desc"><p>Structure/Union member</p></div>
-</dd>
-<dt id="egse.dsi.esl.ESL.eintr_enabled"><code class="name">var <span class="ident">eintr_enabled</span></code></dt>
-<dd>
-<div class="desc"><p>Structure/Union member</p></div>
-</dd>
-<dt id="egse.dsi.esl.ESL.epollfd"><code class="name">var <span class="ident">epollfd</span></code></dt>
-<dd>
-<div class="desc"><p>Structure/Union member</p></div>
-</dd>
-<dt id="egse.dsi.esl.ESL.extension_cb"><code class="name">var <span class="ident">extension_cb</span></code></dt>
-<dd>
-<div class="desc"><p>Structure/Union member</p></div>
-</dd>
-<dt id="egse.dsi.esl.ESL.extn_byte"><code class="name">var <span class="ident">extn_byte</span></code></dt>
-<dd>
-<div class="desc"><p>Structure/Union member</p></div>
-</dd>
-<dt id="egse.dsi.esl.ESL.extn_cmd"><code class="name">var <span class="ident">extn_cmd</span></code></dt>
-<dd>
-<div class="desc"><p>Structure/Union member</p></div>
-</dd>
-<dt id="egse.dsi.esl.ESL.extn_count"><code class="name">var <span class="ident">extn_count</span></code></dt>
-<dd>
-<div class="desc"><p>Structure/Union member</p></div>
-</dd>
-<dt id="egse.dsi.esl.ESL.extn_link"><code class="name">var <span class="ident">extn_link</span></code></dt>
-<dd>
-<div class="desc"><p>Structure/Union member</p></div>
-</dd>
-<dt id="egse.dsi.esl.ESL.extn_size"><code class="name">var <span class="ident">extn_size</span></code></dt>
-<dd>
-<div class="desc"><p>Structure/Union member</p></div>
-</dd>
-<dt id="egse.dsi.esl.ESL.file"><code class="name">var <span class="ident">file</span></code></dt>
-<dd>
-<div class="desc"><p>Structure/Union member</p></div>
-</dd>
-<dt id="egse.dsi.esl.ESL.filesize"><code class="name">var <span class="ident">filesize</span></code></dt>
-<dd>
-<div class="desc"><p>Structure/Union member</p></div>
-</dd>
-<dt id="egse.dsi.esl.ESL.live"><code class="name">var <span class="ident">live</span></code></dt>
-<dd>
-<div class="desc"><p>Structure/Union member</p></div>
-</dd>
-<dt id="egse.dsi.esl.ESL.log_file"><code class="name">var <span class="ident">log_file</span></code></dt>
-<dd>
-<div class="desc"><p>Structure/Union member</p></div>
-</dd>
-<dt id="egse.dsi.esl.ESL.log_rx_port"><code class="name">var <span class="ident">log_rx_port</span></code></dt>
-<dd>
-<div class="desc"><p>Structure/Union member</p></div>
-</dd>
-<dt id="egse.dsi.esl.ESL.log_tx_port"><code class="name">var <span class="ident">log_tx_port</span></code></dt>
-<dd>
-<div class="desc"><p>Structure/Union member</p></div>
-</dd>
-<dt id="egse.dsi.esl.ESL.max_dumps"><code class="name">var <span class="ident">max_dumps</span></code></dt>
-<dd>
-<div class="desc"><p>Structure/Union member</p></div>
-</dd>
-<dt id="egse.dsi.esl.ESL.max_length"><code class="name">var <span class="ident">max_length</span></code></dt>
-<dd>
-<div class="desc"><p>Structure/Union member</p></div>
-</dd>
-<dt id="egse.dsi.esl.ESL.number_of_links"><code class="name">var <span class="ident">number_of_links</span></code></dt>
-<dd>
-<div class="desc"><p>Structure/Union member</p></div>
-</dd>
-<dt id="egse.dsi.esl.ESL.number_of_slots"><code class="name">var <span class="ident">number_of_slots</span></code></dt>
-<dd>
-<div class="desc"><p>Structure/Union member</p></div>
-</dd>
-<dt id="egse.dsi.esl.ESL.option"><code class="name">var <span class="ident">option</span></code></dt>
-<dd>
-<div class="desc"><p>Structure/Union member</p></div>
-</dd>
-<dt id="egse.dsi.esl.ESL.options"><code class="name">var <span class="ident">options</span></code></dt>
-<dd>
-<div class="desc"><p>Structure/Union member</p></div>
-</dd>
-<dt id="egse.dsi.esl.ESL.partialframe_offset"><code class="name">var <span class="ident">partialframe_offset</span></code></dt>
-<dd>
-<div class="desc"><p>Structure/Union member</p></div>
-</dd>
-<dt id="egse.dsi.esl.ESL.partialframesz"><code class="name">var <span class="ident">partialframesz</span></code></dt>
-<dd>
-<div class="desc"><p>Structure/Union member</p></div>
-</dd>
-<dt id="egse.dsi.esl.ESL.ram_io"><code class="name">var <span class="ident">ram_io</span></code></dt>
-<dd>
-<div class="desc"><p>Structure/Union member</p></div>
-</dd>
-<dt id="egse.dsi.esl.ESL.ram_io_int"><code class="name">var <span class="ident">ram_io_int</span></code></dt>
-<dd>
-<div class="desc"><p>Structure/Union member</p></div>
-</dd>
-<dt id="egse.dsi.esl.ESL.read_calls"><code class="name">var <span class="ident">read_calls</span></code></dt>
-<dd>
-<div class="desc"><p>Structure/Union member</p></div>
-</dd>
-<dt id="egse.dsi.esl.ESL.read_io_calls"><code class="name">var <span class="ident">read_io_calls</span></code></dt>
-<dd>
-<div class="desc"><p>Structure/Union member</p></div>
-</dd>
-<dt id="egse.dsi.esl.ESL.record_file"><code class="name">var <span class="ident">record_file</span></code></dt>
-<dd>
-<div class="desc"><p>Structure/Union member</p></div>
-</dd>
-<dt id="egse.dsi.esl.ESL.recordsize"><code class="name">var <span class="ident">recordsize</span></code></dt>
-<dd>
-<div class="desc"><p>Structure/Union member</p></div>
-</dd>
-<dt id="egse.dsi.esl.ESL.rx_buffer"><code class="name">var <span class="ident">rx_buffer</span></code></dt>
-<dd>
-<div class="desc"><p>Structure/Union member</p></div>
-</dd>
-<dt id="egse.dsi.esl.ESL.rx_buffer_content"><code class="name">var <span class="ident">rx_buffer_content</span></code></dt>
-<dd>
-<div class="desc"><p>Structure/Union member</p></div>
-</dd>
-<dt id="egse.dsi.esl.ESL.rx_buffer_length"><code class="name">var <span class="ident">rx_buffer_length</span></code></dt>
-<dd>
-<div class="desc"><p>Structure/Union member</p></div>
-</dd>
-<dt id="egse.dsi.esl.ESL.rx_buffer_ptr"><code class="name">var <span class="ident">rx_buffer_ptr</span></code></dt>
-<dd>
-<div class="desc"><p>Structure/Union member</p></div>
-</dd>
-<dt id="egse.dsi.esl.ESL.rx_count"><code class="name">var <span class="ident">rx_count</span></code></dt>
-<dd>
-<div class="desc"><p>Structure/Union member</p></div>
-</dd>
-<dt id="egse.dsi.esl.ESL.rx_final_flags"><code class="name">var <span class="ident">rx_final_flags</span></code></dt>
-<dd>
-<div class="desc"><p>Structure/Union member</p></div>
-</dd>
-<dt id="egse.dsi.esl.ESL.rx_param"><code class="name">var <span class="ident">rx_param</span></code></dt>
-<dd>
-<div class="desc"><p>Structure/Union member</p></div>
-</dd>
-<dt id="egse.dsi.esl.ESL.rx_state"><code class="name">var <span class="ident">rx_state</span></code></dt>
-<dd>
-<div class="desc"><p>Structure/Union member</p></div>
-</dd>
-<dt id="egse.dsi.esl.ESL.rx_timeout"><code class="name">var <span class="ident">rx_timeout</span></code></dt>
-<dd>
-<div class="desc"><p>Structure/Union member</p></div>
-</dd>
-<dt id="egse.dsi.esl.ESL.rx_timeout_returns_error"><code class="name">var <span class="ident">rx_timeout_returns_error</span></code></dt>
-<dd>
-<div class="desc"><p>Structure/Union member</p></div>
-</dd>
-<dt id="egse.dsi.esl.ESL.rxinfo"><code class="name">var <span class="ident">rxinfo</span></code></dt>
-<dd>
-<div class="desc"><p>Structure/Union member</p></div>
-</dd>
-<dt id="egse.dsi.esl.ESL.slot_content"><code class="name">var <span class="ident">slot_content</span></code></dt>
-<dd>
-<div class="desc"><p>Structure/Union member</p></div>
-</dd>
-<dt id="egse.dsi.esl.ESL.sock"><code class="name">var <span class="ident">sock</span></code></dt>
-<dd>
-<div class="desc"><p>Structure/Union member</p></div>
-</dd>
-<dt id="egse.dsi.esl.ESL.special_cb"><code class="name">var <span class="ident">special_cb</span></code></dt>
-<dd>
-<div class="desc"><p>Structure/Union member</p></div>
-</dd>
-<dt id="egse.dsi.esl.ESL.system_type"><code class="name">var <span class="ident">system_type</span></code></dt>
-<dd>
-<div class="desc"><p>Structure/Union member</p></div>
-</dd>
-<dt id="egse.dsi.esl.ESL.time_buffer"><code class="name">var <span class="ident">time_buffer</span></code></dt>
-<dd>
-<div class="desc"><p>Structure/Union member</p></div>
-</dd>
-<dt id="egse.dsi.esl.ESL.timedata"><code class="name">var <span class="ident">timedata</span></code></dt>
-<dd>
-<div class="desc"><p>Structure/Union member</p></div>
-</dd>
-<dt id="egse.dsi.esl.ESL.timedata_ns"><code class="name">var <span class="ident">timedata_ns</span></code></dt>
-<dd>
-<div class="desc"><p>Structure/Union member</p></div>
-</dd>
-<dt id="egse.dsi.esl.ESL.timezero"><code class="name">var <span class="ident">timezero</span></code></dt>
-<dd>
-<div class="desc"><p>Structure/Union member</p></div>
-</dd>
-<dt id="egse.dsi.esl.ESL.total_raw_bytes_received"><code class="name">var <span class="ident">total_raw_bytes_received</span></code></dt>
-<dd>
-<div class="desc"><p>Structure/Union member</p></div>
-</dd>
-<dt id="egse.dsi.esl.ESL.tx_buffer"><code class="name">var <span class="ident">tx_buffer</span></code></dt>
-<dd>
-<div class="desc"><p>Structure/Union member</p></div>
-</dd>
-<dt id="egse.dsi.esl.ESL.tx_buffer_content"><code class="name">var <span class="ident">tx_buffer_content</span></code></dt>
-<dd>
-<div class="desc"><p>Structure/Union member</p></div>
-</dd>
-<dt id="egse.dsi.esl.ESL.tx_buffer_length"><code class="name">var <span class="ident">tx_buffer_length</span></code></dt>
-<dd>
-<div class="desc"><p>Structure/Union member</p></div>
-</dd>
-</dl>
-</dd>
 <dt id="egse.dsi.esl.ESLError"><code class="flex name class">
 <span>class <span class="ident">ESLError</span></span>
 <span>(</span><span>*args, **kwargs)</span>
@@ -2290,18 +1760,6 @@ To guarantee transmission of this data you need to call the esl_flush() function
 <ul class="hlist">
 <li>builtins.Exception</li>
 <li>builtins.BaseException</li>
-</ul>
-</dd>
-<dt id="egse.dsi.esl.LP_ESL"><code class="flex name class">
-<span>class <span class="ident">esl_p</span></span>
-<span>(</span><span>*args, **kwargs)</span>
-</code></dt>
-<dd>
-<div class="desc"><p>XXX to be provided</p></div>
-<h3>Ancestors</h3>
-<ul class="hlist">
-<li>_ctypes._Pointer</li>
-<li>_ctypes._CData</li>
 </ul>
 </dd>
 </dl>
@@ -2325,19 +1783,27 @@ To guarantee transmission of this data you need to call the esl_flush() function
 <li><code><a title="egse.dsi.esl.esl_connection" href="#egse.dsi.esl.esl_connection">esl_connection</a></code></li>
 <li><code><a title="egse.dsi.esl.esl_er_enable_reporting" href="#egse.dsi.esl.esl_er_enable_reporting">esl_er_enable_reporting</a></code></li>
 <li><code><a title="egse.dsi.esl.esl_flush" href="#egse.dsi.esl.esl_flush">esl_flush</a></code></li>
+<li><code><a title="egse.dsi.esl.esl_get_active_link" href="#egse.dsi.esl.esl_get_active_link">esl_get_active_link</a></code></li>
+<li><code><a title="egse.dsi.esl.esl_get_esl_error" href="#egse.dsi.esl.esl_get_esl_error">esl_get_esl_error</a></code></li>
+<li><code><a title="egse.dsi.esl.esl_get_hwa" href="#egse.dsi.esl.esl_get_hwa">esl_get_hwa</a></code></li>
 <li><code><a title="egse.dsi.esl.esl_get_manufacturer_string" href="#egse.dsi.esl.esl_get_manufacturer_string">esl_get_manufacturer_string</a></code></li>
+<li><code><a title="egse.dsi.esl.esl_get_number_of_links" href="#egse.dsi.esl.esl_get_number_of_links">esl_get_number_of_links</a></code></li>
 <li><code><a title="egse.dsi.esl.esl_get_product_string" href="#egse.dsi.esl.esl_get_product_string">esl_get_product_string</a></code></li>
 <li><code><a title="egse.dsi.esl.esl_get_receive_speed" href="#egse.dsi.esl.esl_get_receive_speed">esl_get_receive_speed</a></code></li>
 <li><code><a title="egse.dsi.esl.esl_get_rx_timeout" href="#egse.dsi.esl.esl_get_rx_timeout">esl_get_rx_timeout</a></code></li>
+<li><code><a title="egse.dsi.esl.esl_get_serial_number" href="#egse.dsi.esl.esl_get_serial_number">esl_get_serial_number</a></code></li>
+<li><code><a title="egse.dsi.esl.esl_is_link_connected" href="#egse.dsi.esl.esl_is_link_connected">esl_is_link_connected</a></code></li>
 <li><code><a title="egse.dsi.esl.esl_open_connection" href="#egse.dsi.esl.esl_open_connection">esl_open_connection</a></code></li>
 <li><code><a title="egse.dsi.esl.esl_print_info" href="#egse.dsi.esl.esl_print_info">esl_print_info</a></code></li>
 <li><code><a title="egse.dsi.esl.esl_print_summary_of_structure" href="#egse.dsi.esl.esl_print_summary_of_structure">esl_print_summary_of_structure</a></code></li>
 <li><code><a title="egse.dsi.esl.esl_read_packet" href="#egse.dsi.esl.esl_read_packet">esl_read_packet</a></code></li>
 <li><code><a title="egse.dsi.esl.esl_read_packet_full" href="#egse.dsi.esl.esl_read_packet_full">esl_read_packet_full</a></code></li>
 <li><code><a title="egse.dsi.esl.esl_send_timecode" href="#egse.dsi.esl.esl_send_timecode">esl_send_timecode</a></code></li>
+<li><code><a title="egse.dsi.esl.esl_set_active_link" href="#egse.dsi.esl.esl_set_active_link">esl_set_active_link</a></code></li>
 <li><code><a title="egse.dsi.esl.esl_set_log_file" href="#egse.dsi.esl.esl_set_log_file">esl_set_log_file</a></code></li>
 <li><code><a title="egse.dsi.esl.esl_set_mode" href="#egse.dsi.esl.esl_set_mode">esl_set_mode</a></code></li>
 <li><code><a title="egse.dsi.esl.esl_set_record_file" href="#egse.dsi.esl.esl_set_record_file">esl_set_record_file</a></code></li>
+<li><code><a title="egse.dsi.esl.esl_set_rx_timeout" href="#egse.dsi.esl.esl_set_rx_timeout">esl_set_rx_timeout</a></code></li>
 <li><code><a title="egse.dsi.esl.esl_set_speed" href="#egse.dsi.esl.esl_set_speed">esl_set_speed</a></code></li>
 <li><code><a title="egse.dsi.esl.esl_write_packet" href="#egse.dsi.esl.esl_write_packet">esl_write_packet</a></code></li>
 <li><code><a title="egse.dsi.esl.get_extension_name" href="#egse.dsi.esl.get_extension_name">get_extension_name</a></code></li>
@@ -2347,7 +1813,6 @@ To guarantee transmission of this data you need to call the esl_flush() function
 <li><code><a title="egse.dsi.esl.is_terminator_code" href="#egse.dsi.esl.is_terminator_code">is_terminator_code</a></code></li>
 <li><code><a title="egse.dsi.esl.is_timecode" href="#egse.dsi.esl.is_timecode">is_timecode</a></code></li>
 <li><code><a title="egse.dsi.esl.pp_packet" href="#egse.dsi.esl.pp_packet">pp_packet</a></code></li>
-<li><code><a title="egse.dsi.esl.pretty_print_packet" href="#egse.dsi.esl.pretty_print_packet">pretty_print_packet</a></code></li>
 <li><code><a title="egse.dsi.esl.pretty_print_read_request_packet" href="#egse.dsi.esl.pretty_print_read_request_packet">pretty_print_read_request_packet</a></code></li>
 <li><code><a title="egse.dsi.esl.pretty_print_read_request_reply_packet" href="#egse.dsi.esl.pretty_print_read_request_reply_packet">pretty_print_read_request_reply_packet</a></code></li>
 <li><code><a title="egse.dsi.esl.pretty_print_unverified_write_request_packet" href="#egse.dsi.esl.pretty_print_unverified_write_request_packet">pretty_print_unverified_write_request_packet</a></code></li>
@@ -2358,72 +1823,7 @@ To guarantee transmission of this data you need to call the esl_flush() function
 <li><h3><a href="#header-classes">Classes</a></h3>
 <ul>
 <li>
-<h4><code><a title="egse.dsi.esl.ESL" href="#egse.dsi.esl.ESL">ESL</a></code></h4>
-<ul class="">
-<li><code><a title="egse.dsi.esl.ESL.ESL_error_errno" href="#egse.dsi.esl.ESL.ESL_error_errno">ESL_error_errno</a></code></li>
-<li><code><a title="egse.dsi.esl.ESL.auto_flush" href="#egse.dsi.esl.ESL.auto_flush">auto_flush</a></code></li>
-<li><code><a title="egse.dsi.esl.ESL.check_record_writes" href="#egse.dsi.esl.ESL.check_record_writes">check_record_writes</a></code></li>
-<li><code><a title="egse.dsi.esl.ESL.cmd_buffer" href="#egse.dsi.esl.ESL.cmd_buffer">cmd_buffer</a></code></li>
-<li><code><a title="egse.dsi.esl.ESL.context" href="#egse.dsi.esl.ESL.context">context</a></code></li>
-<li><code><a title="egse.dsi.esl.ESL.current_port" href="#egse.dsi.esl.ESL.current_port">current_port</a></code></li>
-<li><code><a title="egse.dsi.esl.ESL.eintr_enabled" href="#egse.dsi.esl.ESL.eintr_enabled">eintr_enabled</a></code></li>
-<li><code><a title="egse.dsi.esl.ESL.epollfd" href="#egse.dsi.esl.ESL.epollfd">epollfd</a></code></li>
-<li><code><a title="egse.dsi.esl.ESL.extension_cb" href="#egse.dsi.esl.ESL.extension_cb">extension_cb</a></code></li>
-<li><code><a title="egse.dsi.esl.ESL.extn_byte" href="#egse.dsi.esl.ESL.extn_byte">extn_byte</a></code></li>
-<li><code><a title="egse.dsi.esl.ESL.extn_cmd" href="#egse.dsi.esl.ESL.extn_cmd">extn_cmd</a></code></li>
-<li><code><a title="egse.dsi.esl.ESL.extn_count" href="#egse.dsi.esl.ESL.extn_count">extn_count</a></code></li>
-<li><code><a title="egse.dsi.esl.ESL.extn_link" href="#egse.dsi.esl.ESL.extn_link">extn_link</a></code></li>
-<li><code><a title="egse.dsi.esl.ESL.extn_size" href="#egse.dsi.esl.ESL.extn_size">extn_size</a></code></li>
-<li><code><a title="egse.dsi.esl.ESL.file" href="#egse.dsi.esl.ESL.file">file</a></code></li>
-<li><code><a title="egse.dsi.esl.ESL.filesize" href="#egse.dsi.esl.ESL.filesize">filesize</a></code></li>
-<li><code><a title="egse.dsi.esl.ESL.live" href="#egse.dsi.esl.ESL.live">live</a></code></li>
-<li><code><a title="egse.dsi.esl.ESL.log_file" href="#egse.dsi.esl.ESL.log_file">log_file</a></code></li>
-<li><code><a title="egse.dsi.esl.ESL.log_rx_port" href="#egse.dsi.esl.ESL.log_rx_port">log_rx_port</a></code></li>
-<li><code><a title="egse.dsi.esl.ESL.log_tx_port" href="#egse.dsi.esl.ESL.log_tx_port">log_tx_port</a></code></li>
-<li><code><a title="egse.dsi.esl.ESL.max_dumps" href="#egse.dsi.esl.ESL.max_dumps">max_dumps</a></code></li>
-<li><code><a title="egse.dsi.esl.ESL.max_length" href="#egse.dsi.esl.ESL.max_length">max_length</a></code></li>
-<li><code><a title="egse.dsi.esl.ESL.number_of_links" href="#egse.dsi.esl.ESL.number_of_links">number_of_links</a></code></li>
-<li><code><a title="egse.dsi.esl.ESL.number_of_slots" href="#egse.dsi.esl.ESL.number_of_slots">number_of_slots</a></code></li>
-<li><code><a title="egse.dsi.esl.ESL.option" href="#egse.dsi.esl.ESL.option">option</a></code></li>
-<li><code><a title="egse.dsi.esl.ESL.options" href="#egse.dsi.esl.ESL.options">options</a></code></li>
-<li><code><a title="egse.dsi.esl.ESL.partialframe_offset" href="#egse.dsi.esl.ESL.partialframe_offset">partialframe_offset</a></code></li>
-<li><code><a title="egse.dsi.esl.ESL.partialframesz" href="#egse.dsi.esl.ESL.partialframesz">partialframesz</a></code></li>
-<li><code><a title="egse.dsi.esl.ESL.ram_io" href="#egse.dsi.esl.ESL.ram_io">ram_io</a></code></li>
-<li><code><a title="egse.dsi.esl.ESL.ram_io_int" href="#egse.dsi.esl.ESL.ram_io_int">ram_io_int</a></code></li>
-<li><code><a title="egse.dsi.esl.ESL.read_calls" href="#egse.dsi.esl.ESL.read_calls">read_calls</a></code></li>
-<li><code><a title="egse.dsi.esl.ESL.read_io_calls" href="#egse.dsi.esl.ESL.read_io_calls">read_io_calls</a></code></li>
-<li><code><a title="egse.dsi.esl.ESL.record_file" href="#egse.dsi.esl.ESL.record_file">record_file</a></code></li>
-<li><code><a title="egse.dsi.esl.ESL.recordsize" href="#egse.dsi.esl.ESL.recordsize">recordsize</a></code></li>
-<li><code><a title="egse.dsi.esl.ESL.rx_buffer" href="#egse.dsi.esl.ESL.rx_buffer">rx_buffer</a></code></li>
-<li><code><a title="egse.dsi.esl.ESL.rx_buffer_content" href="#egse.dsi.esl.ESL.rx_buffer_content">rx_buffer_content</a></code></li>
-<li><code><a title="egse.dsi.esl.ESL.rx_buffer_length" href="#egse.dsi.esl.ESL.rx_buffer_length">rx_buffer_length</a></code></li>
-<li><code><a title="egse.dsi.esl.ESL.rx_buffer_ptr" href="#egse.dsi.esl.ESL.rx_buffer_ptr">rx_buffer_ptr</a></code></li>
-<li><code><a title="egse.dsi.esl.ESL.rx_count" href="#egse.dsi.esl.ESL.rx_count">rx_count</a></code></li>
-<li><code><a title="egse.dsi.esl.ESL.rx_final_flags" href="#egse.dsi.esl.ESL.rx_final_flags">rx_final_flags</a></code></li>
-<li><code><a title="egse.dsi.esl.ESL.rx_param" href="#egse.dsi.esl.ESL.rx_param">rx_param</a></code></li>
-<li><code><a title="egse.dsi.esl.ESL.rx_state" href="#egse.dsi.esl.ESL.rx_state">rx_state</a></code></li>
-<li><code><a title="egse.dsi.esl.ESL.rx_timeout" href="#egse.dsi.esl.ESL.rx_timeout">rx_timeout</a></code></li>
-<li><code><a title="egse.dsi.esl.ESL.rx_timeout_returns_error" href="#egse.dsi.esl.ESL.rx_timeout_returns_error">rx_timeout_returns_error</a></code></li>
-<li><code><a title="egse.dsi.esl.ESL.rxinfo" href="#egse.dsi.esl.ESL.rxinfo">rxinfo</a></code></li>
-<li><code><a title="egse.dsi.esl.ESL.slot_content" href="#egse.dsi.esl.ESL.slot_content">slot_content</a></code></li>
-<li><code><a title="egse.dsi.esl.ESL.sock" href="#egse.dsi.esl.ESL.sock">sock</a></code></li>
-<li><code><a title="egse.dsi.esl.ESL.special_cb" href="#egse.dsi.esl.ESL.special_cb">special_cb</a></code></li>
-<li><code><a title="egse.dsi.esl.ESL.system_type" href="#egse.dsi.esl.ESL.system_type">system_type</a></code></li>
-<li><code><a title="egse.dsi.esl.ESL.time_buffer" href="#egse.dsi.esl.ESL.time_buffer">time_buffer</a></code></li>
-<li><code><a title="egse.dsi.esl.ESL.timedata" href="#egse.dsi.esl.ESL.timedata">timedata</a></code></li>
-<li><code><a title="egse.dsi.esl.ESL.timedata_ns" href="#egse.dsi.esl.ESL.timedata_ns">timedata_ns</a></code></li>
-<li><code><a title="egse.dsi.esl.ESL.timezero" href="#egse.dsi.esl.ESL.timezero">timezero</a></code></li>
-<li><code><a title="egse.dsi.esl.ESL.total_raw_bytes_received" href="#egse.dsi.esl.ESL.total_raw_bytes_received">total_raw_bytes_received</a></code></li>
-<li><code><a title="egse.dsi.esl.ESL.tx_buffer" href="#egse.dsi.esl.ESL.tx_buffer">tx_buffer</a></code></li>
-<li><code><a title="egse.dsi.esl.ESL.tx_buffer_content" href="#egse.dsi.esl.ESL.tx_buffer_content">tx_buffer_content</a></code></li>
-<li><code><a title="egse.dsi.esl.ESL.tx_buffer_length" href="#egse.dsi.esl.ESL.tx_buffer_length">tx_buffer_length</a></code></li>
-</ul>
-</li>
-<li>
 <h4><code><a title="egse.dsi.esl.ESLError" href="#egse.dsi.esl.ESLError">ESLError</a></code></h4>
-</li>
-<li>
-<h4><code><a title="egse.dsi.esl.LP_ESL" href="#egse.dsi.esl.LP_ESL">LP_ESL</a></code></h4>
 </li>
 </ul>
 </li>

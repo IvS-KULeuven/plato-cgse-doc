@@ -34,36 +34,28 @@ This module defines the basic classes to access the MaRi regulation ensured by
 SRS PTC10 controller that will be used in the IAS TVAC setup.
 &#34;&#34;&#34;
 import logging
+from datetime import datetime
 from typing import List
 
+from time import sleep, strftime, gmtime
 
 from egse.decorators import dynamic_interface
 from egse.device import DeviceInterface
-from egse.tempcontrol.srs.ptc10_devif import ptc10Error
-from egse.tempcontrol.srs.ptc10_devif import ptc10TelnetInterface
+from egse.mixin import add_lf
+from egse.mixin import dynamic_command
 from egse.proxy import Proxy
 from egse.settings import Settings
-from egse.zmq_ser import connect_address
-from egse.mixin import dynamic_command
-from egse.mixin import add_lf
-from time import sleep, strftime, gmtime
-from egse.confman import ConfigurationManagerProxy
+from egse.setup import load_setup
 from egse.system import format_datetime
-from datetime import datetime
-
+from egse.tempcontrol.srs.ptc10_devif import ptc10Error
+from egse.tempcontrol.srs.ptc10_devif import ptc10TelnetInterface
+from egse.zmq_ser import connect_address
 
 LOGGER = logging.getLogger(__name__)
 
 CTRL_SETTINGS = Settings.load(&#34;SRS PTC10 Control Server&#34;)
 PTC10_SETTINGS = Settings.load(&#34;SRS PTC10 Controller&#34;)
 DEVICE_SETTINGS = Settings.load(filename=&#34;ptc10.yaml&#34;)
-
-def load_setup_from_configuration_manager():
-    &#34;&#34;&#34;Loads a Setup YAML file from the Configuration Manager.&#34;&#34;&#34;
-    with ConfigurationManagerProxy() as cm:
-        setup = cm.get_setup()
-
-    return setup
 
 
 class ptc10Interface(DeviceInterface):
@@ -447,7 +439,7 @@ class ptc10Controller(ptc10Interface):
         self.setpoint_var = None
         self.PID = None
         self.limits = None
-        setup = load_setup_from_configuration_manager()
+        setup = load_setup()
         self.T_min_NOP = setup.gse.PTC10.T_min_NOP # TRP2, TRP3 and TRP4 min NOP (°C)
 
         super().__init__()
@@ -874,11 +866,6 @@ class ptc10Controller(ptc10Interface):
             if i in list_error[:4]:
                 self.disable_heater(sensor_names.index(i) + 1)
 
-    def get_time(self) -&gt; str:
-        smhdmy = self.temp.trans(&#34;Systemtime.smh?&#34;)
-        timestamp = format_datetime(datetime.strptime(smhdmy + &#34; +0000&#34;, &#39;%S %M %H %d %m %Y %z&#39;))
-        return timestamp
-
     def update_time(self):
         &#34;&#34;&#34;Updates the PTC10 date and time in UTC from the server&#39;s time which is ntp synchronised.&#34;&#34;&#34;
         self.temp.write(&#34;systemtime.dmy &#34; + strftime(&#34;%d/%m/%Y&#34;, gmtime()))
@@ -888,12 +875,6 @@ class ptc10Controller(ptc10Interface):
         smhdmy = self.temp.trans(&#34;Systemtime.smh?&#34;)
         timestamp = format_datetime(datetime.strptime(smhdmy + &#34; +0000&#34;, &#39;%S %M %H %d %m %Y %z&#39;))
         return timestamp
-
-
-    def update_time(self):
-        &#34;&#34;&#34;Updates the PTC10 date and time in UTC from the server&#39;s time which is ntp synchronised.&#34;&#34;&#34;
-        self.temp.write(&#34;systemtime.dmy &#34; + strftime(&#34;%d/%m/%Y&#34;, gmtime()))
-        self.temp.write(&#34;systemtime.hms &#34; + strftime(&#34;%H:%M:%S&#34;, gmtime()))
 
 class ptc10Proxy(Proxy, ptc10Interface):
     &#34;&#34;&#34;The ptc10Proxy class is used to connect to the control server and send commands to
@@ -921,26 +902,6 @@ class ptc10Proxy(Proxy, ptc10Interface):
 <section>
 </section>
 <section>
-<h2 class="section-title" id="header-functions">Functions</h2>
-<dl>
-<dt id="egse.tempcontrol.srs.ptc10.load_setup_from_configuration_manager"><code class="name flex">
-<span>def <span class="ident">load_setup_from_configuration_manager</span></span>(<span>)</span>
-</code></dt>
-<dd>
-<div class="desc"><p>Loads a Setup YAML file from the Configuration Manager.</p></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def load_setup_from_configuration_manager():
-    &#34;&#34;&#34;Loads a Setup YAML file from the Configuration Manager.&#34;&#34;&#34;
-    with ConfigurationManagerProxy() as cm:
-        setup = cm.get_setup()
-
-    return setup</code></pre>
-</details>
-</dd>
-</dl>
 </section>
 <section>
 <h2 class="section-title" id="header-classes">Classes</h2>
@@ -964,7 +925,7 @@ class ptc10Proxy(Proxy, ptc10Interface):
         self.setpoint_var = None
         self.PID = None
         self.limits = None
-        setup = load_setup_from_configuration_manager()
+        setup = load_setup()
         self.T_min_NOP = setup.gse.PTC10.T_min_NOP # TRP2, TRP3 and TRP4 min NOP (°C)
 
         super().__init__()
@@ -1391,11 +1352,6 @@ class ptc10Proxy(Proxy, ptc10Interface):
             if i in list_error[:4]:
                 self.disable_heater(sensor_names.index(i) + 1)
 
-    def get_time(self) -&gt; str:
-        smhdmy = self.temp.trans(&#34;Systemtime.smh?&#34;)
-        timestamp = format_datetime(datetime.strptime(smhdmy + &#34; +0000&#34;, &#39;%S %M %H %d %m %Y %z&#39;))
-        return timestamp
-
     def update_time(self):
         &#34;&#34;&#34;Updates the PTC10 date and time in UTC from the server&#39;s time which is ntp synchronised.&#34;&#34;&#34;
         self.temp.write(&#34;systemtime.dmy &#34; + strftime(&#34;%d/%m/%Y&#34;, gmtime()))
@@ -1404,13 +1360,7 @@ class ptc10Proxy(Proxy, ptc10Interface):
     def get_time(self) -&gt; str:
         smhdmy = self.temp.trans(&#34;Systemtime.smh?&#34;)
         timestamp = format_datetime(datetime.strptime(smhdmy + &#34; +0000&#34;, &#39;%S %M %H %d %m %Y %z&#39;))
-        return timestamp
-
-
-    def update_time(self):
-        &#34;&#34;&#34;Updates the PTC10 date and time in UTC from the server&#39;s time which is ntp synchronised.&#34;&#34;&#34;
-        self.temp.write(&#34;systemtime.dmy &#34; + strftime(&#34;%d/%m/%Y&#34;, gmtime()))
-        self.temp.write(&#34;systemtime.hms &#34; + strftime(&#34;%H:%M:%S&#34;, gmtime()))</code></pre>
+        return timestamp</code></pre>
 </details>
 <h3>Ancestors</h3>
 <ul class="hlist">
@@ -2889,11 +2839,6 @@ the SRS PTC10 device remotely.</p>
 <li><h3>Super-module</h3>
 <ul>
 <li><code><a title="egse.tempcontrol.srs" href="index.html">egse.tempcontrol.srs</a></code></li>
-</ul>
-</li>
-<li><h3><a href="#header-functions">Functions</a></h3>
-<ul class="">
-<li><code><a title="egse.tempcontrol.srs.ptc10.load_setup_from_configuration_manager" href="#egse.tempcontrol.srs.ptc10.load_setup_from_configuration_manager">load_setup_from_configuration_manager</a></code></li>
 </ul>
 </li>
 <li><h3><a href="#header-classes">Classes</a></h3>

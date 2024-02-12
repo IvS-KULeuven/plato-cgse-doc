@@ -27,14 +27,11 @@
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">from egse.control import ControlServer
-from egse.metrics import define_metrics
-from egse.synoptics import SynopticsManagerProxy
-from egse.tempcontrol.srs.ptc10 import ptc10Controller, ptc10Simulator, ptc10Interface
-from egse.tempcontrol.srs.ptc10_devif import ptc10Command
-
 from egse.protocol import CommandProtocol
 from egse.settings import Settings
-from egse.system import format_datetime
+# from egse.metrics import define_metrics
+from egse.tempcontrol.srs.ptc10 import ptc10Controller, ptc10Simulator, ptc10Interface
+from egse.tempcontrol.srs.ptc10_devif import ptc10Command
 from egse.zmq_ser import bind_address
 
 COMMAND_SETTINGS = Settings.load(filename=&#34;ptc10.yaml&#34;)
@@ -55,9 +52,6 @@ class ptc10Protocol(CommandProtocol):
         )
 
         self.build_device_method_lookup_table(self.temp)
-
-        self.synoptics = SynopticsManagerProxy()
-        self.metrics = define_metrics(&#34;DAS-PTC10&#34;)
 
     def get_bind_address(self):
         return bind_address(
@@ -114,9 +108,6 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
         )
 
         self.build_device_method_lookup_table(self.temp)
-
-        self.synoptics = SynopticsManagerProxy()
-        self.metrics = define_metrics(&#34;DAS-PTC10&#34;)
 
     def get_bind_address(self):
         return bind_address(

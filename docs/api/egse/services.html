@@ -46,13 +46,14 @@ import logging
 
 from egse.command import ClientServerCommand
 from egse.control import ControlServer
+from egse.decorators import dynamic_interface
 from egse.protocol import CommandProtocol
 from egse.proxy import Proxy
 from egse.settings import Settings
 from egse.zmq_ser import bind_address
 from egse.zmq_ser import connect_address
 
-MODULE_LOGGER = logging.getLogger(__name__)
+LOGGER = logging.getLogger(__name__)
 
 SERVICE_SETTINGS = Settings.load(filename=&#34;services.yaml&#34;)
 
@@ -74,7 +75,7 @@ class ServiceProtocol(CommandProtocol):
     def get_status(self):
         return super().get_status()
 
-    def handle_monitoring_frequency(self, freq: float):
+    def handle_set_monitoring_frequency(self, freq: float):
         &#34;&#34;&#34;
         Sets the monitoring frequency (Hz) to the given freq value. This is only approximate since the frequency is
         converted into a delay time and the actual execution of the status function is subject to the load on the
@@ -84,15 +85,15 @@ class ServiceProtocol(CommandProtocol):
             freq: frequency of execution (Hz)
 
         Returns:
-            Sends back the selected delay time in seconds.
+            Sends back the selected delay time in milliseconds.
         &#34;&#34;&#34;
-        seconds = self.control_server.set_delay(1.0 / freq)
+        delay = self.control_server.set_delay(1.0 / freq)
 
-        MODULE_LOGGER.debug(f&#34;Set monitoring frequency to {freq}Hz, ± every {seconds} seconds.&#34;)
+        LOGGER.debug(f&#34;Set monitoring frequency to {freq}Hz, ± every {delay:.0f}ms.&#34;)
 
-        self.send(seconds)
+        self.send(delay)
 
-    def handle_hk_frequency(self, freq: float):
+    def handle_set_hk_frequency(self, freq: float):
         &#34;&#34;&#34;
         Sets the housekeeping frequency (Hz) to the given freq value. This is only approximate since the frequency is
         converted into a delay time and the actual execution of the `housekeeping` function is subject to the load on
@@ -102,15 +103,15 @@ class ServiceProtocol(CommandProtocol):
             freq: frequency of execution (Hz)
 
         Returns:
-            Sends back the selected delay time in seconds.
+            Sends back the selected delay time in milliseconds.
         &#34;&#34;&#34;
-        seconds = self.control_server.set_hk_delay(1.0 / freq)
+        delay = self.control_server.set_hk_delay(1.0 / freq)
 
-        MODULE_LOGGER.debug(f&#34;Set housekeeping frequency to {freq}Hz, ± every {seconds} seconds.&#34;)
+        LOGGER.debug(f&#34;Set housekeeping frequency to {freq}Hz, ± every {delay:.0f}ms.&#34;)
 
-        self.send(seconds)
+        self.send(delay)
 
-    def handle_logging_level(self, *args, **kwargs):
+    def handle_set_logging_level(self, *args, **kwargs):
         &#34;&#34;&#34;
         Set the logging level for the logger with the given name.
 
@@ -129,7 +130,7 @@ class ServiceProtocol(CommandProtocol):
             level = int(args[1])
         else:
             name = kwargs[&#39;name&#39;]
-            level = kwargs[&#39;level&#39;]
+            level = int(kwargs[&#39;level&#39;])
 
         if name == &#39;all&#39;:
             for logger in [logging.getLogger(logger_name)
@@ -149,25 +150,91 @@ class ServiceProtocol(CommandProtocol):
         self.send(msg)
 
     def handle_quit(self):
-        MODULE_LOGGER.info(f&#34;Sending interrupt to {self.control_server.__class__.__name__}.&#34;)
+        LOGGER.info(f&#34;Sending interrupt to {self.control_server.__class__.__name__}.&#34;)
         self.control_server.quit()
         self.send(f&#34;Sent interrupt to {self.control_server.__class__.__name__}.&#34;)
 
-    def handle_process_status(self):
-        MODULE_LOGGER.debug(f&#34;Asking for process status of {self.control_server.__class__.__name__}.&#34;)
+    def handle_get_process_status(self):
+        LOGGER.debug(f&#34;Asking for process status of {self.control_server.__class__.__name__}.&#34;)
         self.send(self.get_status())
 
-    # FIXME: This function should be renamed `handle_get_cs_module` in the same spirit as all other service commands
-
-    def get_cs_module(self):
+    def handle_get_cs_module(self):
         &#34;&#34;&#34;
         Returns the module in which the control server has been implemented.
         &#34;&#34;&#34;
-        MODULE_LOGGER.debug(&#34;Asking for module of {self.control_server.__class__.__name__}.&#34;)
+        LOGGER.debug(f&#34;Asking for module of {self.control_server.__class__.__name__}.&#34;)
         self.send(inspect.getmodule(self.control_server).__spec__.name)
 
+    def handle_get_average_execution_times(self):
+        LOGGER.debug(f&#34;Asking for average execution times of {self.control_server.__class__.__name__} functions.&#34;)
+        self.send(self.control_server.get_average_execution_times())
 
-class ServiceProxy(Proxy):
+    def handle_get_storage_mnemonic(self):
+        LOGGER.debug(f&#34;Asking for the storage menmonic of {self.control_server.__class__.__name__}.&#34;)
+        self.send(self.control_server.get_storage_mnemonic())
+
+    def handle_add_listener(self, listener: dict):
+        LOGGER.debug(f&#34;Add listener to {self.control_server.__class__.__name__}: {listener}&#34;)
+        try:
+            self.control_server.listeners.add_listener(listener)
+            LOGGER.info(f&#34;Registered listener: {listener[&#39;name&#39;]} with proxy {listener[&#39;proxy&#39;]}&#34;)
+            self.send((&#34;ACK&#34;,))
+        except ValueError as exc:
+            self.send((&#34;NACK&#34;, exc))  # Why not send back a failure object?
+
+    def handle_remove_listener(self, listener: dict):
+        LOGGER.debug(f&#34;Remove listener from {self.control_server.__class__.__name__}: {listener}&#34;)
+        try:
+            self.control_server.listeners.remove_listener(listener)
+            LOGGER.info(f&#34;Removed listener: {listener[&#39;name&#39;]}&#34;)
+            self.send((&#34;ACK&#34;,))
+        except ValueError as exc:
+            self.send((&#34;NACK&#34;, exc))  # Why not send back a failure object?
+
+    def handle_get_listener_names(self):
+        LOGGER.debug(f&#34;Get names of registered listener from {self.control_server.__class__.__name__}&#34;)
+        try:
+            names = self.control_server.listeners.get_listener_names()
+            self.send((names,))
+        except ValueError as exc:
+            self.send((&#34;&#34;, exc))  # Why not sent back a Failure object?
+
+class ServiceInterface:
+    @dynamic_interface
+    def set_monitoring_frequency(self, freq: float):
+        ...
+    @dynamic_interface
+    def set_hk_frequency(self, freq: float):
+        ...
+    @dynamic_interface
+    def set_logging_level(self, name: str, level: int):
+        ...
+    @dynamic_interface
+    def quit_server(self):
+        ...
+    @dynamic_interface
+    def get_process_status(self):
+        ...
+    @dynamic_interface
+    def get_cs_module(self):
+        ...
+    @dynamic_interface
+    def get_average_execution_times(self):
+        ...
+    @dynamic_interface
+    def get_storage_mnemonic(self):
+        ...
+    @dynamic_interface
+    def add_listener(self, listener: dict):
+        ...
+    @dynamic_interface
+    def remove_listener(self, listener: dict):
+        ...
+    @dynamic_interface
+    def get_listener_names(self, listener: dict):
+        ...
+
+class ServiceProxy(Proxy, ServiceInterface):
     &#34;&#34;&#34;
     A ServiceProxy is a simple class that forwards service commands to a control server.
     &#34;&#34;&#34;
@@ -208,7 +275,7 @@ class ServiceProxy(Proxy):
             _port = port
 
         if _hostname is None or _port is None:
-            raise ValueError(f&#34;expected ctrl-settings or hostname and port as arguments&#34;)
+            raise ValueError(&#34;Expected ctrl-settings or hostname and port as arguments&#34;)
 
         super().__init__(connect_address(_protocol, _hostname, _port))</code></pre>
 </details>
@@ -255,6 +322,212 @@ Arguments can be positional or keyword arguments, not both.</p></div>
 </li>
 </ul>
 </dd>
+<dt id="egse.services.ServiceInterface"><code class="flex name class">
+<span>class <span class="ident">ServiceInterface</span></span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class ServiceInterface:
+    @dynamic_interface
+    def set_monitoring_frequency(self, freq: float):
+        ...
+    @dynamic_interface
+    def set_hk_frequency(self, freq: float):
+        ...
+    @dynamic_interface
+    def set_logging_level(self, name: str, level: int):
+        ...
+    @dynamic_interface
+    def quit_server(self):
+        ...
+    @dynamic_interface
+    def get_process_status(self):
+        ...
+    @dynamic_interface
+    def get_cs_module(self):
+        ...
+    @dynamic_interface
+    def get_average_execution_times(self):
+        ...
+    @dynamic_interface
+    def get_storage_mnemonic(self):
+        ...
+    @dynamic_interface
+    def add_listener(self, listener: dict):
+        ...
+    @dynamic_interface
+    def remove_listener(self, listener: dict):
+        ...
+    @dynamic_interface
+    def get_listener_names(self, listener: dict):
+        ...</code></pre>
+</details>
+<h3>Subclasses</h3>
+<ul class="hlist">
+<li><a title="egse.services.ServiceProxy" href="#egse.services.ServiceProxy">ServiceProxy</a></li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="egse.services.ServiceInterface.add_listener"><code class="name flex">
+<span>def <span class="ident">add_listener</span></span>(<span>self, listener: dict)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@dynamic_interface
+def add_listener(self, listener: dict):
+    ...</code></pre>
+</details>
+</dd>
+<dt id="egse.services.ServiceInterface.get_average_execution_times"><code class="name flex">
+<span>def <span class="ident">get_average_execution_times</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@dynamic_interface
+def get_average_execution_times(self):
+    ...</code></pre>
+</details>
+</dd>
+<dt id="egse.services.ServiceInterface.get_cs_module"><code class="name flex">
+<span>def <span class="ident">get_cs_module</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@dynamic_interface
+def get_cs_module(self):
+    ...</code></pre>
+</details>
+</dd>
+<dt id="egse.services.ServiceInterface.get_listener_names"><code class="name flex">
+<span>def <span class="ident">get_listener_names</span></span>(<span>self, listener: dict)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@dynamic_interface
+def get_listener_names(self, listener: dict):
+    ...</code></pre>
+</details>
+</dd>
+<dt id="egse.services.ServiceInterface.get_process_status"><code class="name flex">
+<span>def <span class="ident">get_process_status</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@dynamic_interface
+def get_process_status(self):
+    ...</code></pre>
+</details>
+</dd>
+<dt id="egse.services.ServiceInterface.get_storage_mnemonic"><code class="name flex">
+<span>def <span class="ident">get_storage_mnemonic</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@dynamic_interface
+def get_storage_mnemonic(self):
+    ...</code></pre>
+</details>
+</dd>
+<dt id="egse.services.ServiceInterface.quit_server"><code class="name flex">
+<span>def <span class="ident">quit_server</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@dynamic_interface
+def quit_server(self):
+    ...</code></pre>
+</details>
+</dd>
+<dt id="egse.services.ServiceInterface.remove_listener"><code class="name flex">
+<span>def <span class="ident">remove_listener</span></span>(<span>self, listener: dict)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@dynamic_interface
+def remove_listener(self, listener: dict):
+    ...</code></pre>
+</details>
+</dd>
+<dt id="egse.services.ServiceInterface.set_hk_frequency"><code class="name flex">
+<span>def <span class="ident">set_hk_frequency</span></span>(<span>self, freq: float)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@dynamic_interface
+def set_hk_frequency(self, freq: float):
+    ...</code></pre>
+</details>
+</dd>
+<dt id="egse.services.ServiceInterface.set_logging_level"><code class="name flex">
+<span>def <span class="ident">set_logging_level</span></span>(<span>self, name: str, level: int)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@dynamic_interface
+def set_logging_level(self, name: str, level: int):
+    ...</code></pre>
+</details>
+</dd>
+<dt id="egse.services.ServiceInterface.set_monitoring_frequency"><code class="name flex">
+<span>def <span class="ident">set_monitoring_frequency</span></span>(<span>self, freq: float)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@dynamic_interface
+def set_monitoring_frequency(self, freq: float):
+    ...</code></pre>
+</details>
+</dd>
+</dl>
+</dd>
 <dt id="egse.services.ServiceProtocol"><code class="flex name class">
 <span>class <span class="ident">ServiceProtocol</span></span>
 <span>(</span><span>control_server: <a title="egse.control.ControlServer" href="control.html#egse.control.ControlServer">ControlServer</a>)</span>
@@ -285,7 +558,7 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
     def get_status(self):
         return super().get_status()
 
-    def handle_monitoring_frequency(self, freq: float):
+    def handle_set_monitoring_frequency(self, freq: float):
         &#34;&#34;&#34;
         Sets the monitoring frequency (Hz) to the given freq value. This is only approximate since the frequency is
         converted into a delay time and the actual execution of the status function is subject to the load on the
@@ -295,15 +568,15 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
             freq: frequency of execution (Hz)
 
         Returns:
-            Sends back the selected delay time in seconds.
+            Sends back the selected delay time in milliseconds.
         &#34;&#34;&#34;
-        seconds = self.control_server.set_delay(1.0 / freq)
+        delay = self.control_server.set_delay(1.0 / freq)
 
-        MODULE_LOGGER.debug(f&#34;Set monitoring frequency to {freq}Hz, ± every {seconds} seconds.&#34;)
+        LOGGER.debug(f&#34;Set monitoring frequency to {freq}Hz, ± every {delay:.0f}ms.&#34;)
 
-        self.send(seconds)
+        self.send(delay)
 
-    def handle_hk_frequency(self, freq: float):
+    def handle_set_hk_frequency(self, freq: float):
         &#34;&#34;&#34;
         Sets the housekeeping frequency (Hz) to the given freq value. This is only approximate since the frequency is
         converted into a delay time and the actual execution of the `housekeeping` function is subject to the load on
@@ -313,15 +586,15 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
             freq: frequency of execution (Hz)
 
         Returns:
-            Sends back the selected delay time in seconds.
+            Sends back the selected delay time in milliseconds.
         &#34;&#34;&#34;
-        seconds = self.control_server.set_hk_delay(1.0 / freq)
+        delay = self.control_server.set_hk_delay(1.0 / freq)
 
-        MODULE_LOGGER.debug(f&#34;Set housekeeping frequency to {freq}Hz, ± every {seconds} seconds.&#34;)
+        LOGGER.debug(f&#34;Set housekeeping frequency to {freq}Hz, ± every {delay:.0f}ms.&#34;)
 
-        self.send(seconds)
+        self.send(delay)
 
-    def handle_logging_level(self, *args, **kwargs):
+    def handle_set_logging_level(self, *args, **kwargs):
         &#34;&#34;&#34;
         Set the logging level for the logger with the given name.
 
@@ -340,7 +613,7 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
             level = int(args[1])
         else:
             name = kwargs[&#39;name&#39;]
-            level = kwargs[&#39;level&#39;]
+            level = int(kwargs[&#39;level&#39;])
 
         if name == &#39;all&#39;:
             for logger in [logging.getLogger(logger_name)
@@ -360,22 +633,54 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
         self.send(msg)
 
     def handle_quit(self):
-        MODULE_LOGGER.info(f&#34;Sending interrupt to {self.control_server.__class__.__name__}.&#34;)
+        LOGGER.info(f&#34;Sending interrupt to {self.control_server.__class__.__name__}.&#34;)
         self.control_server.quit()
         self.send(f&#34;Sent interrupt to {self.control_server.__class__.__name__}.&#34;)
 
-    def handle_process_status(self):
-        MODULE_LOGGER.debug(f&#34;Asking for process status of {self.control_server.__class__.__name__}.&#34;)
+    def handle_get_process_status(self):
+        LOGGER.debug(f&#34;Asking for process status of {self.control_server.__class__.__name__}.&#34;)
         self.send(self.get_status())
 
-    # FIXME: This function should be renamed `handle_get_cs_module` in the same spirit as all other service commands
-
-    def get_cs_module(self):
+    def handle_get_cs_module(self):
         &#34;&#34;&#34;
         Returns the module in which the control server has been implemented.
         &#34;&#34;&#34;
-        MODULE_LOGGER.debug(&#34;Asking for module of {self.control_server.__class__.__name__}.&#34;)
-        self.send(inspect.getmodule(self.control_server).__spec__.name)</code></pre>
+        LOGGER.debug(f&#34;Asking for module of {self.control_server.__class__.__name__}.&#34;)
+        self.send(inspect.getmodule(self.control_server).__spec__.name)
+
+    def handle_get_average_execution_times(self):
+        LOGGER.debug(f&#34;Asking for average execution times of {self.control_server.__class__.__name__} functions.&#34;)
+        self.send(self.control_server.get_average_execution_times())
+
+    def handle_get_storage_mnemonic(self):
+        LOGGER.debug(f&#34;Asking for the storage menmonic of {self.control_server.__class__.__name__}.&#34;)
+        self.send(self.control_server.get_storage_mnemonic())
+
+    def handle_add_listener(self, listener: dict):
+        LOGGER.debug(f&#34;Add listener to {self.control_server.__class__.__name__}: {listener}&#34;)
+        try:
+            self.control_server.listeners.add_listener(listener)
+            LOGGER.info(f&#34;Registered listener: {listener[&#39;name&#39;]} with proxy {listener[&#39;proxy&#39;]}&#34;)
+            self.send((&#34;ACK&#34;,))
+        except ValueError as exc:
+            self.send((&#34;NACK&#34;, exc))  # Why not send back a failure object?
+
+    def handle_remove_listener(self, listener: dict):
+        LOGGER.debug(f&#34;Remove listener from {self.control_server.__class__.__name__}: {listener}&#34;)
+        try:
+            self.control_server.listeners.remove_listener(listener)
+            LOGGER.info(f&#34;Removed listener: {listener[&#39;name&#39;]}&#34;)
+            self.send((&#34;ACK&#34;,))
+        except ValueError as exc:
+            self.send((&#34;NACK&#34;, exc))  # Why not send back a failure object?
+
+    def handle_get_listener_names(self):
+        LOGGER.debug(f&#34;Get names of registered listener from {self.control_server.__class__.__name__}&#34;)
+        try:
+            names = self.control_server.listeners.get_listener_names()
+            self.send((names,))
+        except ValueError as exc:
+            self.send((&#34;&#34;, exc))  # Why not sent back a Failure object?</code></pre>
 </details>
 <h3>Ancestors</h3>
 <ul class="hlist">
@@ -384,8 +689,41 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
 </ul>
 <h3>Methods</h3>
 <dl>
-<dt id="egse.services.ServiceProtocol.get_cs_module"><code class="name flex">
-<span>def <span class="ident">get_cs_module</span></span>(<span>self)</span>
+<dt id="egse.services.ServiceProtocol.handle_add_listener"><code class="name flex">
+<span>def <span class="ident">handle_add_listener</span></span>(<span>self, listener: dict)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def handle_add_listener(self, listener: dict):
+    LOGGER.debug(f&#34;Add listener to {self.control_server.__class__.__name__}: {listener}&#34;)
+    try:
+        self.control_server.listeners.add_listener(listener)
+        LOGGER.info(f&#34;Registered listener: {listener[&#39;name&#39;]} with proxy {listener[&#39;proxy&#39;]}&#34;)
+        self.send((&#34;ACK&#34;,))
+    except ValueError as exc:
+        self.send((&#34;NACK&#34;, exc))  # Why not send back a failure object?</code></pre>
+</details>
+</dd>
+<dt id="egse.services.ServiceProtocol.handle_get_average_execution_times"><code class="name flex">
+<span>def <span class="ident">handle_get_average_execution_times</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def handle_get_average_execution_times(self):
+    LOGGER.debug(f&#34;Asking for average execution times of {self.control_server.__class__.__name__} functions.&#34;)
+    self.send(self.control_server.get_average_execution_times())</code></pre>
+</details>
+</dd>
+<dt id="egse.services.ServiceProtocol.handle_get_cs_module"><code class="name flex">
+<span>def <span class="ident">handle_get_cs_module</span></span>(<span>self)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Returns the module in which the control server has been implemented.</p></div>
@@ -393,16 +731,96 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def get_cs_module(self):
+<pre><code class="python">def handle_get_cs_module(self):
     &#34;&#34;&#34;
     Returns the module in which the control server has been implemented.
     &#34;&#34;&#34;
-    MODULE_LOGGER.debug(&#34;Asking for module of {self.control_server.__class__.__name__}.&#34;)
+    LOGGER.debug(f&#34;Asking for module of {self.control_server.__class__.__name__}.&#34;)
     self.send(inspect.getmodule(self.control_server).__spec__.name)</code></pre>
 </details>
 </dd>
-<dt id="egse.services.ServiceProtocol.handle_hk_frequency"><code class="name flex">
-<span>def <span class="ident">handle_hk_frequency</span></span>(<span>self, freq: float)</span>
+<dt id="egse.services.ServiceProtocol.handle_get_listener_names"><code class="name flex">
+<span>def <span class="ident">handle_get_listener_names</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def handle_get_listener_names(self):
+    LOGGER.debug(f&#34;Get names of registered listener from {self.control_server.__class__.__name__}&#34;)
+    try:
+        names = self.control_server.listeners.get_listener_names()
+        self.send((names,))
+    except ValueError as exc:
+        self.send((&#34;&#34;, exc))  # Why not sent back a Failure object?</code></pre>
+</details>
+</dd>
+<dt id="egse.services.ServiceProtocol.handle_get_process_status"><code class="name flex">
+<span>def <span class="ident">handle_get_process_status</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def handle_get_process_status(self):
+    LOGGER.debug(f&#34;Asking for process status of {self.control_server.__class__.__name__}.&#34;)
+    self.send(self.get_status())</code></pre>
+</details>
+</dd>
+<dt id="egse.services.ServiceProtocol.handle_get_storage_mnemonic"><code class="name flex">
+<span>def <span class="ident">handle_get_storage_mnemonic</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def handle_get_storage_mnemonic(self):
+    LOGGER.debug(f&#34;Asking for the storage menmonic of {self.control_server.__class__.__name__}.&#34;)
+    self.send(self.control_server.get_storage_mnemonic())</code></pre>
+</details>
+</dd>
+<dt id="egse.services.ServiceProtocol.handle_quit"><code class="name flex">
+<span>def <span class="ident">handle_quit</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def handle_quit(self):
+    LOGGER.info(f&#34;Sending interrupt to {self.control_server.__class__.__name__}.&#34;)
+    self.control_server.quit()
+    self.send(f&#34;Sent interrupt to {self.control_server.__class__.__name__}.&#34;)</code></pre>
+</details>
+</dd>
+<dt id="egse.services.ServiceProtocol.handle_remove_listener"><code class="name flex">
+<span>def <span class="ident">handle_remove_listener</span></span>(<span>self, listener: dict)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def handle_remove_listener(self, listener: dict):
+    LOGGER.debug(f&#34;Remove listener from {self.control_server.__class__.__name__}: {listener}&#34;)
+    try:
+        self.control_server.listeners.remove_listener(listener)
+        LOGGER.info(f&#34;Removed listener: {listener[&#39;name&#39;]}&#34;)
+        self.send((&#34;ACK&#34;,))
+    except ValueError as exc:
+        self.send((&#34;NACK&#34;, exc))  # Why not send back a failure object?</code></pre>
+</details>
+</dd>
+<dt id="egse.services.ServiceProtocol.handle_set_hk_frequency"><code class="name flex">
+<span>def <span class="ident">handle_set_hk_frequency</span></span>(<span>self, freq: float)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Sets the housekeeping frequency (Hz) to the given freq value. This is only approximate since the frequency is
@@ -414,12 +832,12 @@ the server and the overhead of the timing.</p>
 <dd>frequency of execution (Hz)</dd>
 </dl>
 <h2 id="returns">Returns</h2>
-<p>Sends back the selected delay time in seconds.</p></div>
+<p>Sends back the selected delay time in milliseconds.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def handle_hk_frequency(self, freq: float):
+<pre><code class="python">def handle_set_hk_frequency(self, freq: float):
     &#34;&#34;&#34;
     Sets the housekeeping frequency (Hz) to the given freq value. This is only approximate since the frequency is
     converted into a delay time and the actual execution of the `housekeeping` function is subject to the load on
@@ -429,17 +847,17 @@ the server and the overhead of the timing.</p>
         freq: frequency of execution (Hz)
 
     Returns:
-        Sends back the selected delay time in seconds.
+        Sends back the selected delay time in milliseconds.
     &#34;&#34;&#34;
-    seconds = self.control_server.set_hk_delay(1.0 / freq)
+    delay = self.control_server.set_hk_delay(1.0 / freq)
 
-    MODULE_LOGGER.debug(f&#34;Set housekeeping frequency to {freq}Hz, ± every {seconds} seconds.&#34;)
+    LOGGER.debug(f&#34;Set housekeeping frequency to {freq}Hz, ± every {delay:.0f}ms.&#34;)
 
-    self.send(seconds)</code></pre>
+    self.send(delay)</code></pre>
 </details>
 </dd>
-<dt id="egse.services.ServiceProtocol.handle_logging_level"><code class="name flex">
-<span>def <span class="ident">handle_logging_level</span></span>(<span>self, *args, **kwargs)</span>
+<dt id="egse.services.ServiceProtocol.handle_set_logging_level"><code class="name flex">
+<span>def <span class="ident">handle_set_logging_level</span></span>(<span>self, *args, **kwargs)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Set the logging level for the logger with the given name.</p>
@@ -458,7 +876,7 @@ starts with 'egse' will be changed to <code>level</code>.</p>
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def handle_logging_level(self, *args, **kwargs):
+<pre><code class="python">def handle_set_logging_level(self, *args, **kwargs):
     &#34;&#34;&#34;
     Set the logging level for the logger with the given name.
 
@@ -477,7 +895,7 @@ starts with 'egse' will be changed to <code>level</code>.</p>
         level = int(args[1])
     else:
         name = kwargs[&#39;name&#39;]
-        level = kwargs[&#39;level&#39;]
+        level = int(kwargs[&#39;level&#39;])
 
     if name == &#39;all&#39;:
         for logger in [logging.getLogger(logger_name)
@@ -497,8 +915,8 @@ starts with 'egse' will be changed to <code>level</code>.</p>
     self.send(msg)</code></pre>
 </details>
 </dd>
-<dt id="egse.services.ServiceProtocol.handle_monitoring_frequency"><code class="name flex">
-<span>def <span class="ident">handle_monitoring_frequency</span></span>(<span>self, freq: float)</span>
+<dt id="egse.services.ServiceProtocol.handle_set_monitoring_frequency"><code class="name flex">
+<span>def <span class="ident">handle_set_monitoring_frequency</span></span>(<span>self, freq: float)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Sets the monitoring frequency (Hz) to the given freq value. This is only approximate since the frequency is
@@ -510,12 +928,12 @@ server and the overhead of the timing.</p>
 <dd>frequency of execution (Hz)</dd>
 </dl>
 <h2 id="returns">Returns</h2>
-<p>Sends back the selected delay time in seconds.</p></div>
+<p>Sends back the selected delay time in milliseconds.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def handle_monitoring_frequency(self, freq: float):
+<pre><code class="python">def handle_set_monitoring_frequency(self, freq: float):
     &#34;&#34;&#34;
     Sets the monitoring frequency (Hz) to the given freq value. This is only approximate since the frequency is
     converted into a delay time and the actual execution of the status function is subject to the load on the
@@ -525,42 +943,13 @@ server and the overhead of the timing.</p>
         freq: frequency of execution (Hz)
 
     Returns:
-        Sends back the selected delay time in seconds.
+        Sends back the selected delay time in milliseconds.
     &#34;&#34;&#34;
-    seconds = self.control_server.set_delay(1.0 / freq)
+    delay = self.control_server.set_delay(1.0 / freq)
 
-    MODULE_LOGGER.debug(f&#34;Set monitoring frequency to {freq}Hz, ± every {seconds} seconds.&#34;)
+    LOGGER.debug(f&#34;Set monitoring frequency to {freq}Hz, ± every {delay:.0f}ms.&#34;)
 
-    self.send(seconds)</code></pre>
-</details>
-</dd>
-<dt id="egse.services.ServiceProtocol.handle_process_status"><code class="name flex">
-<span>def <span class="ident">handle_process_status</span></span>(<span>self)</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def handle_process_status(self):
-    MODULE_LOGGER.debug(f&#34;Asking for process status of {self.control_server.__class__.__name__}.&#34;)
-    self.send(self.get_status())</code></pre>
-</details>
-</dd>
-<dt id="egse.services.ServiceProtocol.handle_quit"><code class="name flex">
-<span>def <span class="ident">handle_quit</span></span>(<span>self)</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def handle_quit(self):
-    MODULE_LOGGER.info(f&#34;Sending interrupt to {self.control_server.__class__.__name__}.&#34;)
-    self.control_server.quit()
-    self.send(f&#34;Sent interrupt to {self.control_server.__class__.__name__}.&#34;)</code></pre>
+    self.send(delay)</code></pre>
 </details>
 </dd>
 </dl>
@@ -611,7 +1000,7 @@ hostname and port must be provided, protocol is optional and defaults to 'tcp'.<
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">class ServiceProxy(Proxy):
+<pre><code class="python">class ServiceProxy(Proxy, ServiceInterface):
     &#34;&#34;&#34;
     A ServiceProxy is a simple class that forwards service commands to a control server.
     &#34;&#34;&#34;
@@ -652,7 +1041,7 @@ hostname and port must be provided, protocol is optional and defaults to 'tcp'.<
             _port = port
 
         if _hostname is None or _port is None:
-            raise ValueError(f&#34;expected ctrl-settings or hostname and port as arguments&#34;)
+            raise ValueError(&#34;Expected ctrl-settings or hostname and port as arguments&#34;)
 
         super().__init__(connect_address(_protocol, _hostname, _port))</code></pre>
 </details>
@@ -661,6 +1050,7 @@ hostname and port must be provided, protocol is optional and defaults to 'tcp'.<
 <li><a title="egse.proxy.Proxy" href="proxy.html#egse.proxy.Proxy">Proxy</a></li>
 <li><a title="egse.proxy.BaseProxy" href="proxy.html#egse.proxy.BaseProxy">BaseProxy</a></li>
 <li><a title="egse.proxy.ControlServerConnectionInterface" href="proxy.html#egse.proxy.ControlServerConnectionInterface">ControlServerConnectionInterface</a></li>
+<li><a title="egse.services.ServiceInterface" href="#egse.services.ServiceInterface">ServiceInterface</a></li>
 </ul>
 <h3>Inherited members</h3>
 <ul class="hlist">
@@ -705,14 +1095,35 @@ hostname and port must be provided, protocol is optional and defaults to 'tcp'.<
 <h4><code><a title="egse.services.ServiceCommand" href="#egse.services.ServiceCommand">ServiceCommand</a></code></h4>
 </li>
 <li>
+<h4><code><a title="egse.services.ServiceInterface" href="#egse.services.ServiceInterface">ServiceInterface</a></code></h4>
+<ul class="">
+<li><code><a title="egse.services.ServiceInterface.add_listener" href="#egse.services.ServiceInterface.add_listener">add_listener</a></code></li>
+<li><code><a title="egse.services.ServiceInterface.get_average_execution_times" href="#egse.services.ServiceInterface.get_average_execution_times">get_average_execution_times</a></code></li>
+<li><code><a title="egse.services.ServiceInterface.get_cs_module" href="#egse.services.ServiceInterface.get_cs_module">get_cs_module</a></code></li>
+<li><code><a title="egse.services.ServiceInterface.get_listener_names" href="#egse.services.ServiceInterface.get_listener_names">get_listener_names</a></code></li>
+<li><code><a title="egse.services.ServiceInterface.get_process_status" href="#egse.services.ServiceInterface.get_process_status">get_process_status</a></code></li>
+<li><code><a title="egse.services.ServiceInterface.get_storage_mnemonic" href="#egse.services.ServiceInterface.get_storage_mnemonic">get_storage_mnemonic</a></code></li>
+<li><code><a title="egse.services.ServiceInterface.quit_server" href="#egse.services.ServiceInterface.quit_server">quit_server</a></code></li>
+<li><code><a title="egse.services.ServiceInterface.remove_listener" href="#egse.services.ServiceInterface.remove_listener">remove_listener</a></code></li>
+<li><code><a title="egse.services.ServiceInterface.set_hk_frequency" href="#egse.services.ServiceInterface.set_hk_frequency">set_hk_frequency</a></code></li>
+<li><code><a title="egse.services.ServiceInterface.set_logging_level" href="#egse.services.ServiceInterface.set_logging_level">set_logging_level</a></code></li>
+<li><code><a title="egse.services.ServiceInterface.set_monitoring_frequency" href="#egse.services.ServiceInterface.set_monitoring_frequency">set_monitoring_frequency</a></code></li>
+</ul>
+</li>
+<li>
 <h4><code><a title="egse.services.ServiceProtocol" href="#egse.services.ServiceProtocol">ServiceProtocol</a></code></h4>
 <ul class="">
-<li><code><a title="egse.services.ServiceProtocol.get_cs_module" href="#egse.services.ServiceProtocol.get_cs_module">get_cs_module</a></code></li>
-<li><code><a title="egse.services.ServiceProtocol.handle_hk_frequency" href="#egse.services.ServiceProtocol.handle_hk_frequency">handle_hk_frequency</a></code></li>
-<li><code><a title="egse.services.ServiceProtocol.handle_logging_level" href="#egse.services.ServiceProtocol.handle_logging_level">handle_logging_level</a></code></li>
-<li><code><a title="egse.services.ServiceProtocol.handle_monitoring_frequency" href="#egse.services.ServiceProtocol.handle_monitoring_frequency">handle_monitoring_frequency</a></code></li>
-<li><code><a title="egse.services.ServiceProtocol.handle_process_status" href="#egse.services.ServiceProtocol.handle_process_status">handle_process_status</a></code></li>
+<li><code><a title="egse.services.ServiceProtocol.handle_add_listener" href="#egse.services.ServiceProtocol.handle_add_listener">handle_add_listener</a></code></li>
+<li><code><a title="egse.services.ServiceProtocol.handle_get_average_execution_times" href="#egse.services.ServiceProtocol.handle_get_average_execution_times">handle_get_average_execution_times</a></code></li>
+<li><code><a title="egse.services.ServiceProtocol.handle_get_cs_module" href="#egse.services.ServiceProtocol.handle_get_cs_module">handle_get_cs_module</a></code></li>
+<li><code><a title="egse.services.ServiceProtocol.handle_get_listener_names" href="#egse.services.ServiceProtocol.handle_get_listener_names">handle_get_listener_names</a></code></li>
+<li><code><a title="egse.services.ServiceProtocol.handle_get_process_status" href="#egse.services.ServiceProtocol.handle_get_process_status">handle_get_process_status</a></code></li>
+<li><code><a title="egse.services.ServiceProtocol.handle_get_storage_mnemonic" href="#egse.services.ServiceProtocol.handle_get_storage_mnemonic">handle_get_storage_mnemonic</a></code></li>
 <li><code><a title="egse.services.ServiceProtocol.handle_quit" href="#egse.services.ServiceProtocol.handle_quit">handle_quit</a></code></li>
+<li><code><a title="egse.services.ServiceProtocol.handle_remove_listener" href="#egse.services.ServiceProtocol.handle_remove_listener">handle_remove_listener</a></code></li>
+<li><code><a title="egse.services.ServiceProtocol.handle_set_hk_frequency" href="#egse.services.ServiceProtocol.handle_set_hk_frequency">handle_set_hk_frequency</a></code></li>
+<li><code><a title="egse.services.ServiceProtocol.handle_set_logging_level" href="#egse.services.ServiceProtocol.handle_set_logging_level">handle_set_logging_level</a></code></li>
+<li><code><a title="egse.services.ServiceProtocol.handle_set_monitoring_frequency" href="#egse.services.ServiceProtocol.handle_set_monitoring_frequency">handle_set_monitoring_frequency</a></code></li>
 </ul>
 </li>
 <li>

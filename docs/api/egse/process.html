@@ -393,7 +393,7 @@ def is_process_running(items: List[str] | str, contains: bool = True, case_sensi
 
     items = [items] if isinstance(items, str) else items
 
-    for proc in psutil.process_iter():
+    for proc in psutil.process_iter(attrs=[&#39;cmdline&#39;, &#39;name&#39;], ad_value=&#39;n/a&#39;):
         with contextlib.suppress(psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
             # LOGGER.info(f&#34;{proc.name().lower() = }, {proc.cmdline() = }&#34;)
             if contains:
@@ -667,7 +667,7 @@ of the process. If all 'cmd_line_items' can be matched to a process, the functio
 
     items = [items] if isinstance(items, str) else items
 
-    for proc in psutil.process_iter():
+    for proc in psutil.process_iter(attrs=[&#39;cmdline&#39;, &#39;name&#39;], ad_value=&#39;n/a&#39;):
         with contextlib.suppress(psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
             # LOGGER.info(f&#34;{proc.name().lower() = }, {proc.cmdline() = }&#34;)
             if contains:

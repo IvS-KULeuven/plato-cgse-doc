@@ -48,7 +48,7 @@ from egse.help.help_ui import HelpWindow, HELP_TOPICS
 from egse.observer import Observer, Observable
 from egse.resource import get_resource
 from egse.settings import Settings
-from egse.state import GlobalState
+from egse.setup import load_setup
 from egse.zmq_ser import connect_address
 
 FONT = QFont(&#34;Helvetica&#34;, 18)
@@ -177,7 +177,7 @@ class StagesMonitoringWorker(MonitoringWorker):
 
         # Information from the setup
 
-        setup = GlobalState.setup
+        setup = load_setup()
 
         self.focal_length = setup.camera.fov.focal_length_mm
         self.offset_alpha = setup.gse.stages.calibration.offset_alpha
@@ -188,8 +188,6 @@ class StagesMonitoringWorker(MonitoringWorker):
 
         self.distortion_coefficients = setup.camera.fov.distortion_coefficients
         self.height_collimated_beam = setup.gse.stages.calibration.height_collimated_beam
-
-
 
     @pyqtSlot()
     def run(self):
@@ -322,7 +320,7 @@ class StagesMonitoringWorker(MonitoringWorker):
 
         # CCD coordinates [pixels]
 
-        (row, column, ccd_code) = focal_plane_to_ccd_coordinates(x, y)
+        (row, column, ccd_code) = focal_plane_to_ccd_coordinates(x, y, setup)
 
         position = {
             &#34;angles&#34;: (theta, phi),
@@ -498,7 +496,7 @@ class FOVUIView(QMainWindow, Observable):
         self.setGeometry(300, 300, 1500, 1000)
         self.setWindowTitle(&#34;FOV Position GUI&#34;)
 
-        setup = GlobalState.setup
+        setup = load_setup()
         self.fov_radius_mm = setup.camera.fov.radius_mm
 
         # Monitoring the stages
@@ -1014,7 +1012,7 @@ inheritance.</p></div>
 <span>class <span class="ident">FOVUIView</span></span>
 </code></dt>
 <dd>
-<div class="desc"><p>QMainWindow(parent: QWidget = None, flags: Union[Qt.WindowFlags, Qt.WindowType] = Qt.WindowFlags())</p>
+<div class="desc"><p>QMainWindow(parent: typing.Optional[QWidget] = None, flags: Union[Qt.WindowFlags, Qt.WindowType] = Qt.WindowFlags())</p>
 <p>Open a window and initialiase the GUI.
 The GUI is divided into two parts.
 On the
@@ -1042,7 +1040,7 @@ the size of the field-of-view, and a red dot indicating the current position of 
         self.setGeometry(300, 300, 1500, 1000)
         self.setWindowTitle(&#34;FOV Position GUI&#34;)
 
-        setup = GlobalState.setup
+        setup = load_setup()
         self.fov_radius_mm = setup.camera.fov.radius_mm
 
         # Monitoring the stages
@@ -2126,7 +2124,7 @@ def run(self):
 <span>(</span><span>settings)</span>
 </code></dt>
 <dd>
-<div class="desc"><p>QObject(parent: QObject = None)</p>
+<div class="desc"><p>QObject(parent: typing.Optional[QObject] = None)</p>
 <p>Initialisation of a monitoring worker.</p>
 <p>This monitoring worker will listen on the monitoring port of the Control Server, based on the given settings.</p>
 <h2 id="args">Args</h2>
@@ -2392,7 +2390,7 @@ to notify the GUI.</p></div>
 
         # Information from the setup
 
-        setup = GlobalState.setup
+        setup = load_setup()
 
         self.focal_length = setup.camera.fov.focal_length_mm
         self.offset_alpha = setup.gse.stages.calibration.offset_alpha
@@ -2403,8 +2401,6 @@ to notify the GUI.</p></div>
 
         self.distortion_coefficients = setup.camera.fov.distortion_coefficients
         self.height_collimated_beam = setup.gse.stages.calibration.height_collimated_beam
-
-
 
     @pyqtSlot()
     def run(self):
@@ -2537,7 +2533,7 @@ to notify the GUI.</p></div>
 
         # CCD coordinates [pixels]
 
-        (row, column, ccd_code) = focal_plane_to_ccd_coordinates(x, y)
+        (row, column, ccd_code) = focal_plane_to_ccd_coordinates(x, y, setup)
 
         position = {
             &#34;angles&#34;: (theta, phi),
@@ -2650,7 +2646,7 @@ the field distortion into account.</p>
 
     # CCD coordinates [pixels]
 
-    (row, column, ccd_code) = focal_plane_to_ccd_coordinates(x, y)
+    (row, column, ccd_code) = focal_plane_to_ccd_coordinates(x, y, setup)
 
     position = {
         &#34;angles&#34;: (theta, phi),

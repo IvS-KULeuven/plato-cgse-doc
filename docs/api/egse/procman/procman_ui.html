@@ -253,6 +253,11 @@ class MonitoringWorker(QObject):
                 commanding_port = ctrl_settings.CDAQ9184[&#34;COMMANDING_PORT&#34;]
                 monitoring_port = ctrl_settings.CDAQ9184[&#34;MONITORING_PORT&#34;]
 
+            elif module_name == &#34;egse.tempcontrol.lakeshore.lsci&#34;:
+                name = &#34;LS_&#34; + self.process_name.split(&#34; &#34;)[2].upper()
+                commanding_port = ctrl_settings[name][&#34;COMMANDING_PORT&#34;]
+                monitoring_port = ctrl_settings[name][&#34;MONITORING_PORT&#34;]
+
             else:
                 commanding_port = ctrl_settings.COMMANDING_PORT
                 monitoring_port = ctrl_settings.MONITORING_PORT
@@ -644,9 +649,13 @@ class ProcessWidget(QGroupBox):
         else:   # No GUI defined in the YAML file of the CS
             LOGGER.debug(f&#34;No GUI available for {self.process_name}&#34;)
             return
-
-        gui_process = SubProcess(&#34;MyApp&#34;, [sys.executable, &#34;-m&#34;, gui_type])
-        gui_process.execute(detach_from_parent=True)
+        if module_name == &#34;egse.tempcontrol.lakeshore.lsci&#34;:
+            index = self.process_name.split(&#34; &#34;)[2]
+            gui_process = SubProcess(&#34;MyApp&#34;, [sys.executable, &#34;-m&#34;, gui_type, &#34;--index&#34;, index])
+            gui_process.execute(detach_from_parent=True)
+        else:
+            gui_process = SubProcess(&#34;MyApp&#34;, [sys.executable, &#34;-m&#34;, gui_type])
+            gui_process.execute(detach_from_parent=True)
 
     def set_cs_start_mode(self):
         &#34;&#34;&#34; Change the start mode for the Control Server.
@@ -687,7 +696,6 @@ class ProcessWidget(QGroupBox):
             with ProcessManagerProxy() as pm:
 
                 response: Response = pm.start_cs(self.process_name, self.is_simulator_mode)
-
                 if response.successful:
                     self.sim_option_button.setDisabled(True)
                 else:
@@ -2451,7 +2459,7 @@ if __name__ == &#39;__main__&#39;:
 <span>class <span class="ident">ConfigurationMonitoringWorker</span></span>
 </code></dt>
 <dd>
-<div class="desc"><p>QObject(parent: QObject = None)</p>
+<div class="desc"><p>QObject(parent: typing.Optional[QObject] = None)</p>
 <p>Initialisation of a monitoring thread.</p>
 <p>This monitoring thread will listen on the monitoring port of the
 Control Server.
@@ -2742,8 +2750,8 @@ def run(self):
 <span>(</span><span>parent)</span>
 </code></dt>
 <dd>
-<div class="desc"><p>QGroupBox(parent: QWidget = None)
-QGroupBox(str, parent: QWidget = None)</p>
+<div class="desc"><p>QGroupBox(parent: typing.Optional[QWidget] = None)
+QGroupBox(title: str, parent: typing.Optional[QWidget] = None)</p>
 <p>Initialisation of a process widget.</p>
 <p>For a Control Server with the given process name and Proxy type, a process widget is created.
 This widget will
@@ -2861,8 +2869,8 @@ comprise the following components:</p>
 <span>(</span><span>parent)</span>
 </code></dt>
 <dd>
-<div class="desc"><p>QGroupBox(parent: QWidget = None)
-QGroupBox(str, parent: QWidget = None)</p>
+<div class="desc"><p>QGroupBox(parent: typing.Optional[QWidget] = None)
+QGroupBox(title: str, parent: typing.Optional[QWidget] = None)</p>
 <p>Initialisation of a process widget.</p>
 <p>For a Control Server with the given process name and Proxy type, a process widget is created.
 This widget will
@@ -2960,8 +2968,8 @@ comprise the following components:</p>
 <span>(</span><span>parent)</span>
 </code></dt>
 <dd>
-<div class="desc"><p>QGroupBox(parent: QWidget = None)
-QGroupBox(str, parent: QWidget = None)</p>
+<div class="desc"><p>QGroupBox(parent: typing.Optional[QWidget] = None)
+QGroupBox(title: str, parent: typing.Optional[QWidget] = None)</p>
 <p>Initialisation of a process widget.</p>
 <p>For a Control Server with the given process name and Proxy type, a process widget is created.
 This widget will
@@ -3112,6 +3120,11 @@ comprise the following components:</p>
             elif module_name == &#34;egse.powermeter.ni.cdaq9184&#34;:
                 commanding_port = ctrl_settings.CDAQ9184[&#34;COMMANDING_PORT&#34;]
                 monitoring_port = ctrl_settings.CDAQ9184[&#34;MONITORING_PORT&#34;]
+
+            elif module_name == &#34;egse.tempcontrol.lakeshore.lsci&#34;:
+                name = &#34;LS_&#34; + self.process_name.split(&#34; &#34;)[2].upper()
+                commanding_port = ctrl_settings[name][&#34;COMMANDING_PORT&#34;]
+                monitoring_port = ctrl_settings[name][&#34;MONITORING_PORT&#34;]
 
             else:
                 commanding_port = ctrl_settings.COMMANDING_PORT
@@ -3342,6 +3355,11 @@ comprise the following components:</p>
         elif module_name == &#34;egse.powermeter.ni.cdaq9184&#34;:
             commanding_port = ctrl_settings.CDAQ9184[&#34;COMMANDING_PORT&#34;]
             monitoring_port = ctrl_settings.CDAQ9184[&#34;MONITORING_PORT&#34;]
+
+        elif module_name == &#34;egse.tempcontrol.lakeshore.lsci&#34;:
+            name = &#34;LS_&#34; + self.process_name.split(&#34; &#34;)[2].upper()
+            commanding_port = ctrl_settings[name][&#34;COMMANDING_PORT&#34;]
+            monitoring_port = ctrl_settings[name][&#34;MONITORING_PORT&#34;]
 
         else:
             commanding_port = ctrl_settings.COMMANDING_PORT
@@ -3594,8 +3612,8 @@ to notify the GUI.</p></div>
 <span>(</span><span>parent)</span>
 </code></dt>
 <dd>
-<div class="desc"><p>QGroupBox(parent: QWidget = None)
-QGroupBox(str, parent: QWidget = None)</p>
+<div class="desc"><p>QGroupBox(parent: typing.Optional[QWidget] = None)
+QGroupBox(title: str, parent: typing.Optional[QWidget] = None)</p>
 <p>Initialisation of a process widget.</p>
 <p>For a Control Server with the given process name and Proxy type, a process widget is created.
 This widget will
@@ -3693,8 +3711,8 @@ comprise the following components:</p>
 <span>(</span><span>process_name, parent, include_gui_button=True, include_start_stop_button=True)</span>
 </code></dt>
 <dd>
-<div class="desc"><p>QGroupBox(parent: QWidget = None)
-QGroupBox(str, parent: QWidget = None)</p>
+<div class="desc"><p>QGroupBox(parent: typing.Optional[QWidget] = None)
+QGroupBox(title: str, parent: typing.Optional[QWidget] = None)</p>
 <p>Initialisation of a process widget.</p>
 <p>For a Control Server with the given process name and Proxy type, a process widget is created.
 This widget will
@@ -4020,7 +4038,7 @@ or Indic.RED.</li>
 <span>class <span class="ident">ProcessManagerUIView</span></span>
 </code></dt>
 <dd>
-<div class="desc"><p>QMainWindow(parent: QWidget = None, flags: Union[Qt.WindowFlags, Qt.WindowType] = Qt.WindowFlags())</p>
+<div class="desc"><p>QMainWindow(parent: typing.Optional[QWidget] = None, flags: Union[Qt.WindowFlags, Qt.WindowType] = Qt.WindowFlags())</p>
 <p>Initialisation of the Process Manager GUI.</p>
 <p>The components are placed in the window and threads are created for all processes, to be able to check for
 updates in the process status (in the background) and display these in the GUI.</p></div>
@@ -6006,8 +6024,8 @@ to notify the GUI.</p></div>
 <span>(</span><span>process_name, process_info, parent, include_start_stop_button=True)</span>
 </code></dt>
 <dd>
-<div class="desc"><p>QGroupBox(parent: QWidget = None)
-QGroupBox(str, parent: QWidget = None)</p>
+<div class="desc"><p>QGroupBox(parent: typing.Optional[QWidget] = None)
+QGroupBox(title: str, parent: typing.Optional[QWidget] = None)</p>
 <p>Initialisation of a process widget.</p>
 <p>For a Control Server with the given process name and Proxy type, a process widget is created.
 This widget will
@@ -6162,9 +6180,13 @@ comprise the following components:</p>
         else:   # No GUI defined in the YAML file of the CS
             LOGGER.debug(f&#34;No GUI available for {self.process_name}&#34;)
             return
-
-        gui_process = SubProcess(&#34;MyApp&#34;, [sys.executable, &#34;-m&#34;, gui_type])
-        gui_process.execute(detach_from_parent=True)
+        if module_name == &#34;egse.tempcontrol.lakeshore.lsci&#34;:
+            index = self.process_name.split(&#34; &#34;)[2]
+            gui_process = SubProcess(&#34;MyApp&#34;, [sys.executable, &#34;-m&#34;, gui_type, &#34;--index&#34;, index])
+            gui_process.execute(detach_from_parent=True)
+        else:
+            gui_process = SubProcess(&#34;MyApp&#34;, [sys.executable, &#34;-m&#34;, gui_type])
+            gui_process.execute(detach_from_parent=True)
 
     def set_cs_start_mode(self):
         &#34;&#34;&#34; Change the start mode for the Control Server.
@@ -6205,7 +6227,6 @@ comprise the following components:</p>
             with ProcessManagerProxy() as pm:
 
                 response: Response = pm.start_cs(self.process_name, self.is_simulator_mode)
-
                 if response.successful:
                     self.sim_option_button.setDisabled(True)
                 else:
@@ -6432,7 +6453,6 @@ Indic.ORANGE, or Indic.RED.</li>
         with ProcessManagerProxy() as pm:
 
             response: Response = pm.start_cs(self.process_name, self.is_simulator_mode)
-
             if response.successful:
                 self.sim_option_button.setDisabled(True)
             else:
@@ -6490,9 +6510,13 @@ Indic.ORANGE, or Indic.RED.</li>
     else:   # No GUI defined in the YAML file of the CS
         LOGGER.debug(f&#34;No GUI available for {self.process_name}&#34;)
         return
-
-    gui_process = SubProcess(&#34;MyApp&#34;, [sys.executable, &#34;-m&#34;, gui_type])
-    gui_process.execute(detach_from_parent=True)</code></pre>
+    if module_name == &#34;egse.tempcontrol.lakeshore.lsci&#34;:
+        index = self.process_name.split(&#34; &#34;)[2]
+        gui_process = SubProcess(&#34;MyApp&#34;, [sys.executable, &#34;-m&#34;, gui_type, &#34;--index&#34;, index])
+        gui_process.execute(detach_from_parent=True)
+    else:
+        gui_process = SubProcess(&#34;MyApp&#34;, [sys.executable, &#34;-m&#34;, gui_type])
+        gui_process.execute(detach_from_parent=True)</code></pre>
 </details>
 </dd>
 <dt id="egse.procman.procman_ui.ProcessWidget.start_stop_cs"><code class="name flex">

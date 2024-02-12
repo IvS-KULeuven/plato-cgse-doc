@@ -38,19 +38,13 @@ from egse.settings import Settings
 from egse.ups.apc.apc import APCController
 from egse.ups.apc.apc import APCInterface
 from egse.ups.apc.apc import APCSimulator
-from egse.ups.apc.apc_devif import APCCommand
+from egse.ups.apc.apc import APCCommand
 from egse.system import format_datetime
 from egse.zmq_ser import bind_address
 
 logger = logging.getLogger(__name__)
 
 COMMAND_SETTINGS = Settings.load(filename=&#39;apc.yaml&#39;)
-
-FDIR_PREFIX = 800
-
-gauge_battchrage    = Gauge(&#39;GSRON_UPS_CHARGE&#39;, &#39;&#39;)
-gauge_onbatt        = Gauge(&#39;GSRON_UPS_ON_BATT&#39;, &#39;&#39;)
-gauge_timeleft      = Gauge(&#39;GSRON_UPS_TIME_LEFT&#39;, &#39;&#39;)
 
 class APCProtocol(CommandProtocol):
     def __init__(self, control_server:ControlServer):
@@ -65,6 +59,31 @@ class APCProtocol(CommandProtocol):
         self.load_commands(COMMAND_SETTINGS.Commands, APCCommand, APCInterface)
 
         self.build_device_method_lookup_table(self.apc)
+        
+        self.gauge_linev     = Gauge(&#39;GSRON_UPS_LINEV&#39;, &#39;&#39;)
+        self.gauge_loadpct     = Gauge(&#39;GSRON_UPS_LOADPCT&#39;, &#39;&#39;)
+        self.gauge_bcharge     = Gauge(&#39;GSRON_UPS_BCHARGE&#39;, &#39;&#39;)
+        self.gauge_timeleft     = Gauge(&#39;GSRON_UPS_TIMELEFT&#39;, &#39;&#39;)
+        self.gauge_mbattchg     = Gauge(&#39;GSRON_UPS_MBATTCHG&#39;, &#39;&#39;)
+        self.gauge_mintimel     = Gauge(&#39;GSRON_UPS_MINTIMEL&#39;, &#39;&#39;)
+        self.gauge_maxtime     = Gauge(&#39;GSRON_UPS_MAXTIME&#39;, &#39;&#39;)
+        self.gauge_maxlinev     = Gauge(&#39;GSRON_UPS_MAXLINEV&#39;, &#39;&#39;)
+        self.gauge_minlinev     = Gauge(&#39;GSRON_UPS_MINLINEV&#39;, &#39;&#39;)
+        self.gauge_outputv     = Gauge(&#39;GSRON_UPS_OUTPUTV&#39;, &#39;&#39;)
+        self.gauge_dlowbatt     = Gauge(&#39;GSRON_UPS_DLOWBATT&#39;, &#39;&#39;)
+        self.gauge_lotrans     = Gauge(&#39;GSRON_UPS_LOTRANS&#39;, &#39;&#39;)
+        self.gauge_hitrans     = Gauge(&#39;GSRON_UPS_HITRANS&#39;, &#39;&#39;)
+        self.gauge_itemp     = Gauge(&#39;GSRON_UPS_ITEMP&#39;, &#39;&#39;)
+        self.gauge_alarmdel     = Gauge(&#39;GSRON_UPS_ALARMDEL&#39;, &#39;&#39;)
+        self.gauge_battv     = Gauge(&#39;GSRON_UPS_BATTV&#39;, &#39;&#39;)
+        self.gauge_linefreq     = Gauge(&#39;GSRON_UPS_LINEFREQ&#39;, &#39;&#39;)
+        self.gauge_lastxfer     = Gauge(&#39;GSRON_UPS_LASTXFER&#39;, &#39;&#39;)
+        self.gauge_numxfers     = Gauge(&#39;GSRON_UPS_NUMXFERS&#39;, &#39;&#39;)
+        self.gauge_tonbatt     = Gauge(&#39;GSRON_UPS_TONBATT&#39;, &#39;&#39;)
+        self.gauge_cumonbatt     = Gauge(&#39;GSRON_UPS_CUMONBATT&#39;, &#39;&#39;)
+        self.gauge_xoffbatt     = Gauge(&#39;GSRON_UPS_XOFFBATT&#39;, &#39;&#39;)
+        self.gauge_statflag     = Gauge(&#39;GSRON_UPS_STATFLAG&#39;, &#39;&#39;)
+        self.gauge_onbatt       = Gauge(&#39;GSRON_UPS_ONBATT&#39;, &#39;&#39;)
 
 
     def get_bind_address(self):
@@ -79,23 +98,57 @@ class APCProtocol(CommandProtocol):
         hk_dict = {&#39;timestamp&#39;: format_datetime()}
 
         try:
-            hk_dict[f&#34;GSRON_UPS_CHARGE&#34;] = self.apc.get_bcharge()
-            hk_dict[f&#34;GSRON_UPS_ON_BATT&#34;] = self.apc.get_onbatt()
-            hk_dict[f&#34;GSRON_UPS_TIME_LEFT&#34;] = self.apc.get_timeleft()
+            dct = self.apc.get_status_dict()
+            hk_dict[f&#39;GSRON_UPS_LINEV&#39;] = dct[&#39;LINEV&#39;]
+            hk_dict[f&#39;GSRON_UPS_LOADPCT&#39;] = dct[&#39;LOADPCT&#39;]
+            hk_dict[f&#39;GSRON_UPS_BCHARGE&#39;] = dct[&#39;BCHARGE&#39;]
+            hk_dict[f&#39;GSRON_UPS_TIMELEFT&#39;] = dct[&#39;TIMELEFT&#39;]
+            hk_dict[f&#39;GSRON_UPS_MBATTCHG&#39;] = dct[&#39;MBATTCHG&#39;]
+            hk_dict[f&#39;GSRON_UPS_MINTIMEL&#39;] = dct[&#39;MINTIMEL&#39;]
+            hk_dict[f&#39;GSRON_UPS_MAXTIME&#39;] = dct[&#39;MAXTIME&#39;]
+            hk_dict[f&#39;GSRON_UPS_MAXLINEV&#39;] = dct[&#39;MAXLINEV&#39;]
+            hk_dict[f&#39;GSRON_UPS_MINLINEV&#39;] = dct[&#39;MINLINEV&#39;]
+            hk_dict[f&#39;GSRON_UPS_OUTPUTV&#39;] = dct[&#39;OUTPUTV&#39;]
+            hk_dict[f&#39;GSRON_UPS_DLOWBATT&#39;] = dct[&#39;DLOWBATT&#39;]
+            hk_dict[f&#39;GSRON_UPS_LOTRANS&#39;] = dct[&#39;LOTRANS&#39;]
+            hk_dict[f&#39;GSRON_UPS_HITRANS&#39;] = dct[&#39;HITRANS&#39;]
+            hk_dict[f&#39;GSRON_UPS_ITEMP&#39;] = dct[&#39;ITEMP&#39;]
+            hk_dict[f&#39;GSRON_UPS_ALARMDEL&#39;] = dct[&#39;ALARMDEL&#39;]
+            hk_dict[f&#39;GSRON_UPS_BATTV&#39;] = dct[&#39;BATTV&#39;]
+            hk_dict[f&#39;GSRON_UPS_LINEFREQ&#39;] = dct[&#39;LINEFREQ&#39;]
+            hk_dict[f&#39;GSRON_UPS_NUMXFERS&#39;] = dct[&#39;NUMXFERS&#39;]
+            hk_dict[f&#39;GSRON_UPS_TONBATT&#39;] = dct[&#39;TONBATT&#39;]
+            hk_dict[f&#39;GSRON_UPS_CUMONBATT&#39;] = dct[&#39;CUMONBATT&#39;]
+            hk_dict[f&#39;GSRON_UPS_STATFLAG&#39;] = int(dct[&#39;STATFLAG&#39;], 16)
+            hk_dict[f&#39;GSRON_UPS_ONBATT&#39;]   = &#39;ONBATT&#39; in dct[&#39;STATUS&#39;]
 
         except Exception as exc:
-            logger.error(f&#39;failed to get HK ({exc})&#39;)
-
-            # with FdirManagerProxy() as fdir:
-            #     fdir_code = FDIR_PREFIX + 1
-            #     fdir.signal_fdir(fdir_code)
-            #     logger.warning(f&#39;asserted fdir signal: {fdir_code}&#39;)
+            logger.exception(&#34;failed to get HK: %s&#34;, exc)
 
             return hk_dict
-
-        gauge_battchrage.set(hk_dict[f&#34;GSRON_UPS_CHARGE&#34;])
-        gauge_onbatt.set(hk_dict[f&#34;GSRON_UPS_ON_BATT&#34;])
-        gauge_timeleft.set(hk_dict[f&#34;GSRON_UPS_TIME_LEFT&#34;])
+        
+        self.gauge_linev.set(hk_dict[f&#39;GSRON_UPS_LINEV&#39;])
+        self.gauge_loadpct.set(hk_dict[f&#39;GSRON_UPS_LOADPCT&#39;])
+        self.gauge_bcharge.set(hk_dict[f&#39;GSRON_UPS_BCHARGE&#39;])
+        self.gauge_timeleft.set(hk_dict[f&#39;GSRON_UPS_TIMELEFT&#39;])
+        self.gauge_mbattchg.set(hk_dict[f&#39;GSRON_UPS_MBATTCHG&#39;])
+        self.gauge_mintimel.set(hk_dict[f&#39;GSRON_UPS_MINTIMEL&#39;])
+        self.gauge_maxtime.set(hk_dict[f&#39;GSRON_UPS_MAXTIME&#39;])
+        self.gauge_maxlinev.set(hk_dict[f&#39;GSRON_UPS_MAXLINEV&#39;])
+        self.gauge_minlinev.set(hk_dict[f&#39;GSRON_UPS_MINLINEV&#39;])
+        self.gauge_outputv.set(hk_dict[f&#39;GSRON_UPS_OUTPUTV&#39;])
+        self.gauge_dlowbatt.set(hk_dict[f&#39;GSRON_UPS_DLOWBATT&#39;])
+        self.gauge_lotrans.set(hk_dict[f&#39;GSRON_UPS_LOTRANS&#39;])
+        self.gauge_hitrans.set(hk_dict[f&#39;GSRON_UPS_HITRANS&#39;])
+        self.gauge_itemp.set(hk_dict[f&#39;GSRON_UPS_ITEMP&#39;])
+        self.gauge_alarmdel.set(hk_dict[f&#39;GSRON_UPS_ALARMDEL&#39;])
+        self.gauge_battv.set(hk_dict[f&#39;GSRON_UPS_BATTV&#39;])
+        self.gauge_linefreq.set(hk_dict[f&#39;GSRON_UPS_LINEFREQ&#39;])
+        self.gauge_numxfers.set(hk_dict[f&#39;GSRON_UPS_NUMXFERS&#39;])
+        self.gauge_tonbatt.set(hk_dict[f&#39;GSRON_UPS_TONBATT&#39;])
+        self.gauge_cumonbatt.set(hk_dict[f&#39;GSRON_UPS_CUMONBATT&#39;])
+        self.gauge_statflag.set(hk_dict[f&#39;GSRON_UPS_STATFLAG&#39;])
+        self.gauge_onbatt.set(hk_dict[f&#39;GSRON_UPS_ONBATT&#39;])
 
         return hk_dict</code></pre>
 </details>
@@ -139,6 +192,31 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
         self.load_commands(COMMAND_SETTINGS.Commands, APCCommand, APCInterface)
 
         self.build_device_method_lookup_table(self.apc)
+        
+        self.gauge_linev     = Gauge(&#39;GSRON_UPS_LINEV&#39;, &#39;&#39;)
+        self.gauge_loadpct     = Gauge(&#39;GSRON_UPS_LOADPCT&#39;, &#39;&#39;)
+        self.gauge_bcharge     = Gauge(&#39;GSRON_UPS_BCHARGE&#39;, &#39;&#39;)
+        self.gauge_timeleft     = Gauge(&#39;GSRON_UPS_TIMELEFT&#39;, &#39;&#39;)
+        self.gauge_mbattchg     = Gauge(&#39;GSRON_UPS_MBATTCHG&#39;, &#39;&#39;)
+        self.gauge_mintimel     = Gauge(&#39;GSRON_UPS_MINTIMEL&#39;, &#39;&#39;)
+        self.gauge_maxtime     = Gauge(&#39;GSRON_UPS_MAXTIME&#39;, &#39;&#39;)
+        self.gauge_maxlinev     = Gauge(&#39;GSRON_UPS_MAXLINEV&#39;, &#39;&#39;)
+        self.gauge_minlinev     = Gauge(&#39;GSRON_UPS_MINLINEV&#39;, &#39;&#39;)
+        self.gauge_outputv     = Gauge(&#39;GSRON_UPS_OUTPUTV&#39;, &#39;&#39;)
+        self.gauge_dlowbatt     = Gauge(&#39;GSRON_UPS_DLOWBATT&#39;, &#39;&#39;)
+        self.gauge_lotrans     = Gauge(&#39;GSRON_UPS_LOTRANS&#39;, &#39;&#39;)
+        self.gauge_hitrans     = Gauge(&#39;GSRON_UPS_HITRANS&#39;, &#39;&#39;)
+        self.gauge_itemp     = Gauge(&#39;GSRON_UPS_ITEMP&#39;, &#39;&#39;)
+        self.gauge_alarmdel     = Gauge(&#39;GSRON_UPS_ALARMDEL&#39;, &#39;&#39;)
+        self.gauge_battv     = Gauge(&#39;GSRON_UPS_BATTV&#39;, &#39;&#39;)
+        self.gauge_linefreq     = Gauge(&#39;GSRON_UPS_LINEFREQ&#39;, &#39;&#39;)
+        self.gauge_lastxfer     = Gauge(&#39;GSRON_UPS_LASTXFER&#39;, &#39;&#39;)
+        self.gauge_numxfers     = Gauge(&#39;GSRON_UPS_NUMXFERS&#39;, &#39;&#39;)
+        self.gauge_tonbatt     = Gauge(&#39;GSRON_UPS_TONBATT&#39;, &#39;&#39;)
+        self.gauge_cumonbatt     = Gauge(&#39;GSRON_UPS_CUMONBATT&#39;, &#39;&#39;)
+        self.gauge_xoffbatt     = Gauge(&#39;GSRON_UPS_XOFFBATT&#39;, &#39;&#39;)
+        self.gauge_statflag     = Gauge(&#39;GSRON_UPS_STATFLAG&#39;, &#39;&#39;)
+        self.gauge_onbatt       = Gauge(&#39;GSRON_UPS_ONBATT&#39;, &#39;&#39;)
 
 
     def get_bind_address(self):
@@ -153,23 +231,57 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
         hk_dict = {&#39;timestamp&#39;: format_datetime()}
 
         try:
-            hk_dict[f&#34;GSRON_UPS_CHARGE&#34;] = self.apc.get_bcharge()
-            hk_dict[f&#34;GSRON_UPS_ON_BATT&#34;] = self.apc.get_onbatt()
-            hk_dict[f&#34;GSRON_UPS_TIME_LEFT&#34;] = self.apc.get_timeleft()
+            dct = self.apc.get_status_dict()
+            hk_dict[f&#39;GSRON_UPS_LINEV&#39;] = dct[&#39;LINEV&#39;]
+            hk_dict[f&#39;GSRON_UPS_LOADPCT&#39;] = dct[&#39;LOADPCT&#39;]
+            hk_dict[f&#39;GSRON_UPS_BCHARGE&#39;] = dct[&#39;BCHARGE&#39;]
+            hk_dict[f&#39;GSRON_UPS_TIMELEFT&#39;] = dct[&#39;TIMELEFT&#39;]
+            hk_dict[f&#39;GSRON_UPS_MBATTCHG&#39;] = dct[&#39;MBATTCHG&#39;]
+            hk_dict[f&#39;GSRON_UPS_MINTIMEL&#39;] = dct[&#39;MINTIMEL&#39;]
+            hk_dict[f&#39;GSRON_UPS_MAXTIME&#39;] = dct[&#39;MAXTIME&#39;]
+            hk_dict[f&#39;GSRON_UPS_MAXLINEV&#39;] = dct[&#39;MAXLINEV&#39;]
+            hk_dict[f&#39;GSRON_UPS_MINLINEV&#39;] = dct[&#39;MINLINEV&#39;]
+            hk_dict[f&#39;GSRON_UPS_OUTPUTV&#39;] = dct[&#39;OUTPUTV&#39;]
+            hk_dict[f&#39;GSRON_UPS_DLOWBATT&#39;] = dct[&#39;DLOWBATT&#39;]
+            hk_dict[f&#39;GSRON_UPS_LOTRANS&#39;] = dct[&#39;LOTRANS&#39;]
+            hk_dict[f&#39;GSRON_UPS_HITRANS&#39;] = dct[&#39;HITRANS&#39;]
+            hk_dict[f&#39;GSRON_UPS_ITEMP&#39;] = dct[&#39;ITEMP&#39;]
+            hk_dict[f&#39;GSRON_UPS_ALARMDEL&#39;] = dct[&#39;ALARMDEL&#39;]
+            hk_dict[f&#39;GSRON_UPS_BATTV&#39;] = dct[&#39;BATTV&#39;]
+            hk_dict[f&#39;GSRON_UPS_LINEFREQ&#39;] = dct[&#39;LINEFREQ&#39;]
+            hk_dict[f&#39;GSRON_UPS_NUMXFERS&#39;] = dct[&#39;NUMXFERS&#39;]
+            hk_dict[f&#39;GSRON_UPS_TONBATT&#39;] = dct[&#39;TONBATT&#39;]
+            hk_dict[f&#39;GSRON_UPS_CUMONBATT&#39;] = dct[&#39;CUMONBATT&#39;]
+            hk_dict[f&#39;GSRON_UPS_STATFLAG&#39;] = int(dct[&#39;STATFLAG&#39;], 16)
+            hk_dict[f&#39;GSRON_UPS_ONBATT&#39;]   = &#39;ONBATT&#39; in dct[&#39;STATUS&#39;]
 
         except Exception as exc:
-            logger.error(f&#39;failed to get HK ({exc})&#39;)
-
-            # with FdirManagerProxy() as fdir:
-            #     fdir_code = FDIR_PREFIX + 1
-            #     fdir.signal_fdir(fdir_code)
-            #     logger.warning(f&#39;asserted fdir signal: {fdir_code}&#39;)
+            logger.exception(&#34;failed to get HK: %s&#34;, exc)
 
             return hk_dict
-
-        gauge_battchrage.set(hk_dict[f&#34;GSRON_UPS_CHARGE&#34;])
-        gauge_onbatt.set(hk_dict[f&#34;GSRON_UPS_ON_BATT&#34;])
-        gauge_timeleft.set(hk_dict[f&#34;GSRON_UPS_TIME_LEFT&#34;])
+        
+        self.gauge_linev.set(hk_dict[f&#39;GSRON_UPS_LINEV&#39;])
+        self.gauge_loadpct.set(hk_dict[f&#39;GSRON_UPS_LOADPCT&#39;])
+        self.gauge_bcharge.set(hk_dict[f&#39;GSRON_UPS_BCHARGE&#39;])
+        self.gauge_timeleft.set(hk_dict[f&#39;GSRON_UPS_TIMELEFT&#39;])
+        self.gauge_mbattchg.set(hk_dict[f&#39;GSRON_UPS_MBATTCHG&#39;])
+        self.gauge_mintimel.set(hk_dict[f&#39;GSRON_UPS_MINTIMEL&#39;])
+        self.gauge_maxtime.set(hk_dict[f&#39;GSRON_UPS_MAXTIME&#39;])
+        self.gauge_maxlinev.set(hk_dict[f&#39;GSRON_UPS_MAXLINEV&#39;])
+        self.gauge_minlinev.set(hk_dict[f&#39;GSRON_UPS_MINLINEV&#39;])
+        self.gauge_outputv.set(hk_dict[f&#39;GSRON_UPS_OUTPUTV&#39;])
+        self.gauge_dlowbatt.set(hk_dict[f&#39;GSRON_UPS_DLOWBATT&#39;])
+        self.gauge_lotrans.set(hk_dict[f&#39;GSRON_UPS_LOTRANS&#39;])
+        self.gauge_hitrans.set(hk_dict[f&#39;GSRON_UPS_HITRANS&#39;])
+        self.gauge_itemp.set(hk_dict[f&#39;GSRON_UPS_ITEMP&#39;])
+        self.gauge_alarmdel.set(hk_dict[f&#39;GSRON_UPS_ALARMDEL&#39;])
+        self.gauge_battv.set(hk_dict[f&#39;GSRON_UPS_BATTV&#39;])
+        self.gauge_linefreq.set(hk_dict[f&#39;GSRON_UPS_LINEFREQ&#39;])
+        self.gauge_numxfers.set(hk_dict[f&#39;GSRON_UPS_NUMXFERS&#39;])
+        self.gauge_tonbatt.set(hk_dict[f&#39;GSRON_UPS_TONBATT&#39;])
+        self.gauge_cumonbatt.set(hk_dict[f&#39;GSRON_UPS_CUMONBATT&#39;])
+        self.gauge_statflag.set(hk_dict[f&#39;GSRON_UPS_STATFLAG&#39;])
+        self.gauge_onbatt.set(hk_dict[f&#39;GSRON_UPS_ONBATT&#39;])
 
         return hk_dict</code></pre>
 </details>

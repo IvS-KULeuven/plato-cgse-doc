@@ -92,10 +92,10 @@ from egse.exceptions import InternalError
 from egse.fee.nfee import HousekeepingData
 from egse.reg import RegisterMap
 from egse.setup import SetupError
+from egse.setup import load_setup
 from egse.spw import DataPacket
 from egse.spw import HousekeepingPacket
 from egse.spw import SpaceWirePacket
-from egse.state import GlobalState
 
 MODULE_LOGGER = logging.getLogger(__name__)
 
@@ -155,7 +155,9 @@ class MainWindow(QMainWindow, MainWindowGUI):
     def __init__(self):
         super().__init__()
 
-        self.n_fee_side = GlobalState.setup.camera.fee.ccd_sides.enum
+        setup = load_setup()
+        self.n_fee_side = setup.camera.fee.ccd_sides.enum
+        self.ccd_bin_to_id = setup.camera.fee.ccd_numbering.CCD_BIN_TO_ID
 
         # Setup the complete GUI
 
@@ -233,6 +235,9 @@ class MainWindow(QMainWindow, MainWindowGUI):
                 self.data_view.setCurrentWidget(self.table_box)
                 self.table_view.resizeColumnsToContents()
                 self.proxy_model.layoutChanged.emit()
+            elif &#34;hk_data&#34; in hdf_item.name:
+                packet = HousekeepingData(hdf_item[()])
+                self.display_hk_data_text(packet)
             elif &#34;hk&#34; in hdf_item.name:
                 packet = HousekeepingPacket(hdf_item[()])
                 self.display_hk_packet_view(packet)
@@ -250,6 +255,15 @@ class MainWindow(QMainWindow, MainWindowGUI):
         elif isinstance(hdf_item, h5py.Group):
             if &#34;data&#34; in hdf_item:
                 self.handle_image_data(hdf_item)
+
+    def display_hk_data_text(self, hk_data: HousekeepingData):
+
+        console = Console(width=120, force_terminal=False, force_jupyter=False)
+        with console.capture() as capture:
+            console.print(hk_data)
+        text = capture.get()
+        self.text_box.setText(text)
+        self.data_view.setCurrentWidget(self.text_box)
 
     def display_hk_packet_view(self, packet: HousekeepingPacket):
         hk_data = HousekeepingData(packet.data)
@@ -314,7 +328,7 @@ class MainWindow(QMainWindow, MainWindowGUI):
         # Create the Worker, any other args, kwargs are passed to the run function
 
         worker = Worker(
-            create_image, data_item, v_start, v_end, h_end
+            create_image, data_item, v_start, v_end, h_end, self.n_fee_side, self.ccd_bin_to_id,
         )
         worker.signals.result.connect(self.show_image_data)
         worker.signals.finished.connect(self.worker_finished)
@@ -401,17 +415,15 @@ def ndarray_to_str(data: np.ndarray):
 
 
 # @profile(sort_by=&#39;cumulative&#39;, lines_to_print=10, strip_dirs=True)
-def create_image(hdf_item: h5py.Group, v_start: int, v_end: int, h_end: int,
+def create_image(hdf_item: h5py.Group, v_start: int, v_end: int, h_end: int, n_fee_side, ccd_bin_to_id,
                  signals: WorkerSignals):
-
-    n_fee_side = GlobalState.setup.camera.fee.ccd_sides.enum
 
     # MODULE_LOGGER.info(f&#34;Creating image: {v_start=}, {v_end=}&#34;)
 
     nr_lines = v_end - v_start + 1
     nr_columns = h_end + 1
 
-    image = ImageCreatorFullSize(v_start, v_end, h_end)
+    image = ImageCreatorFullSize(v_start, v_end, h_end, n_fee_side)
 
     ccd_nr = None
     lines_count = 0
@@ -456,7 +468,7 @@ def create_image(hdf_item: h5py.Group, v_start: int, v_end: int, h_end: int,
             ccd_nr = data_packet.header.type_as_object.ccd_number  # N-FEE CCD number [0-3]
             # MODULE_LOGGER.info(f&#34;before {ccd_nr=}&#34;)
             try:
-                ccd_nr = GlobalState.setup.camera.fee.ccd_numbering.CCD_BIN_TO_ID[ccd_nr]
+                ccd_nr = ccd_bin_to_id[ccd_nr]
             except AttributeError:
                 raise SetupError(&#34;No entry in the setup for camera.fee.ccd_numbering.CCD_BIN_TO_ID&#34;)
             # MODULE_LOGGER.info(f&#34;after  {ccd_nr=}&#34;)
@@ -531,7 +543,7 @@ if __name__ == &#34;__main__&#34;:
 <h2 class="section-title" id="header-functions">Functions</h2>
 <dl>
 <dt id="egse.dpu.hdf5_viewer.create_image"><code class="name flex">
-<span>def <span class="ident">create_image</span></span>(<span>hdf_item: h5py._hl.group.Group, v_start: int, v_end: int, h_end: int, signals: <a title="egse.dpu.hdf5_viewer.WorkerSignals" href="#egse.dpu.hdf5_viewer.WorkerSignals">WorkerSignals</a>)</span>
+<span>def <span class="ident">create_image</span></span>(<span>hdf_item: h5py._hl.group.Group, v_start: int, v_end: int, h_end: int, n_fee_side, ccd_bin_to_id, signals: <a title="egse.dpu.hdf5_viewer.WorkerSignals" href="#egse.dpu.hdf5_viewer.WorkerSignals">WorkerSignals</a>)</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -539,17 +551,15 @@ if __name__ == &#34;__main__&#34;:
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def create_image(hdf_item: h5py.Group, v_start: int, v_end: int, h_end: int,
+<pre><code class="python">def create_image(hdf_item: h5py.Group, v_start: int, v_end: int, h_end: int, n_fee_side, ccd_bin_to_id,
                  signals: WorkerSignals):
-
-    n_fee_side = GlobalState.setup.camera.fee.ccd_sides.enum
 
     # MODULE_LOGGER.info(f&#34;Creating image: {v_start=}, {v_end=}&#34;)
 
     nr_lines = v_end - v_start + 1
     nr_columns = h_end + 1
 
-    image = ImageCreatorFullSize(v_start, v_end, h_end)
+    image = ImageCreatorFullSize(v_start, v_end, h_end, n_fee_side)
 
     ccd_nr = None
     lines_count = 0
@@ -594,7 +604,7 @@ if __name__ == &#34;__main__&#34;:
             ccd_nr = data_packet.header.type_as_object.ccd_number  # N-FEE CCD number [0-3]
             # MODULE_LOGGER.info(f&#34;before {ccd_nr=}&#34;)
             try:
-                ccd_nr = GlobalState.setup.camera.fee.ccd_numbering.CCD_BIN_TO_ID[ccd_nr]
+                ccd_nr = ccd_bin_to_id[ccd_nr]
             except AttributeError:
                 raise SetupError(&#34;No entry in the setup for camera.fee.ccd_numbering.CCD_BIN_TO_ID&#34;)
             # MODULE_LOGGER.info(f&#34;after  {ccd_nr=}&#34;)
@@ -732,7 +742,7 @@ if __name__ == &#34;__main__&#34;:
 <span>class <span class="ident">MainWindow</span></span>
 </code></dt>
 <dd>
-<div class="desc"><p>QMainWindow(parent: QWidget = None, flags: Union[Qt.WindowFlags, Qt.WindowType] = Qt.WindowFlags())</p></div>
+<div class="desc"><p>QMainWindow(parent: typing.Optional[QWidget] = None, flags: Union[Qt.WindowFlags, Qt.WindowType] = Qt.WindowFlags())</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
@@ -741,7 +751,9 @@ if __name__ == &#34;__main__&#34;:
     def __init__(self):
         super().__init__()
 
-        self.n_fee_side = GlobalState.setup.camera.fee.ccd_sides.enum
+        setup = load_setup()
+        self.n_fee_side = setup.camera.fee.ccd_sides.enum
+        self.ccd_bin_to_id = setup.camera.fee.ccd_numbering.CCD_BIN_TO_ID
 
         # Setup the complete GUI
 
@@ -819,6 +831,9 @@ if __name__ == &#34;__main__&#34;:
                 self.data_view.setCurrentWidget(self.table_box)
                 self.table_view.resizeColumnsToContents()
                 self.proxy_model.layoutChanged.emit()
+            elif &#34;hk_data&#34; in hdf_item.name:
+                packet = HousekeepingData(hdf_item[()])
+                self.display_hk_data_text(packet)
             elif &#34;hk&#34; in hdf_item.name:
                 packet = HousekeepingPacket(hdf_item[()])
                 self.display_hk_packet_view(packet)
@@ -836,6 +851,15 @@ if __name__ == &#34;__main__&#34;:
         elif isinstance(hdf_item, h5py.Group):
             if &#34;data&#34; in hdf_item:
                 self.handle_image_data(hdf_item)
+
+    def display_hk_data_text(self, hk_data: HousekeepingData):
+
+        console = Console(width=120, force_terminal=False, force_jupyter=False)
+        with console.capture() as capture:
+            console.print(hk_data)
+        text = capture.get()
+        self.text_box.setText(text)
+        self.data_view.setCurrentWidget(self.text_box)
 
     def display_hk_packet_view(self, packet: HousekeepingPacket):
         hk_data = HousekeepingData(packet.data)
@@ -900,7 +924,7 @@ if __name__ == &#34;__main__&#34;:
         # Create the Worker, any other args, kwargs are passed to the run function
 
         worker = Worker(
-            create_image, data_item, v_start, v_end, h_end
+            create_image, data_item, v_start, v_end, h_end, self.n_fee_side, self.ccd_bin_to_id,
         )
         worker.signals.result.connect(self.show_image_data)
         worker.signals.finished.connect(self.worker_finished)
@@ -957,6 +981,25 @@ if __name__ == &#34;__main__&#34;:
 </ul>
 <h3>Methods</h3>
 <dl>
+<dt id="egse.dpu.hdf5_viewer.MainWindow.display_hk_data_text"><code class="name flex">
+<span>def <span class="ident">display_hk_data_text</span></span>(<span>self, hk_data: <a title="egse.fee.nfee.HousekeepingData" href="../fee/nfee.html#egse.fee.nfee.HousekeepingData">HousekeepingData</a>)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def display_hk_data_text(self, hk_data: HousekeepingData):
+
+    console = Console(width=120, force_terminal=False, force_jupyter=False)
+    with console.capture() as capture:
+        console.print(hk_data)
+    text = capture.get()
+    self.text_box.setText(text)
+    self.data_view.setCurrentWidget(self.text_box)</code></pre>
+</details>
+</dd>
 <dt id="egse.dpu.hdf5_viewer.MainWindow.display_hk_packet_text"><code class="name flex">
 <span>def <span class="ident">display_hk_packet_text</span></span>(<span>self, packet: <a title="egse.spw.HousekeepingPacket" href="../spw.html#egse.spw.HousekeepingPacket">HousekeepingPacket</a>)</span>
 </code></dt>
@@ -1049,7 +1092,7 @@ if __name__ == &#34;__main__&#34;:
     # Create the Worker, any other args, kwargs are passed to the run function
 
     worker = Worker(
-        create_image, data_item, v_start, v_end, h_end
+        create_image, data_item, v_start, v_end, h_end, self.n_fee_side, self.ccd_bin_to_id,
     )
     worker.signals.result.connect(self.show_image_data)
     worker.signals.finished.connect(self.worker_finished)
@@ -1141,6 +1184,9 @@ if __name__ == &#34;__main__&#34;:
             self.data_view.setCurrentWidget(self.table_box)
             self.table_view.resizeColumnsToContents()
             self.proxy_model.layoutChanged.emit()
+        elif &#34;hk_data&#34; in hdf_item.name:
+            packet = HousekeepingData(hdf_item[()])
+            self.display_hk_data_text(packet)
         elif &#34;hk&#34; in hdf_item.name:
             packet = HousekeepingPacket(hdf_item[()])
             self.display_hk_packet_view(packet)
@@ -1427,6 +1473,7 @@ def run(self):
 <li>
 <h4><code><a title="egse.dpu.hdf5_viewer.MainWindow" href="#egse.dpu.hdf5_viewer.MainWindow">MainWindow</a></code></h4>
 <ul class="">
+<li><code><a title="egse.dpu.hdf5_viewer.MainWindow.display_hk_data_text" href="#egse.dpu.hdf5_viewer.MainWindow.display_hk_data_text">display_hk_data_text</a></code></li>
 <li><code><a title="egse.dpu.hdf5_viewer.MainWindow.display_hk_packet_text" href="#egse.dpu.hdf5_viewer.MainWindow.display_hk_packet_text">display_hk_packet_text</a></code></li>
 <li><code><a title="egse.dpu.hdf5_viewer.MainWindow.display_hk_packet_view" href="#egse.dpu.hdf5_viewer.MainWindow.display_hk_packet_view">display_hk_packet_view</a></code></li>
 <li><code><a title="egse.dpu.hdf5_viewer.MainWindow.handle_image_data" href="#egse.dpu.hdf5_viewer.MainWindow.handle_image_data">handle_image_data</a></code></li>
