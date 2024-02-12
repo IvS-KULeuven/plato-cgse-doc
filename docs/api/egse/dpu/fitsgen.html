@@ -43,11 +43,18 @@ import logging
 import multiprocessing
 import os
 import pickle
+import sys
 import threading
-from datetime import timedelta, datetime
+import time
+from datetime import datetime
+from datetime import timedelta
 from enum import Enum
-from pathlib import Path, PosixPath
-from typing import List, Mapping
+from enum import EnumMeta
+from itertools import chain
+from pathlib import Path
+from pathlib import PosixPath
+from typing import List
+from typing import Mapping
 
 import click
 import invoke
@@ -55,39 +62,46 @@ import natsort
 import numpy as np
 import persistqueue
 import rich
-import sys
-import time
 import zmq
 from astropy.io import fits
 from h5py import File
 from h5py._hl.attrs import AttributeManager
-from itertools import chain
 from scipy.interpolate import interp1d
 
 import egse
 from egse import h5
-from egse.config import find_file, find_files
+from egse.config import find_file
+from egse.config import find_files
 from egse.control import time_in_ms
-from egse.dpu import DPUMonitoring, get_expected_last_packet_flags
+from egse.dpu import DPUMonitoring
+from egse.dpu import get_expected_last_packet_flags
 from egse.dpu.dpu_cs import is_dpu_cs_active
 from egse.env import get_data_storage_location
 from egse.exceptions import Abort
 from egse.fee import convert_ccd_order_value
 from egse.fee import n_fee_mode
 from egse.fee.nfee import HousekeepingData
-from egse.hk import get_housekeeping, HKError
-from egse.obsid import ObservationIdentifier, LAB_SETUP_TEST, TEST_LAB, obsid_from_storage
+from egse.hk import HKError
+from egse.hk import get_housekeeping
+from egse.obsid import LAB_SETUP_TEST
+from egse.obsid import ObservationIdentifier
+from egse.obsid import TEST_LAB
+from egse.obsid import obsid_from_storage
 from egse.reg import RegisterMap
 from egse.settings import Settings
-from egse.setup import load_setup, Setup
+from egse.setup import Setup
+from egse.setup import load_setup
 from egse.spw import SpaceWirePacket
-from egse.state import GlobalState
 from egse.storage import is_storage_manager_active
-from egse.storage.persistence import FITS, HDF5
+from egse.storage.persistence import FITS
+from egse.storage.persistence import HDF5
 from egse.synoptics import ORIGIN as SYN_ORIGIN
 from egse.synoptics import get_synoptics_table
-from egse.system import time_since_epoch_1958, format_datetime, read_last_line
-from egse.zmq_ser import bind_address, connect_address
+from egse.system import format_datetime
+from egse.system import read_last_line
+from egse.system import time_since_epoch_1958
+from egse.zmq_ser import bind_address
+from egse.zmq_ser import connect_address
 
 LOGGER = logging.getLogger(__name__)
 
@@ -190,8 +204,9 @@ class FITSGenerator:
         self.ccd_readout_order = None
         # self.sensor_sel = None
         self.rows_final_dump = None
-        self.setup = GlobalState.setup
+        self.setup = load_setup()
         self.sensor_sel_enum = self.setup.camera.fee.sensor_sel.enum
+        self.fee_side = self.setup.camera.fee.ccd_sides.enum
         self.camera_name = self.setup.camera.ID
 
         self.config_slicing_num_cycles = 0   # Configured slicing parameter
@@ -322,7 +337,7 @@ class FITSGenerator:
 
         location = get_data_storage_location()
 
-        previous_obsid = None
+        syn_obsid = None
 
         while self.keep_processing_queue:
 
@@ -458,6 +473,7 @@ class FITSGenerator:
 
                             if has_data:
                                 self.processed_num_cycles += 1
+                                syn_obsid = obsid
 
                                 if self.config_slicing_num_cycles != 0 and \
                                         self.processed_num_cycles == self.config_slicing_num_cycles:
@@ -472,9 +488,10 @@ class FITSGenerator:
                             # it means that the observation has just finished and all FITS files have been generated. It
                             # is only at this point that the synoptics can be included in the FITS headers.
 
-                            if previous_obsid is not None and obsid is None:
-                                add_synoptics(previous_obsid, fits_dir=location, syn_dir=location)
-                            previous_obsid = obsid
+                            if syn_obsid is not None and obsid is None:
+                                LOGGER.info(f&#34;Adding synoptics for {syn_obsid}&#34;)
+                                add_synoptics(syn_obsid, fits_dir=location, syn_dir=location, fee_side=self.fee_side)
+                                syn_obsid = None
                         except KeyError:
                             LOGGER.debug(&#34;KeyError occurred when accessing data in all groups of the HDF5 file.&#34;)
 
@@ -498,7 +515,7 @@ class FITSGenerator:
         if self.fits_images_filename is not None:
 
             self.fits_cube_filename = construct_cube_filename(self.fits_images_filename)
-            convert_to_cubes(self.fits_images_filename)
+            convert_to_cubes(self.fits_images_filename, self.setup)
             self.fits_cube_filename = None
 
             # Stop writing to the current FITS file
@@ -580,7 +597,7 @@ class FITSGenerator:
         return crucial_parameter_change
 
 
-def convert_to_cubes(filename):
+def convert_to_cubes(filename, setup: Setup):
     &#34;&#34;&#34; Conversion of level-1 FITS files to level-2 FITS files.
 
     After the conversion, the flat-structure FITS file is removed.
@@ -589,9 +606,9 @@ def convert_to_cubes(filename):
         - filename: Full path of the level-1 FITS file.
     &#34;&#34;&#34;
 
+    fee_side = setup.camera.fee.ccd_sides.enum
     cube_filename = construct_cube_filename(filename)
     LOGGER.info(f&#34;Converting to {cube_filename}&#34;)
-    fee_side = GlobalState.setup.camera.fee.ccd_sides.enum
 
     with fits.open(filename) as level1:
 
@@ -945,8 +962,9 @@ def construct_images_filename(hdf5_filename: PosixPath, obsid: ObservationIdenti
 
         obsid = obsid_from_storage(obsid, data_dir=location, camera_name=camera_name)
 
-        timestamp = str.split(str(hdf5_filename).split(&#34;/&#34;)[-1], &#34;_&#34;)[0]
         location += &#34;/obs/&#34;
+        dpu_filename = find_file(f&#34;{obsid}_DPU_*.csv&#34;, root=f&#34;{hdf5_filename.parents[2]}/obs/{obsid}&#34;)
+        timestamp = str(dpu_filename).split(&#34;_&#34;)[-2]
 
         if not os.path.isdir(f&#34;{location}/{obsid}&#34;):
             os.makedirs(f&#34;{location}/{obsid}&#34;)
@@ -1108,7 +1126,7 @@ def create_fits_from_hdf5_register_map(files: List, location: str = None, setup:
                     environment variable will be used to construct the location.
         - setup: Setup to retrieve information from.
     &#34;&#34;&#34;
-    setup = setup or GlobalState.setup
+    setup = setup or load_setup()
 
     location = location or get_data_storage_location()
     hdf5_file_root = Path(files[0]).parent.parent.parent
@@ -1156,7 +1174,7 @@ def create_fits_from_hdf5_register_map(files: List, location: str = None, setup:
                                 if fits_filename:
 
                                     LOGGER.info(f&#34;Creating a FITS CUBE file ...&#34;)
-                                    convert_to_cubes(fits_filename)
+                                    convert_to_cubes(fits_filename, setup)
                                     fits_filename = None
 
                             if in_data_acquisition_mode(register_map):
@@ -1225,7 +1243,7 @@ def create_fits_from_hdf5_register_map(files: List, location: str = None, setup:
                         if fits_filename:
 
                             LOGGER.info(f&#34;Creating a FITS CUBE file ...&#34;)
-                            convert_to_cubes(fits_filename)
+                            convert_to_cubes(fits_filename, setup)
                             fits_filename = None
 
                         prep = clear_crucial_parameters(prep)
@@ -1238,7 +1256,7 @@ def create_fits_from_hdf5_register_map(files: List, location: str = None, setup:
     try:
         if fits_filename:
             LOGGER.info(f&#34;Creating a FITS CUBE file ...&#34;)
-            convert_to_cubes(fits_filename)
+            convert_to_cubes(fits_filename, setup)
     except OSError:
         # The last file in the list still contained data, so we reached the end of the list without creating a cube
         # FITS file yet
@@ -1263,11 +1281,12 @@ def create_fits_from_hdf5_nfee_state(files: List, location: str = None, setup: S
     Args:
         - files: List of filenames of the HDF5 files to use to create the FITS file.
         - location: Folder (with /daily and /obs sub-folders) in which the FITS files should be written (in a
-                    dedicated directory in the /obs folder). If not specified, the `PLATO_DATA_STORAGE_LOCATION`
-                    environment variable will be used to construct the location.
-        - setup: Setup to retrieve information from.
+              dedicated directory in the /obs folder). If not specified, the `PLATO_DATA_STORAGE_LOCATION`
+              environment variable will be used to construct the location.
+        - setup: Setup to retrieve information from, if not provided, the setup is loaded from the
+              configuration manager..
     &#34;&#34;&#34;
-    setup = setup or GlobalState.setup
+    setup = setup or load_setup()
 
     location = location or get_data_storage_location()
     hdf5_file_root = Path(files[0]).parent.parent.parent
@@ -1298,7 +1317,7 @@ def create_fits_from_hdf5_nfee_state(files: List, location: str = None, setup: S
                         slicing_num_cycles = hdf5_file[&#34;dpu&#34;].attrs[&#34;slicing_num_cycles&#34;]
                         if slicing_num_cycles != config_slicing_num_cycles:
                             if fits_filename:
-                                convert_to_cubes(fits_filename)
+                                convert_to_cubes(fits_filename, setup)
                                 fits_filename = None
                             processed_num_cycles = 0
                             config_slicing_num_cycles = slicing_num_cycles
@@ -1329,7 +1348,7 @@ def create_fits_from_hdf5_nfee_state(files: List, location: str = None, setup: S
                                 if fits_filename:
 
                                     LOGGER.info(f&#34;Creating a FITS CUBE file ...&#34;)
-                                    convert_to_cubes(fits_filename)
+                                    convert_to_cubes(fits_filename, setup)
                                     fits_filename = None
                                     processed_num_cycles = 0
 
@@ -1399,14 +1418,14 @@ def create_fits_from_hdf5_nfee_state(files: List, location: str = None, setup: S
 
                         if fits_filename and config_slicing_num_cycles != 0 \
                                 and processed_num_cycles == config_slicing_num_cycles:
-                            convert_to_cubes(fits_filename)
+                            convert_to_cubes(fits_filename, setup)
                             fits_filename = None
                             processed_num_cycles = 0
                     else:
 
                         if fits_filename:
                             LOGGER.info(f&#34;Creating a FITS CUBE file ...&#34;)
-                            convert_to_cubes(fits_filename)
+                            convert_to_cubes(fits_filename, setup)
                             fits_filename = None
                             processed_num_cycles = 0
 
@@ -1420,7 +1439,7 @@ def create_fits_from_hdf5_nfee_state(files: List, location: str = None, setup: S
     try:
         if fits_filename:
             LOGGER.info(f&#34;Creating a FITS CUBE file ...&#34;)
-            convert_to_cubes(fits_filename)
+            convert_to_cubes(fits_filename, setup)
     except OSError:
         # The last file in the list still contained data, so we reached the end of the list without creating a cube
         # FITS file yet
@@ -1483,12 +1502,17 @@ class SynopticsInterp1d(tuple, Enum):
     T_TRP31 = (&#34;GSYN_TRP31&#34;, &#34;Mean T for TRP31 (TOU bipod -Y bottom) [deg C]&#34;)
     T_TRP41 = (&#34;GSYN_TRP41&#34;, &#34;Mean T for TRP41 (TOU bipod +Y bottom) [deg C]&#34;)
 
-    # CCD PT100 sensors (N-FEE)
+    # CCD PT100/PT1000 sensors (N-FEE)
 
     T_CCD1 = (&#34;GSYN_CCD1&#34;, &#34;Mean T for CCD1 [deg C]&#34;)
     T_CCD2 = (&#34;GSYN_CCD2&#34;, &#34;Mean T for CCD2 [deg C]&#34;)
     T_CCD3 = (&#34;GSYN_CCD3&#34;, &#34;Mean T for CCD3 [deg C]&#34;)
     T_CCD4 = (&#34;GSYN_CCD4&#34;, &#34;Mean T for CCD4 [deg C]&#34;)
+
+    T_CCD1_AMB = (&#34;GSYN_CCD1_AMB&#34;, &#34;Mean T for CCD1 (ambient calibration) [deg C]&#34;)
+    T_CCD2_AMB = (&#34;GSYN_CCD2_AMB&#34;, &#34;Mean T for CCD2 (ambient calibration) [deg C]&#34;)
+    T_CCD3_AMB = (&#34;GSYN_CCD3_AMB&#34;, &#34;Mean T for CCD3 (ambient calibration) [deg C]&#34;)
+    T_CCD4_AMB = (&#34;GSYN_CCD4_AMB&#34;, &#34;Mean T for CCD4 (ambient calibration) [deg C]&#34;)
 
     # Board sensors: type PT1000 (N-FEE)
 
@@ -1539,7 +1563,7 @@ class SynopticsLeaveGaps(tuple, Enum):
 def get_fits_synoptics(obsid: str, data_dir=None) -&gt; dict:
     &#34;&#34;&#34; Retrieve the synoptics that need to be included in the FITS files for the given observation.
 
-    The synoptics that need be be included in the FITS files are represented by the following enumerations:
+    The synoptics that need to be included in the FITS files are represented by the following enumerations:
 
         - SynopticsFwdFill: Use forward filling for the gaps -&gt; only at the beginning of the observation it is possible
           that there still are gaps (but it is unlikely that the data acquisition has already started then);
@@ -1579,9 +1603,13 @@ def get_fits_synoptics(obsid: str, data_dir=None) -&gt; dict:
                 selection = ~np.isnan(values)
 
                 if np.any(selection):
-                    interpolation = interp1d(timestamps[np.where(selection)], values[np.where(selection)], kind=&#39;linear&#39;,
-                                             fill_value=&#39;extrapolate&#39;)
-                    synoptics[syn_enum] = interpolation(timestamps)
+                    selected_timestamps = timestamps[np.where(selection)]
+                    selected_values = values[np.where(selection)]
+
+                    if len(selected_timestamps) &gt; 1:
+                        interpolation = interp1d(selected_timestamps, selected_values, kind=&#39;linear&#39;,
+                                                 fill_value=&#39;extrapolate&#39;)
+                        synoptics[syn_enum] = interpolation(timestamps)
 
     # Forward fill
 
@@ -1604,7 +1632,7 @@ def get_fits_synoptics(obsid: str, data_dir=None) -&gt; dict:
     return synoptics
 
 
-def add_synoptics(obsid: str, fits_dir: str, syn_dir: str):
+def add_synoptics(obsid: str, fits_dir: str, syn_dir: str, fee_side: EnumMeta):
     &#34;&#34;&#34; Add synoptics to the FITS headers for the given observation.
 
     When all FITS files have been produced for the given obsid, synoptics is added to the headers.  This is done in the
@@ -1623,11 +1651,11 @@ def add_synoptics(obsid: str, fits_dir: str, syn_dir: str):
         obsid: Observation identifier [TEST_LAB or TEST_LAB_SETUP]
         fits_dir: Directory (with /daily and /obs sub-folders) with the FITS files
         syn_dir: Directory (with /daily and /obs sub-folders) with the original synoptics files
+        fee_side: Enumeration with the definition of the FEE CCD sides
     &#34;&#34;&#34;
 
     fits_dir = fits_dir or get_data_storage_location()
     syn_dir = syn_dir or get_data_storage_location()
-    fee_side = GlobalState.setup.camera.fee.ccd_sides.enum
 
     obsid = obsid_from_storage(obsid, data_dir=fits_dir)
     obs_dir = f&#34;{fits_dir}/obs/{obsid}&#34;  # Where the HK and FITS files are stored
@@ -1941,14 +1969,16 @@ def for_obsid(obsid, input_dir=None, output_dir=None, setup_id=None, site_id=Non
     # Create FITS files (flat structure -&gt; cubes)
     create_fits_from_hdf5(hdf5_filenames, location=output_dir, setup=setup)
 
+    fee_side = setup.camera.fee.ccd_sides.enum
+
     # Add synoptics
 
-    if find_file(f&#34;{obsid_from_storage(obsid, data_dir=input_dir)}_{SYN_ORIGIN}d_*.csv&#34;, root=output_obs_folder):
+    if find_file(f&#34;{obsid_from_storage(obsid, data_dir=input_dir)}_{SYN_ORIGIN}_*.csv&#34;, root=output_obs_folder):
         # Synoptics have already been re-processed (located in the directory to which the FITS files will be stored)
-        add_synoptics(obsid, fits_dir=output_dir, syn_dir=output_dir)
+        add_synoptics(obsid, fits_dir=output_dir, syn_dir=output_dir, fee_side=fee_side)
     else:
         # Use the original synoptics files
-        add_synoptics(obsid, fits_dir=output_dir, syn_dir=input_dir)
+        add_synoptics(obsid, fits_dir=output_dir, syn_dir=input_dir, fee_side=fee_side)
 
 
 def get_offline_setup(site_id: str = None, setup_id: int = None):
@@ -1966,7 +1996,7 @@ def get_offline_setup(site_id: str = None, setup_id: int = None):
     &#34;&#34;&#34;
 
     if setup_id is None:
-        return GlobalState.setup
+        return load_setup()
     else:
         site_id = site_id or SITE.ID
         return load_setup(setup_id=setup_id, site_id=site_id, from_disk=True)
@@ -2106,7 +2136,7 @@ if __name__ == &#34;__main__&#34;:
 <h2 class="section-title" id="header-functions">Functions</h2>
 <dl>
 <dt id="egse.dpu.fitsgen.add_synoptics"><code class="name flex">
-<span>def <span class="ident">add_synoptics</span></span>(<span>obsid: str, fits_dir: str, syn_dir: str)</span>
+<span>def <span class="ident">add_synoptics</span></span>(<span>obsid: str, fits_dir: str, syn_dir: str, fee_side: enum.EnumMeta)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Add synoptics to the FITS headers for the given observation.</p>
@@ -2130,12 +2160,14 @@ the average and add this to the header of the cube;
 <dd>Directory (with /daily and /obs sub-folders) with the FITS files</dd>
 <dt><strong><code>syn_dir</code></strong></dt>
 <dd>Directory (with /daily and /obs sub-folders) with the original synoptics files</dd>
+<dt><strong><code>fee_side</code></strong></dt>
+<dd>Enumeration with the definition of the FEE CCD sides</dd>
 </dl></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def add_synoptics(obsid: str, fits_dir: str, syn_dir: str):
+<pre><code class="python">def add_synoptics(obsid: str, fits_dir: str, syn_dir: str, fee_side: EnumMeta):
     &#34;&#34;&#34; Add synoptics to the FITS headers for the given observation.
 
     When all FITS files have been produced for the given obsid, synoptics is added to the headers.  This is done in the
@@ -2154,11 +2186,11 @@ the average and add this to the header of the cube;
         obsid: Observation identifier [TEST_LAB or TEST_LAB_SETUP]
         fits_dir: Directory (with /daily and /obs sub-folders) with the FITS files
         syn_dir: Directory (with /daily and /obs sub-folders) with the original synoptics files
+        fee_side: Enumeration with the definition of the FEE CCD sides
     &#34;&#34;&#34;
 
     fits_dir = fits_dir or get_data_storage_location()
     syn_dir = syn_dir or get_data_storage_location()
-    fee_side = GlobalState.setup.camera.fee.ccd_sides.enum
 
     obsid = obsid_from_storage(obsid, data_dir=fits_dir)
     obs_dir = f&#34;{fits_dir}/obs/{obsid}&#34;  # Where the HK and FITS files are stored
@@ -2472,8 +2504,9 @@ Returns: Full path to the file as a <code>PurePath</code>.</li>
 
         obsid = obsid_from_storage(obsid, data_dir=location, camera_name=camera_name)
 
-        timestamp = str.split(str(hdf5_filename).split(&#34;/&#34;)[-1], &#34;_&#34;)[0]
         location += &#34;/obs/&#34;
+        dpu_filename = find_file(f&#34;{obsid}_DPU_*.csv&#34;, root=f&#34;{hdf5_filename.parents[2]}/obs/{obsid}&#34;)
+        timestamp = str(dpu_filename).split(&#34;_&#34;)[-2]
 
         if not os.path.isdir(f&#34;{location}/{obsid}&#34;):
             os.makedirs(f&#34;{location}/{obsid}&#34;)
@@ -2490,7 +2523,7 @@ Returns: Full path to the file as a <code>PurePath</code>.</li>
 </details>
 </dd>
 <dt id="egse.dpu.fitsgen.convert_to_cubes"><code class="name flex">
-<span>def <span class="ident">convert_to_cubes</span></span>(<span>filename)</span>
+<span>def <span class="ident">convert_to_cubes</span></span>(<span>filename, setup: <a title="egse.setup.Setup" href="../setup.html#egse.setup.Setup">Setup</a>)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Conversion of level-1 FITS files to level-2 FITS files.</p>
@@ -2503,7 +2536,7 @@ Returns: Full path to the file as a <code>PurePath</code>.</li>
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def convert_to_cubes(filename):
+<pre><code class="python">def convert_to_cubes(filename, setup: Setup):
     &#34;&#34;&#34; Conversion of level-1 FITS files to level-2 FITS files.
 
     After the conversion, the flat-structure FITS file is removed.
@@ -2512,9 +2545,9 @@ Returns: Full path to the file as a <code>PurePath</code>.</li>
         - filename: Full path of the level-1 FITS file.
     &#34;&#34;&#34;
 
+    fee_side = setup.camera.fee.ccd_sides.enum
     cube_filename = construct_cube_filename(filename)
     LOGGER.info(f&#34;Converting to {cube_filename}&#34;)
-    fee_side = GlobalState.setup.camera.fee.ccd_sides.enum
 
     with fits.open(filename) as level1:
 
@@ -2847,7 +2880,8 @@ solving the problem of the mismatch between the register map and the N-FEE state
 <li>location: Folder (with /daily and /obs sub-folders) in which the FITS files should be written (in a
 dedicated directory in the /obs folder). If not specified, the <code>PLATO_DATA_STORAGE_LOCATION</code>
 environment variable will be used to construct the location.</li>
-<li>setup: Setup to retrieve information from.</li>
+<li>setup: Setup to retrieve information from, if not provided, the setup is loaded from the
+configuration manager..</li>
 </ul></div>
 <details class="source">
 <summary>
@@ -2871,11 +2905,12 @@ environment variable will be used to construct the location.</li>
     Args:
         - files: List of filenames of the HDF5 files to use to create the FITS file.
         - location: Folder (with /daily and /obs sub-folders) in which the FITS files should be written (in a
-                    dedicated directory in the /obs folder). If not specified, the `PLATO_DATA_STORAGE_LOCATION`
-                    environment variable will be used to construct the location.
-        - setup: Setup to retrieve information from.
+              dedicated directory in the /obs folder). If not specified, the `PLATO_DATA_STORAGE_LOCATION`
+              environment variable will be used to construct the location.
+        - setup: Setup to retrieve information from, if not provided, the setup is loaded from the
+              configuration manager..
     &#34;&#34;&#34;
-    setup = setup or GlobalState.setup
+    setup = setup or load_setup()
 
     location = location or get_data_storage_location()
     hdf5_file_root = Path(files[0]).parent.parent.parent
@@ -2906,7 +2941,7 @@ environment variable will be used to construct the location.</li>
                         slicing_num_cycles = hdf5_file[&#34;dpu&#34;].attrs[&#34;slicing_num_cycles&#34;]
                         if slicing_num_cycles != config_slicing_num_cycles:
                             if fits_filename:
-                                convert_to_cubes(fits_filename)
+                                convert_to_cubes(fits_filename, setup)
                                 fits_filename = None
                             processed_num_cycles = 0
                             config_slicing_num_cycles = slicing_num_cycles
@@ -2937,7 +2972,7 @@ environment variable will be used to construct the location.</li>
                                 if fits_filename:
 
                                     LOGGER.info(f&#34;Creating a FITS CUBE file ...&#34;)
-                                    convert_to_cubes(fits_filename)
+                                    convert_to_cubes(fits_filename, setup)
                                     fits_filename = None
                                     processed_num_cycles = 0
 
@@ -3007,14 +3042,14 @@ environment variable will be used to construct the location.</li>
 
                         if fits_filename and config_slicing_num_cycles != 0 \
                                 and processed_num_cycles == config_slicing_num_cycles:
-                            convert_to_cubes(fits_filename)
+                            convert_to_cubes(fits_filename, setup)
                             fits_filename = None
                             processed_num_cycles = 0
                     else:
 
                         if fits_filename:
                             LOGGER.info(f&#34;Creating a FITS CUBE file ...&#34;)
-                            convert_to_cubes(fits_filename)
+                            convert_to_cubes(fits_filename, setup)
                             fits_filename = None
                             processed_num_cycles = 0
 
@@ -3028,7 +3063,7 @@ environment variable will be used to construct the location.</li>
     try:
         if fits_filename:
             LOGGER.info(f&#34;Creating a FITS CUBE file ...&#34;)
-            convert_to_cubes(fits_filename)
+            convert_to_cubes(fits_filename, setup)
     except OSError:
         # The last file in the list still contained data, so we reached the end of the list without creating a cube
         # FITS file yet
@@ -3091,7 +3126,7 @@ environment variable will be used to construct the location.</li>
                     environment variable will be used to construct the location.
         - setup: Setup to retrieve information from.
     &#34;&#34;&#34;
-    setup = setup or GlobalState.setup
+    setup = setup or load_setup()
 
     location = location or get_data_storage_location()
     hdf5_file_root = Path(files[0]).parent.parent.parent
@@ -3139,7 +3174,7 @@ environment variable will be used to construct the location.</li>
                                 if fits_filename:
 
                                     LOGGER.info(f&#34;Creating a FITS CUBE file ...&#34;)
-                                    convert_to_cubes(fits_filename)
+                                    convert_to_cubes(fits_filename, setup)
                                     fits_filename = None
 
                             if in_data_acquisition_mode(register_map):
@@ -3208,7 +3243,7 @@ environment variable will be used to construct the location.</li>
                         if fits_filename:
 
                             LOGGER.info(f&#34;Creating a FITS CUBE file ...&#34;)
-                            convert_to_cubes(fits_filename)
+                            convert_to_cubes(fits_filename, setup)
                             fits_filename = None
 
                         prep = clear_crucial_parameters(prep)
@@ -3221,7 +3256,7 @@ environment variable will be used to construct the location.</li>
     try:
         if fits_filename:
             LOGGER.info(f&#34;Creating a FITS CUBE file ...&#34;)
-            convert_to_cubes(fits_filename)
+            convert_to_cubes(fits_filename, setup)
     except OSError:
         # The last file in the list still contained data, so we reached the end of the list without creating a cube
         # FITS file yet
@@ -3375,7 +3410,7 @@ Returns: Value of the next counter; 1 if no previous files were found or if an e
 </code></dt>
 <dd>
 <div class="desc"><p>Retrieve the synoptics that need to be included in the FITS files for the given observation.</p>
-<p>The synoptics that need be be included in the FITS files are represented by the following enumerations:</p>
+<p>The synoptics that need to be included in the FITS files are represented by the following enumerations:</p>
 <pre><code>- SynopticsFwdFill: Use forward filling for the gaps -&gt; only at the beginning of the observation it is possible
   that there still are gaps (but it is unlikely that the data acquisition has already started then);
 - SynopticsInterp1d: Use linear interpolation to fill the gaps.  At the extremes, we use extrapolation;
@@ -3393,7 +3428,7 @@ Returns: Dictionary with the synoptics that should go into the FITS files for th
 <pre><code class="python">def get_fits_synoptics(obsid: str, data_dir=None) -&gt; dict:
     &#34;&#34;&#34; Retrieve the synoptics that need to be included in the FITS files for the given observation.
 
-    The synoptics that need be be included in the FITS files are represented by the following enumerations:
+    The synoptics that need to be included in the FITS files are represented by the following enumerations:
 
         - SynopticsFwdFill: Use forward filling for the gaps -&gt; only at the beginning of the observation it is possible
           that there still are gaps (but it is unlikely that the data acquisition has already started then);
@@ -3433,9 +3468,13 @@ Returns: Dictionary with the synoptics that should go into the FITS files for th
                 selection = ~np.isnan(values)
 
                 if np.any(selection):
-                    interpolation = interp1d(timestamps[np.where(selection)], values[np.where(selection)], kind=&#39;linear&#39;,
-                                             fill_value=&#39;extrapolate&#39;)
-                    synoptics[syn_enum] = interpolation(timestamps)
+                    selected_timestamps = timestamps[np.where(selection)]
+                    selected_values = values[np.where(selection)]
+
+                    if len(selected_timestamps) &gt; 1:
+                        interpolation = interp1d(selected_timestamps, selected_values, kind=&#39;linear&#39;,
+                                                 fill_value=&#39;extrapolate&#39;)
+                        synoptics[syn_enum] = interpolation(timestamps)
 
     # Forward fill
 
@@ -3686,7 +3725,7 @@ currently loaded in the Configuration Manager is used.</p>
     &#34;&#34;&#34;
 
     if setup_id is None:
-        return GlobalState.setup
+        return load_setup()
     else:
         site_id = site_id or SITE.ID
         return load_setup(setup_id=setup_id, site_id=site_id, from_disk=True)</code></pre>
@@ -3894,8 +3933,9 @@ be created as soon as data packet start coming in (when the N-FEE is in full-ima
         self.ccd_readout_order = None
         # self.sensor_sel = None
         self.rows_final_dump = None
-        self.setup = GlobalState.setup
+        self.setup = load_setup()
         self.sensor_sel_enum = self.setup.camera.fee.sensor_sel.enum
+        self.fee_side = self.setup.camera.fee.ccd_sides.enum
         self.camera_name = self.setup.camera.ID
 
         self.config_slicing_num_cycles = 0   # Configured slicing parameter
@@ -4026,7 +4066,7 @@ be created as soon as data packet start coming in (when the N-FEE is in full-ima
 
         location = get_data_storage_location()
 
-        previous_obsid = None
+        syn_obsid = None
 
         while self.keep_processing_queue:
 
@@ -4162,6 +4202,7 @@ be created as soon as data packet start coming in (when the N-FEE is in full-ima
 
                             if has_data:
                                 self.processed_num_cycles += 1
+                                syn_obsid = obsid
 
                                 if self.config_slicing_num_cycles != 0 and \
                                         self.processed_num_cycles == self.config_slicing_num_cycles:
@@ -4176,9 +4217,10 @@ be created as soon as data packet start coming in (when the N-FEE is in full-ima
                             # it means that the observation has just finished and all FITS files have been generated. It
                             # is only at this point that the synoptics can be included in the FITS headers.
 
-                            if previous_obsid is not None and obsid is None:
-                                add_synoptics(previous_obsid, fits_dir=location, syn_dir=location)
-                            previous_obsid = obsid
+                            if syn_obsid is not None and obsid is None:
+                                LOGGER.info(f&#34;Adding synoptics for {syn_obsid}&#34;)
+                                add_synoptics(syn_obsid, fits_dir=location, syn_dir=location, fee_side=self.fee_side)
+                                syn_obsid = None
                         except KeyError:
                             LOGGER.debug(&#34;KeyError occurred when accessing data in all groups of the HDF5 file.&#34;)
 
@@ -4202,7 +4244,7 @@ be created as soon as data packet start coming in (when the N-FEE is in full-ima
         if self.fits_images_filename is not None:
 
             self.fits_cube_filename = construct_cube_filename(self.fits_images_filename)
-            convert_to_cubes(self.fits_images_filename)
+            convert_to_cubes(self.fits_images_filename, self.setup)
             self.fits_cube_filename = None
 
             # Stop writing to the current FITS file
@@ -4319,7 +4361,7 @@ be created as soon as data packet start coming in (when the N-FEE is in full-ima
     if self.fits_images_filename is not None:
 
         self.fits_cube_filename = construct_cube_filename(self.fits_images_filename)
-        convert_to_cubes(self.fits_images_filename)
+        convert_to_cubes(self.fits_images_filename, self.setup)
         self.fits_cube_filename = None
 
         # Stop writing to the current FITS file
@@ -4476,7 +4518,7 @@ queue.</p></div>
 
     location = get_data_storage_location()
 
-    previous_obsid = None
+    syn_obsid = None
 
     while self.keep_processing_queue:
 
@@ -4612,6 +4654,7 @@ queue.</p></div>
 
                         if has_data:
                             self.processed_num_cycles += 1
+                            syn_obsid = obsid
 
                             if self.config_slicing_num_cycles != 0 and \
                                     self.processed_num_cycles == self.config_slicing_num_cycles:
@@ -4626,9 +4669,10 @@ queue.</p></div>
                         # it means that the observation has just finished and all FITS files have been generated. It
                         # is only at this point that the synoptics can be included in the FITS headers.
 
-                        if previous_obsid is not None and obsid is None:
-                            add_synoptics(previous_obsid, fits_dir=location, syn_dir=location)
-                        previous_obsid = obsid
+                        if syn_obsid is not None and obsid is None:
+                            LOGGER.info(f&#34;Adding synoptics for {syn_obsid}&#34;)
+                            add_synoptics(syn_obsid, fits_dir=location, syn_dir=location, fee_side=self.fee_side)
+                            syn_obsid = None
                     except KeyError:
                         LOGGER.debug(&#34;KeyError occurred when accessing data in all groups of the HDF5 file.&#34;)
 
@@ -4807,12 +4851,17 @@ queue.</p></div>
     T_TRP31 = (&#34;GSYN_TRP31&#34;, &#34;Mean T for TRP31 (TOU bipod -Y bottom) [deg C]&#34;)
     T_TRP41 = (&#34;GSYN_TRP41&#34;, &#34;Mean T for TRP41 (TOU bipod +Y bottom) [deg C]&#34;)
 
-    # CCD PT100 sensors (N-FEE)
+    # CCD PT100/PT1000 sensors (N-FEE)
 
     T_CCD1 = (&#34;GSYN_CCD1&#34;, &#34;Mean T for CCD1 [deg C]&#34;)
     T_CCD2 = (&#34;GSYN_CCD2&#34;, &#34;Mean T for CCD2 [deg C]&#34;)
     T_CCD3 = (&#34;GSYN_CCD3&#34;, &#34;Mean T for CCD3 [deg C]&#34;)
     T_CCD4 = (&#34;GSYN_CCD4&#34;, &#34;Mean T for CCD4 [deg C]&#34;)
+
+    T_CCD1_AMB = (&#34;GSYN_CCD1_AMB&#34;, &#34;Mean T for CCD1 (ambient calibration) [deg C]&#34;)
+    T_CCD2_AMB = (&#34;GSYN_CCD2_AMB&#34;, &#34;Mean T for CCD2 (ambient calibration) [deg C]&#34;)
+    T_CCD3_AMB = (&#34;GSYN_CCD3_AMB&#34;, &#34;Mean T for CCD3 (ambient calibration) [deg C]&#34;)
+    T_CCD4_AMB = (&#34;GSYN_CCD4_AMB&#34;, &#34;Mean T for CCD4 (ambient calibration) [deg C]&#34;)
 
     # Board sensors: type PT1000 (N-FEE)
 
@@ -4884,7 +4933,15 @@ queue.</p></div>
 <dd>
 <div class="desc"></div>
 </dd>
+<dt id="egse.dpu.fitsgen.SynopticsInterp1d.T_CCD1_AMB"><code class="name">var <span class="ident">T_CCD1_AMB</span></code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
 <dt id="egse.dpu.fitsgen.SynopticsInterp1d.T_CCD2"><code class="name">var <span class="ident">T_CCD2</span></code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="egse.dpu.fitsgen.SynopticsInterp1d.T_CCD2_AMB"><code class="name">var <span class="ident">T_CCD2_AMB</span></code></dt>
 <dd>
 <div class="desc"></div>
 </dd>
@@ -4892,7 +4949,15 @@ queue.</p></div>
 <dd>
 <div class="desc"></div>
 </dd>
+<dt id="egse.dpu.fitsgen.SynopticsInterp1d.T_CCD3_AMB"><code class="name">var <span class="ident">T_CCD3_AMB</span></code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
 <dt id="egse.dpu.fitsgen.SynopticsInterp1d.T_CCD4"><code class="name">var <span class="ident">T_CCD4</span></code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="egse.dpu.fitsgen.SynopticsInterp1d.T_CCD4_AMB"><code class="name">var <span class="ident">T_CCD4_AMB</span></code></dt>
 <dd>
 <div class="desc"></div>
 </dd>
@@ -5086,9 +5151,13 @@ indicate that the shutter is always open there.</p></div>
 <li><code><a title="egse.dpu.fitsgen.SynopticsInterp1d.T_ADC" href="#egse.dpu.fitsgen.SynopticsInterp1d.T_ADC">T_ADC</a></code></li>
 <li><code><a title="egse.dpu.fitsgen.SynopticsInterp1d.T_ANALOG" href="#egse.dpu.fitsgen.SynopticsInterp1d.T_ANALOG">T_ANALOG</a></code></li>
 <li><code><a title="egse.dpu.fitsgen.SynopticsInterp1d.T_CCD1" href="#egse.dpu.fitsgen.SynopticsInterp1d.T_CCD1">T_CCD1</a></code></li>
+<li><code><a title="egse.dpu.fitsgen.SynopticsInterp1d.T_CCD1_AMB" href="#egse.dpu.fitsgen.SynopticsInterp1d.T_CCD1_AMB">T_CCD1_AMB</a></code></li>
 <li><code><a title="egse.dpu.fitsgen.SynopticsInterp1d.T_CCD2" href="#egse.dpu.fitsgen.SynopticsInterp1d.T_CCD2">T_CCD2</a></code></li>
+<li><code><a title="egse.dpu.fitsgen.SynopticsInterp1d.T_CCD2_AMB" href="#egse.dpu.fitsgen.SynopticsInterp1d.T_CCD2_AMB">T_CCD2_AMB</a></code></li>
 <li><code><a title="egse.dpu.fitsgen.SynopticsInterp1d.T_CCD3" href="#egse.dpu.fitsgen.SynopticsInterp1d.T_CCD3">T_CCD3</a></code></li>
+<li><code><a title="egse.dpu.fitsgen.SynopticsInterp1d.T_CCD3_AMB" href="#egse.dpu.fitsgen.SynopticsInterp1d.T_CCD3_AMB">T_CCD3_AMB</a></code></li>
 <li><code><a title="egse.dpu.fitsgen.SynopticsInterp1d.T_CCD4" href="#egse.dpu.fitsgen.SynopticsInterp1d.T_CCD4">T_CCD4</a></code></li>
+<li><code><a title="egse.dpu.fitsgen.SynopticsInterp1d.T_CCD4_AMB" href="#egse.dpu.fitsgen.SynopticsInterp1d.T_CCD4_AMB">T_CCD4_AMB</a></code></li>
 <li><code><a title="egse.dpu.fitsgen.SynopticsInterp1d.T_CDS" href="#egse.dpu.fitsgen.SynopticsInterp1d.T_CDS">T_CDS</a></code></li>
 <li><code><a title="egse.dpu.fitsgen.SynopticsInterp1d.T_PCB1" href="#egse.dpu.fitsgen.SynopticsInterp1d.T_PCB1">T_PCB1</a></code></li>
 <li><code><a title="egse.dpu.fitsgen.SynopticsInterp1d.T_PCB2" href="#egse.dpu.fitsgen.SynopticsInterp1d.T_PCB2">T_PCB2</a></code></li>

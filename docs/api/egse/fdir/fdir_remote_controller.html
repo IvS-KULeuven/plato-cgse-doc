@@ -27,18 +27,11 @@
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">import os
-import sys
 import logging
-import psutil
 import subprocess
-import threading
-import time
 
-from PyQt5.QtWidgets import QMessageBox, QApplication
-
-from egse.control import Response, Success, Failure
+from egse.control import Response
 from egse.fdir.fdir_remote_interface import FdirRemoteInterface
-# from egse.fdir.fdir_manager import FdirManagerProxy
 
 logger = logging.getLogger(__name__)
 
@@ -52,25 +45,12 @@ class FdirRemoteController(FdirRemoteInterface):
     
     def is_simulator(self):
         return False
-    
-    def kill_process(self, pid: int) -&gt; Response:
-
-        try:
-            process = psutil.Process(pid)
-        except psutil.NoSuchProcess:
-            logger.warning(f&#34;Could not find a process with PID {pid}.&#34;)
-            return Failure(f&#34;Could not find a process with PID {pid}.&#34;)
-        else:
-            process.kill()
-            logger.info(f&#34;Killed registered script with PID {pid}.&#34;)
-            return Success(&#34;&#34;)
 
     def generate_popup(self, code: str, actions: str, success: bool) -&gt; Response:
-
         path = os.path.dirname(os.path.abspath(__file__))
         subprocess.Popen([&#39;python3&#39;, f&#39;{path}/fdir_remote_popup.py&#39;, code, actions, str(success)])
 
-        
+
 
 
 if __name__ == &#34;__main__&#34;:
@@ -105,21 +85,8 @@ if __name__ == &#34;__main__&#34;:
     
     def is_simulator(self):
         return False
-    
-    def kill_process(self, pid: int) -&gt; Response:
-
-        try:
-            process = psutil.Process(pid)
-        except psutil.NoSuchProcess:
-            logger.warning(f&#34;Could not find a process with PID {pid}.&#34;)
-            return Failure(f&#34;Could not find a process with PID {pid}.&#34;)
-        else:
-            process.kill()
-            logger.info(f&#34;Killed registered script with PID {pid}.&#34;)
-            return Success(&#34;&#34;)
 
     def generate_popup(self, code: str, actions: str, success: bool) -&gt; Response:
-
         path = os.path.dirname(os.path.abspath(__file__))
         subprocess.Popen([&#39;python3&#39;, f&#39;{path}/fdir_remote_popup.py&#39;, code, actions, str(success)])</code></pre>
 </details>
@@ -139,7 +106,6 @@ if __name__ == &#34;__main__&#34;:
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def generate_popup(self, code: str, actions: str, success: bool) -&gt; Response:
-
     path = os.path.dirname(os.path.abspath(__file__))
     subprocess.Popen([&#39;python3&#39;, f&#39;{path}/fdir_remote_popup.py&#39;, code, actions, str(success)])</code></pre>
 </details>
@@ -170,28 +136,6 @@ if __name__ == &#34;__main__&#34;:
     return False</code></pre>
 </details>
 </dd>
-<dt id="egse.fdir.fdir_remote_controller.FdirRemoteController.kill_process"><code class="name flex">
-<span>def <span class="ident">kill_process</span></span>(<span>self, pid: int) ‑> <a title="egse.control.Response" href="../control.html#egse.control.Response">Response</a></span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def kill_process(self, pid: int) -&gt; Response:
-
-    try:
-        process = psutil.Process(pid)
-    except psutil.NoSuchProcess:
-        logger.warning(f&#34;Could not find a process with PID {pid}.&#34;)
-        return Failure(f&#34;Could not find a process with PID {pid}.&#34;)
-    else:
-        process.kill()
-        logger.info(f&#34;Killed registered script with PID {pid}.&#34;)
-        return Success(&#34;&#34;)</code></pre>
-</details>
-</dd>
 </dl>
 </dd>
 </dl>
@@ -216,7 +160,6 @@ if __name__ == &#34;__main__&#34;:
 <li><code><a title="egse.fdir.fdir_remote_controller.FdirRemoteController.generate_popup" href="#egse.fdir.fdir_remote_controller.FdirRemoteController.generate_popup">generate_popup</a></code></li>
 <li><code><a title="egse.fdir.fdir_remote_controller.FdirRemoteController.is_connected" href="#egse.fdir.fdir_remote_controller.FdirRemoteController.is_connected">is_connected</a></code></li>
 <li><code><a title="egse.fdir.fdir_remote_controller.FdirRemoteController.is_simulator" href="#egse.fdir.fdir_remote_controller.FdirRemoteController.is_simulator">is_simulator</a></code></li>
-<li><code><a title="egse.fdir.fdir_remote_controller.FdirRemoteController.kill_process" href="#egse.fdir.fdir_remote_controller.FdirRemoteController.kill_process">kill_process</a></code></li>
 </ul>
 </li>
 </ul>

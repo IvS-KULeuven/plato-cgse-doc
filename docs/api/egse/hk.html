@@ -29,22 +29,24 @@
 <pre><code class="python">import csv
 import datetime
 import logging
-import os
 from enum import Enum
 from pathlib import Path
-from typing import Union
+from typing import Union, Optional
 
 import dateutil.parser as date_parser
 import numpy as np
 
 from egse.config import find_files
 from egse.env import get_data_storage_location
-from egse.obsid import ObservationIdentifier, obsid_from_storage
+from egse.obsid import ObservationIdentifier
+from egse.obsid import obsid_from_storage
 from egse.settings import Settings
-from egse.setup import SetupError
-from egse.state import GlobalState
-from egse.system import read_last_line, read_last_lines, SECONDS_IN_A_DAY, str_to_datetime, \
-    time_since_epoch_1958
+from egse.setup import SetupError, load_setup, Setup
+from egse.system import SECONDS_IN_A_DAY
+from egse.system import read_last_line
+from egse.system import read_last_lines
+from egse.system import str_to_datetime
+from egse.system import time_since_epoch_1958
 
 logger = logging.getLogger(__name__)
 
@@ -84,13 +86,12 @@ class TmDictionaryColumns(str, Enum):
 
 
 class HKError(Exception):
-    &#34;&#34;&#34; An HK-specific error.&#34;&#34;&#34;
-
+    &#34;&#34;&#34;An HK-specific error.&#34;&#34;&#34;
     pass
 
 
 def get_housekeeping(hk_name: str, obsid: Union[ObservationIdentifier, str, int] = None, od: str = None,
-                     time_window: int = None, data_dir=None):
+                     time_window: int = None, data_dir=None, setup: Optional[Setup] = None):
     &#34;&#34;&#34;
     Returns the timestamp(s) and housekeeping value(s) for the housekeeping parameter with the given name.
 
@@ -117,6 +118,7 @@ def get_housekeeping(hk_name: str, obsid: Union[ObservationIdentifier, str, int]
             the moment this method is called.  If not given, the latest housekeeping value is returned.
         data_dir: Folder (with sub-folders /daily and /obs) in which the HK files are stored. If this argument is not
             provided, the data_dir will be determined from the environment variable PLATO_DATA_STORAGE_LOCATION.
+        setup: Setup
 
     Raises:
         A HKError when one of the following problems occur
@@ -129,6 +131,8 @@ def get_housekeeping(hk_name: str, obsid: Union[ObservationIdentifier, str, int]
           to the specified time window.
 
     &#34;&#34;&#34;
+
+    setup = setup or load_setup()
 
     # Either specify the obsid or the OD (or neither of them) but not both
 
@@ -143,7 +147,7 @@ def get_housekeeping(hk_name: str, obsid: Union[ObservationIdentifier, str, int]
     if obsid:
 
         try:
-            return _get_housekeeping_obsid(hk_name, data_dir, obsid=obsid, time_window=time_window)
+            return _get_housekeeping_obsid(hk_name, data_dir, obsid=obsid, time_window=time_window, setup=setup)
         except (ValueError, StopIteration, FileNotFoundError) as exc:
             raise HKError(f&#34;No HK found for {hk_name} for obsid {obsid} at {SITE_ID}&#34;) from exc
 
@@ -152,14 +156,14 @@ def get_housekeeping(hk_name: str, obsid: Union[ObservationIdentifier, str, int]
     if od:
 
         try:
-            return _get_housekeeping_od(hk_name, data_dir, od=od, time_window=time_window)
+            return _get_housekeeping_od(hk_name, data_dir, od=od, time_window=time_window, setup=setup)
         except (ValueError, StopIteration, FileNotFoundError) as exc:
             raise HKError(f&#34;No HK found for {hk_name} for OD {od} at {SITE_ID}&#34;) from exc
 
     # Didn&#39;t specify neither the obsid nor the OD
 
     try:
-        return _get_housekeeping_daily(hk_name, data_dir, time_window=time_window)
+        return _get_housekeeping_daily(hk_name, data_dir, time_window=time_window, setup=setup)
     except (ValueError, StopIteration, FileNotFoundError) as exc:
         raise HKError(f&#34;No HK found for {hk_name} for today at {SITE_ID}&#34;) from exc
 
@@ -258,7 +262,7 @@ def _get_housekeeping(hk_name: str, timestamp_name: str, hk_dir: str, files, tim
         return timestamp_array, hk_array
 
 
-def _get_housekeeping_od(hk_name: str, data_dir, od: str, time_window: int = None):
+def _get_housekeeping_od(hk_name: str, data_dir, od: str, time_window: int = None, setup: Optional[Setup] = None):
     &#34;&#34;&#34; Return the timestamp(s) and HK value(s) for the HK parameter with the given name, for the given OD.
 
     When the time window has not been specified, the last timestamp and HK value will be returned for the given OD.
@@ -277,6 +281,7 @@ def _get_housekeeping_od(hk_name: str, data_dir, od: str, time_window: int = Non
         - od: Identifier for the OD (yyyymmdd).
         - time_window: Length of the time window over which to retrieve the housekeeping [s].  The time window ends at
                        the moment this method is called.  If not given, the latest HK-value is returned.
+        - setup: Setup.
 
         Returns:
             - If the time window has not been specified: the most recent timestamp and HK value.
@@ -284,11 +289,12 @@ def _get_housekeeping_od(hk_name: str, data_dir, od: str, time_window: int = Non
               specified time window.
     &#34;&#34;&#34;
 
+    setup = setup or load_setup()
     hk_dir = f&#34;{data_dir}/daily/&#34;  # Where the HK is stored
 
     try:
 
-        origin, timestamp_name = get_hk_info(hk_name)
+        origin, timestamp_name = get_hk_info(hk_name, setup=setup)
 
     except KeyError:
 
@@ -301,7 +307,7 @@ def _get_housekeeping_od(hk_name: str, data_dir, od: str, time_window: int = Non
 
 
 def _get_housekeeping_obsid(hk_name: str, data_dir, obsid: Union[ObservationIdentifier, str, int],
-                            time_window: int = None):
+                            time_window: int = None, setup: Optional[Setup] = None):
     &#34;&#34;&#34; Return the timestamp(s) and HK value(s) for the HK parameter with the given name, for the given obsid.
 
     When the time window has not been specified, the last timestamp and HK value will be returned for the given obsid.
@@ -321,6 +327,7 @@ def _get_housekeeping_obsid(hk_name: str, data_dir, obsid: Union[ObservationIden
                  TEST_LAB_SETUP, or an integer representing the test ID.
         - time_window: Length of the time window over which to retrieve the housekeeping [s].  The time window ends at
                        the moment this method is called.  If not given, the latest HK-value is returned.
+        - setup: Setup.
 
     Returns:
         - If the time window has not been specified: the most recent timestamp and HK value.
@@ -328,11 +335,13 @@ def _get_housekeeping_obsid(hk_name: str, data_dir, obsid: Union[ObservationIden
           specified time window.
     &#34;&#34;&#34;
 
+    setup = setup or load_setup()
+
     hk_dir = f&#34;{data_dir}/obs/&#34;  # Where the HK is stored
 
     try:
 
-        origin, timestamp_name = get_hk_info(hk_name)
+        origin, timestamp_name = get_hk_info(hk_name, setup=setup)
 
     except KeyError:
 
@@ -353,7 +362,7 @@ def _get_housekeeping_obsid(hk_name: str, data_dir, obsid: Union[ObservationIden
     return _get_housekeeping(hk_name, timestamp_name, hk_dir, hk_files, time_window=time_window)
 
 
-def _get_housekeeping_daily(hk_name: str, data_dir, time_window: int = None):
+def _get_housekeeping_daily(hk_name: str, data_dir, time_window: int = None, setup: Optional[Setup] = None):
     &#34;&#34;&#34; Return the timestamp(s) and HK value(s) for the HK parameter with the given name.
 
     When the time window has not been specified, the last timestamp and HK value will be returned.  It is possible that
@@ -380,6 +389,7 @@ def _get_housekeeping_daily(hk_name: str, data_dir, time_window: int = None):
         - data_dir: Folder (with sub-folders /daily and /obs) in which the HK files are stored.
         - time_window: Length of the time window over which to retrieve the housekeeping [s].  The time window ends at
           the moment this method is called.  If not given, the latest HK-value is returned.
+        - setup: Setup.
 
     Returns:
         - If the time window has not been specified: the most recent timestamp and HK value.
@@ -387,11 +397,12 @@ def _get_housekeeping_daily(hk_name: str, data_dir, time_window: int = None):
           specified time window.
     &#34;&#34;&#34;
 
+    setup = setup or load_setup()
     hk_dir = f&#34;{data_dir}/daily/&#34;  # Where the HK is stored
 
     try:
 
-        origin, timestamp_name = get_hk_info(hk_name)
+        origin, timestamp_name = get_hk_info(hk_name, setup=setup)
 
     except KeyError:
 
@@ -637,33 +648,36 @@ def get_sampling_rate(filename: str, timestamp_name: str):
 
 
 def convert_hk_names(original_hk: dict, conversion_dict: dict) -&gt; dict:
-    &#34;&#34;&#34; Converts the names of the HK parameters in the given dictionary.
+    &#34;&#34;&#34;
+    Converts the names of the HK parameters in the given dictionary.
 
-    The names in the given dictionary of HK parameters are replaced by the names from the given conversion dictionary.
+    The names/keys in the given dictionary of HK parameters (original_hk) are replaced by the names
+    from the given conversion dictionary. The original dictionary is left unchanged, a new dictionary is
+    returned.
 
     Args:
         - original_hk: Original dictionary of HK parameters.
-        - conversion_dict: Dictionary with the original HK names as keys and the new HK names as keys.
+        - conversion_dict: Dictionary with the original HK names as keys and the new HK names as values.
 
-    Returns: Dictionary of HK parameters with the corrected HK names.
+    Returns:
+        A new dictionary of HK parameters with the corrected HK names.
     &#34;&#34;&#34;
 
-    old_keys = list(original_hk.keys())
     converted_hk = {}
 
-    for old_key in old_keys:
+    for orig_key in original_hk:
 
         try:
-            new_key = conversion_dict[old_key]
+            new_key = conversion_dict[orig_key]
         except KeyError:
-            new_key = old_key   # No need to convert the name of the timestamp column(s)
+            new_key = orig_key   # no conversion, just copy the key:value pair
 
-        converted_hk[new_key] = original_hk[old_key]
+        converted_hk[new_key] = original_hk[orig_key]
 
     return converted_hk
 
 
-def read_conversion_dict(storage_mnemonic: str, use_site: bool = False):
+def read_conversion_dict(storage_mnemonic: str, use_site: bool = False, setup: Optional[Setup] = None):
     &#34;&#34;&#34; Read the HK spreadsheet and compose conversion dictionary for HK names.
 
     The spreadsheet contains the following information:
@@ -676,12 +690,15 @@ def read_conversion_dict(storage_mnemonic: str, use_site: bool = False):
     Args:
         - storage_mnemonic: Storage mnemonic of the component for which to compose the conversion dictionary
         - use_site: Indicate whether or not the prefixes of the new HK names are TH-specific
+        - setup: Setup.
 
     Returns: Dictionary with the original HK names as keys and the converted HK names as values.
     &#34;&#34;&#34;
 
+    setup = setup or load_setup()
+
     try:
-        hk_info_table = GlobalState.setup.telemetry.dictionary
+        hk_info_table = setup.telemetry.dictionary
     except AttributeError:
         raise SetupError(&#34;Version of the telemetry dictionary not specified in the current setup&#34;)
 
@@ -711,7 +728,7 @@ def read_conversion_dict(storage_mnemonic: str, use_site: bool = False):
         return dict(zip(original_name_col, correct_name_col))
 
 
-def get_hk_info(hk_name: str):
+def get_hk_info(hk_name: str, setup: Optional[Setup] = None):
     &#34;&#34;&#34; Read the HK spreadsheet and extract information for the given HK parameter.
 
     The spreadsheet contains the following information:
@@ -723,13 +740,15 @@ def get_hk_info(hk_name: str):
 
     Args:
         - hk_name: Name of the HK parameter.
+        - setup: Setup.
 
     Returns:
         - storage mnemonic of the component that generates the given HK parameter
         - name of the column in the HK file with the corresponding timestamp
     &#34;&#34;&#34;
 
-    hk_info_table = GlobalState.setup.telemetry.dictionary
+    setup = setup or load_setup()
+    hk_info_table = setup.telemetry.dictionary
 
     storage_mnemonic = hk_info_table[TmDictionaryColumns.STORAGE_MNEMONIC].values
     hk_names = hk_info_table[TmDictionaryColumns.CORRECT_HK_NAMES].values
@@ -743,18 +762,24 @@ def get_hk_info(hk_name: str):
         raise HKError(f&#34;HK parameter {hk_name} unknown&#34;)
 
 
-def get_storage_mnemonics():
+def get_storage_mnemonics(setup: Setup = None):
     &#34;&#34;&#34; Return the list of the storage mnemonics from the TM dictionary.
+
+    Args:
+          - setup: Setup.
 
     Returns: List of the storage mnemonics from the TM dictionary.
     &#34;&#34;&#34;
 
-    hk_info_table = GlobalState.setup.telemetry.dictionary
+    setup = setup or load_setup()
+
+    hk_info_table = setup.telemetry.dictionary
     storage_mnemonics = hk_info_table[TmDictionaryColumns.STORAGE_MNEMONIC].values
+
     return np.unique(storage_mnemonics)
 
 
-def get_housekeeping_names(name_filter=None, device_filter=None):
+def get_housekeeping_names(name_filter=None, device_filter=None, setup: Setup = None):
     &#34;&#34;&#34; Return HK names, storage mnemonic, and description.
 
     The TM dictionary is read into a Pandas DataFrame.  If a device filter is given, only the rows pertaining to the
@@ -766,17 +791,22 @@ def get_housekeeping_names(name_filter=None, device_filter=None):
         - &#34;Storage mnemonic&#34;: Storage mnemonic of the device producing the HK;
         - &#34;Description&#34;: Description of the HK parameter.
 
-    Synopsis: get_housekeeping_names(name_filter=&#34;RAW&#34;, device_filter=&#34;N-FEE-HK&#34;)
+    Synopsis:
+        - get_housekeeping_names(name_filter=&#34;RAW&#34;, device_filter=&#34;N-FEE-HK&#34;)
+        - get_housekeeping_names(name_filter=&#34;RAW&#34;, device_filter=&#34;N-FEE-HK&#34;, setup=setup)
 
     Args:
         - name_filter: Filter the HK dataframe, based on (a part of) the name of the HK parameter(s)
         - device: Filter the HK dataframe, based on the given storage mmenmonic
+        - setup: Setup.
 
     Returns: Pandas DataFrame with the HK name, storage mnemonic, and description of the HK parameters that pass the
              given filter.
     &#34;&#34;&#34;
 
-    hk_info_table = GlobalState.setup.telemetry.dictionary
+    setup = setup or load_setup()
+
+    hk_info_table = setup.telemetry.dictionary
     hk_info_table.dropna(subset=[TmDictionaryColumns.CORRECT_HK_NAMES], inplace=True)
 
     if device_filter:
@@ -801,46 +831,52 @@ def get_housekeeping_names(name_filter=None, device_filter=None):
 </code></dt>
 <dd>
 <div class="desc"><p>Converts the names of the HK parameters in the given dictionary.</p>
-<p>The names in the given dictionary of HK parameters are replaced by the names from the given conversion dictionary.</p>
+<p>The names/keys in the given dictionary of HK parameters (original_hk) are replaced by the names
+from the given conversion dictionary. The original dictionary is left unchanged, a new dictionary is
+returned.</p>
 <h2 id="args">Args</h2>
 <ul>
 <li>original_hk: Original dictionary of HK parameters.</li>
-<li>conversion_dict: Dictionary with the original HK names as keys and the new HK names as keys.
-Returns: Dictionary of HK parameters with the corrected HK names.</li>
-</ul></div>
+<li>conversion_dict: Dictionary with the original HK names as keys and the new HK names as values.</li>
+</ul>
+<h2 id="returns">Returns</h2>
+<p>A new dictionary of HK parameters with the corrected HK names.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def convert_hk_names(original_hk: dict, conversion_dict: dict) -&gt; dict:
-    &#34;&#34;&#34; Converts the names of the HK parameters in the given dictionary.
+    &#34;&#34;&#34;
+    Converts the names of the HK parameters in the given dictionary.
 
-    The names in the given dictionary of HK parameters are replaced by the names from the given conversion dictionary.
+    The names/keys in the given dictionary of HK parameters (original_hk) are replaced by the names
+    from the given conversion dictionary. The original dictionary is left unchanged, a new dictionary is
+    returned.
 
     Args:
         - original_hk: Original dictionary of HK parameters.
-        - conversion_dict: Dictionary with the original HK names as keys and the new HK names as keys.
+        - conversion_dict: Dictionary with the original HK names as keys and the new HK names as values.
 
-    Returns: Dictionary of HK parameters with the corrected HK names.
+    Returns:
+        A new dictionary of HK parameters with the corrected HK names.
     &#34;&#34;&#34;
 
-    old_keys = list(original_hk.keys())
     converted_hk = {}
 
-    for old_key in old_keys:
+    for orig_key in original_hk:
 
         try:
-            new_key = conversion_dict[old_key]
+            new_key = conversion_dict[orig_key]
         except KeyError:
-            new_key = old_key   # No need to convert the name of the timestamp column(s)
+            new_key = orig_key   # no conversion, just copy the key:value pair
 
-        converted_hk[new_key] = original_hk[old_key]
+        converted_hk[new_key] = original_hk[orig_key]
 
     return converted_hk</code></pre>
 </details>
 </dd>
 <dt id="egse.hk.get_hk_info"><code class="name flex">
-<span>def <span class="ident">get_hk_info</span></span>(<span>hk_name: str)</span>
+<span>def <span class="ident">get_hk_info</span></span>(<span>hk_name: str, setup: Optional[<a title="egse.setup.Setup" href="setup.html#egse.setup.Setup">Setup</a>] = None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Read the HK spreadsheet and extract information for the given HK parameter.</p>
@@ -853,6 +889,7 @@ Returns: Dictionary of HK parameters with the corrected HK names.</li>
 <h2 id="args">Args</h2>
 <ul>
 <li>hk_name: Name of the HK parameter.</li>
+<li>setup: Setup.</li>
 </ul>
 <h2 id="returns">Returns</h2>
 <ul>
@@ -863,7 +900,7 @@ Returns: Dictionary of HK parameters with the corrected HK names.</li>
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def get_hk_info(hk_name: str):
+<pre><code class="python">def get_hk_info(hk_name: str, setup: Optional[Setup] = None):
     &#34;&#34;&#34; Read the HK spreadsheet and extract information for the given HK parameter.
 
     The spreadsheet contains the following information:
@@ -875,13 +912,15 @@ Returns: Dictionary of HK parameters with the corrected HK names.</li>
 
     Args:
         - hk_name: Name of the HK parameter.
+        - setup: Setup.
 
     Returns:
         - storage mnemonic of the component that generates the given HK parameter
         - name of the column in the HK file with the corresponding timestamp
     &#34;&#34;&#34;
 
-    hk_info_table = GlobalState.setup.telemetry.dictionary
+    setup = setup or load_setup()
+    hk_info_table = setup.telemetry.dictionary
 
     storage_mnemonic = hk_info_table[TmDictionaryColumns.STORAGE_MNEMONIC].values
     hk_names = hk_info_table[TmDictionaryColumns.CORRECT_HK_NAMES].values
@@ -896,7 +935,7 @@ Returns: Dictionary of HK parameters with the corrected HK names.</li>
 </details>
 </dd>
 <dt id="egse.hk.get_housekeeping"><code class="name flex">
-<span>def <span class="ident">get_housekeeping</span></span>(<span>hk_name: str, obsid: Union[<a title="egse.obsid.ObservationIdentifier" href="obsid.html#egse.obsid.ObservationIdentifier">ObservationIdentifier</a>, str, int] = None, od: str = None, time_window: int = None, data_dir=None)</span>
+<span>def <span class="ident">get_housekeeping</span></span>(<span>hk_name: str, obsid: Union[<a title="egse.obsid.ObservationIdentifier" href="obsid.html#egse.obsid.ObservationIdentifier">ObservationIdentifier</a>, str, int] = None, od: str = None, time_window: int = None, data_dir=None, setup: Optional[<a title="egse.setup.Setup" href="setup.html#egse.setup.Setup">Setup</a>] = None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Returns the timestamp(s) and housekeeping value(s) for the housekeeping parameter with the given name.</p>
@@ -932,6 +971,8 @@ If not given, the latest housekeeping value is returned.</dd>
 <dt><strong><code>data_dir</code></strong></dt>
 <dd>Folder (with sub-folders /daily and /obs) in which the HK files are stored. If this argument is not
 provided, the data_dir will be determined from the environment variable PLATO_DATA_STORAGE_LOCATION.</dd>
+<dt><strong><code>setup</code></strong></dt>
+<dd>Setup</dd>
 </dl>
 <h2 id="raises">Raises</h2>
 <p>A HKError when one of the following problems occur
@@ -948,7 +989,7 @@ to the specified time window.</li>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def get_housekeeping(hk_name: str, obsid: Union[ObservationIdentifier, str, int] = None, od: str = None,
-                     time_window: int = None, data_dir=None):
+                     time_window: int = None, data_dir=None, setup: Optional[Setup] = None):
     &#34;&#34;&#34;
     Returns the timestamp(s) and housekeeping value(s) for the housekeeping parameter with the given name.
 
@@ -975,6 +1016,7 @@ to the specified time window.</li>
             the moment this method is called.  If not given, the latest housekeeping value is returned.
         data_dir: Folder (with sub-folders /daily and /obs) in which the HK files are stored. If this argument is not
             provided, the data_dir will be determined from the environment variable PLATO_DATA_STORAGE_LOCATION.
+        setup: Setup
 
     Raises:
         A HKError when one of the following problems occur
@@ -987,6 +1029,8 @@ to the specified time window.</li>
           to the specified time window.
 
     &#34;&#34;&#34;
+
+    setup = setup or load_setup()
 
     # Either specify the obsid or the OD (or neither of them) but not both
 
@@ -1001,7 +1045,7 @@ to the specified time window.</li>
     if obsid:
 
         try:
-            return _get_housekeeping_obsid(hk_name, data_dir, obsid=obsid, time_window=time_window)
+            return _get_housekeeping_obsid(hk_name, data_dir, obsid=obsid, time_window=time_window, setup=setup)
         except (ValueError, StopIteration, FileNotFoundError) as exc:
             raise HKError(f&#34;No HK found for {hk_name} for obsid {obsid} at {SITE_ID}&#34;) from exc
 
@@ -1010,20 +1054,20 @@ to the specified time window.</li>
     if od:
 
         try:
-            return _get_housekeeping_od(hk_name, data_dir, od=od, time_window=time_window)
+            return _get_housekeeping_od(hk_name, data_dir, od=od, time_window=time_window, setup=setup)
         except (ValueError, StopIteration, FileNotFoundError) as exc:
             raise HKError(f&#34;No HK found for {hk_name} for OD {od} at {SITE_ID}&#34;) from exc
 
     # Didn&#39;t specify neither the obsid nor the OD
 
     try:
-        return _get_housekeeping_daily(hk_name, data_dir, time_window=time_window)
+        return _get_housekeeping_daily(hk_name, data_dir, time_window=time_window, setup=setup)
     except (ValueError, StopIteration, FileNotFoundError) as exc:
         raise HKError(f&#34;No HK found for {hk_name} for today at {SITE_ID}&#34;) from exc</code></pre>
 </details>
 </dd>
 <dt id="egse.hk.get_housekeeping_names"><code class="name flex">
-<span>def <span class="ident">get_housekeeping_names</span></span>(<span>name_filter=None, device_filter=None)</span>
+<span>def <span class="ident">get_housekeeping_names</span></span>(<span>name_filter=None, device_filter=None, setup: <a title="egse.setup.Setup" href="setup.html#egse.setup.Setup">Setup</a> = None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Return HK names, storage mnemonic, and description.</p>
@@ -1036,11 +1080,16 @@ the given name filter are kept.</p>
 - "CAM EGSE mnemonic": Name of the HK parameter;
 - "Storage mnemonic": Storage mnemonic of the device producing the HK;
 - "Description": Description of the HK parameter.</p>
-<p>Synopsis: get_housekeeping_names(name_filter="RAW", device_filter="N-FEE-HK")</p>
+<h2 id="synopsis">Synopsis</h2>
+<ul>
+<li>get_housekeeping_names(name_filter="RAW", device_filter="N-FEE-HK")</li>
+<li>get_housekeeping_names(name_filter="RAW", device_filter="N-FEE-HK", setup=setup)</li>
+</ul>
 <h2 id="args">Args</h2>
 <ul>
 <li>name_filter: Filter the HK dataframe, based on (a part of) the name of the HK parameter(s)</li>
-<li>device: Filter the HK dataframe, based on the given storage mmenmonic
+<li>device: Filter the HK dataframe, based on the given storage mmenmonic</li>
+<li>setup: Setup.
 Returns: Pandas DataFrame with the HK name, storage mnemonic, and description of the HK parameters that pass the
 given filter.</li>
 </ul></div>
@@ -1048,7 +1097,7 @@ given filter.</li>
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def get_housekeeping_names(name_filter=None, device_filter=None):
+<pre><code class="python">def get_housekeeping_names(name_filter=None, device_filter=None, setup: Setup = None):
     &#34;&#34;&#34; Return HK names, storage mnemonic, and description.
 
     The TM dictionary is read into a Pandas DataFrame.  If a device filter is given, only the rows pertaining to the
@@ -1060,17 +1109,22 @@ given filter.</li>
         - &#34;Storage mnemonic&#34;: Storage mnemonic of the device producing the HK;
         - &#34;Description&#34;: Description of the HK parameter.
 
-    Synopsis: get_housekeeping_names(name_filter=&#34;RAW&#34;, device_filter=&#34;N-FEE-HK&#34;)
+    Synopsis:
+        - get_housekeeping_names(name_filter=&#34;RAW&#34;, device_filter=&#34;N-FEE-HK&#34;)
+        - get_housekeeping_names(name_filter=&#34;RAW&#34;, device_filter=&#34;N-FEE-HK&#34;, setup=setup)
 
     Args:
         - name_filter: Filter the HK dataframe, based on (a part of) the name of the HK parameter(s)
         - device: Filter the HK dataframe, based on the given storage mmenmonic
+        - setup: Setup.
 
     Returns: Pandas DataFrame with the HK name, storage mnemonic, and description of the HK parameters that pass the
              given filter.
     &#34;&#34;&#34;
 
-    hk_info_table = GlobalState.setup.telemetry.dictionary
+    setup = setup or load_setup()
+
+    hk_info_table = setup.telemetry.dictionary
     hk_info_table.dropna(subset=[TmDictionaryColumns.CORRECT_HK_NAMES], inplace=True)
 
     if device_filter:
@@ -1266,28 +1320,38 @@ Returns: Sampling rate for the HK file with the given name [s].</li>
 </details>
 </dd>
 <dt id="egse.hk.get_storage_mnemonics"><code class="name flex">
-<span>def <span class="ident">get_storage_mnemonics</span></span>(<span>)</span>
+<span>def <span class="ident">get_storage_mnemonics</span></span>(<span>setup: <a title="egse.setup.Setup" href="setup.html#egse.setup.Setup">Setup</a> = None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Return the list of the storage mnemonics from the TM dictionary.</p>
-<p>Returns: List of the storage mnemonics from the TM dictionary.</p></div>
+<h2 id="args">Args</h2>
+<ul>
+<li>setup: Setup.
+Returns: List of the storage mnemonics from the TM dictionary.</li>
+</ul></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def get_storage_mnemonics():
+<pre><code class="python">def get_storage_mnemonics(setup: Setup = None):
     &#34;&#34;&#34; Return the list of the storage mnemonics from the TM dictionary.
+
+    Args:
+          - setup: Setup.
 
     Returns: List of the storage mnemonics from the TM dictionary.
     &#34;&#34;&#34;
 
-    hk_info_table = GlobalState.setup.telemetry.dictionary
+    setup = setup or load_setup()
+
+    hk_info_table = setup.telemetry.dictionary
     storage_mnemonics = hk_info_table[TmDictionaryColumns.STORAGE_MNEMONIC].values
+
     return np.unique(storage_mnemonics)</code></pre>
 </details>
 </dd>
 <dt id="egse.hk.read_conversion_dict"><code class="name flex">
-<span>def <span class="ident">read_conversion_dict</span></span>(<span>storage_mnemonic: str, use_site: bool = False)</span>
+<span>def <span class="ident">read_conversion_dict</span></span>(<span>storage_mnemonic: str, use_site: bool = False, setup: Optional[<a title="egse.setup.Setup" href="setup.html#egse.setup.Setup">Setup</a>] = None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Read the HK spreadsheet and compose conversion dictionary for HK names.</p>
@@ -1300,14 +1364,15 @@ Returns: Sampling rate for the HK file with the given name [s].</li>
 <h2 id="args">Args</h2>
 <ul>
 <li>storage_mnemonic: Storage mnemonic of the component for which to compose the conversion dictionary</li>
-<li>use_site: Indicate whether or not the prefixes of the new HK names are TH-specific
+<li>use_site: Indicate whether or not the prefixes of the new HK names are TH-specific</li>
+<li>setup: Setup.
 Returns: Dictionary with the original HK names as keys and the converted HK names as values.</li>
 </ul></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def read_conversion_dict(storage_mnemonic: str, use_site: bool = False):
+<pre><code class="python">def read_conversion_dict(storage_mnemonic: str, use_site: bool = False, setup: Optional[Setup] = None):
     &#34;&#34;&#34; Read the HK spreadsheet and compose conversion dictionary for HK names.
 
     The spreadsheet contains the following information:
@@ -1320,12 +1385,15 @@ Returns: Dictionary with the original HK names as keys and the converted HK name
     Args:
         - storage_mnemonic: Storage mnemonic of the component for which to compose the conversion dictionary
         - use_site: Indicate whether or not the prefixes of the new HK names are TH-specific
+        - setup: Setup.
 
     Returns: Dictionary with the original HK names as keys and the converted HK names as values.
     &#34;&#34;&#34;
 
+    setup = setup or load_setup()
+
     try:
-        hk_info_table = GlobalState.setup.telemetry.dictionary
+        hk_info_table = setup.telemetry.dictionary
     except AttributeError:
         raise SetupError(&#34;Version of the telemetry dictionary not specified in the current setup&#34;)
 
@@ -1371,8 +1439,7 @@ Returns: Dictionary with the original HK names as keys and the converted HK name
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">class HKError(Exception):
-    &#34;&#34;&#34; An HK-specific error.&#34;&#34;&#34;
-
+    &#34;&#34;&#34;An HK-specific error.&#34;&#34;&#34;
     pass</code></pre>
 </details>
 <h3>Ancestors</h3>

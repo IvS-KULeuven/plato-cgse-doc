@@ -37,6 +37,7 @@ from egse.hk import read_conversion_dict, convert_hk_names
 from egse.metrics import define_metrics
 from egse.protocol import CommandProtocol
 from egse.settings import Settings
+from egse.setup import load_setup
 from egse.system import format_datetime
 from egse.zmq_ser import bind_address
 
@@ -53,9 +54,12 @@ class ZondaCommand(ClientServerCommand):
 class ZondaProtocol(CommandProtocol):
     def __init__(self, control_server: ControlServer):
         super().__init__()
-        self.control_server = control_server
 
-        self.hk_conversion_table = read_conversion_dict(self.control_server.get_storage_mnemonic(), use_site=True)
+        self.control_server = control_server
+        setup = load_setup()
+
+        self.hk_conversion_table = read_conversion_dict(self.control_server.get_storage_mnemonic(), use_site=True,
+                                                        setup=setup)
 
         if Settings.simulation_mode():
             self.hexapod = ZondaSimulator()
@@ -68,7 +72,7 @@ class ZondaProtocol(CommandProtocol):
 
         self.build_device_method_lookup_table(self.hexapod)
 
-        self.metrics = define_metrics(&#34;ZONDA&#34;)
+        self.metrics = define_metrics(&#34;ZONDA&#34;, setup=setup)
 
     def get_bind_address(self):
         return bind_address(
@@ -96,6 +100,7 @@ class ZondaProtocol(CommandProtocol):
         mach_positions = self.hexapod.get_machine_positions()
         user_positions = self.hexapod.get_user_positions()
         actuator_length = self.hexapod.get_actuator_length()
+        actuator_temperature = self.hexapod.get_temperature()
 
         # TODO If you change these names, please, also change them in egse.fov.fov_hk!
         for idx, key in enumerate(
@@ -112,6 +117,11 @@ class ZondaProtocol(CommandProtocol):
             [&#34;alen_t_x&#34;, &#34;alen_t_y&#34;, &#34;alen_t_z&#34;, &#34;alen_r_x&#34;, &#34;alen_r_y&#34;, &#34;alen_r_z&#34;]
         ):
             result[key] = actuator_length[idx]
+
+        for idx, key in enumerate(
+            [&#34;atemp_1&#34;, &#34;atemp_2&#34;, &#34;atemp_3&#34;, &#34;atemp_4&#34;, &#34;atemp_5&#34;, &#34;atemp_6&#34;]
+        ):
+            result[key] = actuator_temperature[idx]
 
         # # TODO:
         # #   the get_general_state() method should be refactored as to return a dict instead of a
@@ -203,9 +213,12 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
 <pre><code class="python">class ZondaProtocol(CommandProtocol):
     def __init__(self, control_server: ControlServer):
         super().__init__()
-        self.control_server = control_server
 
-        self.hk_conversion_table = read_conversion_dict(self.control_server.get_storage_mnemonic(), use_site=True)
+        self.control_server = control_server
+        setup = load_setup()
+
+        self.hk_conversion_table = read_conversion_dict(self.control_server.get_storage_mnemonic(), use_site=True,
+                                                        setup=setup)
 
         if Settings.simulation_mode():
             self.hexapod = ZondaSimulator()
@@ -218,7 +231,7 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
 
         self.build_device_method_lookup_table(self.hexapod)
 
-        self.metrics = define_metrics(&#34;ZONDA&#34;)
+        self.metrics = define_metrics(&#34;ZONDA&#34;, setup=setup)
 
     def get_bind_address(self):
         return bind_address(
@@ -246,6 +259,7 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
         mach_positions = self.hexapod.get_machine_positions()
         user_positions = self.hexapod.get_user_positions()
         actuator_length = self.hexapod.get_actuator_length()
+        actuator_temperature = self.hexapod.get_temperature()
 
         # TODO If you change these names, please, also change them in egse.fov.fov_hk!
         for idx, key in enumerate(
@@ -262,6 +276,11 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
             [&#34;alen_t_x&#34;, &#34;alen_t_y&#34;, &#34;alen_t_z&#34;, &#34;alen_r_x&#34;, &#34;alen_r_y&#34;, &#34;alen_r_z&#34;]
         ):
             result[key] = actuator_length[idx]
+
+        for idx, key in enumerate(
+            [&#34;atemp_1&#34;, &#34;atemp_2&#34;, &#34;atemp_3&#34;, &#34;atemp_4&#34;, &#34;atemp_5&#34;, &#34;atemp_6&#34;]
+        ):
+            result[key] = actuator_temperature[idx]
 
         # # TODO:
         # #   the get_general_state() method should be refactored as to return a dict instead of a

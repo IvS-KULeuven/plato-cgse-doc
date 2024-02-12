@@ -30,27 +30,41 @@
 <pre><code class="python">&#34;&#34;&#34;
 This module contains functions to handle SpaceWire communication.
 &#34;&#34;&#34;
+from __future__ import annotations
 
 import logging
+import socket
+import textwrap
 from typing import Tuple
 
+import egse.rmap
+import egse.spw
 from egse.dsi import constants
+from egse.dsi.constants import esl_rmap_error_codes
+from egse.dsi.esl import ESLError
 from egse.dsi.esl import esl_close_connection
 from egse.dsi.esl import esl_configure
 from egse.dsi.esl import esl_flush
+from egse.dsi.esl import esl_get_active_link
+from egse.dsi.esl import esl_get_hwa
+from egse.dsi.esl import esl_get_manufacturer_string
+from egse.dsi.esl import esl_get_number_of_links
+from egse.dsi.esl import esl_get_product_string
+from egse.dsi.esl import esl_get_serial_number
 from egse.dsi.esl import esl_open_connection
 from egse.dsi.esl import esl_read_packet
 from egse.dsi.esl import esl_send_timecode
+from egse.dsi.esl import esl_set_active_link
 from egse.dsi.esl import esl_write_packet
 from egse.dsi.rmap import rmap_configure
 from egse.dsi.rmap import rmap_open_connection
-from egse.dsi.rmap import rmap_read_request
-from egse.dsi.rmap import rmap_write_request
 from egse.settings import Settings
 from egse.spw import SpaceWireInterface
 from egse.spw import SpaceWirePacket
+from egse.spw import WriteRequestReply
+from egse.spw import ReadRequestReply
 
-logger = logging.getLogger(__name__)
+LOGGER = logging.getLogger(__name__)
 
 DSI_SETTINGS = Settings.load(&#34;DSI&#34;)
 
@@ -78,16 +92,17 @@ def handle_extension_packet(rx_buffer: bytes, bytes_received: int):
         Nothing: yet.
 
     &#34;&#34;&#34;
-    logger.debug(&#34;*&#34; * 80)
-    logger.debug(&#34;Extension Packet returned by DSI&#34;)
-    logger.debug(
+    LOGGER.debug(&#34;*&#34; * 80)
+    LOGGER.debug(&#34;Extension Packet returned by DSI&#34;)
+    LOGGER.debug(
         f&#34;extension packet: {bin(int.from_bytes(rx_buffer, &#39;big&#39;))} (length={bytes_received})&#34;
     )
-    logger.debug(&#34;*&#34; * 80)
+    LOGGER.debug(&#34;*&#34; * 80)
 
 
 def handle_special_packet(rx_buffer: bytes, bytes_received: int):
     &#34;&#34;&#34;
+    Decide how to handle a special packet that was received over the SpaceWire interface.
 
     Args:
         rx_buffer (bytes): the packet that was received as a bytes object
@@ -97,8 +112,10 @@ def handle_special_packet(rx_buffer: bytes, bytes_received: int):
         Nothing: yet.
 
     &#34;&#34;&#34;
-    logger.debug(&#34;Special Packet returned by DSI&#34;)
-    logger.debug(f&#34;extension packet: {rx_buffer}&#34;)
+    LOGGER.debug(&#34;*&#34; * 80)
+    LOGGER.debug(&#34;Special Packet returned by DSI&#34;)
+    LOGGER.debug(f&#34;Special packet: {rx_buffer} (length={bytes_received})&#34;)
+    LOGGER.debug(&#34;*&#34; * 80)
 
 
 class SpaceWireOverDSI(SpaceWireInterface):
@@ -107,15 +124,34 @@ class SpaceWireOverDSI(SpaceWireInterface):
     SpaceWire Interface (DSI).
     &#34;&#34;&#34;
 
-    def __init__(self, dsi_address, dsi_port):
+    def __init__(self, dsi_address, dsi_port, esl_link=None, rmap_link=None):
         self.dsi_address = dsi_address
         self.dsi_port = dsi_port
-        self.esl_link = None
-        self.rmap_link = None
+        self.esl_link = esl_link
+        self.rmap_link = rmap_link
+        self.socket = None
+
+    def __str__(self):
+        hwa = esl_get_hwa(self.esl_link)
+        serial_number = esl_get_serial_number(self.esl_link)
+
+        msg = textwrap.dedent(f&#34;&#34;&#34;\
+            Info on SpaceWire Interface:
+              Manufacturer      {esl_get_manufacturer_string(self.esl_link)}
+              Product           {esl_get_product_string(self.esl_link)}
+              Number of links   {esl_get_number_of_links(self.esl_link)} [active port={esl_get_active_link(self.esl_link)}]
+              Serial number     {serial_number}
+              Hardware Address  0x{hwa[0]:02X}-{hwa[1]:02X}-{hwa[2]:02X}-{hwa[3]:02X}-{hwa[4]:02X}-{hwa[5]:02X}
+            &#34;&#34;&#34;
+        )
+
+        return msg
 
     def connect(self):
-        self.esl_link = esl_open_connection(self.dsi_address)
-        self.rmap_link = rmap_open_connection(self.esl_link)
+        if self.esl_link is None:
+            self.esl_link = esl_open_connection(self.dsi_address)
+        if self.rmap_link is None:
+            self.rmap_link = rmap_open_connection(self.esl_link)
         # esl_print_info(self.esl_link)
 
     def disconnect(self):
@@ -144,43 +180,188 @@ class SpaceWireOverDSI(SpaceWireInterface):
 
         # esl_print_summary_of_structure(self.esl_link)
 
+    def get_socket(self):
+        &#34;&#34;&#34;
+        Returns the TCP socket that is associated with this transport.
+
+        Returns:
+            A TCP socket or None when the transport has not been initialized or connected.
+        &#34;&#34;&#34;
+        # This &#39;trick&#39; of getting the socket from the `fileno` works only once, so, if we have already
+        # requested the socket for this `fileno`, don&#39;t do it again. It will either result in a
+        # `OSError: [Errno 9] Bad file descriptor` or I&#39;ve seen that a new socket created with the same
+        # family and type will reuse the same `fileno` down the line...
+
+        if self.socket is None and self.esl_link is not None:
+            sock_fd = self.esl_link.contents.sock
+            self.socket = socket.socket(fileno=sock_fd)  # This is how to get the socket from the esl_connection.
+
+        return self.socket
+
+    def set_active_link(self, port: int):
+        &#34;&#34;&#34;
+        Sets the active SpW port on the DSI.
+
+        Raises:
+            An ESLError when an invalid link is provided.
+
+        Returns:
+            The return code of the library call.
+        &#34;&#34;&#34;
+        rc = esl_set_active_link(self.esl_link, port)
+        if rc == constants.ESL_API_INVALID_LINK:  # noqa
+            raise ESLError(
+                f&#34;Could not set active link {port}, ESL error: Invalid Link selected [-45].&#34;
+            )
+
+        return rc
+
+    def get_active_link(self):
+        &#34;&#34;&#34;Return the number of the currently active SpW port on the DSI.&#34;&#34;&#34;
+        return esl_get_active_link(self.esl_link)
+
     def flush(self):
         esl_flush(self.esl_link)
 
-    def send_timecode(self, timecode: int):
-        esl_send_timecode(self.esl_link, timecode)
+    def send_timecode(self, timecode: int) -&gt; int:
+        return esl_send_timecode(self.esl_link, timecode)
 
     def read_packet(self, timeout: int = None) -&gt; Tuple[int, bytes]:
         return esl_read_packet(self.esl_link, timeout=timeout)
 
-    def write_packet(self, packet: bytes):
-        esl_write_packet(self.esl_link, packet, len(packet), constants.ESL_EOP)
+    def write_packet(self, packet: bytes) -&gt; int:
+        return esl_write_packet(self.esl_link, packet, len(packet), constants.ESL_EOP)  # noqa
 
     def read_register(self, address: int, length: int = 4, strict: bool = True) -&gt; bytes:
-        terminator, rx_buffer = rmap_read_request(self.rmap_link, address, length)
+        reply_packet = self.rmap_read_request(address, length, strict=strict)
 
-        packet = SpaceWirePacket.create_packet(rx_buffer)
-        rx_data = packet.data
+        if reply_packet is None:
+            LOGGER.critical(f&#34;read_register() failed: An error occurred in the rmap_read_request() call.&#34;)
+            return bytes()
 
-        return rx_data
+        return reply_packet.data
 
-    def write_register(self, address: int, data: bytes):
-        terminator, rx_buffer = rmap_write_request(self.rmap_link, address, data)
+    def write_register(self, address: int, data: bytes) -&gt; int:
+        reply_packet = self.rmap_write_request(address, data)
 
-        # FIXME:
-        #  So, what do we need to do with the terminator value and the rx_buffer?
-        #  Is there some error checking needed here and what should than be the
-        #  return value?
+        if reply_packet is None:
+            LOGGER.critical(f&#34;write_register() failed: An error occurred in the rmap_write_request() call.&#34;)
+            return -1
 
-        return 0
+        if reply_packet.status:
+            LOGGER.warning(f&#34;write_register() failed: An error occurred in the rmap_write_request() call: &#34;
+                           f&#34;{reply_packet.status = }&#34;)
 
-    def read_memory_map(self, address: int, size: int):
-        terminator, rx_buffer = rmap_read_request(self.rmap_link, address, size)
+        return reply_packet.status
 
-        packet = SpaceWirePacket.create_packet(rx_buffer)
-        rx_data = packet.data
+    def read_memory_map(self, address: int, size: int) -&gt; bytes:
+        reply_packet = self.rmap_read_request(address, size, strict=False)
 
-        return rx_data</code></pre>
+        if reply_packet is None:
+            LOGGER.critical(f&#34;read_memory_map(): An error occurred in the rmap_read_request() call.&#34;)
+            return bytes()
+
+        return reply_packet.data
+
+    def rmap_read_request(
+            self, address: int, length: int, timeout: int = 1000, strict: bool = True) -&gt; ReadRequestReply | None:
+        &#34;&#34;&#34;
+        Read `length` bytes from the remote memory starting at `address`.
+
+        Args:
+            address: the start address (32-bit aligned) in the remote memory
+            length: the number of bytes to read from the remote memory
+            timeout: timeout in milliseconds
+            strict: perform strict checking of read areas
+
+        Returns:
+            A tuple containing the terminator value and the RMAP Reply packet with the data read from
+            the remote memory.
+
+        &#34;&#34;&#34;
+        # TODO:
+        #   the timeout parameter is currently not implemented
+
+        self.rmap_link.transaction_identifier = egse.spw.update_transaction_identifier(self.rmap_link.transaction_identifier)
+
+        buffer = egse.rmap.create_rmap_read_request_packet(
+            address, length, self.rmap_link.transaction_identifier, strict=strict)
+
+        result = esl_write_packet(self.rmap_link.spw_device, buffer, len(buffer), constants.ESL_EOP)  # noqa
+        if result:
+            raise egse.rmap.RMAPError(
+                f&#34;Couldn&#39;t send data within timeout of {timeout} ms, &#34;
+                f&#34;ESL RMAP Error Code = {esl_rmap_error_codes[self.rmap_link.ESL_RMAP_error]} [&#34;
+                f&#34;{self.rmap_link.ESL_RMAP_error}]&#34;)
+
+        result = esl_flush(self.rmap_link.spw_device)
+        if result:
+            raise egse.rmap.RMAPError(
+                f&#34;Couldn&#39;t send data or clear buffers, &#34;
+                f&#34;ESL RMAP Error Code = {esl_rmap_error_codes[self.rmap_link.ESL_RMAP_error]} [&#34;
+                f&#34;{self.rmap_link.ESL_RMAP_error}]&#34;)
+
+        # Read the read request reply packet
+
+        _, rx_buffer = esl_read_packet(self.rmap_link.spw_device, timeout=timeout)
+
+        if rx_buffer:
+            reply_packet = SpaceWirePacket.create_packet(rx_buffer)
+            return reply_packet if isinstance(reply_packet, ReadRequestReply) else None
+
+        return None
+
+    def rmap_write_request(
+            self, address: int, data: bytes, length: int = 4, timeout: int = 1000) -&gt; WriteRequestReply | None:
+        &#34;&#34;&#34;
+        Sends an RMAP write command over the SpaceWire link.
+
+        Based on the address this function will decided to send a verified or unverified write request.
+
+        TODO: the timeout parameter is currently not implemented.
+
+        Args:
+            address: the starting memory address to which the data from buffer will be written
+            data: the data that will be written into the targets memory
+            length: the number of bytes to write (the buffer maybe longer) [default=4]
+            timeout: timeout in milliseconds [default=1000]
+
+        Returns:
+            The Write Request Reply packet.
+
+        Raises:
+            egse.rmap.RMAPError: when data can not be written on the target.
+
+        &#34;&#34;&#34;
+
+        self.rmap_link.transaction_identifier = egse.spw.update_transaction_identifier(
+            self.rmap_link.transaction_identifier
+        )
+
+        if egse.rmap.CRITICAL_AREA_START &lt;= address &lt;= egse.rmap.CRITICAL_AREA_END:
+            buffer = egse.rmap.create_rmap_verified_write_packet(
+                address, data, self.rmap_link.transaction_identifier)
+        else:
+            buffer = egse.rmap.create_rmap_unverified_write_packet(
+                address, data, length, self.rmap_link.transaction_identifier)
+
+        result = esl_write_packet(self.esl_link, buffer, len(buffer), constants.ESL_EOP)  # noqa
+        if result:
+            raise egse.rmap.RMAPError(f&#34;Couldn&#39;t send data ({len(buffer)} bytes) within timeout of {timeout} ms.&#34;)
+
+        result = esl_flush(self.esl_link)
+        if result:
+            raise egse.rmap.RMAPError(f&#34;Couldn&#39;t send data or flush buffers.&#34;)
+
+        # Read the write request reply message
+
+        _, rx_buffer = esl_read_packet(self.esl_link)
+
+        if rx_buffer:
+            reply_packet = SpaceWirePacket.create_packet(rx_buffer)
+            return reply_packet if isinstance(reply_packet, WriteRequestReply) else None
+
+        return None</code></pre>
 </details>
 </section>
 <section>
@@ -231,19 +412,20 @@ class SpaceWireOverDSI(SpaceWireInterface):
         Nothing: yet.
 
     &#34;&#34;&#34;
-    logger.debug(&#34;*&#34; * 80)
-    logger.debug(&#34;Extension Packet returned by DSI&#34;)
-    logger.debug(
+    LOGGER.debug(&#34;*&#34; * 80)
+    LOGGER.debug(&#34;Extension Packet returned by DSI&#34;)
+    LOGGER.debug(
         f&#34;extension packet: {bin(int.from_bytes(rx_buffer, &#39;big&#39;))} (length={bytes_received})&#34;
     )
-    logger.debug(&#34;*&#34; * 80)</code></pre>
+    LOGGER.debug(&#34;*&#34; * 80)</code></pre>
 </details>
 </dd>
 <dt id="egse.dsi.spw.handle_special_packet"><code class="name flex">
 <span>def <span class="ident">handle_special_packet</span></span>(<span>rx_buffer: bytes, bytes_received: int)</span>
 </code></dt>
 <dd>
-<div class="desc"><h2 id="args">Args</h2>
+<div class="desc"><p>Decide how to handle a special packet that was received over the SpaceWire interface.</p>
+<h2 id="args">Args</h2>
 <dl>
 <dt><strong><code>rx_buffer</code></strong> :&ensp;<code>bytes</code></dt>
 <dd>the packet that was received as a bytes object</dd>
@@ -261,6 +443,7 @@ class SpaceWireOverDSI(SpaceWireInterface):
 </summary>
 <pre><code class="python">def handle_special_packet(rx_buffer: bytes, bytes_received: int):
     &#34;&#34;&#34;
+    Decide how to handle a special packet that was received over the SpaceWire interface.
 
     Args:
         rx_buffer (bytes): the packet that was received as a bytes object
@@ -270,8 +453,10 @@ class SpaceWireOverDSI(SpaceWireInterface):
         Nothing: yet.
 
     &#34;&#34;&#34;
-    logger.debug(&#34;Special Packet returned by DSI&#34;)
-    logger.debug(f&#34;extension packet: {rx_buffer}&#34;)</code></pre>
+    LOGGER.debug(&#34;*&#34; * 80)
+    LOGGER.debug(&#34;Special Packet returned by DSI&#34;)
+    LOGGER.debug(f&#34;Special packet: {rx_buffer} (length={bytes_received})&#34;)
+    LOGGER.debug(&#34;*&#34; * 80)</code></pre>
 </details>
 </dd>
 </dl>
@@ -281,7 +466,7 @@ class SpaceWireOverDSI(SpaceWireInterface):
 <dl>
 <dt id="egse.dsi.spw.SpaceWireOverDSI"><code class="flex name class">
 <span>class <span class="ident">SpaceWireOverDSI</span></span>
-<span>(</span><span>dsi_address, dsi_port)</span>
+<span>(</span><span>dsi_address, dsi_port, esl_link=None, rmap_link=None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>The SpaceWireOverDSI implements the SpaceWire communication/transport over a Diagnostic
@@ -296,15 +481,34 @@ SpaceWire Interface (DSI).</p></div>
     SpaceWire Interface (DSI).
     &#34;&#34;&#34;
 
-    def __init__(self, dsi_address, dsi_port):
+    def __init__(self, dsi_address, dsi_port, esl_link=None, rmap_link=None):
         self.dsi_address = dsi_address
         self.dsi_port = dsi_port
-        self.esl_link = None
-        self.rmap_link = None
+        self.esl_link = esl_link
+        self.rmap_link = rmap_link
+        self.socket = None
+
+    def __str__(self):
+        hwa = esl_get_hwa(self.esl_link)
+        serial_number = esl_get_serial_number(self.esl_link)
+
+        msg = textwrap.dedent(f&#34;&#34;&#34;\
+            Info on SpaceWire Interface:
+              Manufacturer      {esl_get_manufacturer_string(self.esl_link)}
+              Product           {esl_get_product_string(self.esl_link)}
+              Number of links   {esl_get_number_of_links(self.esl_link)} [active port={esl_get_active_link(self.esl_link)}]
+              Serial number     {serial_number}
+              Hardware Address  0x{hwa[0]:02X}-{hwa[1]:02X}-{hwa[2]:02X}-{hwa[3]:02X}-{hwa[4]:02X}-{hwa[5]:02X}
+            &#34;&#34;&#34;
+        )
+
+        return msg
 
     def connect(self):
-        self.esl_link = esl_open_connection(self.dsi_address)
-        self.rmap_link = rmap_open_connection(self.esl_link)
+        if self.esl_link is None:
+            self.esl_link = esl_open_connection(self.dsi_address)
+        if self.rmap_link is None:
+            self.rmap_link = rmap_open_connection(self.esl_link)
         # esl_print_info(self.esl_link)
 
     def disconnect(self):
@@ -333,43 +537,188 @@ SpaceWire Interface (DSI).</p></div>
 
         # esl_print_summary_of_structure(self.esl_link)
 
+    def get_socket(self):
+        &#34;&#34;&#34;
+        Returns the TCP socket that is associated with this transport.
+
+        Returns:
+            A TCP socket or None when the transport has not been initialized or connected.
+        &#34;&#34;&#34;
+        # This &#39;trick&#39; of getting the socket from the `fileno` works only once, so, if we have already
+        # requested the socket for this `fileno`, don&#39;t do it again. It will either result in a
+        # `OSError: [Errno 9] Bad file descriptor` or I&#39;ve seen that a new socket created with the same
+        # family and type will reuse the same `fileno` down the line...
+
+        if self.socket is None and self.esl_link is not None:
+            sock_fd = self.esl_link.contents.sock
+            self.socket = socket.socket(fileno=sock_fd)  # This is how to get the socket from the esl_connection.
+
+        return self.socket
+
+    def set_active_link(self, port: int):
+        &#34;&#34;&#34;
+        Sets the active SpW port on the DSI.
+
+        Raises:
+            An ESLError when an invalid link is provided.
+
+        Returns:
+            The return code of the library call.
+        &#34;&#34;&#34;
+        rc = esl_set_active_link(self.esl_link, port)
+        if rc == constants.ESL_API_INVALID_LINK:  # noqa
+            raise ESLError(
+                f&#34;Could not set active link {port}, ESL error: Invalid Link selected [-45].&#34;
+            )
+
+        return rc
+
+    def get_active_link(self):
+        &#34;&#34;&#34;Return the number of the currently active SpW port on the DSI.&#34;&#34;&#34;
+        return esl_get_active_link(self.esl_link)
+
     def flush(self):
         esl_flush(self.esl_link)
 
-    def send_timecode(self, timecode: int):
-        esl_send_timecode(self.esl_link, timecode)
+    def send_timecode(self, timecode: int) -&gt; int:
+        return esl_send_timecode(self.esl_link, timecode)
 
     def read_packet(self, timeout: int = None) -&gt; Tuple[int, bytes]:
         return esl_read_packet(self.esl_link, timeout=timeout)
 
-    def write_packet(self, packet: bytes):
-        esl_write_packet(self.esl_link, packet, len(packet), constants.ESL_EOP)
+    def write_packet(self, packet: bytes) -&gt; int:
+        return esl_write_packet(self.esl_link, packet, len(packet), constants.ESL_EOP)  # noqa
 
     def read_register(self, address: int, length: int = 4, strict: bool = True) -&gt; bytes:
-        terminator, rx_buffer = rmap_read_request(self.rmap_link, address, length)
+        reply_packet = self.rmap_read_request(address, length, strict=strict)
 
-        packet = SpaceWirePacket.create_packet(rx_buffer)
-        rx_data = packet.data
+        if reply_packet is None:
+            LOGGER.critical(f&#34;read_register() failed: An error occurred in the rmap_read_request() call.&#34;)
+            return bytes()
 
-        return rx_data
+        return reply_packet.data
 
-    def write_register(self, address: int, data: bytes):
-        terminator, rx_buffer = rmap_write_request(self.rmap_link, address, data)
+    def write_register(self, address: int, data: bytes) -&gt; int:
+        reply_packet = self.rmap_write_request(address, data)
 
-        # FIXME:
-        #  So, what do we need to do with the terminator value and the rx_buffer?
-        #  Is there some error checking needed here and what should than be the
-        #  return value?
+        if reply_packet is None:
+            LOGGER.critical(f&#34;write_register() failed: An error occurred in the rmap_write_request() call.&#34;)
+            return -1
 
-        return 0
+        if reply_packet.status:
+            LOGGER.warning(f&#34;write_register() failed: An error occurred in the rmap_write_request() call: &#34;
+                           f&#34;{reply_packet.status = }&#34;)
 
-    def read_memory_map(self, address: int, size: int):
-        terminator, rx_buffer = rmap_read_request(self.rmap_link, address, size)
+        return reply_packet.status
 
-        packet = SpaceWirePacket.create_packet(rx_buffer)
-        rx_data = packet.data
+    def read_memory_map(self, address: int, size: int) -&gt; bytes:
+        reply_packet = self.rmap_read_request(address, size, strict=False)
 
-        return rx_data</code></pre>
+        if reply_packet is None:
+            LOGGER.critical(f&#34;read_memory_map(): An error occurred in the rmap_read_request() call.&#34;)
+            return bytes()
+
+        return reply_packet.data
+
+    def rmap_read_request(
+            self, address: int, length: int, timeout: int = 1000, strict: bool = True) -&gt; ReadRequestReply | None:
+        &#34;&#34;&#34;
+        Read `length` bytes from the remote memory starting at `address`.
+
+        Args:
+            address: the start address (32-bit aligned) in the remote memory
+            length: the number of bytes to read from the remote memory
+            timeout: timeout in milliseconds
+            strict: perform strict checking of read areas
+
+        Returns:
+            A tuple containing the terminator value and the RMAP Reply packet with the data read from
+            the remote memory.
+
+        &#34;&#34;&#34;
+        # TODO:
+        #   the timeout parameter is currently not implemented
+
+        self.rmap_link.transaction_identifier = egse.spw.update_transaction_identifier(self.rmap_link.transaction_identifier)
+
+        buffer = egse.rmap.create_rmap_read_request_packet(
+            address, length, self.rmap_link.transaction_identifier, strict=strict)
+
+        result = esl_write_packet(self.rmap_link.spw_device, buffer, len(buffer), constants.ESL_EOP)  # noqa
+        if result:
+            raise egse.rmap.RMAPError(
+                f&#34;Couldn&#39;t send data within timeout of {timeout} ms, &#34;
+                f&#34;ESL RMAP Error Code = {esl_rmap_error_codes[self.rmap_link.ESL_RMAP_error]} [&#34;
+                f&#34;{self.rmap_link.ESL_RMAP_error}]&#34;)
+
+        result = esl_flush(self.rmap_link.spw_device)
+        if result:
+            raise egse.rmap.RMAPError(
+                f&#34;Couldn&#39;t send data or clear buffers, &#34;
+                f&#34;ESL RMAP Error Code = {esl_rmap_error_codes[self.rmap_link.ESL_RMAP_error]} [&#34;
+                f&#34;{self.rmap_link.ESL_RMAP_error}]&#34;)
+
+        # Read the read request reply packet
+
+        _, rx_buffer = esl_read_packet(self.rmap_link.spw_device, timeout=timeout)
+
+        if rx_buffer:
+            reply_packet = SpaceWirePacket.create_packet(rx_buffer)
+            return reply_packet if isinstance(reply_packet, ReadRequestReply) else None
+
+        return None
+
+    def rmap_write_request(
+            self, address: int, data: bytes, length: int = 4, timeout: int = 1000) -&gt; WriteRequestReply | None:
+        &#34;&#34;&#34;
+        Sends an RMAP write command over the SpaceWire link.
+
+        Based on the address this function will decided to send a verified or unverified write request.
+
+        TODO: the timeout parameter is currently not implemented.
+
+        Args:
+            address: the starting memory address to which the data from buffer will be written
+            data: the data that will be written into the targets memory
+            length: the number of bytes to write (the buffer maybe longer) [default=4]
+            timeout: timeout in milliseconds [default=1000]
+
+        Returns:
+            The Write Request Reply packet.
+
+        Raises:
+            egse.rmap.RMAPError: when data can not be written on the target.
+
+        &#34;&#34;&#34;
+
+        self.rmap_link.transaction_identifier = egse.spw.update_transaction_identifier(
+            self.rmap_link.transaction_identifier
+        )
+
+        if egse.rmap.CRITICAL_AREA_START &lt;= address &lt;= egse.rmap.CRITICAL_AREA_END:
+            buffer = egse.rmap.create_rmap_verified_write_packet(
+                address, data, self.rmap_link.transaction_identifier)
+        else:
+            buffer = egse.rmap.create_rmap_unverified_write_packet(
+                address, data, length, self.rmap_link.transaction_identifier)
+
+        result = esl_write_packet(self.esl_link, buffer, len(buffer), constants.ESL_EOP)  # noqa
+        if result:
+            raise egse.rmap.RMAPError(f&#34;Couldn&#39;t send data ({len(buffer)} bytes) within timeout of {timeout} ms.&#34;)
+
+        result = esl_flush(self.esl_link)
+        if result:
+            raise egse.rmap.RMAPError(f&#34;Couldn&#39;t send data or flush buffers.&#34;)
+
+        # Read the write request reply message
+
+        _, rx_buffer = esl_read_packet(self.esl_link)
+
+        if rx_buffer:
+            reply_packet = SpaceWirePacket.create_packet(rx_buffer)
+            return reply_packet if isinstance(reply_packet, WriteRequestReply) else None
+
+        return None</code></pre>
 </details>
 <h3>Ancestors</h3>
 <ul class="hlist">
@@ -420,8 +769,10 @@ SpaceWire Interface (DSI).</p></div>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def connect(self):
-    self.esl_link = esl_open_connection(self.dsi_address)
-    self.rmap_link = rmap_open_connection(self.esl_link)
+    if self.esl_link is None:
+        self.esl_link = esl_open_connection(self.dsi_address)
+    if self.rmap_link is None:
+        self.rmap_link = rmap_open_connection(self.esl_link)
     # esl_print_info(self.esl_link)</code></pre>
 </details>
 </dd>
@@ -451,17 +802,234 @@ SpaceWire Interface (DSI).</p></div>
     esl_flush(self.esl_link)</code></pre>
 </details>
 </dd>
-<dt id="egse.dsi.spw.SpaceWireOverDSI.send_timecode"><code class="name flex">
-<span>def <span class="ident">send_timecode</span></span>(<span>self, timecode: int)</span>
+<dt id="egse.dsi.spw.SpaceWireOverDSI.get_active_link"><code class="name flex">
+<span>def <span class="ident">get_active_link</span></span>(<span>self)</span>
 </code></dt>
 <dd>
-<div class="desc"></div>
+<div class="desc"><p>Return the number of the currently active SpW port on the DSI.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def send_timecode(self, timecode: int):
-    esl_send_timecode(self.esl_link, timecode)</code></pre>
+<pre><code class="python">def get_active_link(self):
+    &#34;&#34;&#34;Return the number of the currently active SpW port on the DSI.&#34;&#34;&#34;
+    return esl_get_active_link(self.esl_link)</code></pre>
+</details>
+</dd>
+<dt id="egse.dsi.spw.SpaceWireOverDSI.get_socket"><code class="name flex">
+<span>def <span class="ident">get_socket</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Returns the TCP socket that is associated with this transport.</p>
+<h2 id="returns">Returns</h2>
+<p>A TCP socket or None when the transport has not been initialized or connected.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_socket(self):
+    &#34;&#34;&#34;
+    Returns the TCP socket that is associated with this transport.
+
+    Returns:
+        A TCP socket or None when the transport has not been initialized or connected.
+    &#34;&#34;&#34;
+    # This &#39;trick&#39; of getting the socket from the `fileno` works only once, so, if we have already
+    # requested the socket for this `fileno`, don&#39;t do it again. It will either result in a
+    # `OSError: [Errno 9] Bad file descriptor` or I&#39;ve seen that a new socket created with the same
+    # family and type will reuse the same `fileno` down the line...
+
+    if self.socket is None and self.esl_link is not None:
+        sock_fd = self.esl_link.contents.sock
+        self.socket = socket.socket(fileno=sock_fd)  # This is how to get the socket from the esl_connection.
+
+    return self.socket</code></pre>
+</details>
+</dd>
+<dt id="egse.dsi.spw.SpaceWireOverDSI.rmap_read_request"><code class="name flex">
+<span>def <span class="ident">rmap_read_request</span></span>(<span>self, address: int, length: int, timeout: int = 1000, strict: bool = True) ‑> ReadRequestReply | None</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Read <code>length</code> bytes from the remote memory starting at <code>address</code>.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>address</code></strong></dt>
+<dd>the start address (32-bit aligned) in the remote memory</dd>
+<dt><strong><code>length</code></strong></dt>
+<dd>the number of bytes to read from the remote memory</dd>
+<dt><strong><code>timeout</code></strong></dt>
+<dd>timeout in milliseconds</dd>
+<dt><strong><code>strict</code></strong></dt>
+<dd>perform strict checking of read areas</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<p>A tuple containing the terminator value and the RMAP Reply packet with the data read from
+the remote memory.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def rmap_read_request(
+        self, address: int, length: int, timeout: int = 1000, strict: bool = True) -&gt; ReadRequestReply | None:
+    &#34;&#34;&#34;
+    Read `length` bytes from the remote memory starting at `address`.
+
+    Args:
+        address: the start address (32-bit aligned) in the remote memory
+        length: the number of bytes to read from the remote memory
+        timeout: timeout in milliseconds
+        strict: perform strict checking of read areas
+
+    Returns:
+        A tuple containing the terminator value and the RMAP Reply packet with the data read from
+        the remote memory.
+
+    &#34;&#34;&#34;
+    # TODO:
+    #   the timeout parameter is currently not implemented
+
+    self.rmap_link.transaction_identifier = egse.spw.update_transaction_identifier(self.rmap_link.transaction_identifier)
+
+    buffer = egse.rmap.create_rmap_read_request_packet(
+        address, length, self.rmap_link.transaction_identifier, strict=strict)
+
+    result = esl_write_packet(self.rmap_link.spw_device, buffer, len(buffer), constants.ESL_EOP)  # noqa
+    if result:
+        raise egse.rmap.RMAPError(
+            f&#34;Couldn&#39;t send data within timeout of {timeout} ms, &#34;
+            f&#34;ESL RMAP Error Code = {esl_rmap_error_codes[self.rmap_link.ESL_RMAP_error]} [&#34;
+            f&#34;{self.rmap_link.ESL_RMAP_error}]&#34;)
+
+    result = esl_flush(self.rmap_link.spw_device)
+    if result:
+        raise egse.rmap.RMAPError(
+            f&#34;Couldn&#39;t send data or clear buffers, &#34;
+            f&#34;ESL RMAP Error Code = {esl_rmap_error_codes[self.rmap_link.ESL_RMAP_error]} [&#34;
+            f&#34;{self.rmap_link.ESL_RMAP_error}]&#34;)
+
+    # Read the read request reply packet
+
+    _, rx_buffer = esl_read_packet(self.rmap_link.spw_device, timeout=timeout)
+
+    if rx_buffer:
+        reply_packet = SpaceWirePacket.create_packet(rx_buffer)
+        return reply_packet if isinstance(reply_packet, ReadRequestReply) else None
+
+    return None</code></pre>
+</details>
+</dd>
+<dt id="egse.dsi.spw.SpaceWireOverDSI.rmap_write_request"><code class="name flex">
+<span>def <span class="ident">rmap_write_request</span></span>(<span>self, address: int, data: bytes, length: int = 4, timeout: int = 1000) ‑> WriteRequestReply | None</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Sends an RMAP write command over the SpaceWire link.</p>
+<p>Based on the address this function will decided to send a verified or unverified write request.</p>
+<p>TODO: the timeout parameter is currently not implemented.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>address</code></strong></dt>
+<dd>the starting memory address to which the data from buffer will be written</dd>
+<dt><strong><code>data</code></strong></dt>
+<dd>the data that will be written into the targets memory</dd>
+<dt><strong><code>length</code></strong></dt>
+<dd>the number of bytes to write (the buffer maybe longer) [default=4]</dd>
+<dt><strong><code>timeout</code></strong></dt>
+<dd>timeout in milliseconds [default=1000]</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<p>The Write Request Reply packet.</p>
+<h2 id="raises">Raises</h2>
+<dl>
+<dt><code><a title="egse.rmap.RMAPError" href="../rmap.html#egse.rmap.RMAPError">RMAPError</a></code></dt>
+<dd>when data can not be written on the target.</dd>
+</dl></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def rmap_write_request(
+        self, address: int, data: bytes, length: int = 4, timeout: int = 1000) -&gt; WriteRequestReply | None:
+    &#34;&#34;&#34;
+    Sends an RMAP write command over the SpaceWire link.
+
+    Based on the address this function will decided to send a verified or unverified write request.
+
+    TODO: the timeout parameter is currently not implemented.
+
+    Args:
+        address: the starting memory address to which the data from buffer will be written
+        data: the data that will be written into the targets memory
+        length: the number of bytes to write (the buffer maybe longer) [default=4]
+        timeout: timeout in milliseconds [default=1000]
+
+    Returns:
+        The Write Request Reply packet.
+
+    Raises:
+        egse.rmap.RMAPError: when data can not be written on the target.
+
+    &#34;&#34;&#34;
+
+    self.rmap_link.transaction_identifier = egse.spw.update_transaction_identifier(
+        self.rmap_link.transaction_identifier
+    )
+
+    if egse.rmap.CRITICAL_AREA_START &lt;= address &lt;= egse.rmap.CRITICAL_AREA_END:
+        buffer = egse.rmap.create_rmap_verified_write_packet(
+            address, data, self.rmap_link.transaction_identifier)
+    else:
+        buffer = egse.rmap.create_rmap_unverified_write_packet(
+            address, data, length, self.rmap_link.transaction_identifier)
+
+    result = esl_write_packet(self.esl_link, buffer, len(buffer), constants.ESL_EOP)  # noqa
+    if result:
+        raise egse.rmap.RMAPError(f&#34;Couldn&#39;t send data ({len(buffer)} bytes) within timeout of {timeout} ms.&#34;)
+
+    result = esl_flush(self.esl_link)
+    if result:
+        raise egse.rmap.RMAPError(f&#34;Couldn&#39;t send data or flush buffers.&#34;)
+
+    # Read the write request reply message
+
+    _, rx_buffer = esl_read_packet(self.esl_link)
+
+    if rx_buffer:
+        reply_packet = SpaceWirePacket.create_packet(rx_buffer)
+        return reply_packet if isinstance(reply_packet, WriteRequestReply) else None
+
+    return None</code></pre>
+</details>
+</dd>
+<dt id="egse.dsi.spw.SpaceWireOverDSI.set_active_link"><code class="name flex">
+<span>def <span class="ident">set_active_link</span></span>(<span>self, port: int)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Sets the active SpW port on the DSI.</p>
+<h2 id="raises">Raises</h2>
+<p>An ESLError when an invalid link is provided.</p>
+<h2 id="returns">Returns</h2>
+<p>The return code of the library call.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def set_active_link(self, port: int):
+    &#34;&#34;&#34;
+    Sets the active SpW port on the DSI.
+
+    Raises:
+        An ESLError when an invalid link is provided.
+
+    Returns:
+        The return code of the library call.
+    &#34;&#34;&#34;
+    rc = esl_set_active_link(self.esl_link, port)
+    if rc == constants.ESL_API_INVALID_LINK:  # noqa
+        raise ESLError(
+            f&#34;Could not set active link {port}, ESL error: Invalid Link selected [-45].&#34;
+        )
+
+    return rc</code></pre>
 </details>
 </dd>
 </dl>
@@ -472,6 +1040,7 @@ SpaceWire Interface (DSI).</p></div>
 <li><code><a title="egse.spw.SpaceWireInterface.read_memory_map" href="../spw.html#egse.spw.SpaceWireInterface.read_memory_map">read_memory_map</a></code></li>
 <li><code><a title="egse.spw.SpaceWireInterface.read_packet" href="../spw.html#egse.spw.SpaceWireInterface.read_packet">read_packet</a></code></li>
 <li><code><a title="egse.spw.SpaceWireInterface.read_register" href="../spw.html#egse.spw.SpaceWireInterface.read_register">read_register</a></code></li>
+<li><code><a title="egse.spw.SpaceWireInterface.send_timecode" href="../spw.html#egse.spw.SpaceWireInterface.send_timecode">send_timecode</a></code></li>
 <li><code><a title="egse.spw.SpaceWireInterface.write_packet" href="../spw.html#egse.spw.SpaceWireInterface.write_packet">write_packet</a></code></li>
 <li><code><a title="egse.spw.SpaceWireInterface.write_register" href="../spw.html#egse.spw.SpaceWireInterface.write_register">write_register</a></code></li>
 </ul>
@@ -502,12 +1071,16 @@ SpaceWire Interface (DSI).</p></div>
 <ul>
 <li>
 <h4><code><a title="egse.dsi.spw.SpaceWireOverDSI" href="#egse.dsi.spw.SpaceWireOverDSI">SpaceWireOverDSI</a></code></h4>
-<ul class="">
+<ul class="two-column">
 <li><code><a title="egse.dsi.spw.SpaceWireOverDSI.configure" href="#egse.dsi.spw.SpaceWireOverDSI.configure">configure</a></code></li>
 <li><code><a title="egse.dsi.spw.SpaceWireOverDSI.connect" href="#egse.dsi.spw.SpaceWireOverDSI.connect">connect</a></code></li>
 <li><code><a title="egse.dsi.spw.SpaceWireOverDSI.disconnect" href="#egse.dsi.spw.SpaceWireOverDSI.disconnect">disconnect</a></code></li>
 <li><code><a title="egse.dsi.spw.SpaceWireOverDSI.flush" href="#egse.dsi.spw.SpaceWireOverDSI.flush">flush</a></code></li>
-<li><code><a title="egse.dsi.spw.SpaceWireOverDSI.send_timecode" href="#egse.dsi.spw.SpaceWireOverDSI.send_timecode">send_timecode</a></code></li>
+<li><code><a title="egse.dsi.spw.SpaceWireOverDSI.get_active_link" href="#egse.dsi.spw.SpaceWireOverDSI.get_active_link">get_active_link</a></code></li>
+<li><code><a title="egse.dsi.spw.SpaceWireOverDSI.get_socket" href="#egse.dsi.spw.SpaceWireOverDSI.get_socket">get_socket</a></code></li>
+<li><code><a title="egse.dsi.spw.SpaceWireOverDSI.rmap_read_request" href="#egse.dsi.spw.SpaceWireOverDSI.rmap_read_request">rmap_read_request</a></code></li>
+<li><code><a title="egse.dsi.spw.SpaceWireOverDSI.rmap_write_request" href="#egse.dsi.spw.SpaceWireOverDSI.rmap_write_request">rmap_write_request</a></code></li>
+<li><code><a title="egse.dsi.spw.SpaceWireOverDSI.set_active_link" href="#egse.dsi.spw.SpaceWireOverDSI.set_active_link">set_active_link</a></code></li>
 </ul>
 </li>
 </ul>

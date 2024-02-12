@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="generator" content="Asciidoctor 2.0.17">
+<meta name="generator" content="Asciidoctor 2.0.20">
 <meta name="author" content="Rik Huygen, Sara Regibo">
 <title>Common–EGSE : Developer Manual</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Open+Sans:300,300italic,400,400italic,600,600italic%7CNoto+Serif:400,400italic,700,700italic%7CDroid+Sans+Mono:400,700">
@@ -85,10 +85,10 @@ code{font-family:"Droid Sans Mono","DejaVu Sans Mono",monospace;font-weight:400;
 ul,ol,dl{line-height:1.6;margin-bottom:1.25em;list-style-position:outside;font-family:inherit}
 ul,ol{margin-left:1.5em}
 ul li ul,ul li ol{margin-left:1.25em;margin-bottom:0}
-ul.square li ul,ul.circle li ul,ul.disc li ul{list-style:inherit}
-ul.square{list-style-type:square}
 ul.circle{list-style-type:circle}
 ul.disc{list-style-type:disc}
+ul.square{list-style-type:square}
+ul.circle ul:not([class]),ul.disc ul:not([class]),ul.square ul:not([class]){list-style:inherit}
 ol li ul,ol li ol{margin-left:1.25em;margin-bottom:0}
 dl dt{margin-bottom:.3125em;font-weight:bold}
 dl dd{margin-bottom:1.25em}
@@ -209,13 +209,10 @@ table.tableblock.fit-content>caption.title{white-space:nowrap;width:0}
 .admonitionblock>table td.content{padding-left:1.125em;padding-right:1.25em;border-left:1px solid #dddddf;color:rgba(0,0,0,.6);word-wrap:anywhere}
 .admonitionblock>table td.content>:last-child>:last-child{margin-bottom:0}
 .exampleblock>.content{border:1px solid #e6e6e6;margin-bottom:1.25em;padding:1.25em;background:#fff;border-radius:4px}
-.exampleblock>.content>:first-child{margin-top:0}
-.exampleblock>.content>:last-child{margin-bottom:0}
 .sidebarblock{border:1px solid #dbdbd6;margin-bottom:1.25em;padding:1.25em;background:#f3f3f2;border-radius:4px}
-.sidebarblock>:first-child{margin-top:0}
-.sidebarblock>:last-child{margin-bottom:0}
 .sidebarblock>.content>.title{color:#7a2518;margin-top:0;text-align:center}
-.exampleblock>.content>:last-child>:last-child,.exampleblock>.content .olist>ol>li:last-child>:last-child,.exampleblock>.content .ulist>ul>li:last-child>:last-child,.exampleblock>.content .qlist>ol>li:last-child>:last-child,.sidebarblock>.content>:last-child>:last-child,.sidebarblock>.content .olist>ol>li:last-child>:last-child,.sidebarblock>.content .ulist>ul>li:last-child>:last-child,.sidebarblock>.content .qlist>ol>li:last-child>:last-child{margin-bottom:0}
+.exampleblock>.content>:first-child,.sidebarblock>.content>:first-child{margin-top:0}
+.exampleblock>.content>:last-child,.exampleblock>.content>:last-child>:last-child,.exampleblock>.content .olist>ol>li:last-child>:last-child,.exampleblock>.content .ulist>ul>li:last-child>:last-child,.exampleblock>.content .qlist>ol>li:last-child>:last-child,.sidebarblock>.content>:last-child,.sidebarblock>.content>:last-child>:last-child,.sidebarblock>.content .olist>ol>li:last-child>:last-child,.sidebarblock>.content .ulist>ul>li:last-child>:last-child,.sidebarblock>.content .qlist>ol>li:last-child>:last-child{margin-bottom:0}
 .literalblock pre,.listingblock>.content>pre{border-radius:4px;overflow-x:auto;padding:1em;font-size:.8125em}
 @media screen and (min-width:768px){.literalblock pre,.listingblock>.content>pre{font-size:.90625em}}
 @media screen and (min-width:1280px){.literalblock pre,.listingblock>.content>pre{font-size:1em}}
@@ -394,7 +391,7 @@ b.conum *{color:inherit!important}
 dt,th.tableblock,td.content,div.footnote{text-rendering:optimizeLegibility}
 h1,h2,p,td.content,span.alt,summary{letter-spacing:-.01em}
 p strong,td.content strong,div.footnote strong{letter-spacing:-.005em}
-p,blockquote,dt,td.content,span.alt,summary{font-size:1.0625rem}
+p,blockquote,dt,td.content,td.hdlist1,span.alt,summary{font-size:1.0625rem}
 p{margin-bottom:1.25rem}
 .sidebarblock p,.sidebarblock dt,.sidebarblock td.content,p.tableblock{font-size:1em}
 .exampleblock>.content{background:#fffef7;border-color:#e0e0dc;box-shadow:0 1px 4px #e0e0dc}
@@ -439,73 +436,113 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
 <style>
 /*! Asciidoctor Tabs | Copyright (c) 2018-present Dan Allen | MIT License */
-.tabs > ul {
-  display: flex;
-  flex-wrap: wrap;
-  list-style: none;
-  margin: 0 -0.25em 0 0;
-  padding: 0;
-}
-
-.tabs > ul li {
-  align-items: center;
-  border: 1px solid black;
-  border-bottom: 0;
-  cursor: pointer;
-  display: flex;
-  font-weight: bold;
-  height: 2em;
-  line-height: 1;
-  margin-right: 0.25em;
-  padding: 0 1em;
-  position: relative;
-}
-
-.tabs > ul li, .tabs > ul p {
-  margin-bottom: 0;
-}
-
-.tabs > ul li + li[id] {
-  margin-top: 0;
-}
-
-.tabset {
+.tabs {
   margin-bottom: 1.25em;
 }
 
-.tabset.is-loading .tabs li:not(:first-child),
-.tabset:not(.is-loading) .tabs li:not(.is-active) {
-  background-color: black;
-  color: white;
+.tablist > ul {
+  display: flex;
+  flex-wrap: wrap;
+  list-style: none;
+  margin: 0;
+  padding: 0;
 }
 
-.tabset.is-loading .tabs li:first-child::after,
-.tabs li.is-active::after {
-  background-color: white;
+.tablist > ul li {
+  align-items: center;
+  background-color: #fff;
+  cursor: pointer;
+  display: flex;
+  font-weight: bold;
+  line-height: 1.5;
+  padding: 0.25em 1em;
+  position: relative;
+}
+
+.tablist > ul li:focus-visible {
+  outline: none;
+}
+
+.tablist.ulist,
+.tablist.ulist > ul li {
+  margin: 0;
+}
+
+.tablist.ulist > ul li + li {
+  margin-left: 0.25em;
+}
+
+.tabs .tablist li::after {
   content: "";
   display: block;
-  height: 3px; /* Chrome doesn't always paint the line accurately, so add a little extra */
+  height: 1px;
   position: absolute;
-  bottom: -1.5px;
+  bottom: -1px;
   left: 0;
   right: 0;
 }
 
-.tabset > .content {
-  border: 1px solid gray;
+.tabs.is-loading .tablist li:not(:first-child),
+.tabs:not(.is-loading) .tablist li:not(.is-selected) {
+  background-color: #f5f5f5;
+}
+
+.tabs.is-loading .tablist li:first-child::after,
+.tabs:not(.is-loading) .tablist li.is-selected::after {
+  background-color: #fff;
+}
+
+/*
+.tabs:not(.is-loading) .tablist li,
+.tabs:not(.is-loading) .tablist li::after {
+  transition: background-color 200ms ease-in-out;
+}
+*/
+
+.tablist > ul p {
+  line-height: inherit;
+  margin: 0;
+}
+
+.tabpanel {
+  background-color: #fff;
   padding: 1.25em;
 }
 
-.tabset.is-loading .tab-pane:not(:first-child),
-.tabset:not(.is-loading) .tab-pane:not(.is-active) {
+.tablist > ul li,
+.tabpanel {
+  border: 1px solid #dcdcdc;
+}
+
+.tablist > ul li {
+  border-bottom: 0;
+}
+
+.tabs.is-loading .tabpanel + .tabpanel,
+.tabs:not(.is-loading) .tabpanel.is-hidden {
   display: none;
 }
 
-.tab-pane > :first-child {
+.tabpanel > :first-child {
   margin-top: 0;
 }
 
-.tab-pane > :last-child > :last-child {
+/* #content is a signature of the Asciidoctor standalone HTML output */
+#content .tabpanel > :last-child,
+#content .tabpanel > :last-child > :last-child,
+#content .tabpanel > :last-child > :last-child > li:last-child > :last-child {
+  margin-bottom: 0;
+}
+
+.tablecontainer {
+  overflow-x: auto;
+}
+
+#content .tablecontainer {
+  margin-bottom: 1.25em;
+}
+
+#content .tablecontainer > table.tableblock {
   margin-bottom: 0;
 }
 </style>
@@ -515,8 +552,8 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <h1>Common–EGSE : Developer Manual</h1>
 <div class="details">
 <span id="author" class="author">Rik Huygen, Sara Regibo</span><br>
-<span id="revnumber">version 1.7,</span>
-<span id="revdate">19/06/2023</span>
+<span id="revnumber">version 1.8,</span>
+<span id="revdate">12/02/2024</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -596,130 +633,153 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <li><a href="#_dynamic_commanding">6.6. Dynamic Commanding</a></li>
 </ul>
 </li>
-<li><a href="#_the_setup">7. The Setup</a>
+<li><a href="#notification-for-cs">7. Notifications for Control Servers</a>
 <ul class="sectlevel2">
-<li><a href="#_what_is_the_setup">7.1. What is the Setup?</a></li>
-<li><a href="#_what_goes_into_the_setup">7.2. What goes into the Setup?</a></li>
-<li><a href="#_how_to_use_the_setup">7.3. How to use the Setup</a></li>
-<li><a href="#_how_to_create_and_manage_setups">7.4. How to create and manage Setups</a></li>
+<li><a href="#_the_event">7.1. The Event</a></li>
+<li><a href="#_the_listener">7.2. The Listener</a></li>
+<li><a href="#_the_event_generator">7.3. The Event Generator</a></li>
+<li><a href="#_the_service_protocol">7.4. The Service Protocol</a></li>
+<li><a href="#_scheduled_tasks">7.5. Scheduled Tasks</a></li>
+<li><a href="#_the_notification_process">7.6. The Notification Process</a></li>
+<li><a href="#_the_configuration_manager_2">7.7. The Configuration Manager</a></li>
+<li><a href="#_the_storage_manager_2">7.8. The Storage Manager</a></li>
+<li><a href="#_the_dummy_control_server">7.9. The Dummy Control Server</a></li>
+<li><a href="#_adding_event_handling_to_a_control_server">7.10. Adding event handling to a control server</a></li>
 </ul>
 </li>
-<li><a href="#_the_settings_class">8. The Settings Class</a></li>
-<li><a href="#_the_globalstate">9. The GlobalState</a>
+<li><a href="#_the_setup">8. The Setup</a>
 <ul class="sectlevel2">
-<li><a href="#_singleton_versus_shared_state">9.1. Singleton versus Shared State</a></li>
-<li><a href="#_what_is_in_the_globalstate">9.2. What is in the GlobalState?</a></li>
+<li><a href="#_what_is_the_setup">8.1. What is the Setup?</a></li>
+<li><a href="#_what_goes_into_the_setup">8.2. What goes into the Setup?</a></li>
+<li><a href="#_how_to_use_the_setup">8.3. How to use the Setup</a></li>
+<li><a href="#_how_to_create_and_manage_setups">8.4. How to create and manage Setups</a></li>
 </ul>
 </li>
-<li><a href="#_data_strategy">10. Data Strategy</a></li>
-<li><a href="#_date_time_and_timestamps">11. Date, Time and Timestamps</a>
+<li><a href="#_the_settings_class">9. The Settings Class</a></li>
+<li><a href="#_the_globalstate">10. The GlobalState</a>
 <ul class="sectlevel2">
-<li><a href="#_formatting_the_date_and_time">11.1. Formatting the date and time</a></li>
+<li><a href="#_singleton_versus_shared_state">10.1. Singleton versus Shared State</a></li>
+<li><a href="#_what_is_in_the_globalstate">10.2. What is in the GlobalState?</a></li>
+</ul>
+</li>
+<li><a href="#_data_strategy">11. Data Strategy</a></li>
+<li><a href="#_date_time_and_timestamps">12. Date, Time and Timestamps</a>
+<ul class="sectlevel2">
+<li><a href="#_formatting_the_date_and_time">12.1. Formatting the date and time</a></li>
 </ul>
 </li>
 </ul>
 </li>
 <li><a href="#_part_iii_device_commanding">Part III — Device Commanding</a>
 <ul class="sectlevel1">
-<li><a href="#_device_control_servers">12. Device Control Servers</a>
+<li><a href="#_device_control_servers">13. Device Control Servers</a>
 <ul class="sectlevel2">
-<li><a href="#_the_device_interface_classes">12.1. The Device Interface Classes</a></li>
+<li><a href="#_the_device_interface_classes">13.1. The Device Interface Classes</a></li>
 </ul>
 </li>
-<li><a href="#sut">13. The System Under Test (SUT)</a>
+<li><a href="#sut">14. The System Under Test (SUT)</a>
 <ul class="sectlevel2">
-<li><a href="#dpu-cs-and-processor">13.1. DPU Control Server and DPU Processor</a></li>
-<li><a href="#_the_n_fee_simulator">13.2. The N-FEE Simulator</a></li>
-<li><a href="#_ccd_numbering">13.3. CCD Numbering</a></li>
+<li><a href="#dpu-cs-and-processor">14.1. DPU Control Server and DPU Processor</a></li>
+<li><a href="#_the_n_fee_simulator">14.2. The N-FEE Simulator</a></li>
+<li><a href="#_ccd_numbering">14.3. CCD Numbering</a></li>
 </ul>
 </li>
-<li><a href="#_device_simulators">14. Device Simulators</a>
+<li><a href="#spacewire">15. SpaceWire</a>
 <ul class="sectlevel2">
-<li><a href="#_the_ogse_simulator">14.1. The OGSE Simulator</a></li>
+<li><a href="#_the_spacewire_lab_interface_hardware">15.1. The SpaceWire Lab Interface – Hardware</a></li>
+<li><a href="#_the_spacewire_interface_class_software">15.2. The SpaceWire Interface class – Software</a></li>
+<li><a href="#_testing_your_connection">15.3. Testing your connection</a></li>
+<li><a href="#_the_rmap_protocol">15.4. The RMAP Protocol</a></li>
+<li><a href="#_a_more_elaborate_example">15.5. A more elaborate example</a></li>
+</ul>
+</li>
+<li><a href="#_device_simulators">16. Device Simulators</a>
+<ul class="sectlevel2">
+<li><a href="#_the_ogse_simulator">16.1. The OGSE Simulator</a></li>
 </ul>
 </li>
 </ul>
 </li>
 <li><a href="#_part_iv_monitoring">Part IV — Monitoring</a>
 <ul class="sectlevel1">
-<li><a href="#_metrics_prometheus_and_grafana">15. Metrics, Prometheus and Grafana</a>
+<li><a href="#_metrics_prometheus_and_grafana">17. Metrics, Prometheus and Grafana</a>
 <ul class="sectlevel2">
-<li><a href="#_setup_prometheus">15.1. Setup Prometheus</a></li>
-<li><a href="#_define_your_metrics">15.2. Define your metrics</a></li>
+<li><a href="#_setup_prometheus">17.1. Setup Prometheus</a></li>
+<li><a href="#_define_your_metrics">17.2. Define your metrics</a></li>
 </ul>
 </li>
 </ul>
 </li>
 <li><a href="#_part_v_test_scripts">Part V — Test Scripts</a>
 <ul class="sectlevel1">
-<li><a href="#_observations">16. Observations</a></li>
-<li><a href="#_building_blocks">17. Building Blocks</a></li>
-<li><a href="#tasks-gui">18. The Tasks GUI</a>
+<li><a href="#_observations">18. Observations</a></li>
+<li><a href="#_building_blocks">19. Building Blocks</a></li>
+<li><a href="#tasks-gui">20. The Tasks GUI</a>
 <ul class="sectlevel2">
-<li><a href="#_the_package_layout">18.1. The package Layout</a></li>
-<li><a href="#_defining_a_task">18.2. Defining a Task</a></li>
-<li><a href="#_the_exec_ui_decorator">18.3. The @exec_ui decorator</a></li>
-<li><a href="#_type_hints_and_defaults">18.4. Type Hints and Defaults</a></li>
-<li><a href="#_choosing_your_icons">18.5. Choosing your icons</a></li>
-<li><a href="#_the_jupyter_kernels">18.6. The Jupyter Kernels</a></li>
-<li><a href="#_running_your_tasks">18.7. Running your tasks</a></li>
-<li><a href="#_the_init_py">18.8. The __init__.py</a></li>
+<li><a href="#_the_package_layout">20.1. The package Layout</a></li>
+<li><a href="#_defining_a_task">20.2. Defining a Task</a></li>
+<li><a href="#_the_exec_ui_decorator">20.3. The @exec_ui decorator</a></li>
+<li><a href="#_type_hints_and_defaults">20.4. Type Hints and Defaults</a></li>
+<li><a href="#_choosing_your_icons">20.5. Choosing your icons</a></li>
+<li><a href="#_the_jupyter_kernels">20.6. The Jupyter Kernels</a></li>
+<li><a href="#_running_your_tasks">20.7. Running your tasks</a></li>
+<li><a href="#_the_init_py">20.8. The __init__.py</a></li>
 </ul>
 </li>
 </ul>
 </li>
 <li><a href="#unit-tests">Part VI — Unit Testing and beyond</a>
 <ul class="sectlevel1">
-<li><a href="#_the_test_suite">19. The Test Suite</a></li>
-<li><a href="#_testing_device_interfaces">20. Testing device Interfaces</a></li>
-<li><a href="#_code_reviews">21. Code Reviews</a>
+<li><a href="#_the_test_suite">21. The Test Suite</a></li>
+<li><a href="#_testing_device_interfaces">22. Testing device Interfaces</a></li>
+<li><a href="#_code_reviews">23. Code Reviews</a>
 <ul class="sectlevel2">
-<li><a href="#_who_is_part_of_this_code_review">21.1. Who is part of this Code Review?</a></li>
-<li><a href="#_planning">21.2. Planning</a></li>
-<li><a href="#_what_needs_to_be_reviewed">21.3. What needs to be reviewed?</a></li>
-<li><a href="#_prerequisites">21.4. Prerequisites</a></li>
+<li><a href="#_who_is_part_of_this_code_review">23.1. Who is part of this Code Review?</a></li>
+<li><a href="#_planning">23.2. Planning</a></li>
+<li><a href="#_what_needs_to_be_reviewed">23.3. What needs to be reviewed?</a></li>
+<li><a href="#_prerequisites">23.4. Prerequisites</a></li>
 </ul>
 </li>
 </ul>
 </li>
 <li><a href="#_part_vii_miscellaneous">Part VII — Miscellaneous</a>
 <ul class="sectlevel1">
-<li><a href="#set-up-dev-env">22. Set up your development environment</a>
+<li><a href="#set-up-dev-env">24. Set up your development environment</a>
 <ul class="sectlevel2">
-<li><a href="#_create_a_github_account_and_request_access">22.1. Create a GitHub account and request access</a></li>
-<li><a href="#_fork_the_repositories_on_github">22.2. Fork the repositories on GitHub</a></li>
-<li><a href="#_clone_github_repository">22.3. Clone GitHub repository</a></li>
-<li><a href="#_set_up_the_environment_variables">22.4. Set up the environment variables</a></li>
-<li><a href="#_create_a_python_virtual_environment">22.5. Create a Python virtual environment</a></li>
-<li><a href="#_install_the_cgse">22.6. Install the CGSE</a></li>
-<li><a href="#_start_the_core_services">22.7. Start the core services</a></li>
-<li><a href="#_updating_the_cgse_and_ts">22.8. Updating the CGSE and TS</a></li>
+<li><a href="#_create_a_github_account_and_request_access">24.1. Create a GitHub account and request access</a></li>
+<li><a href="#_fork_the_repositories_on_github">24.2. Fork the repositories on GitHub</a></li>
+<li><a href="#_clone_github_repository">24.3. Clone GitHub repository</a></li>
+<li><a href="#_set_up_the_environment_variables">24.4. Set up the environment variables</a></li>
+<li><a href="#_create_a_python_virtual_environment">24.5. Create a Python virtual environment</a></li>
+<li><a href="#_install_the_cgse">24.6. Install the CGSE</a></li>
+<li><a href="#_start_the_core_services">24.7. Start the core services</a></li>
+<li><a href="#_updating_the_cgse_and_ts">24.8. Updating the CGSE and TS</a></li>
 </ul>
 </li>
-<li><a href="#_terminal_commands">23. Terminal Commands</a>
+<li><a href="#_terminal_commands">25. Terminal Commands</a>
 <ul class="sectlevel2">
-<li><a href="#_what_goes_into_this_section">23.1. What goes into this section</a></li>
-<li><a href="#_often_used_terminal_commands">23.2. Often used terminal commands</a></li>
-<li><a href="#_often_used_git_commands">23.3. Often used git commands</a></li>
+<li><a href="#_what_goes_into_this_section">25.1. What goes into this section</a></li>
+<li><a href="#_often_used_terminal_commands">25.2. Often used terminal commands</a></li>
+<li><a href="#_often_used_git_commands">25.3. Often used git commands</a></li>
 </ul>
 </li>
-<li><a href="#_stories">24. Stories</a>
+<li><a href="#_stories">26. Stories</a>
 <ul class="sectlevel2">
-<li><a href="#_seemingly_unrelated_process_manager_crash">24.1. Seemingly unrelated Process Manager Crash</a></li>
+<li><a href="#_seemingly_unrelated_process_manager_crash">26.1. Seemingly unrelated Process Manager Crash</a></li>
 </ul>
 </li>
-<li><a href="#_miscellaneous">25. Miscellaneous</a></li>
-<li><a href="#_system_configuration">26. System Configuration</a>
+<li><a href="#_miscellaneous">27. Miscellaneous</a></li>
+<li><a href="#_system_configuration">28. System Configuration</a>
 <ul class="sectlevel2">
-<li><a href="#_system_components">26.1. System Components</a></li>
-<li><a href="#_data_flows">26.2. Data Flows</a></li>
+<li><a href="#_system_components">28.1. System Components</a></li>
+<li><a href="#_data_flows">28.2. Data Flows</a></li>
 </ul>
 </li>
-<li><a href="#_installation_and_update">27. Installation and Update</a></li>
-<li><a href="#_getting_started">28. Getting Started</a>
+<li><a href="#_installation_and_update">29. Installation and Update</a></li>
+<li><a href="#_getting_started">30. Getting Started</a>
 <ul class="sectlevel2">
-<li><a href="#_log_on_to_the_system">28.1. Log on to the System</a></li>
-<li><a href="#_setting_up_the_development_environment">28.2. Setting up the development environment</a></li>
+<li><a href="#_log_on_to_the_system">30.1. Log on to the System</a></li>
+<li><a href="#_setting_up_the_development_environment">30.2. Setting up the development environment</a></li>
 </ul>
 </li>
 </ul>
@@ -742,12 +802,25 @@ Backlink &#8594; <a href="https://ivs-kuleuven.github.io/plato-cgse-doc/">CGSE D
 <div class="sectionbody">
 <div class="dlist">
 <dl>
+<dt class="hdlist1">12/02/2024 — v1.8</dt>
+<dd>
+<div class="ulist">
+<ul>
+<li>
+<p>Started a chapter on SpaceWire communication, see <a href="#spacewire">Chapter 15</a>.</p>
+</li>
+<li>
+<p>Added a chapter on the notification system for control servers, see <a href="#notification-for-cs">Chapter 7</a>.</p>
+</li>
+</ul>
+</div>
+</dd>
 <dt class="hdlist1">18/06/2023 — v1.7</dt>
 <dd>
 <div class="ulist">
 <ul>
 <li>
-<p>Added a section on setting up a development environment to contribute to the CGSE and/or TS, see <a href="#set-up-dev-env">Chapter 22</a>.</p>
+<p>Added a section on setting up a development environment to contribute to the CGSE and/or TS, see <a href="#set-up-dev-env">Chapter 24</a>.</p>
 </li>
 <li>
 <p>added a backlink to the CGSE Documentation web site for your convenience. It&#8217;s at the top of the HTML page.</p>
@@ -760,13 +833,13 @@ Backlink &#8594; <a href="https://ivs-kuleuven.github.io/plato-cgse-doc/">CGSE D
 <div class="ulist">
 <ul>
 <li>
-<p>Added explanation about data distribution and monitoring message queues used by the DPU Processor to publish information and data, see <a href="#sut">Chapter 13</a>.</p>
+<p>Added explanation about data distribution and monitoring message queues used by the DPU Processor to publish information and data, see <a href="#sut">Chapter 14</a>.</p>
 </li>
 <li>
 <p>Added some more meat into the description of the arguments for the <code>@dynamic_command</code> decorator, see <a href="#_dynamic_command_decorator">Section 6.6.2</a>.</p>
 </li>
 <li>
-<p>Added an explanation of the communication with and commanding of the N-FEE in the inner loop of the DPUProcessor, see <a href="#inner-loop">Section 13.1.1</a>.</p>
+<p>Added an explanation of the communication with and commanding of the N-FEE in the inner loop of the DPUProcessor, see <a href="#inner-loop">Section 14.1.1</a>.</p>
 </li>
 </ul>
 </div>
@@ -886,24 +959,24 @@ This feature is only available in the HTML version of the documents. If you are 
 </tr>
 </table>
 </div>
-<div id="_tabset_1" class="tabset is-loading">
-<div class="ulist tabs">
+<div id="_tabs_1" class="openblock tabs is-loading">
+<div class="content">
+<div class="ulist tablist">
 <ul>
-<li id="_tabset_1_fm">
+<li id="_tabs_1_fm" class="tab">
 <p>FM</p>
 </li>
-<li id="_tabset_1_em">
+<li id="_tabs_1_em" class="tab">
 <p>EM</p>
 </li>
 </ul>
 </div>
-<div class="content">
-<div class="tab-pane" aria-labelledby="_tabset_1_fm">
+<div id="_tabs_1_fm--panel" class="tabpanel" aria-labelledby="_tabs_1_fm">
 <div class="paragraph">
 <p>In this TAB we present <em>FM specific information</em>.</p>
 </div>
 </div>
-<div class="tab-pane" aria-labelledby="_tabset_1_em">
+<div id="_tabs_1_em--panel" class="tabpanel" aria-labelledby="_tabs_1_em">
 <div class="paragraph">
 <p>In this TAB we present <strong>EM specific information</strong>.</p>
 </div>
@@ -1205,6 +1278,10 @@ plato-data@strawberry:/data/CSL1/obs/01151_CSL1_chimay$</pre>
 <td class="tableblock halign-left valign-top"><p class="tableblock">Camera</p></td>
 </tr>
 <tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">CCD</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Charged-Coupled Device</p></td>
+</tr>
+<tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">CGSE</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">Common-EGSE</p></td>
 </tr>
@@ -1213,12 +1290,20 @@ plato-data@strawberry:/data/CSL1/obs/01151_CSL1_chimay$</pre>
 <td class="tableblock halign-left valign-top"><p class="tableblock">Centre Spatial de Liège</p></td>
 </tr>
 <tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">CSV</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Comma-Separated Values</p></td>
+</tr>
+<tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">COT</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">Commercial off-the-shelf</p></td>
 </tr>
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">CTI</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">Charge Transfer Inefficiency</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">CTS</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Consent to Ship</p></td>
 </tr>
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">DPU</p></td>
@@ -1237,8 +1322,16 @@ plato-data@strawberry:/data/CSL1/obs/01151_CSL1_chimay$</pre>
 <td class="tableblock halign-left valign-top"><p class="tableblock">End Of Life</p></td>
 </tr>
 <tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">FAQ</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Frequently Asked Questions</p></td>
+</tr>
+<tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">FEE</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">Front End Electronics</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">FITS</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Flexible Image Transport System</p></td>
 </tr>
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">FPA</p></td>
@@ -1247,6 +1340,14 @@ plato-data@strawberry:/data/CSL1/obs/01151_CSL1_chimay$</pre>
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">GSE</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">Ground Support Equipment</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">GUI</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Graphical User Interface</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">HDF5</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Hierarchical Data Format version 5 (File format)</p></td>
 </tr>
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">HK</p></td>
@@ -1281,6 +1382,10 @@ plato-data@strawberry:/data/CSL1/obs/01151_CSL1_chimay$</pre>
 <td class="tableblock halign-left valign-top"><p class="tableblock">Non-Conformance Review Board</p></td>
 </tr>
 <tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">OBSID</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Observation Identifier</p></td>
+</tr>
+<tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">OGSE</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">Optical Ground Support Equipment</p></td>
 </tr>
@@ -1289,8 +1394,16 @@ plato-data@strawberry:/data/CSL1/obs/01151_CSL1_chimay$</pre>
 <td class="tableblock halign-left valign-top"><p class="tableblock">Operating System</p></td>
 </tr>
 <tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">PDF</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Portable Document Format</p></td>
+</tr>
+<tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">PID</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">Process Identifier</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">PLATO</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">PLAnetary Transits and Oscillations of stars</p></td>
 </tr>
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">PPID</p></td>
@@ -1319,6 +1432,10 @@ plato-data@strawberry:/data/CSL1/obs/01151_CSL1_chimay$</pre>
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">SpW</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">SpaceWire</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">SQL</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Structured Query Language</p></td>
 </tr>
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">SRON</p></td>
@@ -1369,12 +1486,24 @@ plato-data@strawberry:/data/CSL1/obs/01151_CSL1_chimay$</pre>
 <td class="tableblock halign-left valign-top"><p class="tableblock">Test Scripts</p></td>
 </tr>
 <tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">TUI</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Text-based User Interface</p></td>
+</tr>
+<tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">TV</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">Thermal Vacuum</p></td>
 </tr>
 <tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">UM</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">User Manual</p></td>
+</tr>
+<tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">USB</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">Universal Serial Bus</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">YAML</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">YAML Ain&#8217;t Markup Language</p></td>
 </tr>
 </tbody>
 </table>
@@ -3202,7 +3331,371 @@ use_format=True</pre>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_the_setup">7. The Setup</h2>
+<h2 id="notification-for-cs">7. Notifications for Control Servers</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>This section explains how notifications for control servers are designed and implemented with an Event Listeners pattern. We will talk about events between two processes, two control servers. One control server will send out notifications for an event and is therefore called the <em>notifying</em> control server or the <em>Producer</em>, the other control server is listening for events and is therefore called the <em>listening</em> control server, or the <em>Consumer</em>.</p>
+</div>
+<div class="paragraph">
+<p>The basic requirements we have for the event notification are:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Any control server shall be able to accept a registration for a notification of an event.</p>
+</li>
+<li>
+<p>It shall be possible to unregister from receiving events.</p>
+</li>
+<li>
+<p>The event generator (producer) shall not wait for a reply from the listener.</p>
+</li>
+<li>
+<p>The Listener shall handle events as soon as possible.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>The following terms will be used throughout this chapter. In order to try to avoid confusion, we will briefly explain those in the context of the CGSE.</p>
+</div>
+<div class="hdlist">
+<table>
+<tr>
+<td class="hdlist1">
+Event
+</td>
+<td class="hdlist2">
+<p>The event is the object that carries the information about a change that needs to be reported to the listeners.</p>
+</td>
+</tr>
+<tr>
+<td class="hdlist1">
+Listener
+</td>
+<td class="hdlist2">
+<p>The process that registers to a control server for an event notification is called a <em>listener</em> or <em>consumer</em>, i.e. it listens for one or more specific events that are sent out by another control server process.</p>
+</td>
+</tr>
+<tr>
+<td class="hdlist1">
+Event Generator
+</td>
+<td class="hdlist2">
+<p>The control server process that sends out notifications to its listeners. Sometimes its called a <em>producer</em>. This control server holds registrations for all listeners that need to be notified of an event.</p>
+</td>
+</tr>
+</table>
+</div>
+<div class="paragraph">
+<p>In the case of the CGSE, a control server can act both as the event generator and the listener. Not that the control server will send events to itself, but it will send events to other control servers. Therefore, the implementation will include both sides of the event listener pattern, i.e. producer and consumer. The pattern will be implemented with ZeroMQ messaging. This is different from the usual implementation of this pattern where a producer object calls a method on a consumer object. In our case, the event generator process, will send a ZeroMQ message, containing the event object, to the listener process.</p>
+</div>
+<div class="sect2">
+<h3 id="_the_event">7.1. The Event</h3>
+<div class="paragraph">
+<p>An Event is an object that contains all information needed by the listeners in order to process the event notification.</p>
+</div>
+<div class="paragraph">
+<p>An Event is defined by an event identifier and an event type. Currently, the only event identified is the New Setup event notification with event_id: EVENT_ID.SETUP and event_type: "new_setup". An Event also needs a context which contains information that is needed by the listener in order to handle the event. The context contains event specific information, e.g. in the case of a new Setup, the context also contains the setup identifier (<code>setup_id</code>).</p>
+</div>
+<div class="paragraph">
+<p>The control server that wants to be notified of an event needs to implement the EventInterface in the Proxy and in the Controller. This interface currently contains only one method, ie. <code>handle_event(event)</code> which takes the event object as its only argument.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_the_listener">7.2. The Listener</h3>
+<div class="paragraph">
+<p>Listeners are registered and unregistered through the services interface of the control server. That means the developer of a control server that needs to listen to events doesn&#8217;t need to implement the registration functions, only the handling of the events must be implemented.</p>
+</div>
+<div class="paragraph">
+<p>When a listener is registered, a name and a proxy shall be provided. The name is used as an identifier for the listener, the proxy is the Proxy class for the <em>listening</em> process. The proxy will be used by the producer to notify the listener/consumer.</p>
+</div>
+<div class="paragraph">
+<p>When registering, another proxy shall be provided, which is the producers proxy, i.e. the proxy  for the control server to which the listener wants to register. So, for example, if the storage manager wants to listen to events on new Setups from the configuration manager, that proxy shall be a ConfigurationManagerProxy. The following code snippet should make this clear:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-python" data-lang="python">self.register_as_listener(
+    proxy=ConfigurationManagerProxy,
+    listener={'name': 'Storage CS', 'proxy': StorageProxy, 'event_id': EVENT_ID.SETUP}
+)</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Registrations are issued from the ControlServer and handled by the ServiceProtocol. The registration is executed in a separate thread and retried 5 times with a 10s wait time in between.</p>
+</div>
+<div class="paragraph">
+<p>Event notifications are handled by executing the <code>handle_event()</code> method on the consumer Proxy. The <code>handle_event</code> command is defined by the <code>EventInterface</code> which is a base class for the Controller and the Proxy. Both the Controller class and the Proxy class need to inherit from the <code>EventInterface</code>.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-python" data-lang="python">class EventInterface:
+
+    @dynamic_interface
+    def handle_event(self, event: Event):
+        ...</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>In this case, we will also need to provide an entry in the command YAML file:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>handle_event:
+    description:   Notification of an event
+    cmd:           '{event}'</pre>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_the_event_generator">7.3. The Event Generator</h3>
+<div class="paragraph">
+<p>The control server that generates the events keeps a list of registered consumers/listeners. The registration of these listeners is handled by the service protocol. Event notifications are sent out from the ControlServer class, but they usually occur in the Controller class. The Controller therefore shall keep a reference to its control server. When the event is detected, the Controller will use the <code>notify_listeners()</code> method of the ControlServer. This latter method expects an event identifier and the event context. The example code snippet below sends out a <em>new setup loaded</em> notification to all registered listeners.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-python" data-lang="python">self._control_server.notify_listeners(
+    EVENT_ID.SETUP,
+    {'event_type': 'new_setup', 'setup_id': setup_id}
+)</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>The <code>notify_listeners()</code> method will execute the actual notification in a separate thread in order not to block the commanding event loop.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_the_service_protocol">7.4. The Service Protocol</h3>
+<div class="paragraph">
+<p>The registration, management, and notification of listeners in a control server is handled by the service protocol. That means all control servers automatically have this functionality available. There is only one method that needs to be implemented in the listening control server and that is the handling of the event. That is defined in the <code>EventInterface</code> which the Proxy and the Controller of the listening control server shall inherit and implement.</p>
+</div>
+<div class="paragraph">
+<p>New commands in Service:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>add_listener()</code> – add a listener to the registration</p>
+</li>
+<li>
+<p><code>remove_listener()</code> – remove a listener from the registration</p>
+</li>
+<li>
+<p><code>get_listener_names()</code> – returns the names of the control servers that are registered as listener</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>New commands in ControlServer:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>register_as_listener()</code> — register this control server to a producer</p>
+</li>
+<li>
+<p><code>unregister_as_listener()</code> — unregisters this control server</p>
+</li>
+<li>
+<p><code>notify_listeners()</code> — send an event notification to all registered listeners</p>
+</li>
+<li>
+<p><code>get_listener_names()</code> — return a list of names of registered listeners</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_scheduled_tasks">7.5. Scheduled Tasks</h3>
+<div class="paragraph">
+<p>The scheduled tasks are functions known in the control server sub-class which will be executed outside the context of commanding and monitoring. The reason we need these scheduled tasks is to handle actions that either take too long during the execution of a command, or when a command request is sent back to the same control server that the original command came from, e.g. request the current Setup. In that latter case we will get a deadlock because both control servers will be waiting for each others reply.</p>
+</div>
+<div class="paragraph">
+<p>Scheduled tasks are executed from the ControlServers event loop (<code>serve()</code>) after the current command has been finished and the status and housekeeping has been published. Keep in mind that –at this point– the tasks should not take too much time or shall either run in a thread or run asynchronously.</p>
+</div>
+<div class="paragraph">
+<p>Tasks can also be scheduled after a certain time, e.g. after 10s (approximately), or can be scheduled when a certain condition is true, e.g., when a service comes on-line. The <em>after</em> and <em>when</em> can be combined.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_the_notification_process">7.6. The Notification Process</h3>
+<div class="paragraph">
+<p>This section explains what the natural flow is for notifications, starting at an event happening in a control server up to processing the event in the registered listener processes.</p>
+</div>
+<div class="paragraph">
+<p>As an example we will use the event that a new Setup will be loaded in the configuration manager. This can happen when the configuration manager is requested to load a new Setup (<code>load_setup()</code>) or when a client submits a new Setup to the configuration manager (<code>submit_setup()</code>). The configuration manager will then send a notification of this event to its registered listeners. The listeners shall implement a command to accept such an event notification. By convention, this command is <code>handle_event(event)</code> (defined in the <code>EventInterface</code>). So, if you need to be notified about a new Setup, your control server needs to implement the <code>handle_event</code> command in its commanding interface. See further XXXXX</p>
+</div>
+<div class="paragraph">
+<p>A control server that wants to listen to events needs to register first. This shall be done during startup, usually in the <code>__init__()</code> method of the <em>listening</em> control server. Registration requires a proxy for the <em>notifying</em> control server that will accept the registration, and a listener object (a dictionary) with information about the listener process.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-python" data-lang="python">self.register_as_listener(
+    proxy=ConfigurationManagerProxy,
+    listener={'name': 'Storage CS', 'proxy': StorageProxy, 'event_id': EVENT_ID.SETUP}
+)</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>The <em>notifying</em> control server will accept the registration and add the listener to its list of registrations.</p>
+</div>
+<div class="paragraph">
+<p>When an event occurs at the <em>notifying</em> control server, an event notification will be sent out to all the registered listeners. This is done by the <code>notify_listeners()</code> method of the ControlServer.</p>
+</div>
+<div class="paragraph">
+<p>The <em>listening</em> control server will receive the notification, execute or schedule a task to act on the event, and acknowledge the proper reception of the notification. This is done in the <code>handle_event()</code> method that needs to be implemented by the <em>listening</em> control server in its Controller class. The handling of the event shall be as fast as possible because the <em>notifying</em> control server will be waiting for an acknowledgment. Therefore, there are currently two options:
+     1. the task is executed in a thread,
+     2. the task is scheduled and will be executed from the event loop in the control server (<code>serve()</code>).</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_the_configuration_manager_2">7.7. The Configuration Manager</h3>
+<div class="dlist">
+<dl>
+<dt class="hdlist1">NOTE</dt>
+<dd>
+<p>This section should describe how notification is implemented in the configuration control server as a producer.</p>
+</dd>
+</dl>
+</div>
+<div class="paragraph">
+<p>The controller now keeps track of the Setup that is currently active. This value changes when a different Setup is loaded (with <code>load_setup()</code>) or when a new Setup is submitted (with <code>submit_setup()</code>) to the configuration manager.</p>
+</div>
+<div class="paragraph">
+<p>If you want to know which processes have registered to the configuration manager, the status info has been updated for this. The last line now shows the registered listeners:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>$ cm_cs status
+Configuration manager:
+  Status: active
+  Site ID: CSL2
+  No observation running
+  Setup loaded: 00053
+  Hostname: 192.168.68.76
+  Monitoring port: 6001
+  Commanding port: 6000
+  Service port: 6002
+  Listeners: Storage CS, Dummy CS</pre>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_the_storage_manager_2">7.8. The Storage Manager</h3>
+<div class="dlist">
+<dl>
+<dt class="hdlist1">NOTE</dt>
+<dd>
+<p>This section should describe how notification is implemented in the storage manager control server as a consumer.</p>
+</dd>
+</dl>
+</div>
+<div class="paragraph">
+<p>The Storage Manager can now handle events about a new Setup loaded in the configurations manager and will register to the configuration manager during startup. The Storage Controller now keeps a record of the currently loaded Setup in its Controller.</p>
+</div>
+<div class="paragraph">
+<p>Since a Setup can only be changed outside the context of an observation, the implementation is not too complicated. The controller has a new method <code>load_setup(id)</code> which is executed as a scheduled task after a notification is received. That task will fetch the Setup from the configuration manager (the reason why we needed scheduled tasks to avoid a deadlock at this point).</p>
+</div>
+<div class="paragraph">
+<p>The status information from the Storage manager now also includes the ID of the loaded Setup. See second last line in the example output below.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>Storage Manager:
+  Status: active
+  Hostname: 172.20.10.3
+  Monitoring port: 6101
+  Commanding port: 6100
+  Service port: 6102
+  Storage location: /Users/rik/data/CSL2
+  Loaded Setup: 00053
+  Registrations: ['obsid', 'CM', 'PM', 'SYN-HK', 'SYN', 'DUMMY-HK']</pre>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_the_dummy_control_server">7.9. The Dummy Control Server</h3>
+<div class="paragraph">
+<p>As an example&#8230;&#8203; XXXXX</p>
+</div>
+<div class="paragraph">
+<p>The Dummy module is updated to implement event notification and listener registration. The Dummy control server will register to the configuration manager at start up and will handle any event it receives by logging the event reception and execution. In the shutdown phase <code>after_serve()</code> the Dummy control server unregisters from the configuration control manager.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_adding_event_handling_to_a_control_server">7.10. Adding event handling to a control server</h3>
+<div class="paragraph">
+<p>This section will guide you through the process of implementing event handling into a control server. As an example we will update the Synoptic Manager CS to register to the configuration manager for new Setup events and handle those events in a scheduled task.</p>
+</div>
+<div class="paragraph">
+<p>So, the summary of changes that we are going to implement is:</p>
+</div>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>Add registration and de-registration to the Synoptic Manager CS</p>
+<div class="ulist">
+<ul>
+<li>
+<p>add registration to <code>__init__()</code> method</p>
+</li>
+<li>
+<p>add de-registration to the <code>after_server()</code> method</p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p>Implement the <code>EventInterface</code> by means of the <code>handle_event()</code> method</p>
+<div class="ulist">
+<ul>
+<li>
+<p>implement a load_setup function for the controller class</p>
+</li>
+<li>
+<p>schedule the task to load the Setup</p>
+</li>
+</ul>
+</div>
+</li>
+</ol>
+</div>
+<div class="paragraph">
+<p>The Synoptic Manager is started only after the configuration manager has started up and will therefore be initialised with the proper Setup. No need to add a one-time scheduled task for loading the Setup at startup.</p>
+</div>
+<div class="sect3">
+<h4 id="_add_registration_and_de_registration">7.10.1. Add registration and de-registration</h4>
+<div class="paragraph">
+<p>Files:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>egse.synoptics.syn_cs.py</code></p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_implement_the_event_handling">7.10.2. Implement the event handling</h4>
+<div class="paragraph">
+<p>Files:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><code>egse.synoptics.__init__.py</code></p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>XXXXX: shall we also add an example of an event handling task that takes too long to process and can therefore not be a scheduled task unless it is running in a thread?</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_the_setup">8. The Setup</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>TODO:</p>
@@ -3243,7 +3736,7 @@ The content of this section needs to be split between the developer manual and t
 <p>This section will explain what the Setup contains, when and where it is used, how the different Setups are managed and how you can create a new Setup.</p>
 </div>
 <div class="sect2">
-<h3 id="_what_is_the_setup">7.1. What is the Setup?</h3>
+<h3 id="_what_is_the_setup">8.1. What is the Setup?</h3>
 <div class="admonitionblock warning">
 <table>
 <tr>
@@ -3311,7 +3804,7 @@ dict_keys(['hexapod', 'stages', 'thorlabs', 'shutter', 'ogse', 'filter_wheel'])<
 </div>
 </div>
 <div class="sect2">
-<h3 id="_what_goes_into_the_setup">7.2. What goes into the Setup?</h3>
+<h3 id="_what_goes_into_the_setup">8.2. What goes into the Setup?</h3>
 <div class="paragraph">
 <p>The <em>Setup</em> will contain configuration information of your test equipment. This includes calibration and conversion information, identification, alignment information, etc. All items that can change from one setup to the next should be fully described in the <em>Setup</em>.</p>
 </div>
@@ -3339,7 +3832,7 @@ dict_keys(['hexapod', 'stages', 'thorlabs', 'shutter', 'ogse', 'filter_wheel'])<
 </div>
 </div>
 <div class="sect2">
-<h3 id="_how_to_use_the_setup">7.3. How to use the Setup</h3>
+<h3 id="_how_to_use_the_setup">8.3. How to use the Setup</h3>
 <div class="paragraph">
 <p>As described above, the Setup is a special dictionary that contains all the configuration information of your test equipment. This information resides in several files maintained by the configuration control server. You can request a list of Setups that are available from the configuration manager with the <code>list_setups()</code> function. This is a convenience function that will print the list in your Python session.</p>
 </div>
@@ -3369,7 +3862,7 @@ dict_keys(['hexapod', 'stages', 'thorlabs', 'shutter', 'ogse', 'filter_wheel'])<
 </div>
 </div>
 <div class="sect2">
-<h3 id="_how_to_create_and_manage_setups">7.4. How to create and manage Setups</h3>
+<h3 id="_how_to_create_and_manage_setups">8.4. How to create and manage Setups</h3>
 <div class="paragraph">
 <p>Whenever you make a change to an item in the Setup, or you add a configuration item, a new Setup will be created with a new unique <code>id</code> as soon as you submit the Setup to the configuration manager.</p>
 </div>
@@ -3431,7 +3924,7 @@ Explain here how the user should submit a Setup from the client machine. That wi
 </div>
 </div>
 <div class="sect1">
-<h2 id="_the_settings_class">8. The Settings Class</h2>
+<h2 id="_the_settings_class">9. The Settings Class</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -3516,7 +4009,7 @@ Memoized locations:
 </div>
 </div>
 <div class="sect1">
-<h2 id="_the_globalstate">9. The GlobalState</h2>
+<h2 id="_the_globalstate">10. The GlobalState</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -3541,7 +4034,7 @@ This section needs to be updated!
 </table>
 </div>
 <div class="sect2">
-<h3 id="_singleton_versus_shared_state">9.1. Singleton versus Shared State</h3>
+<h3 id="_singleton_versus_shared_state">10.1. Singleton versus Shared State</h3>
 <div class="paragraph">
 <p>From within several places deep in the code of the test scripts, we need access to a certain state of the system and act accordingly. The main state to access is the Setup which provides all configuration and calibration parameters of the test equipment and of the SUT.</p>
 </div>
@@ -3556,12 +4049,12 @@ This section needs to be updated!
 </div>
 </div>
 <div class="sect2">
-<h3 id="_what_is_in_the_globalstate">9.2. What is in the GlobalState?</h3>
+<h3 id="_what_is_in_the_globalstate">10.2. What is in the GlobalState?</h3>
 <div class="paragraph">
 <p>The following sections describe the different states and function provided by the GlobalState. Remember the GlobalState is intended to be used within functions and methods of the test scripts in order to access global state information. That means the GlobalState needs to be initialised for some functions to work properly. Don&#8217;t use the GlobalState in Common-EGSE modules. If you need access to the Setup from the CGSE, explicitly request the Setup from the configuration manager using the <code>get_setup()</code> function.</p>
 </div>
 <div class="sect3">
-<h4 id="_the_setup_2">9.2.1. The Setup</h4>
+<h4 id="_the_setup_2">10.2.1. The Setup</h4>
 <div class="paragraph">
 <p>You can access the Setup from the GlobalState as follows:</p>
 </div>
@@ -3618,13 +4111,13 @@ There is a subtle difference between the <code>get_setup()</code> and the <code>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_performing_a_dry_run">9.2.2. Performing a Dry Run</h4>
+<h4 id="_performing_a_dry_run">10.2.2. Performing a Dry Run</h4>
 <div class="paragraph">
 <p>At some point we need to check the test scripts that we write in order to see if the proper commands will be executed with their intended arguments. But we don&#8217;t want the commands to be sent to the mechanisms or controllers. We want to do a dry run where the script is executed as normal, but no instructions are sent to any device.</p>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_retrieve_the_command_sequence">9.2.3. Retrieve the Command Sequence</h4>
+<h4 id="_retrieve_the_command_sequence">10.2.3. Retrieve the Command Sequence</h4>
 <div class="paragraph">
 <p>Whenever a building block is executed, a command sequence is generated and stored in the <code>GlobalState</code>. There are two functions that access this command sequence: (1) the <code>execute()</code> function will copy the command sequence into the test dataset, and (2) the <code>generate_command_sequence()</code> will return the command sequence as a list (TODO: this will probably get its own class eventually).</p>
 </div>
@@ -3633,7 +4126,7 @@ There is a subtle difference between the <code>get_setup()</code> and the <code>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_data_strategy">10. Data Strategy</h2>
+<h2 id="_data_strategy">11. Data Strategy</h2>
 <div class="sectionbody">
 <div class="ulist checklist">
 <ul class="checklist">
@@ -3660,7 +4153,7 @@ There is a subtle difference between the <code>get_setup()</code> and the <code>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_date_time_and_timestamps">11. Date, Time and Timestamps</h2>
+<h2 id="_date_time_and_timestamps">12. Date, Time and Timestamps</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>This section explains how and where time is used in the CGSE code and in the data.</p>
@@ -3697,7 +4190,7 @@ There is a subtle difference between the <code>get_setup()</code> and the <code>
 </ul>
 </div>
 <div class="sect2">
-<h3 id="_formatting_the_date_and_time">11.1. Formatting the date and time</h3>
+<h3 id="_formatting_the_date_and_time">12.1. Formatting the date and time</h3>
 <div class="paragraph">
 <p>In the <code>egse.system</code> module we have provided a few functions to work with datetime in a consistent way. The most important is the <code>format_datetime()</code> function which is used for instance to create the timestamps for all CSV housekeeping data files.</p>
 </div>
@@ -3735,7 +4228,7 @@ datetime.datetime(2022, 6, 1, 8, 22, 3, 686000, tzinfo=datetime.timezone.utc)</p
 </div>
 <h1 id="_part_iii_device_commanding" class="sect0">Part III — Device Commanding</h1>
 <div class="sect1">
-<h2 id="_device_control_servers">12. Device Control Servers</h2>
+<h2 id="_device_control_servers">13. Device Control Servers</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -3754,7 +4247,7 @@ datetime.datetime(2022, 6, 1, 8, 22, 3, 686000, tzinfo=datetime.timezone.utc)</p
 </ul>
 </div>
 <div class="sect2">
-<h3 id="_the_device_interface_classes">12.1. The Device Interface Classes</h3>
+<h3 id="_the_device_interface_classes">13.1. The Device Interface Classes</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -3781,7 +4274,7 @@ datetime.datetime(2022, 6, 1, 8, 22, 3, 686000, tzinfo=datetime.timezone.utc)</p
 </ul>
 </div>
 <div class="sect3">
-<h4 id="_the_connection_interface">12.1.1. The Connection Interface</h4>
+<h4 id="_the_connection_interface">13.1.1. The Connection Interface</h4>
 <div class="paragraph">
 <p>A <strong>connection interface</strong> defines the commands that are used to establish a connection, terminate a connection, and check if a connection has been established. We have two main connection interfaces: (1) a connection to a hardware device, e.g. a temperature controller or a filter wheel, and (2) a connection to a control server. A control server is the single point access to a hardware device.</p>
 </div>
@@ -3905,7 +4398,7 @@ with PunaProxy() as puna:
 </div>
 </div>
 <div class="sect1">
-<h2 id="sut">13. The System Under Test (SUT)</h2>
+<h2 id="sut">14. The System Under Test (SUT)</h2>
 <div class="sectionbody">
 <div class="ulist checklist">
 <ul class="checklist">
@@ -3930,7 +4423,7 @@ with PunaProxy() as puna:
 </ul>
 </div>
 <div class="sect2">
-<h3 id="dpu-cs-and-processor">13.1. DPU Control Server and DPU Processor</h3>
+<h3 id="dpu-cs-and-processor">14.1. DPU Control Server and DPU Processor</h3>
 <div class="paragraph">
 <p>The DPU Control Server (used to be called the DPU Simulator in older documents) acts like any other control server. It&#8217;s Protocol class (<code>DPUProtocol</code>) starts a <code>DPUController</code> which implements the commands that are defined in the <code>DPUInterface</code> class. Specific DPU commands are sent to the control server using the <code>DPUProxy</code> class. The <code>DPUProxy</code> class also implements the <code>DPUInterface</code>.</p>
 </div>
@@ -4037,7 +4530,7 @@ receiver.close(linger=0)</code></pre>
 </div>
 </div>
 <div class="sect3">
-<h4 id="inner-loop">13.1.1. The Inner Loop</h4>
+<h4 id="inner-loop">14.1.1. The Inner Loop</h4>
 <div class="paragraph">
 <p>The inner loop is the workhorse of the DPUProcessor, it has three main functions (1) reading information and data that is provided by the N-FEE, (2) sending that data to the storage manager, and (3) send commands to the N-FEE. In pseudo language, the inner loop performs the following functions:</p>
 </div>
@@ -4121,13 +4614,13 @@ this information comes directly from the DPUProcessor internal state instead of 
 </div>
 </div>
 <div class="sect2">
-<h3 id="_the_n_fee_simulator">13.2. The N-FEE Simulator</h3>
+<h3 id="_the_n_fee_simulator">14.2. The N-FEE Simulator</h3>
 <div class="paragraph">
 <p>TBW</p>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_ccd_numbering">13.3. CCD Numbering</h3>
+<h3 id="_ccd_numbering">14.3. CCD Numbering</h3>
 <div class="paragraph">
 <p>Throughout the PLATO camera test campaigns, the CCD numbering, used throughout the CGSE, will remain the same (see figure below), but the underlying numbering, used by MSSL for the N-FEE will be different for EM, PFM, and FM.</p>
 </div>
@@ -4137,7 +4630,7 @@ this information comes directly from the DPUProcessor internal state instead of 
 </div>
 </div>
 <div class="sect3">
-<h4 id="_mssl_numbering">13.3.1. MSSL Numbering</h4>
+<h4 id="_mssl_numbering">14.3.1. MSSL Numbering</h4>
 <div class="paragraph">
 <p>The MSSL numbering of the CCDs is used in:</p>
 </div>
@@ -4153,7 +4646,7 @@ this information comes directly from the DPUProcessor internal state instead of 
 </div>
 </div>
 <div class="sect3">
-<h4 id="_conversions_mssl_cgse">13.3.2. Conversions MSSL &#8646; CGSE</h4>
+<h4 id="_conversions_mssl_cgse">14.3.2. Conversions MSSL &#8646; CGSE</h4>
 <div class="paragraph">
 <p>Originally, the conversion back and forth between the MSSL and CGSE numbering was configured in <code>egse.fee</code> in the following variables:</p>
 </div>
@@ -4178,18 +4671,18 @@ this information comes directly from the DPUProcessor internal state instead of 
 </div>
 </div>
 <div class="sect3">
-<h4 id="_register_map">13.3.3. Register map</h4>
+<h4 id="_register_map">14.3.3. Register map</h4>
 
 </div>
 <div class="sect3">
-<h4 id="_moving_to_the_setup">13.3.4. Moving to the Setup</h4>
+<h4 id="_moving_to_the_setup">14.3.4. Moving to the Setup</h4>
 <div class="paragraph">
 <p>The idea is that these conversions will be moved to the setup file, under <code>setup.camera.fee.ccd_numbering</code>.  The name of the relevant parameters is the same as above, but in small case.</p>
 </div>
 <hr>
 </div>
 <div class="sect3">
-<h4 id="_em">13.3.5. EM</h4>
+<h4 id="_em">14.3.5. EM</h4>
 <div class="paragraph">
 <p>The CCD numbering in the CGSE and the connections to the PCBs for EM are shown in the figure below.  Between brackets are the CCD numbers by MSSL.  Not only do the CCD numbers not match between MSSL and the CGSE, but the connections between the CCDs and the corresponding PCBs is incorrect.  The latter will be corrected for in PFM.</p>
 </div>
@@ -4299,7 +4792,7 @@ this information comes directly from the DPUProcessor internal state instead of 
 </div>
 </div>
 <div class="sect3">
-<h4 id="_pfm">13.3.6. PFM</h4>
+<h4 id="_pfm">14.3.6. PFM</h4>
 <div class="paragraph">
 <p>For PFM, the following modifications will be applied w.r.t. EM:</p>
 </div>
@@ -4407,7 +4900,7 @@ this information comes directly from the DPUProcessor internal state instead of 
 </div>
 </div>
 <div class="sect3">
-<h4 id="_fm">13.3.7. FM</h4>
+<h4 id="_fm">14.3.7. FM</h4>
 <div class="paragraph">
 <p>The CCD numbering and the connections to the PCBs for FM are the same as for PFM.</p>
 </div>
@@ -4499,7 +4992,216 @@ this information comes directly from the DPUProcessor internal state instead of 
 </div>
 </div>
 <div class="sect1">
-<h2 id="_device_simulators">14. Device Simulators</h2>
+<h2 id="spacewire">15. SpaceWire</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>This chapter describes all facets of the SpaceWire interface from and to the camera. We use the 4Links Diagnostic SpaceWire Interface (DSI) with one port to connect to the N-CAM and 4 ports to connect to the F-CAM. The following topics will be explained in this chapter.</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>The SpaceWire Lab interface</p>
+</li>
+<li>
+<p>SpaceWireInterface class</p>
+<div class="ulist">
+<ul>
+<li>
+<p>SpaceWireOverDSI</p>
+</li>
+<li>
+<p>SpaceWireOverZeroMQ</p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p>Connecting to the device</p>
+<div class="ulist">
+<ul>
+<li>
+<p>Speed</p>
+</li>
+<li>
+<p>active link</p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p>testing your connection</p>
+</li>
+</ul>
+</div>
+<div class="sect2">
+<h3 id="_the_spacewire_lab_interface_hardware">15.1. The SpaceWire Lab Interface – Hardware</h3>
+<div class="paragraph">
+<p>In the lab we use a SpaceWire interface from 4Links. This company provides devices to communicate over SpaceWire, but also to monitor, diagnose, develop your SpaceWire connections.</p>
+</div>
+<div class="paragraph">
+<p>Two of these devices are used in the different institutes that test the PLATO cameras, i.e. the Diagnostic SpaceWire Interface (DSI) and the portable version of that (P-DSI). These devices have 2, 4, or 8 SpaceWire ports that can work concurrently at a speed up to 400Mbps. A 1Gbps Ethernet port connects your server to the DSI. 4Links provides software to drive the DSI and communicate with the camera over SpaceWire. The main component is a dynamic shared library <code>EtherSpaceLink</code> which is a C library that provides functionality to read and write SpaceWire packets from the active ports.</p>
+</div>
+<div class="paragraph">
+<p>A Python wrapper module exists and is also delivered by 4Links, but at the time we were developing the CGSE, this Python interface was not available yet. We have implemented our own wrapper functions using the <code>ctypes</code> Python module.</p>
+</div>
+<div class="paragraph">
+<p>The setup that is used in the lab is shown in the figure below. The N-CAM is connected to SpW port 1 on the DSI and the egse-server is connected to the Ethernet port.</p>
+</div>
+<div class="imageblock text-center">
+<div class="content">
+<img src="../images/spw-setup-01.png" alt="spw setup 01" width="50%">
+</div>
+</div>
+<div class="paragraph">
+<p>The IP address of the DSI is different for each test house and is therefore configured in the local Settings file. The DSI is listening on TCP port 4949.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_the_spacewire_interface_class_software">15.2. The SpaceWire Interface class – Software</h3>
+<div class="paragraph">
+<p>The <code>SpaceWireInterface</code> class is the high-level base class that is used to communicate with a SpaceWire device. This class is intended as an interface class and shall not be used directly. We have provided two concrete sub-classes that inherit from the <code>SpaceWireInterface</code>, i.e. the <code>SpaceWireOverDSI</code> and the <code>SpaceWireOverZeroMQ</code>. The interface defines the following methods:</p>
+</div>
+<div class="dlist">
+<dl>
+<dt class="hdlist1"><code>connect()</code></dt>
+<dd>
+<p>open a connection to the SpaceWire interface. All parameters that are needed to establish the connection must be passed when instantiating the concrete sub-class.</p>
+</dd>
+<dt class="hdlist1"><code>disconnect()</code></dt>
+<dd>
+<p>disconnect from the SpaceWire interface.</p>
+</dd>
+<dt class="hdlist1"><code>configure()</code></dt>
+<dd>
+<p>configure the SpaceWire device interface. All parameters that are needed to configure the connection must be passed when instantiating the concrete sub-class.</p>
+</dd>
+<dt class="hdlist1"><code>flush()</code></dt>
+<dd>
+<p>flush any remaining data from the wire.</p>
+</dd>
+<dt class="hdlist1"><code>send_timecode(timecode: int)</code></dt>
+<dd>
+<p>send a timecode packet.</p>
+</dd>
+<dt class="hdlist1"><code>read_packet(timeout: int = None)</code></dt>
+<dd>
+<p>read a SpaceWire packet. The packet is returned as a bytes object and can be converted using the factory method <code>SpaceWirePacket.create_packet()</code>.</p>
+</dd>
+<dt class="hdlist1"><code>write_packet(data: bytes)</code></dt>
+<dd>
+<p>write a SpaceWire packet.</p>
+</dd>
+<dt class="hdlist1"><code>read_register(self, address: int, length: int = 4, strict: bool = True)</code></dt>
+<dd>
+<p>read data from the register map of the camera. There are restrictions on the address space and the number of bytes that can be read. The <code>strict=True</code> argument enforces these restrictions.</p>
+</dd>
+<dt class="hdlist1"><code>write_register(self, address: int, data: bytes)</code></dt>
+<dd>
+<p>write a register to the given address location in the memory map of the camera. The data shall be at least 4 bytes (only 4 bytes will be written).</p>
+</dd>
+<dt class="hdlist1"><code>read_memory_map(self, address: int, size: int)</code></dt>
+<dd>
+<p>read data from the memory map of the camera. The size of the data that can be read is dependent on the address space from which the data is read.</p>
+</dd>
+</dl>
+</div>
+<div class="paragraph">
+<p>Sub-classes of the interface class can implement additional methods that are specific for that device, but only the interface methods shall be used in processes like the DPU Processor and the FEE Simulator.</p>
+</div>
+<div class="paragraph">
+<p>The interface class can also be used as a context manager where it will open the connection upon entry and close the connection upon exit or when an exception happens.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-python" data-lang="python">with SpaceWireOverDSI(dsi_address) as transport:
+    transport.configure()
+
+    while True:
+        flags, data = transport.read_packet(timeout=2000)
+
+        if 0 &lt;= len(data) &lt;= 1:
+            break
+
+        ...</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Note that the connection is only established by entering the <code>with</code> statement, so, what usually  is done is that the SpaceWireInterface sub-class is instantiated at a higher level in a caller function and past into the functions that use it.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>transport = SpaceWireOverZeroMQ(endpoint="tcp://localhost:5555", identity="PEER-TO-PEER")
+
+...
+
+def serve(transport: SpaceWireInterface):
+
+    with transport:
+        transport.configure()
+        ...</pre>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_connecting_to_the_dsi">15.2.1. Connecting to the DSI</h4>
+<div class="paragraph">
+<p>TBW</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Set/Get speed</p>
+</li>
+<li>
+<p>Set/Get active port</p>
+</li>
+<li>
+<p>Low-level functions: <code>esl_*</code></p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_testing_your_connection">15.3. Testing your connection</h3>
+<div class="paragraph">
+<p>TBW</p>
+</div>
+<div class="paragraph">
+<p>Using the unit tests&#8230;&#8203;.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_the_rmap_protocol">15.4. The RMAP Protocol</h3>
+<div class="paragraph">
+<p>TBW</p>
+</div>
+<div class="paragraph">
+<p>Give a brief overview of the RMAP protocol as it is used in PLATO and describe how RMAP and DSI commands and functions work together.</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>ReadRequest and ReadRequestReply</p>
+</li>
+<li>
+<p>WriteRequest and WriteRequestReply</p>
+</li>
+<li>
+<p>&#8230;&#8203;</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_a_more_elaborate_example">15.5. A more elaborate example</h3>
+<div class="paragraph">
+<p>In this section we will present a more in-depth example of both connections of the SpaceWireInterface, i.e. the sending and the receiving part.</p>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_device_simulators">16. Device Simulators</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -4519,7 +5221,7 @@ this information comes directly from the DPUProcessor internal state instead of 
 </ul>
 </div>
 <div class="sect2">
-<h3 id="_the_ogse_simulator">14.1. The OGSE Simulator</h3>
+<h3 id="_the_ogse_simulator">16.1. The OGSE Simulator</h3>
 <div class="paragraph">
 <p>The OGSE simulator by default listens on TCP port 4181 for incoming connections from the OGSE Controller. The controller can be used stand-alone in a Python REPL for testing or can be part of the OGSE Control Server as the last step in the commanding chain.</p>
 </div>
@@ -4699,13 +5401,13 @@ $ kill -TERM 21334</pre>
 </div>
 <h1 id="_part_iv_monitoring" class="sect0">Part IV — Monitoring</h1>
 <div class="sect1">
-<h2 id="_metrics_prometheus_and_grafana">15. Metrics, Prometheus and Grafana</h2>
+<h2 id="_metrics_prometheus_and_grafana">17. Metrics, Prometheus and Grafana</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>The CGSE provides mechanisms for monitoring metrics from different processes and devices with Grafana. This chapter will explain how the metrics are defined for your favorite process and device, how their values are gathered and propagated to the Prometheus server and how Grafana queries Prometheus to create timeseries that are displayed in your browser.</p>
 </div>
 <div class="sect2">
-<h3 id="_setup_prometheus">15.1. Setup Prometheus</h3>
+<h3 id="_setup_prometheus">17.1. Setup Prometheus</h3>
 <div class="ulist checklist">
 <ul class="checklist">
 <li>
@@ -4718,7 +5420,7 @@ $ kill -TERM 21334</pre>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_define_your_metrics">15.2. Define your metrics</h3>
+<h3 id="_define_your_metrics">17.2. Define your metrics</h3>
 <div class="paragraph">
 <p>Depending on your needs, you can choose different methods for the timestamp of your metrics. We will discuss three ways to get and use metrics timestamps:</p>
 </div>
@@ -4780,11 +5482,13 @@ x_ts.set(datetime.datetime.now(tz=datetime.timezone.utc).timestamp())</code></pr
 <h1 id="_part_v_test_scripts" class="sect0">Part V — Test Scripts</h1>
 <div class="openblock partintro">
 <div class="content">
-This section of the development manual is about developing test scripts to run the PLATO camera performance tests. If you were looking for unit tests, see <a href="#unit-tests">Part VI — Unit Testing and beyond</a>.
+<div class="paragraph">
+<p>This section of the development manual is about developing test scripts to run the PLATO camera performance tests. If you were looking for unit tests, see <a href="#unit-tests">Part VI — Unit Testing and beyond</a>.</p>
+</div>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_observations">16. Observations</h2>
+<h2 id="_observations">18. Observations</h2>
 <div class="sectionbody">
 <div class="ulist checklist">
 <ul class="checklist">
@@ -4799,7 +5503,7 @@ This section of the development manual is about developing test scripts to run t
 </div>
 </div>
 <div class="sect1">
-<h2 id="_building_blocks">17. Building Blocks</h2>
+<h2 id="_building_blocks">19. Building Blocks</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p></p>
@@ -4970,7 +5674,7 @@ end_observation()</code></pre>
 </div>
 </div>
 <div class="sect1">
-<h2 id="tasks-gui">18. The Tasks GUI</h2>
+<h2 id="tasks-gui">20. The Tasks GUI</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>The Tasks GUI is a generic GUI that allows the test operator to execute standard tasks by clicking the task button and provide the necessary arguments. An example of such a Task GUI is given in the screenshot below.</p>
@@ -5006,7 +5710,7 @@ end_observation()</code></pre>
 <p>In the rest of this chapter we will explain how these GUIs are created and how you can develop your own version for your specific tasks.</p>
 </div>
 <div class="sect2">
-<h3 id="_the_package_layout">18.1. The package Layout</h3>
+<h3 id="_the_package_layout">20.1. The package Layout</h3>
 <div class="paragraph">
 <p>To build up the Task GUI, we distinguish the task button as a function, several of these functions can be grouped in a Python module (a <code>.py</code> file) and all the modules plus additional information needed for the Task GUI is kept in a Python package. The <em>CSL Operator GUI</em> shown above, is located in the package <code>camtest.csl</code> and has the following layout:</p>
 </div>
@@ -5030,7 +5734,7 @@ end_observation()</code></pre>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_defining_a_task">18.2. Defining a Task</h3>
+<h3 id="_defining_a_task">20.2. Defining a Task</h3>
 <div class="paragraph">
 <p>Let&#8217;s build our own simple Task GUI and start with the most stated and useless function, <em>Hello, World!</em>. We will eventually build a Task GUI with tasks of increasing complexity and guide you through the different steps.</p>
 </div>
@@ -5156,7 +5860,7 @@ def hello_you(name: str = "John"):  <i class="conum" data-value="3"></i><b>(3)</
 </div>
 </div>
 <div class="sect2">
-<h3 id="_the_exec_ui_decorator">18.3. The @exec_ui decorator</h3>
+<h3 id="_the_exec_ui_decorator">20.3. The @exec_ui decorator</h3>
 <div class="paragraph">
 <p>TBW</p>
 </div>
@@ -5184,7 +5888,7 @@ def hello_you(name: str = "John"):  <i class="conum" data-value="3"></i><b>(3)</
 </div>
 </div>
 <div class="sect2">
-<h3 id="_type_hints_and_defaults">18.4. Type Hints and Defaults</h3>
+<h3 id="_type_hints_and_defaults">20.4. Type Hints and Defaults</h3>
 <div class="paragraph">
 <p>TBW</p>
 </div>
@@ -5206,7 +5910,7 @@ def hello_you(name: str = "John"):  <i class="conum" data-value="3"></i><b>(3)</
 </div>
 </div>
 <div class="sect2">
-<h3 id="_choosing_your_icons">18.5. Choosing your icons</h3>
+<h3 id="_choosing_your_icons">20.5. Choosing your icons</h3>
 <div class="paragraph">
 <p>TBW</p>
 </div>
@@ -5225,7 +5929,7 @@ def hello_you(name: str = "John"):  <i class="conum" data-value="3"></i><b>(3)</
 </div>
 </div>
 <div class="sect2">
-<h3 id="_the_jupyter_kernels">18.6. The Jupyter Kernels</h3>
+<h3 id="_the_jupyter_kernels">20.6. The Jupyter Kernels</h3>
 <div class="paragraph">
 <p>TBW</p>
 </div>
@@ -5241,7 +5945,7 @@ def hello_you(name: str = "John"):  <i class="conum" data-value="3"></i><b>(3)</
 </div>
 </div>
 <div class="sect2">
-<h3 id="_running_your_tasks">18.7. Running your tasks</h3>
+<h3 id="_running_your_tasks">20.7. Running your tasks</h3>
 <div class="paragraph">
 <p>TBW</p>
 </div>
@@ -5260,7 +5964,7 @@ def hello_you(name: str = "John"):  <i class="conum" data-value="3"></i><b>(3)</
 </div>
 </div>
 <div class="sect2">
-<h3 id="_the_init_py">18.8. The __init__.py</h3>
+<h3 id="_the_init_py">20.8. The __init__.py</h3>
 <div class="paragraph">
 <p>TBW</p>
 </div>
@@ -5279,7 +5983,7 @@ def hello_you(name: str = "John"):  <i class="conum" data-value="3"></i><b>(3)</
 </div>
 <h1 id="unit-tests" class="sect0">Part VI — Unit Testing and beyond</h1>
 <div class="sect1">
-<h2 id="_the_test_suite">19. The Test Suite</h2>
+<h2 id="_the_test_suite">21. The Test Suite</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -5291,7 +5995,7 @@ def hello_you(name: str = "John"):  <i class="conum" data-value="3"></i><b>(3)</
 </div>
 </div>
 <div class="sect1">
-<h2 id="_testing_device_interfaces">20. Testing device Interfaces</h2>
+<h2 id="_testing_device_interfaces">22. Testing device Interfaces</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>The first step in the development of a device driver is to implement the direct interface to the device, e.g. the Ethernet or USB interface. In parallel to this step start implementing the simulator</p>
@@ -5308,7 +6012,7 @@ def hello_you(name: str = "John"):  <i class="conum" data-value="3"></i><b>(3)</
 </div>
 </div>
 <div class="sect1">
-<h2 id="_code_reviews">21. Code Reviews</h2>
+<h2 id="_code_reviews">23. Code Reviews</h2>
 <div class="sectionbody">
 <div class="admonitionblock warning">
 <table>
@@ -5369,7 +6073,7 @@ def hello_you(name: str = "John"):  <i class="conum" data-value="3"></i><b>(3)</
 <p>Please remember that the purpose of the code review is <strong>not to reject</strong> the code, but <strong>to improve</strong> the code quality. Focus is on how easy it is to understand the code.</p>
 </div>
 <div class="sect2">
-<h3 id="_who_is_part_of_this_code_review">21.1. Who is part of this Code Review?</h3>
+<h3 id="_who_is_part_of_this_code_review">23.1. Who is part of this Code Review?</h3>
 <div class="paragraph">
 <p>Developers: Rik Huygen, Sara Regibo, &#8230;&#8203;</p>
 </div>
@@ -5381,7 +6085,7 @@ def hello_you(name: str = "John"):  <i class="conum" data-value="3"></i><b>(3)</
 </div>
 </div>
 <div class="sect2">
-<h3 id="_planning">21.2. Planning</h3>
+<h3 id="_planning">23.2. Planning</h3>
 <div class="paragraph">
 <p>For each reviewer I will prepare an issue where you can check off the parts which have been reviewed. WHERE TO PUT THE REVIEW REPORTS/COMMENTS?</p>
 </div>
@@ -5455,7 +6159,7 @@ def hello_you(name: str = "John"):  <i class="conum" data-value="3"></i><b>(3)</
 </div>
 </div>
 <div class="sect2">
-<h3 id="_what_needs_to_be_reviewed">21.3. What needs to be reviewed?</h3>
+<h3 id="_what_needs_to_be_reviewed">23.3. What needs to be reviewed?</h3>
 <div class="paragraph">
 <p>TODO: Make a checklist!</p>
 </div>
@@ -5498,7 +6202,7 @@ Be specific!</p>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_prerequisites">21.4. Prerequisites</h3>
+<h3 id="_prerequisites">23.4. Prerequisites</h3>
 <div class="paragraph">
 <p>Before the code review, all the code will be run through a number of automated steps:</p>
 </div>
@@ -5533,11 +6237,13 @@ Be specific!</p>
 <h1 id="_part_vii_miscellaneous" class="sect0">Part VII — Miscellaneous</h1>
 <div class="openblock partintro">
 <div class="content">
-Everything in this part of the manual needs to be worked on and relocated in one of the above parts/sections.
+<div class="paragraph">
+<p>Everything in this part of the manual needs to be worked on and relocated in one of the above parts/sections.</p>
+</div>
 </div>
 </div>
 <div class="sect1">
-<h2 id="set-up-dev-env">22. Set up your development environment</h2>
+<h2 id="set-up-dev-env">24. Set up your development environment</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>This section guides you through the installation of the Common-EGSE, test scripts, and configuration files on your development machine. The result will be a development environment where you can implement features and fix issues in both CGSE and TS, and be able to push these changes to your origin<sup class="footnote">[<a id="_footnoteref_6" class="footnote" href="#_footnotedef_6" title="View footnote.">6</a>]</sup> after which you can make a pull request to the upstream repository (i.e. the IvS-KULeuven original).</p>
@@ -5555,7 +6261,7 @@ The commands in this section have been tested on a MacBook Pro running Ventura 1
 </table>
 </div>
 <div class="sect2">
-<h3 id="_create_a_github_account_and_request_access">22.1. Create a GitHub account and request access</h3>
+<h3 id="_create_a_github_account_and_request_access">24.1. Create a GitHub account and request access</h3>
 <div class="paragraph">
 <p>First thing to do is make sure you have access to GitHub and have a GitHub account (personal or professional) so we<sup class="footnote">[<a id="_footnoteref_7" class="footnote" href="#_footnotedef_7" title="View footnote.">7</a>]</sup> can give you access to the relevant repositories. Therefore,</p>
 </div>
@@ -5584,7 +6290,7 @@ The commands in this section have been tested on a MacBook Pro running Ventura 1
 </div>
 </div>
 <div class="sect2">
-<h3 id="_fork_the_repositories_on_github">22.2. Fork the repositories on GitHub</h3>
+<h3 id="_fork_the_repositories_on_github">24.2. Fork the repositories on GitHub</h3>
 <div class="admonitionblock note">
 <table>
 <tr>
@@ -5623,7 +6329,7 @@ The commands in this section have been tested on a MacBook Pro running Ventura 1
 </div>
 </div>
 <div class="sect2">
-<h3 id="_clone_github_repository">22.3. Clone GitHub repository</h3>
+<h3 id="_clone_github_repository">24.3. Clone GitHub repository</h3>
 <div class="paragraph">
 <p>Execute the following code in a terminal. It will create a folder where all git repositories reside, then clone your fork of the plato-common-egse. A new folder will be created for <code>plato-common-egse</code>.</p>
 </div>
@@ -5679,7 +6385,7 @@ drwxr-xr-x  16 rik  staff  512 Jun 14 23:01 plato-test-scripts</pre>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_set_up_the_environment_variables">22.4. Set up the environment variables</h3>
+<h3 id="_set_up_the_environment_variables">24.4. Set up the environment variables</h3>
 <div class="paragraph">
 <p>Add the following lines to a file that can be sourced into your terminal session, e.g. <code>~/.bash_profile</code>. Preferably, you should use <a href="https://lmod.readthedocs.io/en/latest/">modules</a> to maintain your environment.</p>
 </div>
@@ -5706,7 +6412,7 @@ export PLATO_CONF_REPO_LOCATION=~/plato-git-repos/plato-cgse-conf/</pre>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_create_a_python_virtual_environment">22.5. Create a Python virtual environment</h3>
+<h3 id="_create_a_python_virtual_environment">24.5. Create a Python virtual environment</h3>
 <div class="paragraph">
 <p>Create a virtual environment for Python 3.8 (the version to be used for the CGSE and TS), then activate the venv and update <a href="https://pip.pypa.io/en/stable/user_guide/">pip</a> and setuptools packages.</p>
 </div>
@@ -5746,7 +6452,7 @@ $ python3.8 -m venv venv --prompt venv-ts</pre>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_install_the_cgse">22.6. Install the CGSE</h3>
+<h3 id="_install_the_cgse">24.6. Install the CGSE</h3>
 <div class="paragraph">
 <p>It&#8217;s now time to finally install the Common-EGSE as a developer installation, also called <em>editable mode</em> (<code>-e</code> or <code>--editable</code>). This means the CGSE will be installed as a normal package, only the source code will be linked to the actual checked out source tree in you project. The result is that any changes that you make to the code in your source tree will be used in subsequent executions of scripts or in the Python REPL<sup class="footnote">[<a id="_footnoteref_8" class="footnote" href="#_footnotedef_8" title="View footnote.">8</a>]</sup>.</p>
 </div>
@@ -5773,7 +6479,7 @@ $</pre>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_start_the_core_services">22.7. Start the core services</h3>
+<h3 id="_start_the_core_services">24.7. Start the core services</h3>
 <div class="paragraph">
 <p>From the project folder, run the invoke task <code>start-core-egse</code> to start up the five core services.</p>
 </div>
@@ -5857,7 +6563,7 @@ If you try to start the Operator GUI from the toolbar, note that this will only 
 </div>
 </div>
 <div class="sect2">
-<h3 id="_updating_the_cgse_and_ts">22.8. Updating the CGSE and TS</h3>
+<h3 id="_updating_the_cgse_and_ts">24.8. Updating the CGSE and TS</h3>
 <div class="sidebarblock">
 <div class="content">
 <div class="title">Prepare for updates (only once)</div>
@@ -5934,13 +6640,13 @@ CAMTEST git version = 2023.24.1+TS-0-geedbdef</pre>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_terminal_commands">23. Terminal Commands</h2>
+<h2 id="_terminal_commands">25. Terminal Commands</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>A lot of testing and monitoring can be done from the command terminal and doesn&#8217;t need a specific GUI or PyCharm. This section will explain how to check status of most of the control servers, how to inspect log files and HDF5 files, how to generate reports and how you can update the Common-EGSE and the test scripts.</p>
 </div>
 <div class="sect2">
-<h3 id="_what_goes_into_this_section">23.1. What goes into this section</h3>
+<h3 id="_what_goes_into_this_section">25.1. What goes into this section</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -5984,7 +6690,7 @@ CAMTEST git version = 2023.24.1+TS-0-geedbdef</pre>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_often_used_terminal_commands">23.2. Often used terminal commands</h3>
+<h3 id="_often_used_terminal_commands">25.2. Often used terminal commands</h3>
 <table class="tableblock frame-all grid-all stretch">
 <colgroup>
 <col style="width: 40%;">
@@ -6021,7 +6727,7 @@ CAMTEST git version = 2023.24.1+TS-0-geedbdef</pre>
 </table>
 </div>
 <div class="sect2">
-<h3 id="_often_used_git_commands">23.3. Often used git commands</h3>
+<h3 id="_often_used_git_commands">25.3. Often used git commands</h3>
 <div class="paragraph">
 <p>The <code>git</code> commands need to be executed in the project folder or a sub-folder thereof, e.g. <code>~/git/plato-common-egse</code>.</p>
 </div>
@@ -6077,13 +6783,13 @@ CAMTEST git version = 2023.24.1+TS-0-geedbdef</pre>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_stories">24. Stories</h2>
+<h2 id="_stories">26. Stories</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>This section contains short stories of debugging sessions and working with the system that are otherwise difficult to explain in the previous sections.</p>
 </div>
 <div class="sect2">
-<h3 id="_seemingly_unrelated_process_manager_crash">24.1. Seemingly unrelated Process Manager Crash</h3>
+<h3 id="_seemingly_unrelated_process_manager_crash">26.1. Seemingly unrelated Process Manager Crash</h3>
 <div class="paragraph">
 <p>Related to issue: xxxx</p>
 </div>
@@ -6185,7 +6891,7 @@ WantedBy=multi-user.target</pre>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_miscellaneous">25. Miscellaneous</h2>
+<h2 id="_miscellaneous">27. Miscellaneous</h2>
 <div class="sectionbody">
 <div class="admonitionblock warning">
 <table>
@@ -6208,7 +6914,7 @@ Below this point we have miscellaneous topics that still need their place in the
 </div>
 </div>
 <div class="sect1">
-<h2 id="_system_configuration">26. System Configuration</h2>
+<h2 id="_system_configuration">28. System Configuration</h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
@@ -6231,7 +6937,7 @@ Below this point we have miscellaneous topics that still need their place in the
 </ul>
 </div>
 <div class="sect2">
-<h3 id="_system_components">26.1. System Components</h3>
+<h3 id="_system_components">28.1. System Components</h3>
 <div class="paragraph">
 <p>This section describes the main components of the Common-EGSE system.</p>
 </div>
@@ -6256,7 +6962,7 @@ Below this point we have miscellaneous topics that still need their place in the
 </div>
 </div>
 <div class="sect2">
-<h3 id="_data_flows">26.2. Data Flows</h3>
+<h3 id="_data_flows">28.2. Data Flows</h3>
 <div class="paragraph">
 <p>The Common-EGSE provides functionality to configure, control and/or readout the following devices:</p>
 </div>
@@ -6323,7 +7029,7 @@ Below this point we have miscellaneous topics that still need their place in the
 </div>
 </div>
 <div class="sect1">
-<h2 id="_installation_and_update">27. Installation and Update</h2>
+<h2 id="_installation_and_update">29. Installation and Update</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>The Common-EGSE software system is installed and updated via GitHub. The installation is more complex than a simple download-and-install procedure and is fully described in its installation guide [RD-01].</p>
@@ -6331,13 +7037,13 @@ Below this point we have miscellaneous topics that still need their place in the
 </div>
 </div>
 <div class="sect1">
-<h2 id="_getting_started">28. Getting Started</h2>
+<h2 id="_getting_started">30. Getting Started</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>If you work with the system for the first time, you should go through the user manual [RD-02] to get familiar with the Common-EGSE setup, services and interactions. This section will explain how to log onto the Common-EGSE and how to prepare your development environment.</p>
 </div>
 <div class="sect2">
-<h3 id="_log_on_to_the_system">28.1. Log on to the System</h3>
+<h3 id="_log_on_to_the_system">30.1. Log on to the System</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -6356,7 +7062,7 @@ Below this point we have miscellaneous topics that still need their place in the
 </div>
 </div>
 <div class="sect2">
-<h3 id="_setting_up_the_development_environment">28.2. Setting up the development environment</h3>
+<h3 id="_setting_up_the_development_environment">30.2. Setting up the development environment</h3>
 <div class="ulist">
 <ul>
 <li>
@@ -6412,8 +7118,8 @@ Below this point we have miscellaneous topics that still need their place in the
 </div>
 <div id="footer">
 <div id="footer-text">
-Version 1.7<br>
-Last updated 2023-06-19 16:37:52 +0200
+Version 1.8<br>
+Last updated 2024-02-12 16:50:05 +0100
 </div>
 </div>
 <script type="text/x-mathjax-config">
@@ -6441,50 +7147,131 @@ MathJax.Hub.Register.StartupHook("AsciiMath Jax Ready", function () {
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.9/MathJax.js?config=TeX-MML-AM_HTMLorMML"></script>
 <script>
-/*! Asciidoctor Tabs | Copyright (c) 2018-present Dan Allen | MIT License */
-;(function () {
+;(function () { /*! Asciidoctor Tabs | Copyright (c) 2018-present Dan Allen | MIT License */
   'use strict'
 
-  var hash = window.location.hash
-  find('.tabset').forEach(function (tabset) {
-    var active
-    var tabs = tabset.querySelector('.tabs')
-    if (tabs) {
-      var first
-      find('li', tabs).forEach(function (tab, idx) {
-        var id = (tab.querySelector('a[id]') || tab).id
-        if (!id) return
-        var pane = tabset.querySelector('.tab-pane[aria-labelledby~="' + id + '"]')
-        if (!pane) return
-        if (!idx) first = { tab: tab, pane: pane }
-        if (!active && hash === '#' + id && (active = true)) {
-          tab.classList.add('is-active')
-          if (pane) pane.classList.add('is-active')
-        } else if (!idx) {
-          tab.classList.remove('is-active')
-          if (pane) pane.classList.remove('is-active')
+  var config = (document.currentScript || {}).dataset || {}
+  var forEach = Array.prototype.forEach
+
+  init(document.querySelectorAll('.tabs'))
+
+  function init (tabsBlocks) {
+    if (!tabsBlocks.length) return
+    forEach.call(tabsBlocks, function (tabs) {
+      var syncIds = tabs.classList.contains('is-sync') ? {} : undefined
+      var tablist = tabs.querySelector('.tablist ul')
+      tablist.setAttribute('role', 'tablist')
+      var start
+      forEach.call(tablist.querySelectorAll('li'), function (tab, idx) {
+        tab.tabIndex = -1
+        tab.setAttribute('role', tab.classList.add('tab') || 'tab')
+        var id, anchor, syncId
+        if (!(id = tab.id) && (anchor = tab.querySelector('a[id]'))) {
+          id = tab.id = anchor.parentNode.removeChild(anchor).id
         }
-        tab.addEventListener('click', activateTab.bind({ tabset: tabset, tab: tab, pane: pane }))
+        var panel = id && tabs.querySelector('.tabpanel[aria-labelledby~="' + id + '"]')
+        if (!panel) return idx ? undefined : toggleSelected(tab, true) // invalid state
+        syncIds && (((syncId = tab.textContent.trim()) in syncIds) ? (syncId = undefined) : true) &&
+          (syncIds[(tab.dataset.syncId = syncId)] = tab)
+        idx || (syncIds && (start = { tab: tab, panel: panel })) ? toggleHidden(panel, true) : toggleSelected(tab, true)
+        tab.setAttribute('aria-controls', panel.id)
+        panel.setAttribute('role', 'tabpanel')
+        var onClick = syncId === undefined ? activateTab : activateTabSync
+        tab.addEventListener('click', onClick.bind({ tabs: tabs, tab: tab, panel: panel }))
       })
-      if (!active && first) {
-        first.tab.classList.add('is-active')
-        if (first.pane) first.pane.classList.add('is-active')
+      if (!tabs.closest('.tabpanel')) {
+        forEach.call(tabs.querySelectorAll('.tabpanel table.tableblock'), function (table) {
+          var container = Object.assign(document.createElement('div'), { className: 'tablecontainer' })
+          table.parentNode.insertBefore(container, table).appendChild(table)
+        })
       }
-    }
-    tabset.classList.remove('is-loading')
-  })
+      if (start) {
+        var syncGroupId
+        for (var i = 0, lst = tabs.classList, len = lst.length, className; i !== len; i++) {
+          if (!(className = lst.item(i)).startsWith('data-sync-group-id=')) continue
+          tabs.dataset.syncGroupId = syncGroupId = lst.remove(className) || className.slice(19).replace(/\u00a0/g, ' ')
+          break
+        }
+        if (syncGroupId === undefined) tabs.dataset.syncGroupId = syncGroupId = Object.keys(syncIds).sort().join('|')
+        var preferredSyncId = 'syncStorageKey' in config &&
+          window[(config.syncStorageScope || 'local') + 'Storage'].getItem(config.syncStorageKey + '-' + syncGroupId)
+        var tab = preferredSyncId && syncIds[preferredSyncId]
+        tab && Object.assign(start, { tab: tab, panel: document.getElementById(tab.getAttribute('aria-controls')) })
+        toggleSelected(start.tab, true) || toggleHidden(start.panel, false)
+      }
+    })
+    onHashChange()
+    toggleClassOnEach(tabsBlocks, 'is-loading', 'remove')
+    window.setTimeout(toggleClassOnEach.bind(null, tabsBlocks, 'is-loaded', 'add'), 0)
+    window.addEventListener('hashchange', onHashChange)
+  }
 
   function activateTab (e) {
     var tab = this.tab
-    var pane = this.pane
-    find('.tabs li, .tab-pane', this.tabset).forEach(function (it) {
-      it === tab || it === pane ? it.classList.add('is-active') : it.classList.remove('is-active')
+    var tabs = this.tabs || (this.tabs = tab.closest('.tabs'))
+    var panel = this.panel || (this.panel = document.getElementById(tab.getAttribute('aria-controls')))
+    querySelectorWithSiblings(tabs, '.tablist .tab', 'tab').forEach(function (el) {
+      toggleSelected(el, el === tab)
     })
+    querySelectorWithSiblings(tabs, '.tabpanel', 'tabpanel').forEach(function (el) {
+      toggleHidden(el, el !== panel)
+    })
+    if (!this.isSync && 'syncStorageKey' in config && 'syncGroupId' in tabs.dataset) {
+      var storageKey = config.syncStorageKey + '-' + tabs.dataset.syncGroupId
+      window[(config.syncStorageScope || 'local') + 'Storage'].setItem(storageKey, tab.dataset.syncId)
+    }
+    if (!e) return
+    var loc = window.location
+    var hashIdx = loc.hash ? loc.href.indexOf('#') : -1
+    if (~hashIdx) window.history.replaceState(null, '', loc.href.slice(0, hashIdx))
     e.preventDefault()
   }
 
-  function find (selector, from) {
-    return Array.prototype.slice.call((from || document).querySelectorAll(selector))
+  function activateTabSync (e) {
+    activateTab.call(this, e)
+    var thisTabs = this.tabs
+    var thisTab = this.tab
+    var initialY = thisTabs.getBoundingClientRect().y
+    forEach.call(document.querySelectorAll('.tabs'), function (tabs) {
+      if (tabs === thisTabs || tabs.dataset.syncGroupId !== thisTabs.dataset.syncGroupId) return
+      querySelectorWithSiblings(tabs, '.tablist .tab', 'tab').forEach(function (tab) {
+        if (tab.dataset.syncId === thisTab.dataset.syncId) activateTab.call({ tabs: tabs, tab: tab, isSync: true })
+      })
+    })
+    var shiftedBy = thisTabs.getBoundingClientRect().y - initialY
+    if (shiftedBy && (shiftedBy = Math.round(shiftedBy))) window.scrollBy({ top: shiftedBy, behavior: 'instant' })
+  }
+
+  function querySelectorWithSiblings (scope, selector, siblingClass) {
+    var el = scope.querySelector(selector)
+    if (!el) return []
+    var result = [el]
+    while ((el = el.nextElementSibling) && el.classList.contains(siblingClass)) result.push(el)
+    return result
+  }
+
+  function toggleClassOnEach (elements, className, method) {
+    forEach.call(elements, function (el) {
+      el.classList[method](className)
+    })
+  }
+
+  function toggleHidden (el, state) {
+    el.classList[(el.hidden = state) ? 'add' : 'remove']('is-hidden')
+  }
+
+  function toggleSelected (el, state) {
+    el.setAttribute('aria-selected', '' + state)
+    el.classList[state ? 'add' : 'remove']('is-selected')
+    el.tabIndex = state ? 0 : -1
+  }
+
+  function onHashChange () {
+    var id = window.location.hash.slice(1)
+    if (!id) return
+    var tab = document.getElementById(~id.indexOf('%') ? decodeURIComponent(id) : id)
+    if (!(tab && tab.classList.contains('tab'))) return
+    'syncId' in tab.dataset ? activateTabSync.call({ tab: tab }) : activateTab.call({ tab: tab })
   }
 })()
 </script>

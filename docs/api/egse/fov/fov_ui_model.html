@@ -41,7 +41,7 @@ from egse.coordinates import focal_plane_to_ccd_coordinates
 from egse.coordinates import undistorted_to_distorted_focal_plane_coordinates
 from egse.hexapod.symetrie.puna_ui import PunaUIModel
 from egse.settings import Settings
-from egse.setup import get_setup
+from egse.setup import load_setup
 from egse.stages.huber.smc9300_ui import HuberUIModel
 
 STAGES_SETTINGS = Settings.load(&#34;Huber Controller&#34;)
@@ -64,6 +64,7 @@ class FOVUIModel:
 
         self.hexapod_model = PunaUIModel(type_hexapod)
         self.stages_model = HuberUIModel(type_stages)
+        self.setup = load_setup()
 
     ##############
     # Connectivity
@@ -111,9 +112,9 @@ class FOVUIModel:
                     - &#34;mm&#34;: focal-plane coordinates (x, y) [mm]
         &#34;&#34;&#34;
 
-        setup = get_setup()
-        offset_phi = setup.gse.stages.calibration.offset_phi
-        offset_alpha = setup.gse.stages.calibration.offset_alpha
+        offset_phi = self.setup.gse.stages.calibration.offset_phi
+        offset_alpha = self.setup.gse.stages.calibration.offset_alpha
+        alpha_correction_coefficients = self.setup.gse.stages.calibration.alpha_correction_coefficients
 
         # Focal-plane coordinates [mm]
 
@@ -121,12 +122,13 @@ class FOVUIModel:
 
         # CCD coordinates [pixels]
 
-        (row, column, ccd_code) = focal_plane_to_ccd_coordinates(x, y)
+        (row, column, ccd_code) = focal_plane_to_ccd_coordinates(x, y, setup)
 
         # Gnomonic distance to optical axis and in-field angle [degrees]
 
         angle_small_rotation_stage = self.get_rotation_angle_small_rotation_stage()
-        theta = 2 * (angle_small_rotation_stage + offset_alpha)
+        theta = (angle_small_rotation_stage + offset_alpha - alpha_correction_coefficients[0]) \
+                / alpha_correction_coefficients[1]
 
         position = {
             &#34;angles&#34;: (theta, offset_phi - self.get_rotation_angle_big_rotation_stage()),
@@ -266,6 +268,7 @@ proxy, simulator, and huber.</p></div>
 
         self.hexapod_model = PunaUIModel(type_hexapod)
         self.stages_model = HuberUIModel(type_stages)
+        self.setup = load_setup()
 
     ##############
     # Connectivity
@@ -313,9 +316,9 @@ proxy, simulator, and huber.</p></div>
                     - &#34;mm&#34;: focal-plane coordinates (x, y) [mm]
         &#34;&#34;&#34;
 
-        setup = get_setup()
-        offset_phi = setup.gse.stages.calibration.offset_phi
-        offset_alpha = setup.gse.stages.calibration.offset_alpha
+        offset_phi = self.setup.gse.stages.calibration.offset_phi
+        offset_alpha = self.setup.gse.stages.calibration.offset_alpha
+        alpha_correction_coefficients = self.setup.gse.stages.calibration.alpha_correction_coefficients
 
         # Focal-plane coordinates [mm]
 
@@ -323,12 +326,13 @@ proxy, simulator, and huber.</p></div>
 
         # CCD coordinates [pixels]
 
-        (row, column, ccd_code) = focal_plane_to_ccd_coordinates(x, y)
+        (row, column, ccd_code) = focal_plane_to_ccd_coordinates(x, y, setup)
 
         # Gnomonic distance to optical axis and in-field angle [degrees]
 
         angle_small_rotation_stage = self.get_rotation_angle_small_rotation_stage()
-        theta = 2 * (angle_small_rotation_stage + offset_alpha)
+        theta = (angle_small_rotation_stage + offset_alpha - alpha_correction_coefficients[0]) \
+                / alpha_correction_coefficients[1]
 
         position = {
             &#34;angles&#34;: (theta, offset_phi - self.get_rotation_angle_big_rotation_stage()),
@@ -565,9 +569,9 @@ the field distortion into account.</p>
                 - &#34;mm&#34;: focal-plane coordinates (x, y) [mm]
     &#34;&#34;&#34;
 
-    setup = get_setup()
-    offset_phi = setup.gse.stages.calibration.offset_phi
-    offset_alpha = setup.gse.stages.calibration.offset_alpha
+    offset_phi = self.setup.gse.stages.calibration.offset_phi
+    offset_alpha = self.setup.gse.stages.calibration.offset_alpha
+    alpha_correction_coefficients = self.setup.gse.stages.calibration.alpha_correction_coefficients
 
     # Focal-plane coordinates [mm]
 
@@ -575,12 +579,13 @@ the field distortion into account.</p>
 
     # CCD coordinates [pixels]
 
-    (row, column, ccd_code) = focal_plane_to_ccd_coordinates(x, y)
+    (row, column, ccd_code) = focal_plane_to_ccd_coordinates(x, y, setup)
 
     # Gnomonic distance to optical axis and in-field angle [degrees]
 
     angle_small_rotation_stage = self.get_rotation_angle_small_rotation_stage()
-    theta = 2 * (angle_small_rotation_stage + offset_alpha)
+    theta = (angle_small_rotation_stage + offset_alpha - alpha_correction_coefficients[0]) \
+            / alpha_correction_coefficients[1]
 
     position = {
         &#34;angles&#34;: (theta, offset_phi - self.get_rotation_angle_big_rotation_stage()),

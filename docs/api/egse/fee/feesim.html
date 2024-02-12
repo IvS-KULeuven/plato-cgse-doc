@@ -65,30 +65,30 @@ When connecting over a tunnel, the SSH passphrase is requested.
 import getpass
 import logging
 import multiprocessing
+import random
+import sys
+import time
+from typing import List
+from typing import NamedTuple
 
 import click
 import numpy as np
-
-from egse.hk import TmDictionaryColumns
-from egse.setup import SetupError
-from egse.state import GlobalState
-
-multiprocessing.current_process().name = &#34;feesim&#34;
-
-import sys
-import time
-from typing import NamedTuple, List
-
 import sshtunnel
 
 from egse.dsi.spw import SpaceWireOverDSI
-from egse.fee import n_fee_mode
 from egse.fee import convert_ccd_order_value
-from egse.fee.fee import create_pattern_data
-from egse.fee.fee import generate_data_packets
+from egse.fee import n_fee_mode
+from egse.fee.n_fee_hk import ORIGIN
 from egse.fee.nfee import HousekeepingData
+from egse.hk import TmDictionaryColumns
+from egse.randomwalk import RandomWalk
 from egse.reg import RegisterMap
+from egse.rmap import create_rmap_read_request_reply_packet
+from egse.rmap import create_rmap_write_request_reply_packet
 from egse.settings import Settings
+from egse.setup import Setup
+from egse.setup import SetupError
+from egse.setup import load_setup
 from egse.spw import DataPacketHeader
 from egse.spw import DataPacketType
 from egse.spw import PacketType
@@ -96,10 +96,8 @@ from egse.spw import ReadRequest
 from egse.spw import SpaceWireInterface
 from egse.spw import SpaceWirePacket
 from egse.spw import WriteRequest
-from egse.spw import create_rmap_read_request_reply_packet
-from egse.spw import create_rmap_write_request_reply_packet
+from egse.system import SignalCatcher
 from egse.zmq.spw import SpaceWireOverZeroMQ
-from egse.fee.n_fee_hk import ORIGIN
 
 logging.basicConfig(level=logging.DEBUG, format=Settings.LOG_FORMAT_FULL)
 
@@ -256,9 +254,9 @@ class NFEEInternals:
         Returns:
             The sync period (time between two sync pulses) in seconds.
         &#34;&#34;&#34;
-        sync_sel = self.reg_map.get_value(&#34;reg_5_config&#34;, &#34;sync_sel&#34;)
+        sync_sel = self.sync_sel
         if sync_sel:
-            sync_period = self.reg_map.get_value(&#34;reg_4_config&#34;, &#34;int_sync_period&#34;)
+            sync_period = self.int_sync_period + 400  # add the duration of the long pulse
         else:
             sync_period = 6250
         return sync_period / 1000
@@ -267,6 +265,213 @@ class NFEEInternals:
         &#34;&#34;&#34;Returns the ccd readout order as a list of CCD numbers, e.g. [1, 2, 3, 4].&#34;&#34;&#34;
         return convert_ccd_order_value(self.ccd_readout_order)
 
+
+temperature_walks = {
+    &#34;TOU_SENSE_1&#34;: RandomWalk(boundary=(0, 0x7FFF)),
+    &#34;TOU_SENSE_2&#34;: RandomWalk(boundary=(0, 0x7FFF)),
+    &#34;TOU_SENSE_3&#34;: RandomWalk(boundary=(0, 0x7FFF)),
+    &#34;TOU_SENSE_4&#34;: RandomWalk(boundary=(0, 0x7FFF)),
+    &#34;TOU_SENSE_5&#34;: RandomWalk(boundary=(0, 0x7FFF)),
+    &#34;TOU_SENSE_6&#34;: RandomWalk(boundary=(0, 0x7FFF)),
+}
+
+
+def create_pattern_data(timecode: int, ccd_id: int, ccd_side: int) -&gt; np.ndarray:
+    &#34;&#34;&#34;
+    Create pattern data as a two-dimensional ND array. The pattern data is generated as described
+    in PLATO-LESIA-PL-TN-023 - SimuCam pattern requirement.
+
+    The pattern is build up like this: each pixel is a 16-bit number with the following structure:
+
+        * Bits [15:13] = time-code % 8
+        * Bits [12:11] = CCD number [1, 2, 3, 4]  should be [0-3]!
+        * Bit [10] = CCD side: 0 = left side, 1 = right side
+        * Bits [9:5] = Y-coordinate % 32
+        * Bits [4:0] = X-coordinate % 32
+
+    The total image data size of a full frame CCD is:
+
+        x = 4590 = 2 x (25 [serial prescan] + 2255 + 15 [serial overscan])
+        y = 4540 = 4510 + 30 [parallel overscan]
+
+    This function creates each side of the CCD separately, so each half can be treated individually
+    as is done in the N-FEE. The two sides can easily be concatenated to form the full image:
+
+        data = np.concatenate((data_left, data_right), axis=1)
+
+    Args:
+        timecode (int): the timecode for this readout
+        ccd_id (int): the CCD number [0-3]
+        ccd_side (int): the CCD side, 0 = left = E-side, 1 = right = F-side
+    Returns:
+        A two-dimensional ND array representing half of a CCD.
+    &#34;&#34;&#34;
+
+    ccd_number = ccd_id  # save for later use
+
+    timecode = (timecode % 8) &lt;&lt; 13  # timecode is 3 bits at [15:13]
+    ccd_id = (ccd_id &amp; 0b0011) &lt;&lt; 11  # ccd_id is 2 bits at [12:11]
+    ccd_side = (ccd_side &amp; 0b0001) &lt;&lt; 10  # ccd_side is 1 bit at [10]
+
+    x_size = 25 + 2255 + 15
+    y_size = 4510 + 30
+
+    rows, cols = np.indices((y_size, x_size), dtype=np.uint16)
+    cols %= 32
+    rows %= 32
+
+    data = rows * 16 + cols + timecode + ccd_side + ccd_id
+
+    # We leave set the msb because of the bit flipt for N-FEE EM
+
+    data[50:300, 100:105] = ccd_number | 0b10000000_00000000
+    data[100:105, 50:500] = ccd_number | 0b10000000_00000000
+    data[300:305, 50:150] = ccd_number | 0b10000000_00000000
+    data[50:150, 500:505] = ccd_number | 0b10000000_00000000
+
+    # We unset the msb because of the bit flip for N-FEE EM
+
+    data[110, 110] = 0x7FFF
+
+    return data
+
+
+def initialise_hk_data(hk_data: HousekeepingData) -&gt; HousekeepingData:
+    &#34;&#34;&#34;Initialises the housekeeping data to fake or simulated values.&#34;&#34;&#34;
+
+    try:
+        setup = load_setup()
+        hk_info_table = setup.telemetry.dictionary
+    except AttributeError as exc:
+        raise SetupError(&#34;Version of the telemetry dictionary not specified in the current setup.&#34;) from exc
+
+    storage_mnemonic_col = hk_info_table[TmDictionaryColumns.STORAGE_MNEMONIC].values
+    original_name_col = hk_info_table[TmDictionaryColumns.ORIGINAL_EGSE_HK_NAMES].values
+    selection = np.where(storage_mnemonic_col == ORIGIN)
+    original_names = original_name_col[selection]
+
+    for name in temperature_walks:
+        hk_data[name] = int(next(temperature_walks[name]))
+
+    hk_data[&#34;CCD1_TS&#34;] = 0x7FFF
+    hk_data[&#34;CCD2_TS&#34;] = 0x7FFF
+    hk_data[&#34;CCD3_TS&#34;] = 0x7FFF
+    hk_data[&#34;CCD4_TS&#34;] = 0x7FFF
+
+    hk_data[&#34;PRT1&#34;] = 0x7FFF
+    hk_data[&#34;PRT2&#34;] = 0x7FFF
+    hk_data[&#34;PRT3&#34;] = 0x7FFF
+    hk_data[&#34;PRT4&#34;] = 0x7FFF
+    hk_data[&#34;PRT5&#34;] = 0x7FFF
+
+    hk_data[&#34;ZERO_DIFF_AMP&#34;] = 0x8015
+
+    if &#34;CCD1_VOD_MON&#34; in original_names:
+        hk_data[&#34;CCD1_VOD_MON&#34;] = 0x8055
+    else:
+        if &#34;CCD1_VOD_MON_E&#34; in original_names:
+            hk_data[&#34;CCD1_VOD_MON_E&#34;] = 0x8055
+        if &#34;CCD1_VOD_MON_F&#34; in original_names:
+            hk_data[&#34;CCD1_VOD_MON_F&#34;] = 0x8055
+    hk_data[&#34;CCD1_VOG_MON&#34;] = 0x8056
+    hk_data[&#34;CCD1_VRD_MON_E&#34;] = 0x8056
+
+    if &#34;CCD2_VOD_MON&#34; in original_names:
+        hk_data[&#34;CCD2_VOD_MON&#34;] = 0x8057
+    else:
+        if &#34;CCD2_VOD_MON_E&#34; in original_names:
+            hk_data[&#34;CCD2_VOD_MON_E&#34;] = 0x8057
+        if &#34;CCD2_VOD_MON_F&#34; in original_names:
+            hk_data[&#34;CCD2_VOD_MON_F&#34;] = 0x8057
+    hk_data[&#34;CCD2_VOG_MON&#34;] = 0x8058
+    hk_data[&#34;CCD2_VRD_MON_E&#34;] = 0x8057
+
+    if &#34;CCD3_VOD_MON&#34; in original_names:
+        hk_data[&#34;CCD3_VOD_MON&#34;] = 0x8058
+    else:
+        if &#34;CCD3_VOD_MON_E&#34; in original_names:
+            hk_data[&#34;CCD3_VOD_MON_E&#34;] = 0x8058
+        if &#34;CCD3_VOD_MON_F&#34; in original_names:
+            hk_data[&#34;CCD3_VOD_MON_F&#34;] = 0x8058
+    hk_data[&#34;CCD3_VOG_MON&#34;] = 0x8058
+    hk_data[&#34;CCD3_VRD_MON_E&#34;] = 0x8058
+
+    if &#34;CCD4_VOD_MON&#34; in original_names:
+        hk_data[&#34;CCD4_VOD_MON&#34;] = 0x8057
+    else:
+        if &#34;CCD4_VOD_MON_E&#34; in original_names:
+            hk_data[&#34;CCD4_VOD_MON_E&#34;] = 0x8057
+        if &#34;CCD4_VOD_MON_F&#34; in original_names:
+            hk_data[&#34;CCD4_VOD_MON_F&#34;] = 0x8057
+    hk_data[&#34;CCD4_VOG_MON&#34;] = 0x8058
+    hk_data[&#34;CCD4_VRD_MON_E&#34;] = 0x8058
+
+    hk_data[&#34;VCCD&#34;] = 0x39BF
+    hk_data[&#34;VRCLK_MON&#34;] = 0xFC8A
+    hk_data[&#34;VICLK&#34;] = 0xFAE9
+    if &#34;VRCLK_LOW&#34; in original_names:
+        hk_data[&#34;VRCLK_LOW&#34;] = 0x821A
+
+    if &#34;5VB_POS_MON&#34; in original_names:
+        hk_data[&#34;5VB_POS_MON&#34;] = 0x1E6A
+    hk_data[&#34;5VB_NEG_MON&#34;] = 0x1A9F
+    hk_data[&#34;3V3B_MON&#34;] = 0xE75D
+    hk_data[&#34;2V5A_MON&#34;] = 0x1979
+    hk_data[&#34;3V3D_MON&#34;] = 0xE76E
+    hk_data[&#34;2V5D_MON&#34;] = 0x1A8C
+    hk_data[&#34;1V5D_MON&#34;] = 0xDF35
+    hk_data[&#34;5VREF_MON&#34;] = 0x1A80
+
+    hk_data[&#34;VCCD_POS_RAW&#34;] = 0x53BF
+    hk_data[&#34;VCLK_POS_RAW&#34;] = 0x40BA
+    hk_data[&#34;VAN1_POS_RAW&#34;] = 0x0744
+    hk_data[&#34;VAN3_NEG_MON&#34;] = 0xFB7C
+    hk_data[&#34;VAN2_POS_RAW&#34;] = 0x3AEC
+    hk_data[&#34;VDIG_RAW&#34;] = 0x0AB5
+    if &#34;5VB_POS_MON&#34; in original_names:
+        hk_data[&#34;VDIG_RAW_2&#34;] = 0x0A32
+    if &#34;VICLK_LOW&#34; in original_names:
+        hk_data[&#34;VICLK_LOW&#34;] = 0x8277
+
+    hk_data[&#34;CCD1_VRD_MON_F&#34;] = 0x8059
+    hk_data[&#34;CCD1_VDD_MON&#34;] = 0x94CA
+    hk_data[&#34;CCD1_VGD_MON&#34;] = 0x8056
+    hk_data[&#34;CCD2_VRD_MON_F&#34;] = 0x8058
+    hk_data[&#34;CCD2_VDD_MON&#34;] = 0x94C1
+    hk_data[&#34;CCD2_VGD_MON&#34;] = 0x8055
+    hk_data[&#34;CCD3_VRD_MON_F&#34;] = 0x8059
+    hk_data[&#34;CCD3_VDD_MON&#34;] = 0x94C1
+    hk_data[&#34;CCD3_VGD_MON&#34;] = 0x8058
+    hk_data[&#34;CCD4_VRD_MON_F&#34;] = 0x8058
+    hk_data[&#34;CCD4_VDD_MON&#34;] = 0x94BA
+    hk_data[&#34;CCD4_VGD_MON&#34;] = 0x8056
+
+    hk_data[&#34;IG_HI_MON&#34;] = 0x8057
+    if &#34;IG_LO_MON&#34; in original_names:
+        hk_data[&#34;IG_LO_MON&#34;] = 0x8059
+    hk_data[&#34;TSENSE_A&#34;] = 0x8059
+    hk_data[&#34;TSENSE_B&#34;] = 0x805A
+
+    hk_data[&#34;spw_timecode&#34;] = 0x0000
+    hk_data[&#34;rmap_target_status&#34;] = 0x0000
+    hk_data[&#34;rmap_target_indicate&#34;] = 0x0000
+    hk_data[&#34;spw_link_escape_error&#34;] = 0x0000
+    hk_data[&#34;spw_credit_error&#34;] = 0x0000
+    hk_data[&#34;spw_parity_error&#34;] = 0x0000
+    hk_data[&#34;spw_link_disconnect&#34;] = 0x0000
+    hk_data[&#34;spw_link_running&#34;] = 0x0001
+
+    hk_data[&#34;frame_counter&#34;] = 0x0000
+    hk_data[&#34;op_mode&#34;] = 0x0000
+    hk_data[&#34;frame_number&#34;] = 0x0000
+
+    hk_data[&#34;error_flags&#34;] = 0x0000
+
+    hk_data[&#34;FPGA minor version&#34;] = 0x0018
+    hk_data[&#34;FPGA major version&#34;] = 0x0000
+    hk_data[&#34;Board ID&#34;] = 0x0000
+
+    return hk_data
 
 class FEESimulator:
     &#34;&#34;&#34;
@@ -283,148 +488,15 @@ class FEESimulator:
         self._hk_data = HousekeepingData()
         self._hk_header = DataPacketHeader()
 
+        self.setup = load_setup()
+
         self._IN = NFEEInternals(self.register_map)
 
-        self.initialise_hk_data()
+        initialise_hk_data(self._hk_data)
         self.initialise_hk_header()
 
-    def initialise_hk_data(self):
-        &#34;&#34;&#34;Initialises the housekeeping data to fake or simulated values.&#34;&#34;&#34;
+        self._killer = SignalCatcher()
 
-        try:
-            hk_info_table = GlobalState.setup.telemetry.dictionary
-        except AttributeError:
-            raise SetupError(&#34;Version of the telemetry dictionary not specified in the current setup&#34;)
-
-        storage_mnemonic_col = hk_info_table[TmDictionaryColumns.STORAGE_MNEMONIC].values
-        original_name_col = hk_info_table[TmDictionaryColumns.ORIGINAL_EGSE_HK_NAMES].values
-        selection = np.where(storage_mnemonic_col == ORIGIN)
-        original_names = original_name_col[selection]
-
-        self._hk_data[&#34;TOU_SENSE_1&#34;] = 0x8000
-        self._hk_data[&#34;TOU_SENSE_2&#34;] = 0x8000
-        self._hk_data[&#34;TOU_SENSE_3&#34;] = 0x8000
-        self._hk_data[&#34;TOU_SENSE_4&#34;] = 0x8000
-        self._hk_data[&#34;TOU_SENSE_5&#34;] = 0x8000
-        self._hk_data[&#34;TOU_SENSE_6&#34;] = 0x8000
-
-        self._hk_data[&#34;CCD1_TS&#34;] = 0x7FFF
-        self._hk_data[&#34;CCD2_TS&#34;] = 0x7FFF
-        self._hk_data[&#34;CCD3_TS&#34;] = 0x7FFF
-        self._hk_data[&#34;CCD4_TS&#34;] = 0x7FFF
-
-        self._hk_data[&#34;PRT1&#34;] = 0x7FFF
-        self._hk_data[&#34;PRT2&#34;] = 0x7FFF
-        self._hk_data[&#34;PRT3&#34;] = 0x7FFF
-        self._hk_data[&#34;PRT4&#34;] = 0x7FFF
-        self._hk_data[&#34;PRT5&#34;] = 0x7FFF
-
-        self._hk_data[&#34;ZERO_DIFF_AMP&#34;] = 0x8015
-
-        if &#34;CCD1_VOD_MON&#34; in original_names:
-            self._hk_data[&#34;CCD1_VOD_MON&#34;] = 0x8055
-        else:
-            if &#34;CCD1_VOD_MON_E&#34; in original_names:
-                self._hk_data[&#34;CCD1_VOD_MON_E&#34;] = 0x8055
-            if &#34;CCD1_VOD_MON_F&#34; in original_names:
-                self._hk_data[&#34;CCD1_VOD_MON_F&#34;] = 0x8055
-        self._hk_data[&#34;CCD1_VOG_MON&#34;] = 0x8056
-        self._hk_data[&#34;CCD1_VRD_MON_E&#34;] = 0x8056
-
-        if &#34;CCD2_VOD_MON&#34; in original_names:
-            self._hk_data[&#34;CCD2_VOD_MON&#34;] = 0x8057
-        else:
-            if &#34;CCD2_VOD_MON_E&#34; in original_names:
-                self._hk_data[&#34;CCD2_VOD_MON_E&#34;] = 0x8057
-            if &#34;CCD2_VOD_MON_E&#34; in original_names:
-                self._hk_data[&#34;CCD2_VOD_MON_E&#34;] = 0x8057
-        self._hk_data[&#34;CCD2_VOG_MON&#34;] = 0x8058
-        self._hk_data[&#34;CCD2_VRD_MON_E&#34;] = 0x8057
-
-        if &#34;CCD3_VOD_MON&#34; in original_names:
-            self._hk_data[&#34;CCD3_VOD_MON&#34;] = 0x8058
-        else:
-            if &#34;CCD3_VOD_MON_E&#34; in original_names:
-                self._hk_data[&#34;CCD3_VOD_MON_E&#34;] = 0x8058
-            if &#34;CCD3_VOD_MON_F&#34; in original_names:
-                self._hk_data[&#34;CCD3_VOD_MON_F&#34;] = 0x8058
-        self._hk_data[&#34;CCD3_VOG_MON&#34;] = 0x8058
-        self._hk_data[&#34;CCD3_VRD_MON_E&#34;] = 0x8058
-
-        if &#34;CCD4_VOD_MON&#34; in original_names:
-            self._hk_data[&#34;CCD4_VOD_MON&#34;] = 0x8057
-        else:
-            if &#34;CCD4_VOD_MON_E&#34; in original_names:
-                self._hk_data[&#34;CCD4_VOD_MON_E&#34;] = 0x8057
-            if &#34;CCD4_VOD_MON_F&#34; in original_names:
-                self._hk_data[&#34;CCD4_VOD_MON_F&#34;] = 0x8057
-        self._hk_data[&#34;CCD4_VOG_MON&#34;] = 0x8058
-        self._hk_data[&#34;CCD4_VRD_MON_E&#34;] = 0x8058
-
-        self._hk_data[&#34;VCCD&#34;] = 0x39BF
-        self._hk_data[&#34;VRCLK_MON&#34;] = 0xFC8A
-        self._hk_data[&#34;VICLK&#34;] = 0xFAE9
-        if &#34;VRCLK_LOW&#34; in original_names:
-            self._hk_data[&#34;VRCLK_LOW&#34;] = 0x821A
-
-        if &#34;5VB_POS_MON&#34; in original_names:
-            self._hk_data[&#34;5VB_POS_MON&#34;] = 0x1E6A
-        self._hk_data[&#34;5VB_NEG_MON&#34;] = 0x1A9F
-        self._hk_data[&#34;3V3B_MON&#34;] = 0xE75D
-        self._hk_data[&#34;2V5A_MON&#34;] = 0x1979
-        self._hk_data[&#34;3V3D_MON&#34;] = 0xE76E
-        self._hk_data[&#34;2V5D_MON&#34;] = 0x1A8C
-        self._hk_data[&#34;1V5D_MON&#34;] = 0xDF35
-        self._hk_data[&#34;5VREF_MON&#34;] = 0x1A80
-
-        self._hk_data[&#34;VCCD_POS_RAW&#34;] = 0x53BF
-        self._hk_data[&#34;VCLK_POS_RAW&#34;] = 0x40BA
-        self._hk_data[&#34;VAN1_POS_RAW&#34;] = 0x0744
-        self._hk_data[&#34;VAN3_NEG_MON&#34;] = 0xFB7C
-        self._hk_data[&#34;VAN2_POS_RAW&#34;] = 0x3AEC
-        self._hk_data[&#34;VDIG_RAW&#34;] = 0x0AB5
-        if &#34;5VB_POS_MON&#34; in original_names:
-            self._hk_data[&#34;VDIG_RAW_2&#34;] = 0x0A32
-        if &#34;VICLK_LOW&#34; in original_names:
-            self._hk_data[&#34;VICLK_LOW&#34;] = 0x8277
-
-        self._hk_data[&#34;CCD1_VRD_MON_F&#34;] = 0x8059
-        self._hk_data[&#34;CCD1_VDD_MON&#34;] = 0x94CA
-        self._hk_data[&#34;CCD1_VGD_MON&#34;] = 0x8056
-        self._hk_data[&#34;CCD2_VRD_MON_F&#34;] = 0x8058
-        self._hk_data[&#34;CCD2_VDD_MON&#34;] = 0x94C1
-        self._hk_data[&#34;CCD2_VGD_MON&#34;] = 0x8055
-        self._hk_data[&#34;CCD3_VRD_MON_F&#34;] = 0x8059
-        self._hk_data[&#34;CCD3_VDD_MON&#34;] = 0x94C1
-        self._hk_data[&#34;CCD3_VGD_MON&#34;] = 0x8058
-        self._hk_data[&#34;CCD4_VRD_MON_F&#34;] = 0x8058
-        self._hk_data[&#34;CCD4_VDD_MON&#34;] = 0x94BA
-        self._hk_data[&#34;CCD4_VGD_MON&#34;] = 0x8056
-
-        self._hk_data[&#34;IG_HI_MON&#34;] = 0x8057
-        if &#34;IG_LO_MON&#34; in original_names:
-            self._hk_data[&#34;IG_LO_MON&#34;] = 0x8059
-        self._hk_data[&#34;TSENSE_A&#34;] = 0x8059
-        self._hk_data[&#34;TSENSE_B&#34;] = 0x805A
-
-        self._hk_data[&#34;spw_timecode&#34;] = 0x0000
-        self._hk_data[&#34;rmap_target_status&#34;] = 0x0000
-        self._hk_data[&#34;rmap_target_indicate&#34;] = 0x0000
-        self._hk_data[&#34;spw_link_escape_error&#34;] = 0x0000
-        self._hk_data[&#34;spw_credit_error&#34;] = 0x0000
-        self._hk_data[&#34;spw_parity_error&#34;] = 0x0000
-        self._hk_data[&#34;spw_link_disconnect&#34;] = 0x0000
-        self._hk_data[&#34;spw_link_running&#34;] = 0x0001
-
-        self._hk_data[&#34;frame_counter&#34;] = 0x0000
-        self._hk_data[&#34;op_mode&#34;] = 0x0000
-        self._hk_data[&#34;frame_number&#34;] = 0x0000
-
-        self._hk_data[&#34;error_flags&#34;] = 0x0000
-
-        self._hk_data[&#34;FPGA minor version&#34;] = 0x0018
-        self._hk_data[&#34;FPGA major version&#34;] = 0x0000
-        self._hk_data[&#34;Board ID&#34;] = 0x0000
 
     def initialise_hk_header(self):
         &#34;&#34;&#34;
@@ -489,8 +561,8 @@ class FEESimulator:
     def run(self):
 
         LOGGER.info(f&#34;FEE Simulator Current State: {self.decode_current_state()}&#34;)
-        n_fee_side = GlobalState.setup.camera.fee.ccd_sides.enum
-        sensor_sel_enum = GlobalState.setup.camera.fee.sensor_sel.enum
+        n_fee_side = self.setup.camera.fee.ccd_sides.enum
+        sensor_sel_enum = self.setup.camera.fee.sensor_sel.enum
 
         with self._transport:
 
@@ -508,15 +580,21 @@ class FEESimulator:
 
                 sync_period = self.get_sync_period()
 
+                if self._killer.term_signal_received:
+                    LOGGER.warning(f&#34;Terminating N-FEE Simulator after receiving {self._killer.signal_name}&#34;)
+                    break
+
                 if time.perf_counter() &lt;= start_time + sync_period:
                     continue
+
+                # LOGGER.debug(f&#34;{&#39;-&#39;*80} {sync_period = }&#34;)
 
                 start_time = time.perf_counter()
 
                 # Send a timecode packet -----------------------------------------------------------
 
                 timecode = self._hk_data.timecode
-                LOGGER.info(f&#34;Sending timecode=0x{timecode:02X}&#34;)
+                LOGGER.info(f&#34;Sending timecode: 0x{timecode:02X} ({timecode})&#34;)
                 self._transport.send_timecode(timecode)
 
                 # Send a housekeeping packet -------------------------------------------------------
@@ -524,13 +602,20 @@ class FEESimulator:
                 LOGGER.info(f&#34;Sending HK packet: frame_counter={self._hk_data.frame_counter}, &#34;
                             f&#34;sequence_counter={self._hk_header.sequence_counter}, &#34;
                             f&#34;type={self._hk_header.type_as_object}&#34;)
-                LOGGER.info(f&#34;error_flags={self._hk_data[&#39;error_flags&#39;]}&#34;)
+                LOGGER.debug(f&#34;HK Packet: error_flags=0b{self._hk_data[&#39;error_flags&#39;]:0b}&#34;)
 
                 data = self._hk_header.data_as_bytes() + self._hk_data.data_as_bytes()
                 packet = SpaceWirePacket.create_packet(data)
                 self._transport.write_packet(packet.packet_as_bytes)
 
                 self._transport.flush()
+
+                # Check if error flags must be cleared ---------------------------------------------
+
+                if self.register_map[&#39;clear_error_flag&#39;]:
+                    LOGGER.info(&#34;Clearing error flags&#34;)
+                    self.register_map[(&#39;reg_21_config&#39;, &#39;clear_error_flag&#39;)] = 0
+                    self._hk_data[&#39;error_flags&#39;] = 0
 
                 # Send the Data packets ------------------------------------------------------------
 
@@ -547,25 +632,39 @@ class FEESimulator:
                                                  n_fee_mode.FULL_IMAGE_MODE,)):
 
                     try:
-                        ccd_id_to_bin = GlobalState.setup.camera.fee.ccd_numbering.CCD_ID_TO_BIN
+                        ccd_id_to_bin = self.setup.camera.fee.ccd_numbering.CCD_ID_TO_BIN
                     except AttributeError:
                         raise SetupError(&#34;No entry in the setup for camera.fee.ccd_numbering.CCD_ID_TO_BIN&#34;)
 
+                    LOGGER.info(&#34;Sending Data packets...&#34;)
+
                     ccd_number = ccd_id_to_bin[self.get_current_ccd_number()]  # N-FEE CCD number [0-3]
                     if self.sensor_sel &amp; sensor_sel_enum.E_SIDE:
-                        self.send_data_packets(timecode, ccd_id=ccd_number, ccd_side=n_fee_side.E_SIDE)
+                        send_data_packets(
+                            self._transport, timecode,
+                            ccd_id=ccd_number, ccd_side=n_fee_side.E_SIDE, frame_number=self._hk_data.frame_number,
+                            ccd_mode=self._IN.ccd_mode_config, v_start=self.v_start, v_end=self.v_end, setup=self.setup
+                        )
                     if self.sensor_sel &amp; sensor_sel_enum.F_SIDE:
-                        self.send_data_packets(timecode, ccd_id=ccd_number, ccd_side=n_fee_side.F_SIDE)
+                        send_data_packets(
+                            self._transport, timecode,
+                            ccd_id=ccd_number, ccd_side=n_fee_side.F_SIDE, frame_number=self._hk_data.frame_number,
+                            ccd_mode=self._IN.ccd_mode_config, v_start=self.v_start, v_end=self.v_end, setup=self.setup
+                        )
+
+                if self._killer.user_signal_received and self._killer.signal_name == &#34;SIGUSR1&#34;:
+                    # On USR1 signal, set the error flags to a random number. There are currently 12 error flags.
+                    self.set_error_flags(random.randint(0x0, 0b1111_1111_1111))
+                    self._killer.clear()
 
                 # Process any RMAP commands that were sent -----------------------------------------
 
-                LOGGER.info(
-                    f&#34;Calling process_rmap_commands() method for &#34;
-                    f&#34;{self._transport.__class__.__name__}.&#34;
-                )
+                LOGGER.info(&#34;Processing RMAP commands...&#34;)
 
                 while time.perf_counter() &lt; start_time + sync_period - 0.2:
-                    process_rmap_command(self._transport, self.register_map)
+                    process_rmap_command(self._transport, self.register_map, self._hk_data)
+
+                LOGGER.info(&#34;Updating internals...&#34;)
 
                 self._hk_data.increment_timecode()
 
@@ -580,34 +679,124 @@ class FEESimulator:
                     self._IN.update(200)
                     self.update_hk_header(200)
 
-                self.update_error_flags()
 
-    def update_error_flags(self):
-        &#34;&#34;&#34;Set error_flags to 0b0000_1000_1000 (136) whenever the frame counter is a multiple of 5.&#34;&#34;&#34;
-        self._hk_data[&#34;error_flags&#34;] = 0b0000_0000_0000 if self._hk_data.frame_counter % 5 else 0b0000_1000_1000
-
-    def send_data_packets(self, timecode: int, ccd_id: int, ccd_side: int):
-
-            data = create_pattern_data(timecode, ccd_id, ccd_side)
-
-            header = DataPacketHeader()
-            packet_type = header.type_as_object
-            packet_type.ccd_side = ccd_side
-            packet_type.ccd_number = ccd_id
-            packet_type.last_packet = False
-            packet_type.frame_number = self._hk_data.frame_number
-            packet_type.mode = self._IN.ccd_mode_config
-            header.type = packet_type
-
-            LOGGER.info(f&#34;**** {packet_type=!s}&#34;)
-            LOGGER.info(f&#34;Sending data packets...{self.v_start=} {self.v_end=}&#34;)
-
-            for packet in generate_data_packets(data, header, self.v_start, self.v_end):
-                self._transport.write_packet(packet.packet_as_bytes)
-                self._transport.flush()
+    def set_error_flags(self, flags: int):
+        &#34;&#34;&#34;Set error_flags to the given number.&#34;&#34;&#34;
+        LOGGER.warning(f&#34;Setting error flags to 0b{flags:012b}&#34;)
+        self._hk_data[&#34;error_flags&#34;] = flags
 
 
-def process_rmap_command(transport: SpaceWireInterface, register: RegisterMap):
+def generate_data_packets(data: np.ndarray, header: DataPacketHeader, v_start: int, v_end: int, setup: Setup):
+    &#34;&#34;&#34;
+    This generator function creates and returns the SpaceWire packets to send to the DPU Processor.
+
+    Args:
+        data (ndarray): the full frame image data
+        header (DataPacketHeader): the data packet header
+        v_start (int): the first row to be transmitted
+        v_end (int): the last row to be transmitted
+        setup: Setup
+
+    Returns:
+
+    &#34;&#34;&#34;
+    # steps:
+    # * reshape data to 1D array
+    # * update header with length, last_packet
+    # * increment sequence number?
+    # * convert data part into bytes object
+    # * concatenate header and data -&gt; bytes
+    # * yield the packet
+
+    N_FEE_SIDE = setup.camera.fee.ccd_sides.enum
+
+    MAX_PACKET_SIZE = 32140  # this is a register value reg_4_config
+    HEADER_LENGTH = 10
+    H_END = 2294
+    MAX_CCD_LINE = 4509
+    MAX_OVERSCAN_LINE = MAX_CCD_LINE + 30
+
+    nr_rows_in_packet = row_offset = (MAX_PACKET_SIZE - HEADER_LENGTH) // (H_END + 1) // 2
+
+    y_size, x_size = data.shape
+    h_end = x_size - 1
+    v_end_ccd = min(MAX_CCD_LINE, v_end)
+
+    ccd_side = header.type_as_object.ccd_side
+
+    # F-side is read out starting from the right, so we flip the data left to right
+    # before sending, which simulates the reverse readout.
+
+    data = np.fliplr(data) if ccd_side == N_FEE_SIDE.RIGHT_SIDE else data
+
+    header.length = nr_rows_in_packet * ((h_end + 1) * 2)
+    LOGGER.debug(f&#34;{header.length = }, {nr_rows_in_packet = }, {h_end = }&#34;)
+
+    for idx in range(v_start, v_end_ccd + 1, nr_rows_in_packet):
+        if idx + nr_rows_in_packet &gt; v_end_ccd:
+            row_offset = v_end_ccd - idx + 1
+            header.length = row_offset * ((h_end + 1) * 2)
+            header.last_packet = True
+        # LOGGER.debug(f&#34;{idx=}, {row_offset=}&#34;)
+        chunk = bytearray(data[idx:idx+row_offset, :])
+        chunk[0::2], chunk[1::2] = chunk[1::2], chunk[0::2]
+        packet_data = header.data_as_bytes() + chunk
+        # LOGGER.debug(f&#34;{len(packet_data)=}, {len(chunk)=}&#34;)
+        yield SpaceWirePacket.create_packet(packet_data)
+
+    # reset the header for the overscan lines
+
+    header.packet_type = PacketType.OVERSCAN_DATA
+    header.last_packet = False
+    header.length = nr_rows_in_packet * ((h_end + 1) * 2)
+
+    v_end_overscan = min(MAX_OVERSCAN_LINE, v_end)
+
+    # reset the row_offset
+
+    row_offset = nr_rows_in_packet
+
+    for idx in range(MAX_CCD_LINE+1, v_end_overscan + 1, nr_rows_in_packet):
+        if idx + nr_rows_in_packet &gt; v_end_overscan:
+            row_offset = v_end_overscan - idx + 1
+            header.length = row_offset * ((h_end + 1) * 2)
+            header.last_packet = True
+        LOGGER.debug(f&#34;{idx=}, {row_offset=}&#34;)
+        chunk = bytearray(data[idx:idx+row_offset, :])
+        chunk[0::2], chunk[1::2] = chunk[1::2], chunk[0::2]
+        packet_data = header.data_as_bytes() + chunk
+        LOGGER.debug(f&#34;{len(packet_data)=}, {len(chunk)=}&#34;)
+        yield SpaceWirePacket.create_packet(packet_data)
+
+
+def send_data_packets(
+        transport, timecode: int, ccd_id: int, ccd_side: int, frame_number: int, ccd_mode: int,
+        v_start: int, v_end: int, setup: Setup
+):
+        &#34;&#34;&#34;
+        Generates pattern data and sends it over
+        &#34;&#34;&#34;
+        data = create_pattern_data(timecode, ccd_id, ccd_side)
+
+        header = DataPacketHeader()
+        packet_type = header.type_as_object
+        packet_type.ccd_side = ccd_side
+        packet_type.ccd_number = ccd_id
+        packet_type.last_packet = False
+        packet_type.frame_number = frame_number
+        packet_type.mode = ccd_mode
+        header.type = packet_type
+
+        LOGGER.info(f&#34;**** {packet_type=!s}&#34;)
+        LOGGER.info(f&#34;Sending data packets...{v_start=} {v_end=}&#34;)
+
+        for packet in generate_data_packets(data, header, v_start, v_end, setup):
+            if x := transport.write_packet(packet.packet_as_bytes):
+                LOGGER.error(f&#34;Sending Data packet failed ({x}).&#34;)
+            transport.flush()
+
+
+def process_rmap_command(transport: SpaceWireInterface, register: RegisterMap, hk_data: HousekeepingData):
 
     _, buffer = transport.read_packet(timeout=200)
     if not buffer:
@@ -617,39 +806,49 @@ def process_rmap_command(transport: SpaceWireInterface, register: RegisterMap):
     # DPU Processor crashed or the connection dropped for some other reason.
     # We will receive one packet with 0 or 1 bytes.
 
-    if len(buffer) in (0, 1):
+    if len(buffer) in {0, 1}:
         return
 
     packet = SpaceWirePacket.create_packet(buffer)
 
-    LOGGER.info(f&#34;SpW packet received: {packet}&#34;)
+    LOGGER.debug(f&#34;Received {packet!r}&#34;)
 
     status = 0  # indicating OK
 
     if isinstance(packet, ReadRequest):
-        data = register.get_data(packet.address, packet.data_length)
+        # If address is start of HK memory area, read the data from the housekeeping data
+        if packet.address == 0x700:
+            data = hk_data.data_as_bytes()
+        else:
+            data = register.get_data(packet.address, packet.data_length)
 
         data = create_rmap_read_request_reply_packet(
             packet.instruction, packet.transaction_id, status, data, packet.data_length)
 
-        LOGGER.info(f&#34;Sending a ReadRequestReply: {data[:10]=}&#34;)
+        LOGGER.debug(f&#34;Sending {SpaceWirePacket.create_packet(data)!r}&#34;)
 
         transport.write_packet(data)
         transport.flush()
 
     elif isinstance(packet, WriteRequest):
         if packet.is_verified():
-            LOGGER.info(f&#34;Write data to register map: 0x{packet.address:x} {packet.data}&#34;)
+            LOGGER.debug(
+                f&#34;Write data to register map: 0x{packet.address:x} [0x{&#39; &#39;.join(f&#39;{x:02x}&#39;for x in packet.data)}]&#34;
+            )
             register.set_data(packet.address, packet.data)
             data = create_rmap_write_request_reply_packet(
                 packet.instruction, packet.transaction_id, status
             )
 
+            LOGGER.debug(f&#34;Sending {SpaceWirePacket.create_packet(data)!r}&#34;)
+
             transport.write_packet(data)
             transport.flush()
 
         else:
-            LOGGER.warning(f&#34;Unverified Write Request not yet implemented!&#34;)
+            LOGGER.warning(&#34;Unverified Write Request not yet implemented!&#34;)
+    else:
+        LOGGER.warning(f&#34;Unexpected packet type received: {packet.__class__}&#34;)
 
 
 def start_fee_simulator(transport: SpaceWireInterface):
@@ -660,7 +859,7 @@ def start_fee_simulator(transport: SpaceWireInterface):
     except KeyboardInterrupt:
         print(&#34;Shutdown requested...exiting&#34;)
     except SystemExit as exit_code:
-        print(&#34;System Exit with code {}.&#34;.format(exit_code))
+        print(f&#34;System Exit with code {exit_code}.&#34;)
         return exit_code
     except Exception:
         import traceback
@@ -693,6 +892,8 @@ def start(tunnel, zeromq, ssh_user, dsi_address, dsi_port):
     When --tunnel is specified, DSI_ADDRESS will default to 127.0.0.1
     unless explicitly provided.
     &#34;&#34;&#34;
+    multiprocessing.current_process().name = &#34;feesim&#34;
+
     print(f&#34;{tunnel=}, {zeromq=}, {ssh_user=}, {dsi_address=}, {dsi_port=}&#34;)
 
     if tunnel:
@@ -764,6 +965,208 @@ if __name__ == &#34;__main__&#34;:
 <section>
 <h2 class="section-title" id="header-functions">Functions</h2>
 <dl>
+<dt id="egse.fee.feesim.create_pattern_data"><code class="name flex">
+<span>def <span class="ident">create_pattern_data</span></span>(<span>timecode: int, ccd_id: int, ccd_side: int) ‑> numpy.ndarray</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Create pattern data as a two-dimensional ND array. The pattern data is generated as described
+in PLATO-LESIA-PL-TN-023 - SimuCam pattern requirement.</p>
+<p>The pattern is build up like this: each pixel is a 16-bit number with the following structure:</p>
+<pre><code>* Bits [15:13] = time-code % 8
+* Bits [12:11] = CCD number [1, 2, 3, 4]  should be [0-3]!
+* Bit [10] = CCD side: 0 = left side, 1 = right side
+* Bits [9:5] = Y-coordinate % 32
+* Bits [4:0] = X-coordinate % 32
+</code></pre>
+<p>The total image data size of a full frame CCD is:</p>
+<pre><code>x = 4590 = 2 x (25 [serial prescan] + 2255 + 15 [serial overscan])
+y = 4540 = 4510 + 30 [parallel overscan]
+</code></pre>
+<p>This function creates each side of the CCD separately, so each half can be treated individually
+as is done in the N-FEE. The two sides can easily be concatenated to form the full image:</p>
+<pre><code>data = np.concatenate((data_left, data_right), axis=1)
+</code></pre>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>timecode</code></strong> :&ensp;<code>int</code></dt>
+<dd>the timecode for this readout</dd>
+<dt><strong><code>ccd_id</code></strong> :&ensp;<code>int</code></dt>
+<dd>the CCD number [0-3]</dd>
+<dt><strong><code>ccd_side</code></strong> :&ensp;<code>int</code></dt>
+<dd>the CCD side, 0 = left = E-side, 1 = right = F-side</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<p>A two-dimensional ND array representing half of a CCD.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def create_pattern_data(timecode: int, ccd_id: int, ccd_side: int) -&gt; np.ndarray:
+    &#34;&#34;&#34;
+    Create pattern data as a two-dimensional ND array. The pattern data is generated as described
+    in PLATO-LESIA-PL-TN-023 - SimuCam pattern requirement.
+
+    The pattern is build up like this: each pixel is a 16-bit number with the following structure:
+
+        * Bits [15:13] = time-code % 8
+        * Bits [12:11] = CCD number [1, 2, 3, 4]  should be [0-3]!
+        * Bit [10] = CCD side: 0 = left side, 1 = right side
+        * Bits [9:5] = Y-coordinate % 32
+        * Bits [4:0] = X-coordinate % 32
+
+    The total image data size of a full frame CCD is:
+
+        x = 4590 = 2 x (25 [serial prescan] + 2255 + 15 [serial overscan])
+        y = 4540 = 4510 + 30 [parallel overscan]
+
+    This function creates each side of the CCD separately, so each half can be treated individually
+    as is done in the N-FEE. The two sides can easily be concatenated to form the full image:
+
+        data = np.concatenate((data_left, data_right), axis=1)
+
+    Args:
+        timecode (int): the timecode for this readout
+        ccd_id (int): the CCD number [0-3]
+        ccd_side (int): the CCD side, 0 = left = E-side, 1 = right = F-side
+    Returns:
+        A two-dimensional ND array representing half of a CCD.
+    &#34;&#34;&#34;
+
+    ccd_number = ccd_id  # save for later use
+
+    timecode = (timecode % 8) &lt;&lt; 13  # timecode is 3 bits at [15:13]
+    ccd_id = (ccd_id &amp; 0b0011) &lt;&lt; 11  # ccd_id is 2 bits at [12:11]
+    ccd_side = (ccd_side &amp; 0b0001) &lt;&lt; 10  # ccd_side is 1 bit at [10]
+
+    x_size = 25 + 2255 + 15
+    y_size = 4510 + 30
+
+    rows, cols = np.indices((y_size, x_size), dtype=np.uint16)
+    cols %= 32
+    rows %= 32
+
+    data = rows * 16 + cols + timecode + ccd_side + ccd_id
+
+    # We leave set the msb because of the bit flipt for N-FEE EM
+
+    data[50:300, 100:105] = ccd_number | 0b10000000_00000000
+    data[100:105, 50:500] = ccd_number | 0b10000000_00000000
+    data[300:305, 50:150] = ccd_number | 0b10000000_00000000
+    data[50:150, 500:505] = ccd_number | 0b10000000_00000000
+
+    # We unset the msb because of the bit flip for N-FEE EM
+
+    data[110, 110] = 0x7FFF
+
+    return data</code></pre>
+</details>
+</dd>
+<dt id="egse.fee.feesim.generate_data_packets"><code class="name flex">
+<span>def <span class="ident">generate_data_packets</span></span>(<span>data: numpy.ndarray, header: <a title="egse.spw.DataPacketHeader" href="../spw.html#egse.spw.DataPacketHeader">DataPacketHeader</a>, v_start: int, v_end: int, setup: <a title="egse.setup.Setup" href="../setup.html#egse.setup.Setup">Setup</a>)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>This generator function creates and returns the SpaceWire packets to send to the DPU Processor.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>data</code></strong> :&ensp;<code>ndarray</code></dt>
+<dd>the full frame image data</dd>
+<dt><strong><code>header</code></strong> :&ensp;<code>DataPacketHeader</code></dt>
+<dd>the data packet header</dd>
+<dt><strong><code>v_start</code></strong> :&ensp;<code>int</code></dt>
+<dd>the first row to be transmitted</dd>
+<dt><strong><code>v_end</code></strong> :&ensp;<code>int</code></dt>
+<dd>the last row to be transmitted</dd>
+<dt><strong><code>setup</code></strong></dt>
+<dd>Setup</dd>
+</dl>
+<p>Returns:</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def generate_data_packets(data: np.ndarray, header: DataPacketHeader, v_start: int, v_end: int, setup: Setup):
+    &#34;&#34;&#34;
+    This generator function creates and returns the SpaceWire packets to send to the DPU Processor.
+
+    Args:
+        data (ndarray): the full frame image data
+        header (DataPacketHeader): the data packet header
+        v_start (int): the first row to be transmitted
+        v_end (int): the last row to be transmitted
+        setup: Setup
+
+    Returns:
+
+    &#34;&#34;&#34;
+    # steps:
+    # * reshape data to 1D array
+    # * update header with length, last_packet
+    # * increment sequence number?
+    # * convert data part into bytes object
+    # * concatenate header and data -&gt; bytes
+    # * yield the packet
+
+    N_FEE_SIDE = setup.camera.fee.ccd_sides.enum
+
+    MAX_PACKET_SIZE = 32140  # this is a register value reg_4_config
+    HEADER_LENGTH = 10
+    H_END = 2294
+    MAX_CCD_LINE = 4509
+    MAX_OVERSCAN_LINE = MAX_CCD_LINE + 30
+
+    nr_rows_in_packet = row_offset = (MAX_PACKET_SIZE - HEADER_LENGTH) // (H_END + 1) // 2
+
+    y_size, x_size = data.shape
+    h_end = x_size - 1
+    v_end_ccd = min(MAX_CCD_LINE, v_end)
+
+    ccd_side = header.type_as_object.ccd_side
+
+    # F-side is read out starting from the right, so we flip the data left to right
+    # before sending, which simulates the reverse readout.
+
+    data = np.fliplr(data) if ccd_side == N_FEE_SIDE.RIGHT_SIDE else data
+
+    header.length = nr_rows_in_packet * ((h_end + 1) * 2)
+    LOGGER.debug(f&#34;{header.length = }, {nr_rows_in_packet = }, {h_end = }&#34;)
+
+    for idx in range(v_start, v_end_ccd + 1, nr_rows_in_packet):
+        if idx + nr_rows_in_packet &gt; v_end_ccd:
+            row_offset = v_end_ccd - idx + 1
+            header.length = row_offset * ((h_end + 1) * 2)
+            header.last_packet = True
+        # LOGGER.debug(f&#34;{idx=}, {row_offset=}&#34;)
+        chunk = bytearray(data[idx:idx+row_offset, :])
+        chunk[0::2], chunk[1::2] = chunk[1::2], chunk[0::2]
+        packet_data = header.data_as_bytes() + chunk
+        # LOGGER.debug(f&#34;{len(packet_data)=}, {len(chunk)=}&#34;)
+        yield SpaceWirePacket.create_packet(packet_data)
+
+    # reset the header for the overscan lines
+
+    header.packet_type = PacketType.OVERSCAN_DATA
+    header.last_packet = False
+    header.length = nr_rows_in_packet * ((h_end + 1) * 2)
+
+    v_end_overscan = min(MAX_OVERSCAN_LINE, v_end)
+
+    # reset the row_offset
+
+    row_offset = nr_rows_in_packet
+
+    for idx in range(MAX_CCD_LINE+1, v_end_overscan + 1, nr_rows_in_packet):
+        if idx + nr_rows_in_packet &gt; v_end_overscan:
+            row_offset = v_end_overscan - idx + 1
+            header.length = row_offset * ((h_end + 1) * 2)
+            header.last_packet = True
+        LOGGER.debug(f&#34;{idx=}, {row_offset=}&#34;)
+        chunk = bytearray(data[idx:idx+row_offset, :])
+        chunk[0::2], chunk[1::2] = chunk[1::2], chunk[0::2]
+        packet_data = header.data_as_bytes() + chunk
+        LOGGER.debug(f&#34;{len(packet_data)=}, {len(chunk)=}&#34;)
+        yield SpaceWirePacket.create_packet(packet_data)</code></pre>
+</details>
+</dd>
 <dt id="egse.fee.feesim.goto_on_mode"><code class="name flex">
 <span>def <span class="ident">goto_on_mode</span></span>(<span>state)</span>
 </code></dt>
@@ -829,8 +1232,155 @@ if __name__ == &#34;__main__&#34;:
     return states.ST_WINDOWING</code></pre>
 </details>
 </dd>
+<dt id="egse.fee.feesim.initialise_hk_data"><code class="name flex">
+<span>def <span class="ident">initialise_hk_data</span></span>(<span>hk_data: <a title="egse.fee.nfee.HousekeepingData" href="nfee.html#egse.fee.nfee.HousekeepingData">HousekeepingData</a>) ‑> <a title="egse.fee.nfee.HousekeepingData" href="nfee.html#egse.fee.nfee.HousekeepingData">HousekeepingData</a></span>
+</code></dt>
+<dd>
+<div class="desc"><p>Initialises the housekeeping data to fake or simulated values.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def initialise_hk_data(hk_data: HousekeepingData) -&gt; HousekeepingData:
+    &#34;&#34;&#34;Initialises the housekeeping data to fake or simulated values.&#34;&#34;&#34;
+
+    try:
+        setup = load_setup()
+        hk_info_table = setup.telemetry.dictionary
+    except AttributeError as exc:
+        raise SetupError(&#34;Version of the telemetry dictionary not specified in the current setup.&#34;) from exc
+
+    storage_mnemonic_col = hk_info_table[TmDictionaryColumns.STORAGE_MNEMONIC].values
+    original_name_col = hk_info_table[TmDictionaryColumns.ORIGINAL_EGSE_HK_NAMES].values
+    selection = np.where(storage_mnemonic_col == ORIGIN)
+    original_names = original_name_col[selection]
+
+    for name in temperature_walks:
+        hk_data[name] = int(next(temperature_walks[name]))
+
+    hk_data[&#34;CCD1_TS&#34;] = 0x7FFF
+    hk_data[&#34;CCD2_TS&#34;] = 0x7FFF
+    hk_data[&#34;CCD3_TS&#34;] = 0x7FFF
+    hk_data[&#34;CCD4_TS&#34;] = 0x7FFF
+
+    hk_data[&#34;PRT1&#34;] = 0x7FFF
+    hk_data[&#34;PRT2&#34;] = 0x7FFF
+    hk_data[&#34;PRT3&#34;] = 0x7FFF
+    hk_data[&#34;PRT4&#34;] = 0x7FFF
+    hk_data[&#34;PRT5&#34;] = 0x7FFF
+
+    hk_data[&#34;ZERO_DIFF_AMP&#34;] = 0x8015
+
+    if &#34;CCD1_VOD_MON&#34; in original_names:
+        hk_data[&#34;CCD1_VOD_MON&#34;] = 0x8055
+    else:
+        if &#34;CCD1_VOD_MON_E&#34; in original_names:
+            hk_data[&#34;CCD1_VOD_MON_E&#34;] = 0x8055
+        if &#34;CCD1_VOD_MON_F&#34; in original_names:
+            hk_data[&#34;CCD1_VOD_MON_F&#34;] = 0x8055
+    hk_data[&#34;CCD1_VOG_MON&#34;] = 0x8056
+    hk_data[&#34;CCD1_VRD_MON_E&#34;] = 0x8056
+
+    if &#34;CCD2_VOD_MON&#34; in original_names:
+        hk_data[&#34;CCD2_VOD_MON&#34;] = 0x8057
+    else:
+        if &#34;CCD2_VOD_MON_E&#34; in original_names:
+            hk_data[&#34;CCD2_VOD_MON_E&#34;] = 0x8057
+        if &#34;CCD2_VOD_MON_F&#34; in original_names:
+            hk_data[&#34;CCD2_VOD_MON_F&#34;] = 0x8057
+    hk_data[&#34;CCD2_VOG_MON&#34;] = 0x8058
+    hk_data[&#34;CCD2_VRD_MON_E&#34;] = 0x8057
+
+    if &#34;CCD3_VOD_MON&#34; in original_names:
+        hk_data[&#34;CCD3_VOD_MON&#34;] = 0x8058
+    else:
+        if &#34;CCD3_VOD_MON_E&#34; in original_names:
+            hk_data[&#34;CCD3_VOD_MON_E&#34;] = 0x8058
+        if &#34;CCD3_VOD_MON_F&#34; in original_names:
+            hk_data[&#34;CCD3_VOD_MON_F&#34;] = 0x8058
+    hk_data[&#34;CCD3_VOG_MON&#34;] = 0x8058
+    hk_data[&#34;CCD3_VRD_MON_E&#34;] = 0x8058
+
+    if &#34;CCD4_VOD_MON&#34; in original_names:
+        hk_data[&#34;CCD4_VOD_MON&#34;] = 0x8057
+    else:
+        if &#34;CCD4_VOD_MON_E&#34; in original_names:
+            hk_data[&#34;CCD4_VOD_MON_E&#34;] = 0x8057
+        if &#34;CCD4_VOD_MON_F&#34; in original_names:
+            hk_data[&#34;CCD4_VOD_MON_F&#34;] = 0x8057
+    hk_data[&#34;CCD4_VOG_MON&#34;] = 0x8058
+    hk_data[&#34;CCD4_VRD_MON_E&#34;] = 0x8058
+
+    hk_data[&#34;VCCD&#34;] = 0x39BF
+    hk_data[&#34;VRCLK_MON&#34;] = 0xFC8A
+    hk_data[&#34;VICLK&#34;] = 0xFAE9
+    if &#34;VRCLK_LOW&#34; in original_names:
+        hk_data[&#34;VRCLK_LOW&#34;] = 0x821A
+
+    if &#34;5VB_POS_MON&#34; in original_names:
+        hk_data[&#34;5VB_POS_MON&#34;] = 0x1E6A
+    hk_data[&#34;5VB_NEG_MON&#34;] = 0x1A9F
+    hk_data[&#34;3V3B_MON&#34;] = 0xE75D
+    hk_data[&#34;2V5A_MON&#34;] = 0x1979
+    hk_data[&#34;3V3D_MON&#34;] = 0xE76E
+    hk_data[&#34;2V5D_MON&#34;] = 0x1A8C
+    hk_data[&#34;1V5D_MON&#34;] = 0xDF35
+    hk_data[&#34;5VREF_MON&#34;] = 0x1A80
+
+    hk_data[&#34;VCCD_POS_RAW&#34;] = 0x53BF
+    hk_data[&#34;VCLK_POS_RAW&#34;] = 0x40BA
+    hk_data[&#34;VAN1_POS_RAW&#34;] = 0x0744
+    hk_data[&#34;VAN3_NEG_MON&#34;] = 0xFB7C
+    hk_data[&#34;VAN2_POS_RAW&#34;] = 0x3AEC
+    hk_data[&#34;VDIG_RAW&#34;] = 0x0AB5
+    if &#34;5VB_POS_MON&#34; in original_names:
+        hk_data[&#34;VDIG_RAW_2&#34;] = 0x0A32
+    if &#34;VICLK_LOW&#34; in original_names:
+        hk_data[&#34;VICLK_LOW&#34;] = 0x8277
+
+    hk_data[&#34;CCD1_VRD_MON_F&#34;] = 0x8059
+    hk_data[&#34;CCD1_VDD_MON&#34;] = 0x94CA
+    hk_data[&#34;CCD1_VGD_MON&#34;] = 0x8056
+    hk_data[&#34;CCD2_VRD_MON_F&#34;] = 0x8058
+    hk_data[&#34;CCD2_VDD_MON&#34;] = 0x94C1
+    hk_data[&#34;CCD2_VGD_MON&#34;] = 0x8055
+    hk_data[&#34;CCD3_VRD_MON_F&#34;] = 0x8059
+    hk_data[&#34;CCD3_VDD_MON&#34;] = 0x94C1
+    hk_data[&#34;CCD3_VGD_MON&#34;] = 0x8058
+    hk_data[&#34;CCD4_VRD_MON_F&#34;] = 0x8058
+    hk_data[&#34;CCD4_VDD_MON&#34;] = 0x94BA
+    hk_data[&#34;CCD4_VGD_MON&#34;] = 0x8056
+
+    hk_data[&#34;IG_HI_MON&#34;] = 0x8057
+    if &#34;IG_LO_MON&#34; in original_names:
+        hk_data[&#34;IG_LO_MON&#34;] = 0x8059
+    hk_data[&#34;TSENSE_A&#34;] = 0x8059
+    hk_data[&#34;TSENSE_B&#34;] = 0x805A
+
+    hk_data[&#34;spw_timecode&#34;] = 0x0000
+    hk_data[&#34;rmap_target_status&#34;] = 0x0000
+    hk_data[&#34;rmap_target_indicate&#34;] = 0x0000
+    hk_data[&#34;spw_link_escape_error&#34;] = 0x0000
+    hk_data[&#34;spw_credit_error&#34;] = 0x0000
+    hk_data[&#34;spw_parity_error&#34;] = 0x0000
+    hk_data[&#34;spw_link_disconnect&#34;] = 0x0000
+    hk_data[&#34;spw_link_running&#34;] = 0x0001
+
+    hk_data[&#34;frame_counter&#34;] = 0x0000
+    hk_data[&#34;op_mode&#34;] = 0x0000
+    hk_data[&#34;frame_number&#34;] = 0x0000
+
+    hk_data[&#34;error_flags&#34;] = 0x0000
+
+    hk_data[&#34;FPGA minor version&#34;] = 0x0018
+    hk_data[&#34;FPGA major version&#34;] = 0x0000
+    hk_data[&#34;Board ID&#34;] = 0x0000
+
+    return hk_data</code></pre>
+</details>
+</dd>
 <dt id="egse.fee.feesim.process_rmap_command"><code class="name flex">
-<span>def <span class="ident">process_rmap_command</span></span>(<span>transport: <a title="egse.spw.SpaceWireInterface" href="../spw.html#egse.spw.SpaceWireInterface">SpaceWireInterface</a>, register: <a title="egse.reg.RegisterMap" href="../reg.html#egse.reg.RegisterMap">RegisterMap</a>)</span>
+<span>def <span class="ident">process_rmap_command</span></span>(<span>transport: <a title="egse.spw.SpaceWireInterface" href="../spw.html#egse.spw.SpaceWireInterface">SpaceWireInterface</a>, register: <a title="egse.reg.RegisterMap" href="../reg.html#egse.reg.RegisterMap">RegisterMap</a>, hk_data: <a title="egse.fee.nfee.HousekeepingData" href="nfee.html#egse.fee.nfee.HousekeepingData">HousekeepingData</a>)</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -838,7 +1388,7 @@ if __name__ == &#34;__main__&#34;:
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def process_rmap_command(transport: SpaceWireInterface, register: RegisterMap):
+<pre><code class="python">def process_rmap_command(transport: SpaceWireInterface, register: RegisterMap, hk_data: HousekeepingData):
 
     _, buffer = transport.read_packet(timeout=200)
     if not buffer:
@@ -848,39 +1398,85 @@ if __name__ == &#34;__main__&#34;:
     # DPU Processor crashed or the connection dropped for some other reason.
     # We will receive one packet with 0 or 1 bytes.
 
-    if len(buffer) in (0, 1):
+    if len(buffer) in {0, 1}:
         return
 
     packet = SpaceWirePacket.create_packet(buffer)
 
-    LOGGER.info(f&#34;SpW packet received: {packet}&#34;)
+    LOGGER.debug(f&#34;Received {packet!r}&#34;)
 
     status = 0  # indicating OK
 
     if isinstance(packet, ReadRequest):
-        data = register.get_data(packet.address, packet.data_length)
+        # If address is start of HK memory area, read the data from the housekeeping data
+        if packet.address == 0x700:
+            data = hk_data.data_as_bytes()
+        else:
+            data = register.get_data(packet.address, packet.data_length)
 
         data = create_rmap_read_request_reply_packet(
             packet.instruction, packet.transaction_id, status, data, packet.data_length)
 
-        LOGGER.info(f&#34;Sending a ReadRequestReply: {data[:10]=}&#34;)
+        LOGGER.debug(f&#34;Sending {SpaceWirePacket.create_packet(data)!r}&#34;)
 
         transport.write_packet(data)
         transport.flush()
 
     elif isinstance(packet, WriteRequest):
         if packet.is_verified():
-            LOGGER.info(f&#34;Write data to register map: 0x{packet.address:x} {packet.data}&#34;)
+            LOGGER.debug(
+                f&#34;Write data to register map: 0x{packet.address:x} [0x{&#39; &#39;.join(f&#39;{x:02x}&#39;for x in packet.data)}]&#34;
+            )
             register.set_data(packet.address, packet.data)
             data = create_rmap_write_request_reply_packet(
                 packet.instruction, packet.transaction_id, status
             )
 
+            LOGGER.debug(f&#34;Sending {SpaceWirePacket.create_packet(data)!r}&#34;)
+
             transport.write_packet(data)
             transport.flush()
 
         else:
-            LOGGER.warning(f&#34;Unverified Write Request not yet implemented!&#34;)</code></pre>
+            LOGGER.warning(&#34;Unverified Write Request not yet implemented!&#34;)
+    else:
+        LOGGER.warning(f&#34;Unexpected packet type received: {packet.__class__}&#34;)</code></pre>
+</details>
+</dd>
+<dt id="egse.fee.feesim.send_data_packets"><code class="name flex">
+<span>def <span class="ident">send_data_packets</span></span>(<span>transport, timecode: int, ccd_id: int, ccd_side: int, frame_number: int, ccd_mode: int, v_start: int, v_end: int, setup: <a title="egse.setup.Setup" href="../setup.html#egse.setup.Setup">Setup</a>)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Generates pattern data and sends it over</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def send_data_packets(
+        transport, timecode: int, ccd_id: int, ccd_side: int, frame_number: int, ccd_mode: int,
+        v_start: int, v_end: int, setup: Setup
+):
+        &#34;&#34;&#34;
+        Generates pattern data and sends it over
+        &#34;&#34;&#34;
+        data = create_pattern_data(timecode, ccd_id, ccd_side)
+
+        header = DataPacketHeader()
+        packet_type = header.type_as_object
+        packet_type.ccd_side = ccd_side
+        packet_type.ccd_number = ccd_id
+        packet_type.last_packet = False
+        packet_type.frame_number = frame_number
+        packet_type.mode = ccd_mode
+        header.type = packet_type
+
+        LOGGER.info(f&#34;**** {packet_type=!s}&#34;)
+        LOGGER.info(f&#34;Sending data packets...{v_start=} {v_end=}&#34;)
+
+        for packet in generate_data_packets(data, header, v_start, v_end, setup):
+            if x := transport.write_packet(packet.packet_as_bytes):
+                LOGGER.error(f&#34;Sending Data packet failed ({x}).&#34;)
+            transport.flush()</code></pre>
 </details>
 </dd>
 <dt id="egse.fee.feesim.start_fee_simulator"><code class="name flex">
@@ -900,7 +1496,7 @@ if __name__ == &#34;__main__&#34;:
     except KeyboardInterrupt:
         print(&#34;Shutdown requested...exiting&#34;)
     except SystemExit as exit_code:
-        print(&#34;System Exit with code {}.&#34;.format(exit_code))
+        print(f&#34;System Exit with code {exit_code}.&#34;)
         return exit_code
     except Exception:
         import traceback
@@ -943,148 +1539,15 @@ if __name__ == &#34;__main__&#34;:
         self._hk_data = HousekeepingData()
         self._hk_header = DataPacketHeader()
 
+        self.setup = load_setup()
+
         self._IN = NFEEInternals(self.register_map)
 
-        self.initialise_hk_data()
+        initialise_hk_data(self._hk_data)
         self.initialise_hk_header()
 
-    def initialise_hk_data(self):
-        &#34;&#34;&#34;Initialises the housekeeping data to fake or simulated values.&#34;&#34;&#34;
+        self._killer = SignalCatcher()
 
-        try:
-            hk_info_table = GlobalState.setup.telemetry.dictionary
-        except AttributeError:
-            raise SetupError(&#34;Version of the telemetry dictionary not specified in the current setup&#34;)
-
-        storage_mnemonic_col = hk_info_table[TmDictionaryColumns.STORAGE_MNEMONIC].values
-        original_name_col = hk_info_table[TmDictionaryColumns.ORIGINAL_EGSE_HK_NAMES].values
-        selection = np.where(storage_mnemonic_col == ORIGIN)
-        original_names = original_name_col[selection]
-
-        self._hk_data[&#34;TOU_SENSE_1&#34;] = 0x8000
-        self._hk_data[&#34;TOU_SENSE_2&#34;] = 0x8000
-        self._hk_data[&#34;TOU_SENSE_3&#34;] = 0x8000
-        self._hk_data[&#34;TOU_SENSE_4&#34;] = 0x8000
-        self._hk_data[&#34;TOU_SENSE_5&#34;] = 0x8000
-        self._hk_data[&#34;TOU_SENSE_6&#34;] = 0x8000
-
-        self._hk_data[&#34;CCD1_TS&#34;] = 0x7FFF
-        self._hk_data[&#34;CCD2_TS&#34;] = 0x7FFF
-        self._hk_data[&#34;CCD3_TS&#34;] = 0x7FFF
-        self._hk_data[&#34;CCD4_TS&#34;] = 0x7FFF
-
-        self._hk_data[&#34;PRT1&#34;] = 0x7FFF
-        self._hk_data[&#34;PRT2&#34;] = 0x7FFF
-        self._hk_data[&#34;PRT3&#34;] = 0x7FFF
-        self._hk_data[&#34;PRT4&#34;] = 0x7FFF
-        self._hk_data[&#34;PRT5&#34;] = 0x7FFF
-
-        self._hk_data[&#34;ZERO_DIFF_AMP&#34;] = 0x8015
-
-        if &#34;CCD1_VOD_MON&#34; in original_names:
-            self._hk_data[&#34;CCD1_VOD_MON&#34;] = 0x8055
-        else:
-            if &#34;CCD1_VOD_MON_E&#34; in original_names:
-                self._hk_data[&#34;CCD1_VOD_MON_E&#34;] = 0x8055
-            if &#34;CCD1_VOD_MON_F&#34; in original_names:
-                self._hk_data[&#34;CCD1_VOD_MON_F&#34;] = 0x8055
-        self._hk_data[&#34;CCD1_VOG_MON&#34;] = 0x8056
-        self._hk_data[&#34;CCD1_VRD_MON_E&#34;] = 0x8056
-
-        if &#34;CCD2_VOD_MON&#34; in original_names:
-            self._hk_data[&#34;CCD2_VOD_MON&#34;] = 0x8057
-        else:
-            if &#34;CCD2_VOD_MON_E&#34; in original_names:
-                self._hk_data[&#34;CCD2_VOD_MON_E&#34;] = 0x8057
-            if &#34;CCD2_VOD_MON_E&#34; in original_names:
-                self._hk_data[&#34;CCD2_VOD_MON_E&#34;] = 0x8057
-        self._hk_data[&#34;CCD2_VOG_MON&#34;] = 0x8058
-        self._hk_data[&#34;CCD2_VRD_MON_E&#34;] = 0x8057
-
-        if &#34;CCD3_VOD_MON&#34; in original_names:
-            self._hk_data[&#34;CCD3_VOD_MON&#34;] = 0x8058
-        else:
-            if &#34;CCD3_VOD_MON_E&#34; in original_names:
-                self._hk_data[&#34;CCD3_VOD_MON_E&#34;] = 0x8058
-            if &#34;CCD3_VOD_MON_F&#34; in original_names:
-                self._hk_data[&#34;CCD3_VOD_MON_F&#34;] = 0x8058
-        self._hk_data[&#34;CCD3_VOG_MON&#34;] = 0x8058
-        self._hk_data[&#34;CCD3_VRD_MON_E&#34;] = 0x8058
-
-        if &#34;CCD4_VOD_MON&#34; in original_names:
-            self._hk_data[&#34;CCD4_VOD_MON&#34;] = 0x8057
-        else:
-            if &#34;CCD4_VOD_MON_E&#34; in original_names:
-                self._hk_data[&#34;CCD4_VOD_MON_E&#34;] = 0x8057
-            if &#34;CCD4_VOD_MON_F&#34; in original_names:
-                self._hk_data[&#34;CCD4_VOD_MON_F&#34;] = 0x8057
-        self._hk_data[&#34;CCD4_VOG_MON&#34;] = 0x8058
-        self._hk_data[&#34;CCD4_VRD_MON_E&#34;] = 0x8058
-
-        self._hk_data[&#34;VCCD&#34;] = 0x39BF
-        self._hk_data[&#34;VRCLK_MON&#34;] = 0xFC8A
-        self._hk_data[&#34;VICLK&#34;] = 0xFAE9
-        if &#34;VRCLK_LOW&#34; in original_names:
-            self._hk_data[&#34;VRCLK_LOW&#34;] = 0x821A
-
-        if &#34;5VB_POS_MON&#34; in original_names:
-            self._hk_data[&#34;5VB_POS_MON&#34;] = 0x1E6A
-        self._hk_data[&#34;5VB_NEG_MON&#34;] = 0x1A9F
-        self._hk_data[&#34;3V3B_MON&#34;] = 0xE75D
-        self._hk_data[&#34;2V5A_MON&#34;] = 0x1979
-        self._hk_data[&#34;3V3D_MON&#34;] = 0xE76E
-        self._hk_data[&#34;2V5D_MON&#34;] = 0x1A8C
-        self._hk_data[&#34;1V5D_MON&#34;] = 0xDF35
-        self._hk_data[&#34;5VREF_MON&#34;] = 0x1A80
-
-        self._hk_data[&#34;VCCD_POS_RAW&#34;] = 0x53BF
-        self._hk_data[&#34;VCLK_POS_RAW&#34;] = 0x40BA
-        self._hk_data[&#34;VAN1_POS_RAW&#34;] = 0x0744
-        self._hk_data[&#34;VAN3_NEG_MON&#34;] = 0xFB7C
-        self._hk_data[&#34;VAN2_POS_RAW&#34;] = 0x3AEC
-        self._hk_data[&#34;VDIG_RAW&#34;] = 0x0AB5
-        if &#34;5VB_POS_MON&#34; in original_names:
-            self._hk_data[&#34;VDIG_RAW_2&#34;] = 0x0A32
-        if &#34;VICLK_LOW&#34; in original_names:
-            self._hk_data[&#34;VICLK_LOW&#34;] = 0x8277
-
-        self._hk_data[&#34;CCD1_VRD_MON_F&#34;] = 0x8059
-        self._hk_data[&#34;CCD1_VDD_MON&#34;] = 0x94CA
-        self._hk_data[&#34;CCD1_VGD_MON&#34;] = 0x8056
-        self._hk_data[&#34;CCD2_VRD_MON_F&#34;] = 0x8058
-        self._hk_data[&#34;CCD2_VDD_MON&#34;] = 0x94C1
-        self._hk_data[&#34;CCD2_VGD_MON&#34;] = 0x8055
-        self._hk_data[&#34;CCD3_VRD_MON_F&#34;] = 0x8059
-        self._hk_data[&#34;CCD3_VDD_MON&#34;] = 0x94C1
-        self._hk_data[&#34;CCD3_VGD_MON&#34;] = 0x8058
-        self._hk_data[&#34;CCD4_VRD_MON_F&#34;] = 0x8058
-        self._hk_data[&#34;CCD4_VDD_MON&#34;] = 0x94BA
-        self._hk_data[&#34;CCD4_VGD_MON&#34;] = 0x8056
-
-        self._hk_data[&#34;IG_HI_MON&#34;] = 0x8057
-        if &#34;IG_LO_MON&#34; in original_names:
-            self._hk_data[&#34;IG_LO_MON&#34;] = 0x8059
-        self._hk_data[&#34;TSENSE_A&#34;] = 0x8059
-        self._hk_data[&#34;TSENSE_B&#34;] = 0x805A
-
-        self._hk_data[&#34;spw_timecode&#34;] = 0x0000
-        self._hk_data[&#34;rmap_target_status&#34;] = 0x0000
-        self._hk_data[&#34;rmap_target_indicate&#34;] = 0x0000
-        self._hk_data[&#34;spw_link_escape_error&#34;] = 0x0000
-        self._hk_data[&#34;spw_credit_error&#34;] = 0x0000
-        self._hk_data[&#34;spw_parity_error&#34;] = 0x0000
-        self._hk_data[&#34;spw_link_disconnect&#34;] = 0x0000
-        self._hk_data[&#34;spw_link_running&#34;] = 0x0001
-
-        self._hk_data[&#34;frame_counter&#34;] = 0x0000
-        self._hk_data[&#34;op_mode&#34;] = 0x0000
-        self._hk_data[&#34;frame_number&#34;] = 0x0000
-
-        self._hk_data[&#34;error_flags&#34;] = 0x0000
-
-        self._hk_data[&#34;FPGA minor version&#34;] = 0x0018
-        self._hk_data[&#34;FPGA major version&#34;] = 0x0000
-        self._hk_data[&#34;Board ID&#34;] = 0x0000
 
     def initialise_hk_header(self):
         &#34;&#34;&#34;
@@ -1149,8 +1612,8 @@ if __name__ == &#34;__main__&#34;:
     def run(self):
 
         LOGGER.info(f&#34;FEE Simulator Current State: {self.decode_current_state()}&#34;)
-        n_fee_side = GlobalState.setup.camera.fee.ccd_sides.enum
-        sensor_sel_enum = GlobalState.setup.camera.fee.sensor_sel.enum
+        n_fee_side = self.setup.camera.fee.ccd_sides.enum
+        sensor_sel_enum = self.setup.camera.fee.sensor_sel.enum
 
         with self._transport:
 
@@ -1168,15 +1631,21 @@ if __name__ == &#34;__main__&#34;:
 
                 sync_period = self.get_sync_period()
 
+                if self._killer.term_signal_received:
+                    LOGGER.warning(f&#34;Terminating N-FEE Simulator after receiving {self._killer.signal_name}&#34;)
+                    break
+
                 if time.perf_counter() &lt;= start_time + sync_period:
                     continue
+
+                # LOGGER.debug(f&#34;{&#39;-&#39;*80} {sync_period = }&#34;)
 
                 start_time = time.perf_counter()
 
                 # Send a timecode packet -----------------------------------------------------------
 
                 timecode = self._hk_data.timecode
-                LOGGER.info(f&#34;Sending timecode=0x{timecode:02X}&#34;)
+                LOGGER.info(f&#34;Sending timecode: 0x{timecode:02X} ({timecode})&#34;)
                 self._transport.send_timecode(timecode)
 
                 # Send a housekeeping packet -------------------------------------------------------
@@ -1184,13 +1653,20 @@ if __name__ == &#34;__main__&#34;:
                 LOGGER.info(f&#34;Sending HK packet: frame_counter={self._hk_data.frame_counter}, &#34;
                             f&#34;sequence_counter={self._hk_header.sequence_counter}, &#34;
                             f&#34;type={self._hk_header.type_as_object}&#34;)
-                LOGGER.info(f&#34;error_flags={self._hk_data[&#39;error_flags&#39;]}&#34;)
+                LOGGER.debug(f&#34;HK Packet: error_flags=0b{self._hk_data[&#39;error_flags&#39;]:0b}&#34;)
 
                 data = self._hk_header.data_as_bytes() + self._hk_data.data_as_bytes()
                 packet = SpaceWirePacket.create_packet(data)
                 self._transport.write_packet(packet.packet_as_bytes)
 
                 self._transport.flush()
+
+                # Check if error flags must be cleared ---------------------------------------------
+
+                if self.register_map[&#39;clear_error_flag&#39;]:
+                    LOGGER.info(&#34;Clearing error flags&#34;)
+                    self.register_map[(&#39;reg_21_config&#39;, &#39;clear_error_flag&#39;)] = 0
+                    self._hk_data[&#39;error_flags&#39;] = 0
 
                 # Send the Data packets ------------------------------------------------------------
 
@@ -1207,25 +1683,39 @@ if __name__ == &#34;__main__&#34;:
                                                  n_fee_mode.FULL_IMAGE_MODE,)):
 
                     try:
-                        ccd_id_to_bin = GlobalState.setup.camera.fee.ccd_numbering.CCD_ID_TO_BIN
+                        ccd_id_to_bin = self.setup.camera.fee.ccd_numbering.CCD_ID_TO_BIN
                     except AttributeError:
                         raise SetupError(&#34;No entry in the setup for camera.fee.ccd_numbering.CCD_ID_TO_BIN&#34;)
 
+                    LOGGER.info(&#34;Sending Data packets...&#34;)
+
                     ccd_number = ccd_id_to_bin[self.get_current_ccd_number()]  # N-FEE CCD number [0-3]
                     if self.sensor_sel &amp; sensor_sel_enum.E_SIDE:
-                        self.send_data_packets(timecode, ccd_id=ccd_number, ccd_side=n_fee_side.E_SIDE)
+                        send_data_packets(
+                            self._transport, timecode,
+                            ccd_id=ccd_number, ccd_side=n_fee_side.E_SIDE, frame_number=self._hk_data.frame_number,
+                            ccd_mode=self._IN.ccd_mode_config, v_start=self.v_start, v_end=self.v_end, setup=self.setup
+                        )
                     if self.sensor_sel &amp; sensor_sel_enum.F_SIDE:
-                        self.send_data_packets(timecode, ccd_id=ccd_number, ccd_side=n_fee_side.F_SIDE)
+                        send_data_packets(
+                            self._transport, timecode,
+                            ccd_id=ccd_number, ccd_side=n_fee_side.F_SIDE, frame_number=self._hk_data.frame_number,
+                            ccd_mode=self._IN.ccd_mode_config, v_start=self.v_start, v_end=self.v_end, setup=self.setup
+                        )
+
+                if self._killer.user_signal_received and self._killer.signal_name == &#34;SIGUSR1&#34;:
+                    # On USR1 signal, set the error flags to a random number. There are currently 12 error flags.
+                    self.set_error_flags(random.randint(0x0, 0b1111_1111_1111))
+                    self._killer.clear()
 
                 # Process any RMAP commands that were sent -----------------------------------------
 
-                LOGGER.info(
-                    f&#34;Calling process_rmap_commands() method for &#34;
-                    f&#34;{self._transport.__class__.__name__}.&#34;
-                )
+                LOGGER.info(&#34;Processing RMAP commands...&#34;)
 
                 while time.perf_counter() &lt; start_time + sync_period - 0.2:
-                    process_rmap_command(self._transport, self.register_map)
+                    process_rmap_command(self._transport, self.register_map, self._hk_data)
+
+                LOGGER.info(&#34;Updating internals...&#34;)
 
                 self._hk_data.increment_timecode()
 
@@ -1240,31 +1730,11 @@ if __name__ == &#34;__main__&#34;:
                     self._IN.update(200)
                     self.update_hk_header(200)
 
-                self.update_error_flags()
 
-    def update_error_flags(self):
-        &#34;&#34;&#34;Set error_flags to 0b0000_1000_1000 (136) whenever the frame counter is a multiple of 5.&#34;&#34;&#34;
-        self._hk_data[&#34;error_flags&#34;] = 0b0000_0000_0000 if self._hk_data.frame_counter % 5 else 0b0000_1000_1000
-
-    def send_data_packets(self, timecode: int, ccd_id: int, ccd_side: int):
-
-            data = create_pattern_data(timecode, ccd_id, ccd_side)
-
-            header = DataPacketHeader()
-            packet_type = header.type_as_object
-            packet_type.ccd_side = ccd_side
-            packet_type.ccd_number = ccd_id
-            packet_type.last_packet = False
-            packet_type.frame_number = self._hk_data.frame_number
-            packet_type.mode = self._IN.ccd_mode_config
-            header.type = packet_type
-
-            LOGGER.info(f&#34;**** {packet_type=!s}&#34;)
-            LOGGER.info(f&#34;Sending data packets...{self.v_start=} {self.v_end=}&#34;)
-
-            for packet in generate_data_packets(data, header, self.v_start, self.v_end):
-                self._transport.write_packet(packet.packet_as_bytes)
-                self._transport.flush()</code></pre>
+    def set_error_flags(self, flags: int):
+        &#34;&#34;&#34;Set error_flags to the given number.&#34;&#34;&#34;
+        LOGGER.warning(f&#34;Setting error flags to 0b{flags:012b}&#34;)
+        self._hk_data[&#34;error_flags&#34;] = flags</code></pre>
 </details>
 <h3>Instance variables</h3>
 <dl>
@@ -1377,154 +1847,6 @@ def v_start(self) -&gt; int:
     return self._IN.get_sync_period()</code></pre>
 </details>
 </dd>
-<dt id="egse.fee.feesim.FEESimulator.initialise_hk_data"><code class="name flex">
-<span>def <span class="ident">initialise_hk_data</span></span>(<span>self)</span>
-</code></dt>
-<dd>
-<div class="desc"><p>Initialises the housekeeping data to fake or simulated values.</p></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def initialise_hk_data(self):
-    &#34;&#34;&#34;Initialises the housekeeping data to fake or simulated values.&#34;&#34;&#34;
-
-    try:
-        hk_info_table = GlobalState.setup.telemetry.dictionary
-    except AttributeError:
-        raise SetupError(&#34;Version of the telemetry dictionary not specified in the current setup&#34;)
-
-    storage_mnemonic_col = hk_info_table[TmDictionaryColumns.STORAGE_MNEMONIC].values
-    original_name_col = hk_info_table[TmDictionaryColumns.ORIGINAL_EGSE_HK_NAMES].values
-    selection = np.where(storage_mnemonic_col == ORIGIN)
-    original_names = original_name_col[selection]
-
-    self._hk_data[&#34;TOU_SENSE_1&#34;] = 0x8000
-    self._hk_data[&#34;TOU_SENSE_2&#34;] = 0x8000
-    self._hk_data[&#34;TOU_SENSE_3&#34;] = 0x8000
-    self._hk_data[&#34;TOU_SENSE_4&#34;] = 0x8000
-    self._hk_data[&#34;TOU_SENSE_5&#34;] = 0x8000
-    self._hk_data[&#34;TOU_SENSE_6&#34;] = 0x8000
-
-    self._hk_data[&#34;CCD1_TS&#34;] = 0x7FFF
-    self._hk_data[&#34;CCD2_TS&#34;] = 0x7FFF
-    self._hk_data[&#34;CCD3_TS&#34;] = 0x7FFF
-    self._hk_data[&#34;CCD4_TS&#34;] = 0x7FFF
-
-    self._hk_data[&#34;PRT1&#34;] = 0x7FFF
-    self._hk_data[&#34;PRT2&#34;] = 0x7FFF
-    self._hk_data[&#34;PRT3&#34;] = 0x7FFF
-    self._hk_data[&#34;PRT4&#34;] = 0x7FFF
-    self._hk_data[&#34;PRT5&#34;] = 0x7FFF
-
-    self._hk_data[&#34;ZERO_DIFF_AMP&#34;] = 0x8015
-
-    if &#34;CCD1_VOD_MON&#34; in original_names:
-        self._hk_data[&#34;CCD1_VOD_MON&#34;] = 0x8055
-    else:
-        if &#34;CCD1_VOD_MON_E&#34; in original_names:
-            self._hk_data[&#34;CCD1_VOD_MON_E&#34;] = 0x8055
-        if &#34;CCD1_VOD_MON_F&#34; in original_names:
-            self._hk_data[&#34;CCD1_VOD_MON_F&#34;] = 0x8055
-    self._hk_data[&#34;CCD1_VOG_MON&#34;] = 0x8056
-    self._hk_data[&#34;CCD1_VRD_MON_E&#34;] = 0x8056
-
-    if &#34;CCD2_VOD_MON&#34; in original_names:
-        self._hk_data[&#34;CCD2_VOD_MON&#34;] = 0x8057
-    else:
-        if &#34;CCD2_VOD_MON_E&#34; in original_names:
-            self._hk_data[&#34;CCD2_VOD_MON_E&#34;] = 0x8057
-        if &#34;CCD2_VOD_MON_E&#34; in original_names:
-            self._hk_data[&#34;CCD2_VOD_MON_E&#34;] = 0x8057
-    self._hk_data[&#34;CCD2_VOG_MON&#34;] = 0x8058
-    self._hk_data[&#34;CCD2_VRD_MON_E&#34;] = 0x8057
-
-    if &#34;CCD3_VOD_MON&#34; in original_names:
-        self._hk_data[&#34;CCD3_VOD_MON&#34;] = 0x8058
-    else:
-        if &#34;CCD3_VOD_MON_E&#34; in original_names:
-            self._hk_data[&#34;CCD3_VOD_MON_E&#34;] = 0x8058
-        if &#34;CCD3_VOD_MON_F&#34; in original_names:
-            self._hk_data[&#34;CCD3_VOD_MON_F&#34;] = 0x8058
-    self._hk_data[&#34;CCD3_VOG_MON&#34;] = 0x8058
-    self._hk_data[&#34;CCD3_VRD_MON_E&#34;] = 0x8058
-
-    if &#34;CCD4_VOD_MON&#34; in original_names:
-        self._hk_data[&#34;CCD4_VOD_MON&#34;] = 0x8057
-    else:
-        if &#34;CCD4_VOD_MON_E&#34; in original_names:
-            self._hk_data[&#34;CCD4_VOD_MON_E&#34;] = 0x8057
-        if &#34;CCD4_VOD_MON_F&#34; in original_names:
-            self._hk_data[&#34;CCD4_VOD_MON_F&#34;] = 0x8057
-    self._hk_data[&#34;CCD4_VOG_MON&#34;] = 0x8058
-    self._hk_data[&#34;CCD4_VRD_MON_E&#34;] = 0x8058
-
-    self._hk_data[&#34;VCCD&#34;] = 0x39BF
-    self._hk_data[&#34;VRCLK_MON&#34;] = 0xFC8A
-    self._hk_data[&#34;VICLK&#34;] = 0xFAE9
-    if &#34;VRCLK_LOW&#34; in original_names:
-        self._hk_data[&#34;VRCLK_LOW&#34;] = 0x821A
-
-    if &#34;5VB_POS_MON&#34; in original_names:
-        self._hk_data[&#34;5VB_POS_MON&#34;] = 0x1E6A
-    self._hk_data[&#34;5VB_NEG_MON&#34;] = 0x1A9F
-    self._hk_data[&#34;3V3B_MON&#34;] = 0xE75D
-    self._hk_data[&#34;2V5A_MON&#34;] = 0x1979
-    self._hk_data[&#34;3V3D_MON&#34;] = 0xE76E
-    self._hk_data[&#34;2V5D_MON&#34;] = 0x1A8C
-    self._hk_data[&#34;1V5D_MON&#34;] = 0xDF35
-    self._hk_data[&#34;5VREF_MON&#34;] = 0x1A80
-
-    self._hk_data[&#34;VCCD_POS_RAW&#34;] = 0x53BF
-    self._hk_data[&#34;VCLK_POS_RAW&#34;] = 0x40BA
-    self._hk_data[&#34;VAN1_POS_RAW&#34;] = 0x0744
-    self._hk_data[&#34;VAN3_NEG_MON&#34;] = 0xFB7C
-    self._hk_data[&#34;VAN2_POS_RAW&#34;] = 0x3AEC
-    self._hk_data[&#34;VDIG_RAW&#34;] = 0x0AB5
-    if &#34;5VB_POS_MON&#34; in original_names:
-        self._hk_data[&#34;VDIG_RAW_2&#34;] = 0x0A32
-    if &#34;VICLK_LOW&#34; in original_names:
-        self._hk_data[&#34;VICLK_LOW&#34;] = 0x8277
-
-    self._hk_data[&#34;CCD1_VRD_MON_F&#34;] = 0x8059
-    self._hk_data[&#34;CCD1_VDD_MON&#34;] = 0x94CA
-    self._hk_data[&#34;CCD1_VGD_MON&#34;] = 0x8056
-    self._hk_data[&#34;CCD2_VRD_MON_F&#34;] = 0x8058
-    self._hk_data[&#34;CCD2_VDD_MON&#34;] = 0x94C1
-    self._hk_data[&#34;CCD2_VGD_MON&#34;] = 0x8055
-    self._hk_data[&#34;CCD3_VRD_MON_F&#34;] = 0x8059
-    self._hk_data[&#34;CCD3_VDD_MON&#34;] = 0x94C1
-    self._hk_data[&#34;CCD3_VGD_MON&#34;] = 0x8058
-    self._hk_data[&#34;CCD4_VRD_MON_F&#34;] = 0x8058
-    self._hk_data[&#34;CCD4_VDD_MON&#34;] = 0x94BA
-    self._hk_data[&#34;CCD4_VGD_MON&#34;] = 0x8056
-
-    self._hk_data[&#34;IG_HI_MON&#34;] = 0x8057
-    if &#34;IG_LO_MON&#34; in original_names:
-        self._hk_data[&#34;IG_LO_MON&#34;] = 0x8059
-    self._hk_data[&#34;TSENSE_A&#34;] = 0x8059
-    self._hk_data[&#34;TSENSE_B&#34;] = 0x805A
-
-    self._hk_data[&#34;spw_timecode&#34;] = 0x0000
-    self._hk_data[&#34;rmap_target_status&#34;] = 0x0000
-    self._hk_data[&#34;rmap_target_indicate&#34;] = 0x0000
-    self._hk_data[&#34;spw_link_escape_error&#34;] = 0x0000
-    self._hk_data[&#34;spw_credit_error&#34;] = 0x0000
-    self._hk_data[&#34;spw_parity_error&#34;] = 0x0000
-    self._hk_data[&#34;spw_link_disconnect&#34;] = 0x0000
-    self._hk_data[&#34;spw_link_running&#34;] = 0x0001
-
-    self._hk_data[&#34;frame_counter&#34;] = 0x0000
-    self._hk_data[&#34;op_mode&#34;] = 0x0000
-    self._hk_data[&#34;frame_number&#34;] = 0x0000
-
-    self._hk_data[&#34;error_flags&#34;] = 0x0000
-
-    self._hk_data[&#34;FPGA minor version&#34;] = 0x0018
-    self._hk_data[&#34;FPGA major version&#34;] = 0x0000
-    self._hk_data[&#34;Board ID&#34;] = 0x0000</code></pre>
-</details>
-</dd>
 <dt id="egse.fee.feesim.FEESimulator.initialise_hk_header"><code class="name flex">
 <span>def <span class="ident">initialise_hk_header</span></span>(<span>self)</span>
 </code></dt>
@@ -1559,8 +1881,8 @@ has been initialised.</p></div>
 <pre><code class="python">def run(self):
 
     LOGGER.info(f&#34;FEE Simulator Current State: {self.decode_current_state()}&#34;)
-    n_fee_side = GlobalState.setup.camera.fee.ccd_sides.enum
-    sensor_sel_enum = GlobalState.setup.camera.fee.sensor_sel.enum
+    n_fee_side = self.setup.camera.fee.ccd_sides.enum
+    sensor_sel_enum = self.setup.camera.fee.sensor_sel.enum
 
     with self._transport:
 
@@ -1578,15 +1900,21 @@ has been initialised.</p></div>
 
             sync_period = self.get_sync_period()
 
+            if self._killer.term_signal_received:
+                LOGGER.warning(f&#34;Terminating N-FEE Simulator after receiving {self._killer.signal_name}&#34;)
+                break
+
             if time.perf_counter() &lt;= start_time + sync_period:
                 continue
+
+            # LOGGER.debug(f&#34;{&#39;-&#39;*80} {sync_period = }&#34;)
 
             start_time = time.perf_counter()
 
             # Send a timecode packet -----------------------------------------------------------
 
             timecode = self._hk_data.timecode
-            LOGGER.info(f&#34;Sending timecode=0x{timecode:02X}&#34;)
+            LOGGER.info(f&#34;Sending timecode: 0x{timecode:02X} ({timecode})&#34;)
             self._transport.send_timecode(timecode)
 
             # Send a housekeeping packet -------------------------------------------------------
@@ -1594,13 +1922,20 @@ has been initialised.</p></div>
             LOGGER.info(f&#34;Sending HK packet: frame_counter={self._hk_data.frame_counter}, &#34;
                         f&#34;sequence_counter={self._hk_header.sequence_counter}, &#34;
                         f&#34;type={self._hk_header.type_as_object}&#34;)
-            LOGGER.info(f&#34;error_flags={self._hk_data[&#39;error_flags&#39;]}&#34;)
+            LOGGER.debug(f&#34;HK Packet: error_flags=0b{self._hk_data[&#39;error_flags&#39;]:0b}&#34;)
 
             data = self._hk_header.data_as_bytes() + self._hk_data.data_as_bytes()
             packet = SpaceWirePacket.create_packet(data)
             self._transport.write_packet(packet.packet_as_bytes)
 
             self._transport.flush()
+
+            # Check if error flags must be cleared ---------------------------------------------
+
+            if self.register_map[&#39;clear_error_flag&#39;]:
+                LOGGER.info(&#34;Clearing error flags&#34;)
+                self.register_map[(&#39;reg_21_config&#39;, &#39;clear_error_flag&#39;)] = 0
+                self._hk_data[&#39;error_flags&#39;] = 0
 
             # Send the Data packets ------------------------------------------------------------
 
@@ -1617,25 +1952,39 @@ has been initialised.</p></div>
                                              n_fee_mode.FULL_IMAGE_MODE,)):
 
                 try:
-                    ccd_id_to_bin = GlobalState.setup.camera.fee.ccd_numbering.CCD_ID_TO_BIN
+                    ccd_id_to_bin = self.setup.camera.fee.ccd_numbering.CCD_ID_TO_BIN
                 except AttributeError:
                     raise SetupError(&#34;No entry in the setup for camera.fee.ccd_numbering.CCD_ID_TO_BIN&#34;)
 
+                LOGGER.info(&#34;Sending Data packets...&#34;)
+
                 ccd_number = ccd_id_to_bin[self.get_current_ccd_number()]  # N-FEE CCD number [0-3]
                 if self.sensor_sel &amp; sensor_sel_enum.E_SIDE:
-                    self.send_data_packets(timecode, ccd_id=ccd_number, ccd_side=n_fee_side.E_SIDE)
+                    send_data_packets(
+                        self._transport, timecode,
+                        ccd_id=ccd_number, ccd_side=n_fee_side.E_SIDE, frame_number=self._hk_data.frame_number,
+                        ccd_mode=self._IN.ccd_mode_config, v_start=self.v_start, v_end=self.v_end, setup=self.setup
+                    )
                 if self.sensor_sel &amp; sensor_sel_enum.F_SIDE:
-                    self.send_data_packets(timecode, ccd_id=ccd_number, ccd_side=n_fee_side.F_SIDE)
+                    send_data_packets(
+                        self._transport, timecode,
+                        ccd_id=ccd_number, ccd_side=n_fee_side.F_SIDE, frame_number=self._hk_data.frame_number,
+                        ccd_mode=self._IN.ccd_mode_config, v_start=self.v_start, v_end=self.v_end, setup=self.setup
+                    )
+
+            if self._killer.user_signal_received and self._killer.signal_name == &#34;SIGUSR1&#34;:
+                # On USR1 signal, set the error flags to a random number. There are currently 12 error flags.
+                self.set_error_flags(random.randint(0x0, 0b1111_1111_1111))
+                self._killer.clear()
 
             # Process any RMAP commands that were sent -----------------------------------------
 
-            LOGGER.info(
-                f&#34;Calling process_rmap_commands() method for &#34;
-                f&#34;{self._transport.__class__.__name__}.&#34;
-            )
+            LOGGER.info(&#34;Processing RMAP commands...&#34;)
 
             while time.perf_counter() &lt; start_time + sync_period - 0.2:
-                process_rmap_command(self._transport, self.register_map)
+                process_rmap_command(self._transport, self.register_map, self._hk_data)
+
+            LOGGER.info(&#34;Updating internals...&#34;)
 
             self._hk_data.increment_timecode()
 
@@ -1648,53 +1997,22 @@ has been initialised.</p></div>
                 self.update_hk_header(400)
             else:
                 self._IN.update(200)
-                self.update_hk_header(200)
-
-            self.update_error_flags()</code></pre>
+                self.update_hk_header(200)</code></pre>
 </details>
 </dd>
-<dt id="egse.fee.feesim.FEESimulator.send_data_packets"><code class="name flex">
-<span>def <span class="ident">send_data_packets</span></span>(<span>self, timecode: int, ccd_id: int, ccd_side: int)</span>
+<dt id="egse.fee.feesim.FEESimulator.set_error_flags"><code class="name flex">
+<span>def <span class="ident">set_error_flags</span></span>(<span>self, flags: int)</span>
 </code></dt>
 <dd>
-<div class="desc"></div>
+<div class="desc"><p>Set error_flags to the given number.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def send_data_packets(self, timecode: int, ccd_id: int, ccd_side: int):
-
-        data = create_pattern_data(timecode, ccd_id, ccd_side)
-
-        header = DataPacketHeader()
-        packet_type = header.type_as_object
-        packet_type.ccd_side = ccd_side
-        packet_type.ccd_number = ccd_id
-        packet_type.last_packet = False
-        packet_type.frame_number = self._hk_data.frame_number
-        packet_type.mode = self._IN.ccd_mode_config
-        header.type = packet_type
-
-        LOGGER.info(f&#34;**** {packet_type=!s}&#34;)
-        LOGGER.info(f&#34;Sending data packets...{self.v_start=} {self.v_end=}&#34;)
-
-        for packet in generate_data_packets(data, header, self.v_start, self.v_end):
-            self._transport.write_packet(packet.packet_as_bytes)
-            self._transport.flush()</code></pre>
-</details>
-</dd>
-<dt id="egse.fee.feesim.FEESimulator.update_error_flags"><code class="name flex">
-<span>def <span class="ident">update_error_flags</span></span>(<span>self)</span>
-</code></dt>
-<dd>
-<div class="desc"><p>Set error_flags to 0b0000_1000_1000 (136) whenever the frame counter is a multiple of 5.</p></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def update_error_flags(self):
-    &#34;&#34;&#34;Set error_flags to 0b0000_1000_1000 (136) whenever the frame counter is a multiple of 5.&#34;&#34;&#34;
-    self._hk_data[&#34;error_flags&#34;] = 0b0000_0000_0000 if self._hk_data.frame_counter % 5 else 0b0000_1000_1000</code></pre>
+<pre><code class="python">def set_error_flags(self, flags: int):
+    &#34;&#34;&#34;Set error_flags to the given number.&#34;&#34;&#34;
+    LOGGER.warning(f&#34;Setting error flags to 0b{flags:012b}&#34;)
+    self._hk_data[&#34;error_flags&#34;] = flags</code></pre>
 </details>
 </dd>
 <dt id="egse.fee.feesim.FEESimulator.update_hk_data"><code class="name flex">
@@ -1804,9 +2122,9 @@ map represents the commanded state.</p></div>
         Returns:
             The sync period (time between two sync pulses) in seconds.
         &#34;&#34;&#34;
-        sync_sel = self.reg_map.get_value(&#34;reg_5_config&#34;, &#34;sync_sel&#34;)
+        sync_sel = self.sync_sel
         if sync_sel:
-            sync_period = self.reg_map.get_value(&#34;reg_4_config&#34;, &#34;int_sync_period&#34;)
+            sync_period = self.int_sync_period + 400  # add the duration of the long pulse
         else:
             sync_period = 6250
         return sync_period / 1000
@@ -1858,9 +2176,9 @@ and the AEU might have been configured for extended sync periods.</p>
     Returns:
         The sync period (time between two sync pulses) in seconds.
     &#34;&#34;&#34;
-    sync_sel = self.reg_map.get_value(&#34;reg_5_config&#34;, &#34;sync_sel&#34;)
+    sync_sel = self.sync_sel
     if sync_sel:
-        sync_period = self.reg_map.get_value(&#34;reg_4_config&#34;, &#34;int_sync_period&#34;)
+        sync_period = self.int_sync_period + 400  # add the duration of the long pulse
     else:
         sync_period = 6250
     return sync_period / 1000</code></pre>
@@ -2003,10 +2321,14 @@ variables are updated from the current register map values.</p>
 </li>
 <li><h3><a href="#header-functions">Functions</a></h3>
 <ul class="">
+<li><code><a title="egse.fee.feesim.create_pattern_data" href="#egse.fee.feesim.create_pattern_data">create_pattern_data</a></code></li>
+<li><code><a title="egse.fee.feesim.generate_data_packets" href="#egse.fee.feesim.generate_data_packets">generate_data_packets</a></code></li>
 <li><code><a title="egse.fee.feesim.goto_on_mode" href="#egse.fee.feesim.goto_on_mode">goto_on_mode</a></code></li>
 <li><code><a title="egse.fee.feesim.goto_standby_mode" href="#egse.fee.feesim.goto_standby_mode">goto_standby_mode</a></code></li>
 <li><code><a title="egse.fee.feesim.goto_windowing_mode" href="#egse.fee.feesim.goto_windowing_mode">goto_windowing_mode</a></code></li>
+<li><code><a title="egse.fee.feesim.initialise_hk_data" href="#egse.fee.feesim.initialise_hk_data">initialise_hk_data</a></code></li>
 <li><code><a title="egse.fee.feesim.process_rmap_command" href="#egse.fee.feesim.process_rmap_command">process_rmap_command</a></code></li>
+<li><code><a title="egse.fee.feesim.send_data_packets" href="#egse.fee.feesim.send_data_packets">send_data_packets</a></code></li>
 <li><code><a title="egse.fee.feesim.start_fee_simulator" href="#egse.fee.feesim.start_fee_simulator">start_fee_simulator</a></code></li>
 </ul>
 </li>
@@ -2019,13 +2341,11 @@ variables are updated from the current register map values.</p>
 <li><code><a title="egse.fee.feesim.FEESimulator.get_current_ccd_number" href="#egse.fee.feesim.FEESimulator.get_current_ccd_number">get_current_ccd_number</a></code></li>
 <li><code><a title="egse.fee.feesim.FEESimulator.get_mode" href="#egse.fee.feesim.FEESimulator.get_mode">get_mode</a></code></li>
 <li><code><a title="egse.fee.feesim.FEESimulator.get_sync_period" href="#egse.fee.feesim.FEESimulator.get_sync_period">get_sync_period</a></code></li>
-<li><code><a title="egse.fee.feesim.FEESimulator.initialise_hk_data" href="#egse.fee.feesim.FEESimulator.initialise_hk_data">initialise_hk_data</a></code></li>
 <li><code><a title="egse.fee.feesim.FEESimulator.initialise_hk_header" href="#egse.fee.feesim.FEESimulator.initialise_hk_header">initialise_hk_header</a></code></li>
 <li><code><a title="egse.fee.feesim.FEESimulator.internal_sync" href="#egse.fee.feesim.FEESimulator.internal_sync">internal_sync</a></code></li>
 <li><code><a title="egse.fee.feesim.FEESimulator.run" href="#egse.fee.feesim.FEESimulator.run">run</a></code></li>
-<li><code><a title="egse.fee.feesim.FEESimulator.send_data_packets" href="#egse.fee.feesim.FEESimulator.send_data_packets">send_data_packets</a></code></li>
 <li><code><a title="egse.fee.feesim.FEESimulator.sensor_sel" href="#egse.fee.feesim.FEESimulator.sensor_sel">sensor_sel</a></code></li>
-<li><code><a title="egse.fee.feesim.FEESimulator.update_error_flags" href="#egse.fee.feesim.FEESimulator.update_error_flags">update_error_flags</a></code></li>
+<li><code><a title="egse.fee.feesim.FEESimulator.set_error_flags" href="#egse.fee.feesim.FEESimulator.set_error_flags">set_error_flags</a></code></li>
 <li><code><a title="egse.fee.feesim.FEESimulator.update_hk_data" href="#egse.fee.feesim.FEESimulator.update_hk_data">update_hk_data</a></code></li>
 <li><code><a title="egse.fee.feesim.FEESimulator.update_hk_header" href="#egse.fee.feesim.FEESimulator.update_hk_header">update_hk_header</a></code></li>
 <li><code><a title="egse.fee.feesim.FEESimulator.v_end" href="#egse.fee.feesim.FEESimulator.v_end">v_end</a></code></li>

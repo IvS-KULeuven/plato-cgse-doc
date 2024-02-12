@@ -161,7 +161,7 @@ def find_dirs(pattern: str, root: str = None):
                 yield Path(path) / name
 
 
-def find_files(pattern: str, root: str = None, in_dir: str = None):
+def find_files(pattern: str, root: str | Path = None, in_dir: str = None):
     &#34;&#34;&#34;
     Generator for returning file paths from a top folder, matching the pattern.
 
@@ -200,7 +200,7 @@ def find_files(pattern: str, root: str = None, in_dir: str = None):
             yield Path(path) / name
 
 
-def find_file(name: str, root: str = None, in_dir: str = None) -&gt; Optional[Path]:
+def find_file(name: str, root: str | Path = None, in_dir: str = None) -&gt; Optional[Path]:
     &#34;&#34;&#34;
     Find the path to the given file starting from the root directory of the Common-EGSE
     distribution.
@@ -219,7 +219,7 @@ def find_file(name: str, root: str = None, in_dir: str = None) -&gt; Optional[Pa
         &gt;&gt;&gt; assert file.match(&#34;*/lib/CentOS-7/EtherSpace*&#34;)
 
     Args:
-        name (str): the name of the file
+        name (str): the name of the file (can contain wildcards)
         root (str): the top level folder to search [default=common-egse-root]
         in_dir (str): the &#39;leaf&#39; directory in which the file shall be
 
@@ -293,7 +293,7 @@ def get_common_egse_root(path: Union[str, PurePath] = None) -&gt; Optional[PureP
     Returns:
         Path: the absolute path to the Common-EGSE installation directory or None
     &#34;&#34;&#34;
-    _TEST_NAMES = (&#34;setup.py&#34;, &#34;MKDOCS&#34;)
+    _TEST_NAMES = (&#34;pyproject.toml&#34;, &#34;setup.py&#34;)
     if path is not None:
         return find_root(path, tests=_TEST_NAMES)
 
@@ -562,7 +562,7 @@ the last part of the path needs to match these folders.</p>
 </details>
 </dd>
 <dt id="egse.config.find_file"><code class="name flex">
-<span>def <span class="ident">find_file</span></span>(<span>name: str, root: str = None, in_dir: str = None) ‑> Optional[pathlib.Path]</span>
+<span>def <span class="ident">find_file</span></span>(<span>name: str, root: str | Path = None, in_dir: str = None) ‑> Optional[Path]</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Find the path to the given file starting from the root directory of the Common-EGSE
@@ -581,7 +581,7 @@ This requires that the path ends with the given string in <code>in_dir</code>.</
 <h2 id="args">Args</h2>
 <dl>
 <dt><strong><code>name</code></strong> :&ensp;<code>str</code></dt>
-<dd>the name of the file</dd>
+<dd>the name of the file (can contain wildcards)</dd>
 <dt><strong><code>root</code></strong> :&ensp;<code>str</code></dt>
 <dd>the top level folder to search [default=common-egse-root]</dd>
 <dt><strong><code>in_dir</code></strong> :&ensp;<code>str</code></dt>
@@ -593,7 +593,7 @@ This requires that the path ends with the given string in <code>in_dir</code>.</
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def find_file(name: str, root: str = None, in_dir: str = None) -&gt; Optional[Path]:
+<pre><code class="python">def find_file(name: str, root: str | Path = None, in_dir: str = None) -&gt; Optional[Path]:
     &#34;&#34;&#34;
     Find the path to the given file starting from the root directory of the Common-EGSE
     distribution.
@@ -612,7 +612,7 @@ This requires that the path ends with the given string in <code>in_dir</code>.</
         &gt;&gt;&gt; assert file.match(&#34;*/lib/CentOS-7/EtherSpace*&#34;)
 
     Args:
-        name (str): the name of the file
+        name (str): the name of the file (can contain wildcards)
         root (str): the top level folder to search [default=common-egse-root]
         in_dir (str): the &#39;leaf&#39; directory in which the file shall be
 
@@ -626,7 +626,7 @@ This requires that the path ends with the given string in <code>in_dir</code>.</
 </details>
 </dd>
 <dt id="egse.config.find_files"><code class="name flex">
-<span>def <span class="ident">find_files</span></span>(<span>pattern: str, root: str = None, in_dir: str = None)</span>
+<span>def <span class="ident">find_files</span></span>(<span>pattern: str, root: str | Path = None, in_dir: str = None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Generator for returning file paths from a top folder, matching the pattern.</p>
@@ -655,7 +655,7 @@ that the path ends with the given string in <code>in_dir</code>.</p>
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def find_files(pattern: str, root: str = None, in_dir: str = None):
+<pre><code class="python">def find_files(pattern: str, root: str | Path = None, in_dir: str = None):
     &#34;&#34;&#34;
     Generator for returning file paths from a top folder, matching the pattern.
 
@@ -875,7 +875,7 @@ def get_common_egse_root(path: Union[str, PurePath] = None) -&gt; Optional[PureP
     Returns:
         Path: the absolute path to the Common-EGSE installation directory or None
     &#34;&#34;&#34;
-    _TEST_NAMES = (&#34;setup.py&#34;, &#34;MKDOCS&#34;)
+    _TEST_NAMES = (&#34;pyproject.toml&#34;, &#34;setup.py&#34;)
     if path is not None:
         return find_root(path, tests=_TEST_NAMES)
 

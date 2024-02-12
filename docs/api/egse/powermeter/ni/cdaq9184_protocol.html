@@ -73,34 +73,6 @@ class cdaq9184Protocol(CommandProtocol):
     def get_housekeeping(self) -&gt; dict:
 
         result = dict()
-        result[&#34;timestamp&#34;] = format_datetime()
-
-        # FIXME:this is not working
-        # if self.state == DeviceConnectionState.DEVICE_NOT_CONNECTED and not Settings.simulation_mode():
-        #     logging.warning(&#34;device not connected&#34;)
-        #     return result
-
-        _data = self.cdaq.read_values()
-
-        #fixme: this will not work even if there it will no throw any error
-        if _data is None:
-            if not self.cdaq.is_connected():
-               logger.warning(&#34;CDAQ9184 is disconnected.&#34;)
-               self.update_connection_state(DeviceConnectionState.DEVICE_NOT_CONNECTED)
-            return result
-
-        ctime = datetime.datetime.strptime(_data[1], &#39;%H:%M:%S.%f&#39;)
-        dtime = ctime - datetime.datetime(1900, 1, 1)
-        ttime = dtime.total_seconds()
-        result[&#34;daytime&#34;] = ttime
-
-        _data = _data[2:]
-
-        for idx, key in enumerate(
-            [&#34;ph1_mean&#34;, &#34;ph1_dev&#34;, &#34;ph2_mean&#34;, &#34;ph2_dev&#34;, &#34;coll_1_temp_mean&#34;, &#34;coll_1_temp_dev&#34;,
-             &#34;coll_2_temp_mean&#34;, &#34;coll_2_temp_dev&#34;, &#34;sphere_temp_mean&#34;, &#34;sphere_temp_dev&#34;]):
-            result[key] = _data[idx]
-
         return result</code></pre>
 </details>
 </section>
@@ -158,34 +130,6 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
     def get_housekeeping(self) -&gt; dict:
 
         result = dict()
-        result[&#34;timestamp&#34;] = format_datetime()
-
-        # FIXME:this is not working
-        # if self.state == DeviceConnectionState.DEVICE_NOT_CONNECTED and not Settings.simulation_mode():
-        #     logging.warning(&#34;device not connected&#34;)
-        #     return result
-
-        _data = self.cdaq.read_values()
-
-        #fixme: this will not work even if there it will no throw any error
-        if _data is None:
-            if not self.cdaq.is_connected():
-               logger.warning(&#34;CDAQ9184 is disconnected.&#34;)
-               self.update_connection_state(DeviceConnectionState.DEVICE_NOT_CONNECTED)
-            return result
-
-        ctime = datetime.datetime.strptime(_data[1], &#39;%H:%M:%S.%f&#39;)
-        dtime = ctime - datetime.datetime(1900, 1, 1)
-        ttime = dtime.total_seconds()
-        result[&#34;daytime&#34;] = ttime
-
-        _data = _data[2:]
-
-        for idx, key in enumerate(
-            [&#34;ph1_mean&#34;, &#34;ph1_dev&#34;, &#34;ph2_mean&#34;, &#34;ph2_dev&#34;, &#34;coll_1_temp_mean&#34;, &#34;coll_1_temp_dev&#34;,
-             &#34;coll_2_temp_mean&#34;, &#34;coll_2_temp_dev&#34;, &#34;sphere_temp_mean&#34;, &#34;sphere_temp_dev&#34;]):
-            result[key] = _data[idx]
-
         return result</code></pre>
 </details>
 <h3>Ancestors</h3>

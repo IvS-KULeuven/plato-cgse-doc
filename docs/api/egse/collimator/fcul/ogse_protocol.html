@@ -27,6 +27,7 @@
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">import logging
+
 import sys
 import time
 
@@ -36,10 +37,12 @@ from egse.control import ControlServer
 from egse.control import Failure
 from egse.device import DeviceConnectionError
 from egse.device import DeviceTimeoutError
+from egse.metrics import define_metrics
+from egse.metrics import update_metrics
 from egse.process import SubProcess
 from egse.protocol import DynamicCommandProtocol
 from egse.settings import Settings
-from egse.state import GlobalState
+from egse.setup import load_setup
 from egse.synoptics import SynopticsManagerProxy
 from egse.system import format_datetime
 
@@ -53,10 +56,12 @@ class OGSEProtocol(DynamicCommandProtocol):
     def __init__(self, control_server: ControlServer):
         super().__init__(control_server)
 
+        setup = load_setup()
+
         self.ogse_sim: SubProcess
         self.device = OGSEInterface
 
-        self.fwc_calibration = GlobalState.setup.gse.ogse.calibration.fwc_calibration
+        self.fwc_calibration = setup.gse.ogse.calibration.fwc_calibration
 
         if Settings.simulation_mode():
             # In simulation mode, we start the simulator process and have the control server
@@ -84,6 +89,7 @@ class OGSEProtocol(DynamicCommandProtocol):
             MODULE_LOGGER.warning(exc)
 
         self.synoptics = SynopticsManagerProxy()
+        self.metrics = define_metrics(origin=&#34;OGSE&#34;, dashboard=&#34;GOGSE_MON&#34;, use_site=True, setup=setup)
 
     def quit(self):
         if self.synoptics is not None:
@@ -142,11 +148,14 @@ class OGSEProtocol(DynamicCommandProtocol):
         hk[f&#34;G{SITE.ID}_OGSE_LDLS_LAMP_FAULT&#34;] = self.device.get_lamp_fault() == &#34;lamp-fault: NO-ERROR&#34;
         hk[f&#34;G{SITE.ID}_OGSE_LDLS_CTRL_FAULT&#34;] = self.device.get_controller_fault() == &#34;controller-fault: NO-ERROR&#34;
         hk[f&#34;G{SITE.ID}_OGSE_LDLS_OPERATE&#34;] = self.device.get_operate() == &#34;operate: ON&#34;
+        hk[f&#34;G{SITE.ID}_OGSE_FW_MOVING&#34;] = ogse_status[&#34;att_moving&#34;]
 
         pm_status = self.device.pm_status()
 
         hk[f&#34;G{SITE.ID}_OGSE_PM_CH1_STATUS&#34;] = pm_status[&#34;pm1&#34;] == &#34;OK&#34;
         hk[f&#34;G{SITE.ID}_OGSE_PM_CH2_STATUS&#34;] = pm_status[&#34;pm2&#34;] == &#34;OK&#34;
+
+        update_metrics(self.metrics, {name: hk[name] for name in hk if name in self.metrics})
 
         return hk</code></pre>
 </details>
@@ -176,10 +185,12 @@ update of its state by calling the <code>update_connection_state()</code> method
     def __init__(self, control_server: ControlServer):
         super().__init__(control_server)
 
+        setup = load_setup()
+
         self.ogse_sim: SubProcess
         self.device = OGSEInterface
 
-        self.fwc_calibration = GlobalState.setup.gse.ogse.calibration.fwc_calibration
+        self.fwc_calibration = setup.gse.ogse.calibration.fwc_calibration
 
         if Settings.simulation_mode():
             # In simulation mode, we start the simulator process and have the control server
@@ -207,6 +218,7 @@ update of its state by calling the <code>update_connection_state()</code> method
             MODULE_LOGGER.warning(exc)
 
         self.synoptics = SynopticsManagerProxy()
+        self.metrics = define_metrics(origin=&#34;OGSE&#34;, dashboard=&#34;GOGSE_MON&#34;, use_site=True, setup=setup)
 
     def quit(self):
         if self.synoptics is not None:
@@ -265,11 +277,14 @@ update of its state by calling the <code>update_connection_state()</code> method
         hk[f&#34;G{SITE.ID}_OGSE_LDLS_LAMP_FAULT&#34;] = self.device.get_lamp_fault() == &#34;lamp-fault: NO-ERROR&#34;
         hk[f&#34;G{SITE.ID}_OGSE_LDLS_CTRL_FAULT&#34;] = self.device.get_controller_fault() == &#34;controller-fault: NO-ERROR&#34;
         hk[f&#34;G{SITE.ID}_OGSE_LDLS_OPERATE&#34;] = self.device.get_operate() == &#34;operate: ON&#34;
+        hk[f&#34;G{SITE.ID}_OGSE_FW_MOVING&#34;] = ogse_status[&#34;att_moving&#34;]
 
         pm_status = self.device.pm_status()
 
         hk[f&#34;G{SITE.ID}_OGSE_PM_CH1_STATUS&#34;] = pm_status[&#34;pm1&#34;] == &#34;OK&#34;
         hk[f&#34;G{SITE.ID}_OGSE_PM_CH2_STATUS&#34;] = pm_status[&#34;pm2&#34;] == &#34;OK&#34;
+
+        update_metrics(self.metrics, {name: hk[name] for name in hk if name in self.metrics})
 
         return hk</code></pre>
 </details>

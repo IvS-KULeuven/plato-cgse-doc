@@ -60,6 +60,7 @@ from egse.mixin import add_etx
 from egse.mixin import dynamic_command
 from egse.proxy import DynamicProxy
 from egse.settings import Settings
+from egse.setup import load_setup, Setup
 from egse.sockets import SocketInterface
 from egse.storage import StorageProxy
 from egse.storage import register_to_storage_manager
@@ -152,12 +153,12 @@ def process_error_response(response: bytes) -&gt; List:
     return data
 
 
-def process_all_housekeeping(data: bytes) -&gt; Union[List[List], Failure]:
+def process_all_housekeeping(response: bytes) -&gt; Union[List[List], Failure]:
     &#34;&#34;&#34;
     Process the response from the TCS EGSE remote command `get_TM_All`.
 
     Args:
-        data (str): a string containing the response from the TCS EGSE to the get_TM_All command.
+        response (bytes): contains the response from the TCS EGSE to the get_TM_All command.
 
     Returns:
         A nested list where the inner lists contain the name, timestamp and value of a housekeeping
@@ -167,7 +168,7 @@ def process_all_housekeeping(data: bytes) -&gt; Union[List[List], Failure]:
         communication error occurred.
     &#34;&#34;&#34;
 
-    data = data.decode().split(&#39;\x03&#39;)
+    data = response.decode().split(&#39;\x03&#39;)
 
     if &#34;not_allowed_remote_mode_not_active&#34; in data:
         msg = &#34;Remote Control not active, no housekeeping values received.&#34;
@@ -185,26 +186,26 @@ def process_all_housekeeping(data: bytes) -&gt; Union[List[List], Failure]:
     return data
 
 
-def process_get_housekeeping_value(data: bytes) -&gt; Union[HousekeepingValue, Failure]:
+def process_get_housekeeping_value(response: bytes) -&gt; Union[HousekeepingValue, Failure]:
 
-    if b&#34;remote_mode_not_active&#34; in data:
+    if b&#34;remote_mode_not_active&#34; in response:
         logger.warning(&#34;Requesting housekeeping value invalid, not in remote control mode.&#34;)
         return Failure(&#34;Requesting housekeeping value invalid, not in remote control mode.&#34;)
-    if b&#34;invalid_tm_item_id&#34; in data:
+    if b&#34;invalid_tm_item_id&#34; in response:
         logger.warning(&#34;Invalid housekeeping parameter name.&#34;)
         return Failure(&#34;Invalid housekeeping parameter name.&#34;)
-    data = data.decode().split(&#39;\x03&#39;)
+    data = response.decode().split(&#39;\x03&#39;)
     data = data[0].split(&#39;\t&#39;)
     return HousekeepingValue(*data)
 
 
-def process_configuration(tcs_conf: bytes) -&gt; Union[Dict, Failure]:
+def process_configuration(response: bytes) -&gt; Union[Dict, Failure]:
     &#34;&#34;&#34;
     Process the response to the get_configuration command. Processing in this context means to
     disentangle the returned string and split it up in parameter name, value pairs.
 
     Args:
-        tcs_conf (str): a string containing the response from the TCS EGSE
+        response (str): a string containing the response from the TCS EGSE
 
     Returns:
         A dictionary with the parameters names and their current values.
@@ -213,7 +214,7 @@ def process_configuration(tcs_conf: bytes) -&gt; Union[Dict, Failure]:
     # The rest of this function parse and organise the configuration parameters
     # in a list of lists with [[name, value], [...]]
 
-    tcs_conf = tcs_conf.decode().split(&#39;\x03&#39;)
+    tcs_conf = response.decode().split(&#39;\x03&#39;)
 
     # Remove empty items from the list. The list ends always with an empty item because
     # the response ends with the &#39;\x03&#39; EOT character.
@@ -592,12 +593,13 @@ class TCSInterface(DeviceInterface):
 
 class TCSParameterNaming:
     &#34;&#34;&#34;Defines the mapping between TCS EGSE device names and the CGSE names.&#34;&#34;&#34;
-    def __init__(self, origin: str):
+    def __init__(self, origin: str, setup: Setup):
+
         # The hk_names_mapping is a dictionary that maps the original device telemetry parameter
         # names to the correct device names as defined in the CGSE. The keys in the mapping are
         # the original device name, the values are the CGSE corrected names.
 
-        self.hk_names_mapping = read_conversion_dict(storage_mnemonic=origin, use_site=False)
+        self.hk_names_mapping = read_conversion_dict(storage_mnemonic=origin, use_site=False, setup=setup)
 
     def get_all_cgse_names(self):
         &#34;&#34;&#34;Returns the correct CGSE housekeeping parameter names.&#34;&#34;&#34;
@@ -613,9 +615,10 @@ class TCSParameterNaming:
 
 class TCSTelemetryMetrics:
     &#34;&#34;&#34;Defines the metrics for the TCS EGSE that are maintained by the TCSTelemetry class.&#34;&#34;&#34;
-    def __init__(self):
-        self.hk_metrics = define_metrics(origin=ORIGIN, dashboard=&#34;TCS_TRP_MON&#34;)
-        self.hk_metrics_status = define_metrics(origin=ORIGIN, dashboard=&#34;TCS_STATUS_MON&#34;)
+    def __init__(self, setup: Setup):
+
+        self.hk_metrics = define_metrics(origin=ORIGIN, dashboard=&#34;TCS_TRP_MON&#34;, setup=setup)
+        self.hk_metrics_status = define_metrics(origin=ORIGIN, dashboard=&#34;TCS_STATUS_MON&#34;, setup=setup)
 
     def update_metrics(self, name: str, value: str):
         &#34;&#34;&#34;Update the TCS metric parameter with the given value.&#34;&#34;&#34;
@@ -640,6 +643,7 @@ class TCSTelemetry(multiprocessing.Process):
         self._killer = None
         self._metrics: TCSTelemetryMetrics = None
         self._hk_names: TCSParameterNaming = None
+        self.setup = load_setup()
 
     def run(self):
 
@@ -652,15 +656,16 @@ class TCSTelemetry(multiprocessing.Process):
 
         self._killer = SignalCatcher()
 
+
         # Device naming is different from CGSE naming, the conversion is handled in the
         # TCSParameterNaming class.
 
-        self._hk_names = TCSParameterNaming(origin=ORIGIN)
+        self._hk_names = TCSParameterNaming(origin=ORIGIN, setup=self.setup)
 
         # Metrics must be defined only when the sub-process already exists, otherwise a TypeError
         # will be raised, indicating that a thread lock cannot be pickled
 
-        self._metrics = TCSTelemetryMetrics()
+        self._metrics = TCSTelemetryMetrics(self.setup)
 
         # These are only 61 of the telemetry parameters of the TCS EGSE. It is not possible to know
         # all the parameters beforehand since they are only published when changed. So, eventually,
@@ -1089,14 +1094,14 @@ This function is for use in a REPL or Jupyter Notebook.</p></div>
 </details>
 </dd>
 <dt id="egse.tcs.tcs.process_all_housekeeping"><code class="name flex">
-<span>def <span class="ident">process_all_housekeeping</span></span>(<span>data: bytes) ‑> Union[List[List[~T]], <a title="egse.control.Failure" href="../control.html#egse.control.Failure">Failure</a>]</span>
+<span>def <span class="ident">process_all_housekeeping</span></span>(<span>response: bytes) ‑> Union[List[List[~T]], <a title="egse.control.Failure" href="../control.html#egse.control.Failure">Failure</a>]</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Process the response from the TCS EGSE remote command <code>get_TM_All</code>.</p>
 <h2 id="args">Args</h2>
 <dl>
-<dt><strong><code>data</code></strong> :&ensp;<code>str</code></dt>
-<dd>a string containing the response from the TCS EGSE to the get_TM_All command.</dd>
+<dt><strong><code>response</code></strong> :&ensp;<code>bytes</code></dt>
+<dd>contains the response from the TCS EGSE to the get_TM_All command.</dd>
 </dl>
 <h2 id="returns">Returns</h2>
 <p>A nested list where the inner lists contain the name, timestamp and value of a housekeeping
@@ -1107,12 +1112,12 @@ communication error occurred.</p></div>
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def process_all_housekeeping(data: bytes) -&gt; Union[List[List], Failure]:
+<pre><code class="python">def process_all_housekeeping(response: bytes) -&gt; Union[List[List], Failure]:
     &#34;&#34;&#34;
     Process the response from the TCS EGSE remote command `get_TM_All`.
 
     Args:
-        data (str): a string containing the response from the TCS EGSE to the get_TM_All command.
+        response (bytes): contains the response from the TCS EGSE to the get_TM_All command.
 
     Returns:
         A nested list where the inner lists contain the name, timestamp and value of a housekeeping
@@ -1122,7 +1127,7 @@ communication error occurred.</p></div>
         communication error occurred.
     &#34;&#34;&#34;
 
-    data = data.decode().split(&#39;\x03&#39;)
+    data = response.decode().split(&#39;\x03&#39;)
 
     if &#34;not_allowed_remote_mode_not_active&#34; in data:
         msg = &#34;Remote Control not active, no housekeeping values received.&#34;
@@ -1157,14 +1162,14 @@ communication error occurred.</p></div>
 </details>
 </dd>
 <dt id="egse.tcs.tcs.process_configuration"><code class="name flex">
-<span>def <span class="ident">process_configuration</span></span>(<span>tcs_conf: bytes) ‑> Union[Dict[~KT, ~VT], <a title="egse.control.Failure" href="../control.html#egse.control.Failure">Failure</a>]</span>
+<span>def <span class="ident">process_configuration</span></span>(<span>response: bytes) ‑> Union[Dict[~KT, ~VT], <a title="egse.control.Failure" href="../control.html#egse.control.Failure">Failure</a>]</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Process the response to the get_configuration command. Processing in this context means to
 disentangle the returned string and split it up in parameter name, value pairs.</p>
 <h2 id="args">Args</h2>
 <dl>
-<dt><strong><code>tcs_conf</code></strong> :&ensp;<code>str</code></dt>
+<dt><strong><code>response</code></strong> :&ensp;<code>str</code></dt>
 <dd>a string containing the response from the TCS EGSE</dd>
 </dl>
 <h2 id="returns">Returns</h2>
@@ -1173,13 +1178,13 @@ disentangle the returned string and split it up in parameter name, value pairs.<
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def process_configuration(tcs_conf: bytes) -&gt; Union[Dict, Failure]:
+<pre><code class="python">def process_configuration(response: bytes) -&gt; Union[Dict, Failure]:
     &#34;&#34;&#34;
     Process the response to the get_configuration command. Processing in this context means to
     disentangle the returned string and split it up in parameter name, value pairs.
 
     Args:
-        tcs_conf (str): a string containing the response from the TCS EGSE
+        response (str): a string containing the response from the TCS EGSE
 
     Returns:
         A dictionary with the parameters names and their current values.
@@ -1188,7 +1193,7 @@ disentangle the returned string and split it up in parameter name, value pairs.<
     # The rest of this function parse and organise the configuration parameters
     # in a list of lists with [[name, value], [...]]
 
-    tcs_conf = tcs_conf.decode().split(&#39;\x03&#39;)
+    tcs_conf = response.decode().split(&#39;\x03&#39;)
 
     # Remove empty items from the list. The list ends always with an empty item because
     # the response ends with the &#39;\x03&#39; EOT character.
@@ -1311,7 +1316,7 @@ string.</p></div>
 </details>
 </dd>
 <dt id="egse.tcs.tcs.process_get_housekeeping_value"><code class="name flex">
-<span>def <span class="ident">process_get_housekeeping_value</span></span>(<span>data: bytes) ‑> Union[<a title="egse.tcs.tcs.HousekeepingValue" href="#egse.tcs.tcs.HousekeepingValue">HousekeepingValue</a>, <a title="egse.control.Failure" href="../control.html#egse.control.Failure">Failure</a>]</span>
+<span>def <span class="ident">process_get_housekeeping_value</span></span>(<span>response: bytes) ‑> Union[<a title="egse.tcs.tcs.HousekeepingValue" href="#egse.tcs.tcs.HousekeepingValue">HousekeepingValue</a>, <a title="egse.control.Failure" href="../control.html#egse.control.Failure">Failure</a>]</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -1319,15 +1324,15 @@ string.</p></div>
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def process_get_housekeeping_value(data: bytes) -&gt; Union[HousekeepingValue, Failure]:
+<pre><code class="python">def process_get_housekeeping_value(response: bytes) -&gt; Union[HousekeepingValue, Failure]:
 
-    if b&#34;remote_mode_not_active&#34; in data:
+    if b&#34;remote_mode_not_active&#34; in response:
         logger.warning(&#34;Requesting housekeeping value invalid, not in remote control mode.&#34;)
         return Failure(&#34;Requesting housekeeping value invalid, not in remote control mode.&#34;)
-    if b&#34;invalid_tm_item_id&#34; in data:
+    if b&#34;invalid_tm_item_id&#34; in response:
         logger.warning(&#34;Invalid housekeeping parameter name.&#34;)
         return Failure(&#34;Invalid housekeeping parameter name.&#34;)
-    data = data.decode().split(&#39;\x03&#39;)
+    data = response.decode().split(&#39;\x03&#39;)
     data = data[0].split(&#39;\t&#39;)
     return HousekeepingValue(*data)</code></pre>
 </details>
@@ -2457,7 +2462,7 @@ def upload_polynomial_rtd_parameters(self, sn, a, b, c, d, e, f):
 </dd>
 <dt id="egse.tcs.tcs.TCSParameterNaming"><code class="flex name class">
 <span>class <span class="ident">TCSParameterNaming</span></span>
-<span>(</span><span>origin: str)</span>
+<span>(</span><span>origin: str, setup: <a title="egse.setup.Setup" href="../setup.html#egse.setup.Setup">Setup</a>)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Defines the mapping between TCS EGSE device names and the CGSE names.</p></div>
@@ -2467,12 +2472,13 @@ def upload_polynomial_rtd_parameters(self, sn, a, b, c, d, e, f):
 </summary>
 <pre><code class="python">class TCSParameterNaming:
     &#34;&#34;&#34;Defines the mapping between TCS EGSE device names and the CGSE names.&#34;&#34;&#34;
-    def __init__(self, origin: str):
+    def __init__(self, origin: str, setup: Setup):
+
         # The hk_names_mapping is a dictionary that maps the original device telemetry parameter
         # names to the correct device names as defined in the CGSE. The keys in the mapping are
         # the original device name, the values are the CGSE corrected names.
 
-        self.hk_names_mapping = read_conversion_dict(storage_mnemonic=origin, use_site=False)
+        self.hk_names_mapping = read_conversion_dict(storage_mnemonic=origin, use_site=False, setup=setup)
 
     def get_all_cgse_names(self):
         &#34;&#34;&#34;Returns the correct CGSE housekeeping parameter names.&#34;&#34;&#34;
@@ -2685,7 +2691,7 @@ TCS EGSE remotely.</p>
 </dd>
 <dt id="egse.tcs.tcs.TCSTelemetry"><code class="flex name class">
 <span>class <span class="ident">TCSTelemetry</span></span>
-<span>(</span><span>command_queue: <bound method BaseContext.Queue of <multiprocessing.context.DefaultContext object at 0x7fd530351850>>, response_queue: <bound method BaseContext.Queue of <multiprocessing.context.DefaultContext object at 0x7fd530351850>>)</span>
+<span>(</span><span>command_queue: <bound method BaseContext.Queue of <multiprocessing.context.DefaultContext object at 0x102d32dc0>>, response_queue: <bound method BaseContext.Queue of <multiprocessing.context.DefaultContext object at 0x102d32dc0>>)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Process objects represent activity that is run in a separate process</p>
@@ -2706,6 +2712,7 @@ TCS EGSE remotely.</p>
         self._killer = None
         self._metrics: TCSTelemetryMetrics = None
         self._hk_names: TCSParameterNaming = None
+        self.setup = load_setup()
 
     def run(self):
 
@@ -2718,15 +2725,16 @@ TCS EGSE remotely.</p>
 
         self._killer = SignalCatcher()
 
+
         # Device naming is different from CGSE naming, the conversion is handled in the
         # TCSParameterNaming class.
 
-        self._hk_names = TCSParameterNaming(origin=ORIGIN)
+        self._hk_names = TCSParameterNaming(origin=ORIGIN, setup=self.setup)
 
         # Metrics must be defined only when the sub-process already exists, otherwise a TypeError
         # will be raised, indicating that a thread lock cannot be pickled
 
-        self._metrics = TCSTelemetryMetrics()
+        self._metrics = TCSTelemetryMetrics(self.setup)
 
         # These are only 61 of the telemetry parameters of the TCS EGSE. It is not possible to know
         # all the parameters beforehand since they are only published when changed. So, eventually,
@@ -2912,15 +2920,16 @@ sample in kept in the dictionary.</p></div>
 
     self._killer = SignalCatcher()
 
+
     # Device naming is different from CGSE naming, the conversion is handled in the
     # TCSParameterNaming class.
 
-    self._hk_names = TCSParameterNaming(origin=ORIGIN)
+    self._hk_names = TCSParameterNaming(origin=ORIGIN, setup=self.setup)
 
     # Metrics must be defined only when the sub-process already exists, otherwise a TypeError
     # will be raised, indicating that a thread lock cannot be pickled
 
-    self._metrics = TCSTelemetryMetrics()
+    self._metrics = TCSTelemetryMetrics(self.setup)
 
     # These are only 61 of the telemetry parameters of the TCS EGSE. It is not possible to know
     # all the parameters beforehand since they are only published when changed. So, eventually,
@@ -2977,6 +2986,7 @@ sample in kept in the dictionary.</p></div>
 </dd>
 <dt id="egse.tcs.tcs.TCSTelemetryMetrics"><code class="flex name class">
 <span>class <span class="ident">TCSTelemetryMetrics</span></span>
+<span>(</span><span>setup: <a title="egse.setup.Setup" href="../setup.html#egse.setup.Setup">Setup</a>)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Defines the metrics for the TCS EGSE that are maintained by the TCSTelemetry class.</p></div>
@@ -2986,9 +2996,10 @@ sample in kept in the dictionary.</p></div>
 </summary>
 <pre><code class="python">class TCSTelemetryMetrics:
     &#34;&#34;&#34;Defines the metrics for the TCS EGSE that are maintained by the TCSTelemetry class.&#34;&#34;&#34;
-    def __init__(self):
-        self.hk_metrics = define_metrics(origin=ORIGIN, dashboard=&#34;TCS_TRP_MON&#34;)
-        self.hk_metrics_status = define_metrics(origin=ORIGIN, dashboard=&#34;TCS_STATUS_MON&#34;)
+    def __init__(self, setup: Setup):
+
+        self.hk_metrics = define_metrics(origin=ORIGIN, dashboard=&#34;TCS_TRP_MON&#34;, setup=setup)
+        self.hk_metrics_status = define_metrics(origin=ORIGIN, dashboard=&#34;TCS_STATUS_MON&#34;, setup=setup)
 
     def update_metrics(self, name: str, value: str):
         &#34;&#34;&#34;Update the TCS metric parameter with the given value.&#34;&#34;&#34;

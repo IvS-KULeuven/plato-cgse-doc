@@ -31,12 +31,12 @@
 from prometheus_client import Gauge
 
 from egse.control import ControlServer
+from egse.fdir.fdir_manager import FdirManagerProxy
 from egse.protocol import CommandProtocol
 from egse.proxy import Proxy
 from egse.settings import Settings
 from egse.zmq_ser import bind_address
 from egse.system import format_datetime
-# from egse.fdir.fdir_manager import FdirManagerProxy
 from egse.vacuum.pfeiffer.tc400_interface import Tc400Command, Tc400Interface
 from egse.vacuum.pfeiffer.tc400_controller import Tc400Controller
 from egse.vacuum.pfeiffer.tc400_simulator import Tc400Simulator
@@ -69,14 +69,12 @@ class Tc400Protocol(CommandProtocol):
 
         self.build_device_method_lookup_table(self.dev)
 
-
     # move to parent class?
     def get_bind_address(self):
         return bind_address(
             self.control_server.get_communication_protocol(),
             self.control_server.get_commanding_port(),
         )
-
 
     def get_status(self):
         status_dict = super().get_status()
@@ -86,10 +84,8 @@ class Tc400Protocol(CommandProtocol):
 
         return status_dict
 
-
     def get_housekeeping(self) -&gt; dict:
         result = dict()
-        prev_err = None
         result[&#34;timestamp&#34;] = format_datetime()
 
         try:
@@ -100,21 +96,7 @@ class Tc400Protocol(CommandProtocol):
         except Exception as e:
             LOGGER.warning(f&#39;failed to get HK ({e})&#39;)
 
-            # with FdirManagerProxy() as fdir:
-            #     fdir_code = 100010
-            #     fdir.signal_fdir(fdir_code)
-            #     LOGGER.warning(f&#39;asserted fdir signal: {fdir_code}&#39;)
-
             return result
-
-        # if prev_err is not result[f&#34;G{SITE_ID}_TC400_LAST_ERROR&#34;]:
-        #     LOGGER.info(f&#34;Device has raised an error flag: {result[f&#34;G{SITE_ID}_TC400_LAST_ERROR&#34;]}&#34;)
-        #     with FdirManagerProxy() as fdir:
-        #         fdir_code = 1010
-        #         fdir.signal_fdir(fdir_code)
-        #         LOGGER.warning(f&#39;asserted fdir signal: {fdir_code}&#39;)
-
-        prev_err = result[&#39;GSRON_TC400_LAST_ERROR&#39;]
 
         gauge_active_speed.set(result[f&#34;GSRON_TC400_ACT_SPEED&#34;])
         gauge_drive_power.set(result[f&#34;GSRON_TC400_POWER&#34;])
@@ -129,16 +111,7 @@ class Tc400Proxy(Proxy, Tc400Interface):
     def __init__(self):
         super().__init__(
             connect_address(
-                CTRL_SETTINGS.PROTOCOL, CTRL_SETTINGS.HOSTNAME, CTRL_SETTINGS.COMMANDING_PORT))
-
-    def connect_cs(self):
-        try:
-            super().connect_cs()
-        except Exception:
-            with FdirManagerProxy() as fdir:
-                fdir_code = 10010
-                fdir.signal_fdir(fdir_code)
-                LOGGER.warning(f&#39;asserted fdir signal: {fdir_code}&#39;)</code></pre>
+                CTRL_SETTINGS.PROTOCOL, CTRL_SETTINGS.HOSTNAME, CTRL_SETTINGS.COMMANDING_PORT))</code></pre>
 </details>
 </section>
 <section>
@@ -183,14 +156,12 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
 
         self.build_device_method_lookup_table(self.dev)
 
-
     # move to parent class?
     def get_bind_address(self):
         return bind_address(
             self.control_server.get_communication_protocol(),
             self.control_server.get_commanding_port(),
         )
-
 
     def get_status(self):
         status_dict = super().get_status()
@@ -200,10 +171,8 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
 
         return status_dict
 
-
     def get_housekeeping(self) -&gt; dict:
         result = dict()
-        prev_err = None
         result[&#34;timestamp&#34;] = format_datetime()
 
         try:
@@ -214,21 +183,7 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
         except Exception as e:
             LOGGER.warning(f&#39;failed to get HK ({e})&#39;)
 
-            # with FdirManagerProxy() as fdir:
-            #     fdir_code = 100010
-            #     fdir.signal_fdir(fdir_code)
-            #     LOGGER.warning(f&#39;asserted fdir signal: {fdir_code}&#39;)
-
             return result
-
-        # if prev_err is not result[f&#34;G{SITE_ID}_TC400_LAST_ERROR&#34;]:
-        #     LOGGER.info(f&#34;Device has raised an error flag: {result[f&#34;G{SITE_ID}_TC400_LAST_ERROR&#34;]}&#34;)
-        #     with FdirManagerProxy() as fdir:
-        #         fdir_code = 1010
-        #         fdir.signal_fdir(fdir_code)
-        #         LOGGER.warning(f&#39;asserted fdir signal: {fdir_code}&#39;)
-
-        prev_err = result[&#39;GSRON_TC400_LAST_ERROR&#39;]
 
         gauge_active_speed.set(result[f&#34;GSRON_TC400_ACT_SPEED&#34;])
         gauge_drive_power.set(result[f&#34;GSRON_TC400_POWER&#34;])
@@ -287,16 +242,7 @@ can fix the problem with the control server and call <code>connect_cs()</code>, 
     def __init__(self):
         super().__init__(
             connect_address(
-                CTRL_SETTINGS.PROTOCOL, CTRL_SETTINGS.HOSTNAME, CTRL_SETTINGS.COMMANDING_PORT))
-
-    def connect_cs(self):
-        try:
-            super().connect_cs()
-        except Exception:
-            with FdirManagerProxy() as fdir:
-                fdir_code = 10010
-                fdir.signal_fdir(fdir_code)
-                LOGGER.warning(f&#39;asserted fdir signal: {fdir_code}&#39;)</code></pre>
+                CTRL_SETTINGS.PROTOCOL, CTRL_SETTINGS.HOSTNAME, CTRL_SETTINGS.COMMANDING_PORT))</code></pre>
 </details>
 <h3>Ancestors</h3>
 <ul class="hlist">

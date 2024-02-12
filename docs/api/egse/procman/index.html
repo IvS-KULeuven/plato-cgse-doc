@@ -50,8 +50,7 @@ from egse.process import SubProcess
 from egse.protocol import CommandProtocol
 from egse.proxy import Proxy
 from egse.settings import Settings
-from egse.setup import Setup
-from egse.state import GlobalState
+from egse.setup import Setup, load_setup
 from egse.storage import is_storage_manager_active
 from egse.system import find_class
 from egse.system import format_datetime
@@ -406,7 +405,7 @@ class ProcessManagerController(ProcessManagerInterface):
 
         try:
 
-            setup = GlobalState.setup
+            setup = load_setup()
 
             devices = {}
             devices = Setup.find_devices(setup, devices=devices)
@@ -509,7 +508,7 @@ class ProcessManagerController(ProcessManagerInterface):
                     cs.execute(detach_from_parent=True)
 
                     if process_name == &#34;DAQ6510&#34;:
-                        setup = GlobalState.setup
+                        setup = load_setup()
                         das_delay = setup.gse.DAQ6510.route.delay
                         das_count = setup.gse.DAQ6510.route.scan.COUNT.SCAN
                         das_interval = setup.gse.DAQ6510.route.scan.INTERVAL
@@ -517,6 +516,18 @@ class ProcessManagerController(ProcessManagerInterface):
                         das = SubProcess(&#34;MyApp&#34;, [sys.executable, &#34;-m&#34;, &#34;egse.das&#34;, &#34;daq6510&#34;, &#34;--count&#34;,
                                                    str(das_count), &#34;--interval&#34;, str(das_interval), &#34;--delay&#34;,
                                                    str(das_delay)])
+                        das.execute(detach_from_parent=&#34;True&#34;)
+
+                    elif process_name == &#34;PTC10&#34;:
+                        das = SubProcess(&#34;MyApp&#34;, [sys.executable, &#34;-m&#34;, &#34;egse.das&#34;, &#34;ptc10&#34;, &#34;--auto_regulation&#34;])
+                        das.execute(detach_from_parent=&#34;True&#34;)
+
+                    elif process_name == &#34;CDAQ OGSE2&#34;:
+                        das = SubProcess(&#34;MyApp&#34;, [sys.executable, &#34;-m&#34;, &#34;egse.das&#34;, &#34;cdaq-photo&#34;])
+                        das.execute(detach_from_parent=&#34;True&#34;)
+
+                    elif process_name == &#34;CDAQ ALARMS&#34;:  # TODO
+                        das = SubProcess(&#34;MyApp&#34;, [sys.executable, &#34;-m&#34;, &#34;egse.das&#34;, &#34;cdaq-alarms&#34;])
                         das.execute(detach_from_parent=&#34;True&#34;)
 
                     # Check to see the CS actually started
@@ -637,6 +648,18 @@ class ProcessManagerController(ProcessManagerInterface):
 
                 if process_name == &#34;DAQ6510&#34;:
                     das = SubProcess(&#34;MyApp&#34;, [sys.executable, &#34;-m&#34;, &#34;egse.das&#34;, &#34;daq6510&#34;])
+                    das.execute(detach_from_parent=&#34;True&#34;)
+
+                elif process_name == &#34;PTC10&#34;:
+                    das = SubProcess(&#34;MyApp&#34;, [sys.executable, &#34;-m&#34;, &#34;egse.das&#34;, &#34;ptc10&#34;, &#34;--auto_regulation&#34;])
+                    das.execute(detach_from_parent=&#34;True&#34;)
+
+                elif process_name == &#34;CDAQ OGSE2&#34;:
+                    das = SubProcess(&#34;MyApp&#34;, [sys.executable, &#34;-m&#34;, &#34;egse.das&#34;, &#34;cdaq-photo&#34;])
+                    das.execute(detach_from_parent=&#34;True&#34;)
+
+                elif process_name == &#34;CDAQ ALARMS&#34;:  # TODO
+                    das = SubProcess(&#34;MyApp&#34;, [sys.executable, &#34;-m&#34;, &#34;egse.das&#34;, &#34;cdaq-alarms&#34;])
                     das.execute(detach_from_parent=&#34;True&#34;)
 
                 # Check to see the CS actually started
@@ -1041,7 +1064,7 @@ inactive (and False will be returned).</p>
 
         try:
 
-            setup = GlobalState.setup
+            setup = load_setup()
 
             devices = {}
             devices = Setup.find_devices(setup, devices=devices)
@@ -1144,7 +1167,7 @@ inactive (and False will be returned).</p>
                     cs.execute(detach_from_parent=True)
 
                     if process_name == &#34;DAQ6510&#34;:
-                        setup = GlobalState.setup
+                        setup = load_setup()
                         das_delay = setup.gse.DAQ6510.route.delay
                         das_count = setup.gse.DAQ6510.route.scan.COUNT.SCAN
                         das_interval = setup.gse.DAQ6510.route.scan.INTERVAL
@@ -1152,6 +1175,18 @@ inactive (and False will be returned).</p>
                         das = SubProcess(&#34;MyApp&#34;, [sys.executable, &#34;-m&#34;, &#34;egse.das&#34;, &#34;daq6510&#34;, &#34;--count&#34;,
                                                    str(das_count), &#34;--interval&#34;, str(das_interval), &#34;--delay&#34;,
                                                    str(das_delay)])
+                        das.execute(detach_from_parent=&#34;True&#34;)
+
+                    elif process_name == &#34;PTC10&#34;:
+                        das = SubProcess(&#34;MyApp&#34;, [sys.executable, &#34;-m&#34;, &#34;egse.das&#34;, &#34;ptc10&#34;, &#34;--auto_regulation&#34;])
+                        das.execute(detach_from_parent=&#34;True&#34;)
+
+                    elif process_name == &#34;CDAQ OGSE2&#34;:
+                        das = SubProcess(&#34;MyApp&#34;, [sys.executable, &#34;-m&#34;, &#34;egse.das&#34;, &#34;cdaq-photo&#34;])
+                        das.execute(detach_from_parent=&#34;True&#34;)
+
+                    elif process_name == &#34;CDAQ ALARMS&#34;:  # TODO
+                        das = SubProcess(&#34;MyApp&#34;, [sys.executable, &#34;-m&#34;, &#34;egse.das&#34;, &#34;cdaq-alarms&#34;])
                         das.execute(detach_from_parent=&#34;True&#34;)
 
                     # Check to see the CS actually started
@@ -1272,6 +1307,18 @@ inactive (and False will be returned).</p>
 
                 if process_name == &#34;DAQ6510&#34;:
                     das = SubProcess(&#34;MyApp&#34;, [sys.executable, &#34;-m&#34;, &#34;egse.das&#34;, &#34;daq6510&#34;])
+                    das.execute(detach_from_parent=&#34;True&#34;)
+
+                elif process_name == &#34;PTC10&#34;:
+                    das = SubProcess(&#34;MyApp&#34;, [sys.executable, &#34;-m&#34;, &#34;egse.das&#34;, &#34;ptc10&#34;, &#34;--auto_regulation&#34;])
+                    das.execute(detach_from_parent=&#34;True&#34;)
+
+                elif process_name == &#34;CDAQ OGSE2&#34;:
+                    das = SubProcess(&#34;MyApp&#34;, [sys.executable, &#34;-m&#34;, &#34;egse.das&#34;, &#34;cdaq-photo&#34;])
+                    das.execute(detach_from_parent=&#34;True&#34;)
+
+                elif process_name == &#34;CDAQ ALARMS&#34;:  # TODO
+                    das = SubProcess(&#34;MyApp&#34;, [sys.executable, &#34;-m&#34;, &#34;egse.das&#34;, &#34;cdaq-alarms&#34;])
                     das.execute(detach_from_parent=&#34;True&#34;)
 
                 # Check to see the CS actually started
@@ -1542,7 +1589,7 @@ from the "device" entries in the setup file (and should be Proxy classes).</p>
 
     try:
 
-        setup = GlobalState.setup
+        setup = load_setup()
 
         devices = {}
         devices = Setup.find_devices(setup, devices=devices)

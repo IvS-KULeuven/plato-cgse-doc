@@ -35,11 +35,12 @@ the same time we can decode the values into the constant name for debugging etc.
 
 logger.debug(f&quot;We received an error code {constants.esl_error_codes[err]} [{err}]&quot;)
 </code></pre>
-<p>The following codes are set up with this two way construct:</p>
+<p>The following codes are set up with this two-way construct:</p>
 <ul>
 <li>Terminator Codes</li>
 <li>Extension Codes</li>
 <li>ESL Error Codes</li>
+<li>ESL subsidiary API Error Codes</li>
 <li>RMAP Error Codes</li>
 </ul>
 <details class="source">
@@ -65,21 +66,31 @@ some_function([10, 20, 30, 40, 50], constants.ESL_EOP)
 
 logger.debug(f&#34;We received an error code {constants.esl_error_codes[err]} [{err}]&#34;)
 ```
-The following codes are set up with this two way construct:
+The following codes are set up with this two-way construct:
 
 * Terminator Codes
 * Extension Codes
 * ESL Error Codes
+* ESL subsidiary API Error Codes
 * RMAP Error Codes
 
 
 &#34;&#34;&#34;
-import sys
 import logging
+import sys
 
 logger = logging.getLogger(__name__)
 
 module = sys.modules[__name__]
+
+__all__ = [
+    &#39;esl_api_error_codes&#39;,
+    &#39;esl_error_codes&#39;,
+    &#39;esl_extension_codes&#39;,
+    &#39;esl_link_mode&#39;,
+    &#39;esl_rmap_error_codes&#39;,
+    &#39;esl_terminator_codes&#39;,
+]
 
 # ESL Error Codes and Constants --------------------------------------------------------------------
 
@@ -108,6 +119,13 @@ ESL_LINK_MODE_DISABLED        = 0x01
 ESL_LINK_MODE_NORMAL          = 0x02
 ESL_LINK_MODE_LEGACY          = 0x04
 ESL_LINK_MODE_MASTER          = 0x06
+
+esl_link_mode = {
+    0x01: &#34;DISABLED&#34;,
+    0x02: &#34;NORMAL&#34;,
+    0x04: &#34;LEGACY&#34;,
+    0x06: &#34;MASTER&#34;
+}
 
 # Error Reporting
 
@@ -148,6 +166,7 @@ for name, value in esl_terminator_names.items():
     except AttributeError:
         setattr(module, name, value)
 
+del esl_terminator_names
 
 # Define the ESL Extension Codes
 
@@ -196,6 +215,7 @@ for name, value in esl_extension_names.items():
     except AttributeError:
         setattr(module, name, value)
 
+del esl_extension_names
 
 # Define the ESL Error Codes
 
@@ -220,6 +240,61 @@ for name, value in esl_error_names.items():
     except AttributeError:
         setattr(module, name, value)
 
+del esl_error_names
+
+# Define subsidiary ESL API error codes
+
+esl_api_error_codes = {
+    -1: &#34;ESL_API_ERROR_RECFILE_OPEN&#34;,              # Couldn&#39;t open recording file
+    -2: &#34;ESL_API_ERROR_RECFILE_WRITE&#34;,             # record_file write failed
+    -3: &#34;ESL_API_ERROR_LOGFILE_OPEN&#34;,              # Couldn&#39;t open logging file
+    -4: &#34;ESL_API_ERROR_LOGFILE_WRITE&#34;,             # log_file write failed
+   -10: &#34;ESL_API_ERROR_RECEIVER_TIMEOUT&#34;,          # we have a network timeout
+   -11: &#34;ESL_API_ERROR_RECEIVER_SHUTDOWN&#34;,         # peer has performed an orderly shutdown
+   -12: &#34;ESL_API_ERROR_IO_ERROR&#34;,                  # we have an IO error
+   -15: &#34;ESL_API_ERROR_SAVEBUF_OVERFLOW_SAVE&#34;,     # Saving the read_packet_full() save_buffer failed
+   -16: &#34;ESL_API_ERROR_SAVEBUF_OVERFLOW_RESTORE&#34;,  # Restoring the read_packet_full() save_buffer failed
+   -17: &#34;ESL_API_ERROR_FUNCTION_NOT_SUPPORTED&#34;,    # Device does not support the requested function
+   -18: &#34;ESL_API_NETWORK&#34;,                         # Error reading / writing to/from the device
+   -19: &#34;ESL_API_NETWORK_FORMAT_ERROR&#34;,            # Error understanding received packet
+   -20: &#34;ESL_API_REQUEST_TOO_LARGE&#34;,               # The I/O request can&#39;t be fulfilled by the hardware
+   -21: &#34;ESL_API_SEQUENCE_ERROR&#34;,                  # Didn&#39;t receive expected notification from the hardware
+   -22: &#34;ESL_API_RESPONSE_TOO_SMALL&#34;,              # Response from the device didn&#39;t contain enough data
+   -23: &#34;ESL_API_RESPONSE_MISMATCH&#34;,               # Response does not match I/O request
+   -24: &#34;ESL_API_MODULE_NOT_PRESENT&#34;,              # Module not present
+   -25: &#34;ESL_API_PARAMETER_RANGE_INCORRECT&#34;,       # Parameter not in range
+   -26: &#34;ESL_API_FILE_NOT_PRESENT&#34;,                # Requested file is not present
+   -27: &#34;ESL_API_EINTR&#34;,                           # EINTR occurred
+   -28: &#34;ESL_API_LINK_INCORRECT&#34;,                  # Link number is incorrect
+   -29: &#34;ESL_API_INCORRECT_DEVICE&#34;,                # Connecting to a device which does not support functionality
+   -30: &#34;ESL_API_MEMORY&#34;,                          # Unable to allocate memory
+   -31: &#34;ESL_API_HOST_UNRESOLVABLE&#34;,               # Unable to resolve host
+   -32: &#34;ESL_API_HOST_UNRESPONSIVE&#34;,               # Unable to connect to host
+   -33: &#34;ESL_API_WAVEFORM_DIR_CREATE&#34;,             # Unable to create waveform directory
+   -34: &#34;ESL_API_ZERO_READ&#34;,                       # asked to read zero bytes
+   -35: &#34;ESL_API_SET_OPTION_FILE&#34;,                 # Asked to set an option when playing back from file
+   -36: &#34;ESL_API_INVALID_DEVICE&#34;,                  # Device is not supported by API
+   -37: &#34;ESL_API_FILE_MOVE&#34;,                       # Unable to move file into place
+   -38: &#34;ESL_API_INVALID_FILE&#34;,                    # Unable to open file
+   -39: &#34;ESL_API_CALLBACK_RETURN&#34;,                 # Callback has asked for a return
+   -40: &#34;ESL_API_FILELIST_EMPTY&#34;,                  # List of files given is empty
+   -41: &#34;ESL_API_UNKNOWN_SYSTEM_TYPE&#34;,             # Unknown type
+   -42: &#34;ESL_API_NOT_KNOWN&#34;,                       # API returned 0 as an error should (should not happen)
+   -43: &#34;ESL_API_EXE_START_FAILED&#34;,                # Cannot start executable
+   -44: &#34;ESL_API_NO_CONNECTION&#34;,                   # Link Not established
+   -45: &#34;ESL_API_INVALID_LINK&#34;,                    # Invalid Link selected
+}
+
+esl_api_error_codes_names = dict([(v, k) for k, v in esl_api_error_codes.items()])
+
+for name, value in esl_api_error_codes_names.items():
+    try:
+        if getattr(module, name) != value:
+            logger.error(f&#34;module {__name__} is trying to overwrite the constant {name} with a new value {value}.&#34;)
+    except AttributeError:
+        setattr(module, name, value)
+
+del esl_api_error_codes_names
 
 # RMAP Error Codes and Constants -------------------------------------------------------------------
 
@@ -265,7 +340,9 @@ for name, value in esl_rmap_error_names.items():
         getattr(module, name)
         logger.error(f&#34;module {__name__} is trying to overwrite the constant {name} with a new value.&#34;)
     except AttributeError:
-        setattr(module, name, value)</code></pre>
+        setattr(module, name, value)
+
+del esl_rmap_error_names</code></pre>
 </details>
 </section>
 <section>

@@ -220,6 +220,7 @@ import datetime
 import logging
 import os
 import shutil
+from functools import partial
 from pathlib import Path
 from pathlib import PurePath
 from typing import Dict
@@ -237,11 +238,15 @@ from egse.control import is_control_server_active
 from egse.decorators import dynamic_interface
 from egse.env import get_data_storage_location
 from egse.exceptions import Error
+from egse.listener import Event
+from egse.listener import EventInterface
 from egse.obsid import ObservationIdentifier
 from egse.obsid import TEST_LAB
 from egse.protocol import CommandProtocol
 from egse.proxy import Proxy
 from egse.settings import Settings
+from egse.setup import Setup
+from egse.setup import get_setup
 from egse.storage.persistence import HDF5
 from egse.storage.persistence import PersistenceLayer
 from egse.system import format_datetime
@@ -565,6 +570,21 @@ class StorageInterface:
 
         pass
 
+    @dynamic_interface
+    def get_loaded_setup_id(self) -&gt; str:
+        &#34;&#34;&#34;
+        Returns the ID of the currently loaded Setup.
+
+        Note:
+            This is the Setup active on this control server. This command is mainly used to check that the Setup
+            loaded in this control server corresponds to the Setup loaded in the configuration manager.
+
+        Returns:
+            The ID of the Setup loaded in this control server.
+        &#34;&#34;&#34;
+
+        pass
+
 
 def _disentangle_filename(filename: Union[str, Path]) -&gt; Tuple:
     &#34;&#34;&#34;Disentangle the given filename and return the test identifier, the site id and the Setup id.
@@ -757,16 +777,18 @@ def determine_counter_from_dir_list(location, pattern, index: int = -1):
         return 1
 
 
-class StorageController(StorageInterface):
+class StorageController(StorageInterface, EventInterface):
     &#34;&#34;&#34;
     The Storage Controller handles the registration of components, the start and end of an
     observation/test and the dispatching of the persistence functions in save.
     &#34;&#34;&#34;
 
-    def __init__(self):
+    def __init__(self, control_server):
         self._obsid: ObservationIdentifier | None = None
         self._camera_name: str | None = None
         self._registry = Registry()
+        self._cs: ControlServer = control_server
+        self._setup: Setup | None = None
 
     def start_observation(self, obsid: ObservationIdentifier, camera_name: str = None) -&gt; Response:
         if self._obsid is not None:
@@ -776,6 +798,11 @@ class StorageController(StorageInterface):
 
         self._obsid = obsid
         self._camera_name = camera_name
+        if camera_name != self._setup.camera.ID.lower():
+            logger.error(
+                f&#34;Mismatch in camera name between Setup in Storage Manager {self._setup.camera.ID.lower()} &#34;
+                f&#34;and Setup in Configuration Manager {camera_name}!&#34;
+            )
 
         # open a dedicated file for each registered item
 
@@ -1072,12 +1099,48 @@ class StorageController(StorageInterface):
         total, used, free = shutil.disk_usage(location)
         return total, used, free
 
+    def get_loaded_setup_id(self) -&gt; str:
+        return self._setup.get_id() if self._setup is not None else &#34;no setup loaded&#34;
+
+    def load_setup(self, setup_id: int = 0):
+        # Use get_setup() here instead of load_setup() in order to prevent recursively notifying and loading Setups.
+        # That is because the load_setup() method will notify the listeners that a new Setup has been loaded.
+        try:
+            setup = get_setup()
+        except Exception as exc:
+            raise RuntimeError(f&#34;Exception caught: {exc!r}&#34;)
+
+        if setup is None:
+            raise RuntimeError(&#34;Couldn&#39;t get Setup from the configuration manager.&#34;)
+
+        if isinstance(setup, Failure):
+            raise setup
+
+        # time.sleep(20.0)  # used as a test to check if this method is blocking the commanding... it is!
+
+        # logger.info(f&#34;{setup_id = }, {setup.get_id() = }&#34;)
+
+        if 0 &lt; setup_id != int(setup.get_id()):
+            raise RuntimeError(f&#34;Setup IDs do not match: {setup.get_id()} != {setup_id}, no Setup loaded.&#34;)
+        else:
+            self._setup = setup
+            logger.info(f&#34;Setup {setup.get_id()} loaded in the Storage manager.&#34;)
+
+    def handle_event(self, event: Event) -&gt; str:
+        logger.info(f&#34;An event is received, {event=}&#34;)
+        try:
+            if event.type == &#39;new_setup&#39;:
+                self._cs.schedule_task(partial(self.load_setup, setup_id=event.context[&#39;setup_id&#39;]))
+        except KeyError as exc:
+            return f&#34;Expected event context to contain the following key: {exc}&#34;
+        return &#34;ACK&#34;
+
 
 class StorageCommand(ClientServerCommand):
     pass
 
 
-class StorageProxy(Proxy, StorageInterface):
+class StorageProxy(Proxy, StorageInterface, EventInterface):
     &#34;&#34;&#34;The StorageProxy class is used to connect to the Storage Manager (control server) and
     send commands remotely.&#34;&#34;&#34;
 
@@ -1103,7 +1166,7 @@ class StorageProtocol(CommandProtocol):
         super().__init__()
         self.control_server = control_server
 
-        self.controller = StorageController()
+        self.controller = StorageController(control_server)
 
         self.load_commands(COMMAND_SETTINGS.Commands, StorageCommand, StorageController)
 
@@ -1563,6 +1626,7 @@ Arguments can be positional or keyword arguments, not both.</p></div>
 </dd>
 <dt id="egse.storage.StorageController"><code class="flex name class">
 <span>class <span class="ident">StorageController</span></span>
+<span>(</span><span>control_server)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>The Storage Controller handles the registration of components, the start and end of an
@@ -1571,16 +1635,18 @@ observation/test and the dispatching of the persistence functions in save.</p></
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">class StorageController(StorageInterface):
+<pre><code class="python">class StorageController(StorageInterface, EventInterface):
     &#34;&#34;&#34;
     The Storage Controller handles the registration of components, the start and end of an
     observation/test and the dispatching of the persistence functions in save.
     &#34;&#34;&#34;
 
-    def __init__(self):
+    def __init__(self, control_server):
         self._obsid: ObservationIdentifier | None = None
         self._camera_name: str | None = None
         self._registry = Registry()
+        self._cs: ControlServer = control_server
+        self._setup: Setup | None = None
 
     def start_observation(self, obsid: ObservationIdentifier, camera_name: str = None) -&gt; Response:
         if self._obsid is not None:
@@ -1590,6 +1656,11 @@ observation/test and the dispatching of the persistence functions in save.</p></
 
         self._obsid = obsid
         self._camera_name = camera_name
+        if camera_name != self._setup.camera.ID.lower():
+            logger.error(
+                f&#34;Mismatch in camera name between Setup in Storage Manager {self._setup.camera.ID.lower()} &#34;
+                f&#34;and Setup in Configuration Manager {camera_name}!&#34;
+            )
 
         # open a dedicated file for each registered item
 
@@ -1884,11 +1955,48 @@ observation/test and the dispatching of the persistence functions in save.</p></
 
         location = Path(get_data_storage_location(site_id=SITE.ID))
         total, used, free = shutil.disk_usage(location)
-        return total, used, free</code></pre>
+        return total, used, free
+
+    def get_loaded_setup_id(self) -&gt; str:
+        return self._setup.get_id() if self._setup is not None else &#34;no setup loaded&#34;
+
+    def load_setup(self, setup_id: int = 0):
+        # Use get_setup() here instead of load_setup() in order to prevent recursively notifying and loading Setups.
+        # That is because the load_setup() method will notify the listeners that a new Setup has been loaded.
+        try:
+            setup = get_setup()
+        except Exception as exc:
+            raise RuntimeError(f&#34;Exception caught: {exc!r}&#34;)
+
+        if setup is None:
+            raise RuntimeError(&#34;Couldn&#39;t get Setup from the configuration manager.&#34;)
+
+        if isinstance(setup, Failure):
+            raise setup
+
+        # time.sleep(20.0)  # used as a test to check if this method is blocking the commanding... it is!
+
+        # logger.info(f&#34;{setup_id = }, {setup.get_id() = }&#34;)
+
+        if 0 &lt; setup_id != int(setup.get_id()):
+            raise RuntimeError(f&#34;Setup IDs do not match: {setup.get_id()} != {setup_id}, no Setup loaded.&#34;)
+        else:
+            self._setup = setup
+            logger.info(f&#34;Setup {setup.get_id()} loaded in the Storage manager.&#34;)
+
+    def handle_event(self, event: Event) -&gt; str:
+        logger.info(f&#34;An event is received, {event=}&#34;)
+        try:
+            if event.type == &#39;new_setup&#39;:
+                self._cs.schedule_task(partial(self.load_setup, setup_id=event.context[&#39;setup_id&#39;]))
+        except KeyError as exc:
+            return f&#34;Expected event context to contain the following key: {exc}&#34;
+        return &#34;ACK&#34;</code></pre>
 </details>
 <h3>Ancestors</h3>
 <ul class="hlist">
 <li><a title="egse.storage.StorageInterface" href="#egse.storage.StorageInterface">StorageInterface</a></li>
+<li><a title="egse.listener.EventInterface" href="../listener.html#egse.listener.EventInterface">EventInterface</a></li>
 </ul>
 <h3>Methods</h3>
 <dl>
@@ -1960,6 +2068,40 @@ observation/test and the dispatching of the persistence functions in save.</p></
     return get_data_storage_location(site_id=SITE.ID)</code></pre>
 </details>
 </dd>
+<dt id="egse.storage.StorageController.load_setup"><code class="name flex">
+<span>def <span class="ident">load_setup</span></span>(<span>self, setup_id: int = 0)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def load_setup(self, setup_id: int = 0):
+    # Use get_setup() here instead of load_setup() in order to prevent recursively notifying and loading Setups.
+    # That is because the load_setup() method will notify the listeners that a new Setup has been loaded.
+    try:
+        setup = get_setup()
+    except Exception as exc:
+        raise RuntimeError(f&#34;Exception caught: {exc!r}&#34;)
+
+    if setup is None:
+        raise RuntimeError(&#34;Couldn&#39;t get Setup from the configuration manager.&#34;)
+
+    if isinstance(setup, Failure):
+        raise setup
+
+    # time.sleep(20.0)  # used as a test to check if this method is blocking the commanding... it is!
+
+    # logger.info(f&#34;{setup_id = }, {setup.get_id() = }&#34;)
+
+    if 0 &lt; setup_id != int(setup.get_id()):
+        raise RuntimeError(f&#34;Setup IDs do not match: {setup.get_id()} != {setup_id}, no Setup loaded.&#34;)
+    else:
+        self._setup = setup
+        logger.info(f&#34;Setup {setup.get_id()} loaded in the Storage manager.&#34;)</code></pre>
+</details>
+</dd>
 <dt id="egse.storage.StorageController.save"><code class="name flex">
 <span>def <span class="ident">save</span></span>(<span>self, item: dict) ‑> <a title="egse.control.Response" href="../control.html#egse.control.Response">Response</a></span>
 </code></dt>
@@ -2018,6 +2160,7 @@ observation/test and the dispatching of the persistence functions in save.</p></
 <li><code><a title="egse.storage.StorageInterface.end_observation" href="#egse.storage.StorageInterface.end_observation">end_observation</a></code></li>
 <li><code><a title="egse.storage.StorageInterface.get_disk_usage" href="#egse.storage.StorageInterface.get_disk_usage">get_disk_usage</a></code></li>
 <li><code><a title="egse.storage.StorageInterface.get_filenames" href="#egse.storage.StorageInterface.get_filenames">get_filenames</a></code></li>
+<li><code><a title="egse.storage.StorageInterface.get_loaded_setup_id" href="#egse.storage.StorageInterface.get_loaded_setup_id">get_loaded_setup_id</a></code></li>
 <li><code><a title="egse.storage.StorageInterface.get_obsid" href="#egse.storage.StorageInterface.get_obsid">get_obsid</a></code></li>
 <li><code><a title="egse.storage.StorageInterface.get_registry_names" href="#egse.storage.StorageInterface.get_registry_names">get_registry_names</a></code></li>
 <li><code><a title="egse.storage.StorageInterface.new_registration" href="#egse.storage.StorageInterface.new_registration">new_registration</a></code></li>
@@ -2025,6 +2168,11 @@ observation/test and the dispatching of the persistence functions in save.</p></
 <li><code><a title="egse.storage.StorageInterface.register" href="#egse.storage.StorageInterface.register">register</a></code></li>
 <li><code><a title="egse.storage.StorageInterface.start_observation" href="#egse.storage.StorageInterface.start_observation">start_observation</a></code></li>
 <li><code><a title="egse.storage.StorageInterface.unregister" href="#egse.storage.StorageInterface.unregister">unregister</a></code></li>
+</ul>
+</li>
+<li><code><b><a title="egse.listener.EventInterface" href="../listener.html#egse.listener.EventInterface">EventInterface</a></b></code>:
+<ul class="hlist">
+<li><code><a title="egse.listener.EventInterface.handle_event" href="../listener.html#egse.listener.EventInterface.handle_event">handle_event</a></code></li>
 </ul>
 </li>
 </ul>
@@ -2190,6 +2338,21 @@ possibly a StorageSimulator should we need that).</p></div>
             - Free disk space [bytes].
         &#34;&#34;&#34;
 
+        pass
+
+    @dynamic_interface
+    def get_loaded_setup_id(self) -&gt; str:
+        &#34;&#34;&#34;
+        Returns the ID of the currently loaded Setup.
+
+        Note:
+            This is the Setup active on this control server. This command is mainly used to check that the Setup
+            loaded in this control server corresponds to the Setup loaded in the configuration manager.
+
+        Returns:
+            The ID of the Setup loaded in this control server.
+        &#34;&#34;&#34;
+
         pass</code></pre>
 </details>
 <h3>Subclasses</h3>
@@ -2299,6 +2462,36 @@ def get_disk_usage(self):
 <pre><code class="python">@dynamic_interface
 def get_filenames(self, item: dict) -&gt; List[Path]:
     &#34;&#34;&#34;Return the filename(s) associated with this registered item.&#34;&#34;&#34;
+    pass</code></pre>
+</details>
+</dd>
+<dt id="egse.storage.StorageInterface.get_loaded_setup_id"><code class="name flex">
+<span>def <span class="ident">get_loaded_setup_id</span></span>(<span>self) ‑> str</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Returns the ID of the currently loaded Setup.</p>
+<h2 id="note">Note</h2>
+<p>This is the Setup active on this control server. This command is mainly used to check that the Setup
+loaded in this control server corresponds to the Setup loaded in the configuration manager.</p>
+<h2 id="returns">Returns</h2>
+<p>The ID of the Setup loaded in this control server.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@dynamic_interface
+def get_loaded_setup_id(self) -&gt; str:
+    &#34;&#34;&#34;
+    Returns the ID of the currently loaded Setup.
+
+    Note:
+        This is the Setup active on this control server. This command is mainly used to check that the Setup
+        loaded in this control server corresponds to the Setup loaded in the configuration manager.
+
+    Returns:
+        The ID of the Setup loaded in this control server.
+    &#34;&#34;&#34;
+
     pass</code></pre>
 </details>
 </dd>
@@ -2678,7 +2871,7 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
         super().__init__()
         self.control_server = control_server
 
-        self.controller = StorageController()
+        self.controller = StorageController(control_server)
 
         self.load_commands(COMMAND_SETTINGS.Commands, StorageCommand, StorageController)
 
@@ -2747,7 +2940,7 @@ send commands remotely.</p>
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">class StorageProxy(Proxy, StorageInterface):
+<pre><code class="python">class StorageProxy(Proxy, StorageInterface, EventInterface):
     &#34;&#34;&#34;The StorageProxy class is used to connect to the Storage Manager (control server) and
     send commands remotely.&#34;&#34;&#34;
 
@@ -2773,6 +2966,7 @@ send commands remotely.</p>
 <li><a title="egse.proxy.BaseProxy" href="../proxy.html#egse.proxy.BaseProxy">BaseProxy</a></li>
 <li><a title="egse.proxy.ControlServerConnectionInterface" href="../proxy.html#egse.proxy.ControlServerConnectionInterface">ControlServerConnectionInterface</a></li>
 <li><a title="egse.storage.StorageInterface" href="#egse.storage.StorageInterface">StorageInterface</a></li>
+<li><a title="egse.listener.EventInterface" href="../listener.html#egse.listener.EventInterface">EventInterface</a></li>
 </ul>
 <h3>Inherited members</h3>
 <ul class="hlist">
@@ -2800,6 +2994,7 @@ send commands remotely.</p>
 <li><code><a title="egse.storage.StorageInterface.end_observation" href="#egse.storage.StorageInterface.end_observation">end_observation</a></code></li>
 <li><code><a title="egse.storage.StorageInterface.get_disk_usage" href="#egse.storage.StorageInterface.get_disk_usage">get_disk_usage</a></code></li>
 <li><code><a title="egse.storage.StorageInterface.get_filenames" href="#egse.storage.StorageInterface.get_filenames">get_filenames</a></code></li>
+<li><code><a title="egse.storage.StorageInterface.get_loaded_setup_id" href="#egse.storage.StorageInterface.get_loaded_setup_id">get_loaded_setup_id</a></code></li>
 <li><code><a title="egse.storage.StorageInterface.get_obsid" href="#egse.storage.StorageInterface.get_obsid">get_obsid</a></code></li>
 <li><code><a title="egse.storage.StorageInterface.get_registry_names" href="#egse.storage.StorageInterface.get_registry_names">get_registry_names</a></code></li>
 <li><code><a title="egse.storage.StorageInterface.new_registration" href="#egse.storage.StorageInterface.new_registration">new_registration</a></code></li>
@@ -2808,6 +3003,11 @@ send commands remotely.</p>
 <li><code><a title="egse.storage.StorageInterface.save" href="#egse.storage.StorageInterface.save">save</a></code></li>
 <li><code><a title="egse.storage.StorageInterface.start_observation" href="#egse.storage.StorageInterface.start_observation">start_observation</a></code></li>
 <li><code><a title="egse.storage.StorageInterface.unregister" href="#egse.storage.StorageInterface.unregister">unregister</a></code></li>
+</ul>
+</li>
+<li><code><b><a title="egse.listener.EventInterface" href="../listener.html#egse.listener.EventInterface">EventInterface</a></b></code>:
+<ul class="hlist">
+<li><code><a title="egse.listener.EventInterface.handle_event" href="../listener.html#egse.listener.EventInterface.handle_event">handle_event</a></code></li>
 </ul>
 </li>
 </ul>
@@ -2869,6 +3069,7 @@ send commands remotely.</p>
 <ul class="">
 <li><code><a title="egse.storage.StorageController.cycle_daily_files" href="#egse.storage.StorageController.cycle_daily_files">cycle_daily_files</a></code></li>
 <li><code><a title="egse.storage.StorageController.get_storage_location" href="#egse.storage.StorageController.get_storage_location">get_storage_location</a></code></li>
+<li><code><a title="egse.storage.StorageController.load_setup" href="#egse.storage.StorageController.load_setup">load_setup</a></code></li>
 <li><code><a title="egse.storage.StorageController.save" href="#egse.storage.StorageController.save">save</a></code></li>
 </ul>
 </li>
@@ -2879,6 +3080,7 @@ send commands remotely.</p>
 <li><code><a title="egse.storage.StorageInterface.end_observation" href="#egse.storage.StorageInterface.end_observation">end_observation</a></code></li>
 <li><code><a title="egse.storage.StorageInterface.get_disk_usage" href="#egse.storage.StorageInterface.get_disk_usage">get_disk_usage</a></code></li>
 <li><code><a title="egse.storage.StorageInterface.get_filenames" href="#egse.storage.StorageInterface.get_filenames">get_filenames</a></code></li>
+<li><code><a title="egse.storage.StorageInterface.get_loaded_setup_id" href="#egse.storage.StorageInterface.get_loaded_setup_id">get_loaded_setup_id</a></code></li>
 <li><code><a title="egse.storage.StorageInterface.get_obsid" href="#egse.storage.StorageInterface.get_obsid">get_obsid</a></code></li>
 <li><code><a title="egse.storage.StorageInterface.get_registry_names" href="#egse.storage.StorageInterface.get_registry_names">get_registry_names</a></code></li>
 <li><code><a title="egse.storage.StorageInterface.get_storage_location" href="#egse.storage.StorageInterface.get_storage_location">get_storage_location</a></code></li>

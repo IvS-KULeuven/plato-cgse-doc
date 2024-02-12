@@ -27,6 +27,7 @@
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">import logging
+from prometheus_client import Gauge
 
 from egse.control import ControlServer
 from egse.metrics import define_metrics
@@ -66,7 +67,7 @@ class FilterWheel8SMC4Protocol(CommandProtocol):
         # self.fwc_calibration = GlobalState.setup.gse.ogse.calibration.fwc_calibration     TODO
 
         self.synoptics = SynopticsManagerProxy()
-        self.metrics = define_metrics(&#34;FW8SMC4&#34;)
+        self.metrics = define_metrics(origin=&#34;FW8SMC4&#34;, use_site=True)
 
     def get_bind_address(self):
         return bind_address(
@@ -79,21 +80,26 @@ class FilterWheel8SMC4Protocol(CommandProtocol):
 
     def get_housekeeping(self) -&gt; dict:
 
-
+        metrics_dict = self.metrics
         hk_dict = dict()
         hk_dict[&#34;timestamp&#34;] = format_datetime()
         try:
-            filterwheel_positions = self.filterwheel.get_position()
             # relative_intensity = self.filterwheel.get_relative_intensity()      # TODO Use the correct command name
 
             # hk_dict[&#34;G{SITE_ID}_FW8SMC4_REL_INTENSITY&#34;] = relative_intensity                          # TODO
             # hk_dict[&#34;G{SITE_ID}_FW8SMC4_FWC_FRACTION&#34;] = relative_intensity / self.fwc_calibration,   # TODO
-    
+
             # self.synoptics.store_th_synoptics(hk_dict)    TODO Uncomment when the relative intensity + FWC fraction are available
             # TODO Update the TM dictionary (entry for the HK + for the synoptics)
 
-            hk_dict[f&#34;G{SITE_ID}_FW8SMC4_POS_0&#34;] = filterwheel_positions[0]
-            hk_dict[f&#34;G{SITE_ID}_FW8SMC4_POS_1&#34;] = filterwheel_positions[1]
+            filterwheel_motor_positions = self.filterwheel.get_position()
+            filterwheel_status = self.filterwheel.get_status()
+
+            hk_values = [filterwheel_motor_positions[0], filterwheel_motor_positions[1], filterwheel_status[2], filterwheel_status[3], filterwheel_status[4]]
+            hk_dict.update({hk_name: hk_value for hk_name, hk_value in zip(metrics_dict.keys(), hk_values)})
+
+            for hk_name in metrics_dict.keys():
+                metrics_dict[hk_name].set(hk_dict[hk_name])
 
             # Send the HK acquired so far to the Synoptics Manager
             self.synoptics.store_th_synoptics(hk_dict)
@@ -148,7 +154,7 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
         # self.fwc_calibration = GlobalState.setup.gse.ogse.calibration.fwc_calibration     TODO
 
         self.synoptics = SynopticsManagerProxy()
-        self.metrics = define_metrics(&#34;FW8SMC4&#34;)
+        self.metrics = define_metrics(origin=&#34;FW8SMC4&#34;, use_site=True)
 
     def get_bind_address(self):
         return bind_address(
@@ -161,21 +167,26 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
 
     def get_housekeeping(self) -&gt; dict:
 
-
+        metrics_dict = self.metrics
         hk_dict = dict()
         hk_dict[&#34;timestamp&#34;] = format_datetime()
         try:
-            filterwheel_positions = self.filterwheel.get_position()
             # relative_intensity = self.filterwheel.get_relative_intensity()      # TODO Use the correct command name
 
             # hk_dict[&#34;G{SITE_ID}_FW8SMC4_REL_INTENSITY&#34;] = relative_intensity                          # TODO
             # hk_dict[&#34;G{SITE_ID}_FW8SMC4_FWC_FRACTION&#34;] = relative_intensity / self.fwc_calibration,   # TODO
-    
+
             # self.synoptics.store_th_synoptics(hk_dict)    TODO Uncomment when the relative intensity + FWC fraction are available
             # TODO Update the TM dictionary (entry for the HK + for the synoptics)
 
-            hk_dict[f&#34;G{SITE_ID}_FW8SMC4_POS_0&#34;] = filterwheel_positions[0]
-            hk_dict[f&#34;G{SITE_ID}_FW8SMC4_POS_1&#34;] = filterwheel_positions[1]
+            filterwheel_motor_positions = self.filterwheel.get_position()
+            filterwheel_status = self.filterwheel.get_status()
+
+            hk_values = [filterwheel_motor_positions[0], filterwheel_motor_positions[1], filterwheel_status[2], filterwheel_status[3], filterwheel_status[4]]
+            hk_dict.update({hk_name: hk_value for hk_name, hk_value in zip(metrics_dict.keys(), hk_values)})
+
+            for hk_name in metrics_dict.keys():
+                metrics_dict[hk_name].set(hk_dict[hk_name])
 
             # Send the HK acquired so far to the Synoptics Manager
             self.synoptics.store_th_synoptics(hk_dict)

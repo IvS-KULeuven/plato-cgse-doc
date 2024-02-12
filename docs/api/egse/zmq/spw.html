@@ -31,16 +31,12 @@ import pickle
 
 import zmq
 
-from egse.spw import CRITICAL_AREA_END
-from egse.spw import CRITICAL_AREA_START
+import egse.rmap
+import egse.spw
 from egse.spw import ReadRequestReply
 from egse.spw import SpaceWireInterface
 from egse.spw import SpaceWirePacket
 from egse.spw import WriteRequestReply
-from egse.spw import create_rmap_read_request_packet
-from egse.spw import create_rmap_unverified_write_packet
-from egse.spw import create_rmap_verified_write_packet
-from egse.spw import update_transaction_identifier
 
 LOGGER = logging.getLogger(__name__)
 
@@ -56,7 +52,7 @@ class SpaceWireOverZeroMQ(SpaceWireInterface):
         self._transaction_id = 0
 
     def connect(self):
-        LOGGER.log(5, f&#34;Called connect() method of {self.__class__.__name__}.&#34;)
+        LOGGER.debug(f&#34;Called {self.__class__.__name__}.connect().&#34;)
         self._zcontext = zmq.Context.instance()
         if &#34;*&#34; in self._endpoint:
             self._zsock = self._zcontext.socket(zmq.DEALER)
@@ -75,15 +71,16 @@ class SpaceWireOverZeroMQ(SpaceWireInterface):
         self._zsock.close(linger=0)
 
     def configure(self):
-        LOGGER.flash_flood(f&#34;Called configure() method of {self.__class__.__name__}.&#34;)
+        LOGGER.debug(f&#34;Called configure() method of {self.__class__.__name__}.&#34;)
 
     def flush(self):
-        LOGGER.flash_flood(f&#34;Called flush() method of {self.__class__.__name__}.&#34;)
+        LOGGER.debug(f&#34;Called flush() method of {self.__class__.__name__}.&#34;)
 
-    def send_timecode(self, timecode: int):
-        LOGGER.flash_flood(f&#34;Called send_timecode() method of {self.__class__.__name__}.&#34;)
+    def send_timecode(self, timecode: int) -&gt; int:
+        LOGGER.debug(f&#34;Called {self.__class__.__name__}.send_timecode({timecode}).&#34;)
         packet = bytes([0x91, timecode])
         self._zsock.send_multipart([self._identity, pickle.dumps(packet)])
+        return 0
 
     def read_packet(self, timeout: int = None):
 
@@ -98,29 +95,30 @@ class SpaceWireOverZeroMQ(SpaceWireInterface):
             return None, None
 
         if self._zsock not in socks:
-            # This happens most of the time, no RMAP commands, therefore commented out
+            # This happens most of the time, no RMAP commands, therefore commented out the log msg
             # LOGGER.warning(f&#34;No message received during {timeout=} seconds.&#34;)
             return None, None
 
-        LOGGER.flash_flood(f&#34;Called read_packet() method of {self.__class__.__name__}.&#34;)
+        # LOGGER.debug(f&#34;Called read_packet() method of {self.__class__.__name__}.&#34;)
 
         identity, pickle_string = self._zsock.recv_multipart()
         if not pickle_string:
             return None, None
-        LOGGER.flash_flood(f&#34;identity = {identity}, pickle_string = {type(pickle_string)}&#34;)
+        # LOGGER.debug(f&#34;identity = {identity}, pickle_string = {type(pickle_string)}&#34;)
         response = pickle.loads(pickle_string)
-        LOGGER.flash_flood(f&#34;response = {response[:20]}&#34;)
+        # LOGGER.debug(f&#34;response = {response[:20]}&#34;)
         return None, response
 
     def write_packet(self, packet: bytes):
-        LOGGER.flash_flood(f&#34;Called write_packet() method of {self.__class__.__name__}.&#34;)
+        LOGGER.debug(f&#34;Called {self.__class__.__name__}.write_packet({packet[:10]=}).&#34;)
         self._zsock.send_multipart([self._identity, pickle.dumps(packet)])
 
     def read_register(self, address: int, length: int = 4, strict: bool = True) -&gt; bytes:
-        LOGGER.flash_flood(f&#34;Called read_register() method of {self.__class__.__name__}.&#34;)
+        LOGGER.debug(f&#34;Called {self.__class__.__name__}.read_register(0x{address:0x}, {length=}).&#34;)
 
-        self._transaction_id = update_transaction_identifier(self._transaction_id)
-        buffer = create_rmap_read_request_packet(address, length, self._transaction_id, strict=strict)
+        self._transaction_id = egse.spw.update_transaction_identifier(self._transaction_id)
+
+        buffer = egse.rmap.create_rmap_read_request_packet(address, length, self._transaction_id, strict=strict)
 
         self.write_packet(buffer)
         _, data = self.read_packet()
@@ -141,13 +139,14 @@ class SpaceWireOverZeroMQ(SpaceWireInterface):
         return data
 
     def write_register(self, address: int, data: bytes):
-        LOGGER.log(10, f&#34;Called write_register() method of {self.__class__.__name__}.&#34;)
+        LOGGER.debug(f&#34;Called {self.__class__.__name__}.write_register(0x{address:0x}, {data}) method.&#34;)
 
-        self._transaction_id = update_transaction_identifier(self._transaction_id)
-        if CRITICAL_AREA_START &lt;= address &lt;= CRITICAL_AREA_END:
-            buffer = create_rmap_verified_write_packet(address, data, self._transaction_id)
+        self._transaction_id = egse.spw.update_transaction_identifier(self._transaction_id)
+
+        if egse.rmap.CRITICAL_AREA_START &lt;= address &lt;= egse.rmap.CRITICAL_AREA_END:
+            buffer = egse.rmap.create_rmap_verified_write_packet(address, data, self._transaction_id)
         else:
-            buffer = create_rmap_unverified_write_packet(
+            buffer = egse.rmap.create_rmap_unverified_write_packet(
                 address, data, len(data), self._transaction_id)
 
         self.write_packet(buffer)
@@ -161,7 +160,32 @@ class SpaceWireOverZeroMQ(SpaceWireInterface):
             LOGGER.error(f&#34;Expected RMAP write request reply packet, got {packet.__class__.__name__}&#34;)
             status = -1
 
-        return status</code></pre>
+        return status
+
+    def read_memory_map(self, address: int, length: int = 4) -&gt; bytes:
+        LOGGER.debug(f&#34;Called read_memory_map({address}, {length}) method of {self.__class__.__name__}.&#34;)
+
+        self._transaction_id = egse.spw.update_transaction_identifier(self._transaction_id)
+
+        buffer = egse.rmap.create_rmap_read_request_packet(address, length, self._transaction_id, strict=True)
+
+        self.write_packet(buffer)
+        _, data = self.read_packet()
+
+        packet = SpaceWirePacket.create_packet(data)
+
+        if isinstance(packet, ReadRequestReply):
+            data = packet.data
+
+            if len(data) != length:
+                LOGGER.warning(
+                    f&#34;Expected data to be {length} bytes, but received {len(data)} bytes. {data=}&#34;)
+        else:
+            LOGGER.error(
+                f&#34;Expected RMAP read request reply packet, got {packet.__class__.__name__}&#34;)
+            data = bytes()
+
+        return data</code></pre>
 </details>
 </section>
 <section>
@@ -194,7 +218,7 @@ class SpaceWireOverZeroMQ(SpaceWireInterface):
         self._transaction_id = 0
 
     def connect(self):
-        LOGGER.log(5, f&#34;Called connect() method of {self.__class__.__name__}.&#34;)
+        LOGGER.debug(f&#34;Called {self.__class__.__name__}.connect().&#34;)
         self._zcontext = zmq.Context.instance()
         if &#34;*&#34; in self._endpoint:
             self._zsock = self._zcontext.socket(zmq.DEALER)
@@ -213,15 +237,16 @@ class SpaceWireOverZeroMQ(SpaceWireInterface):
         self._zsock.close(linger=0)
 
     def configure(self):
-        LOGGER.flash_flood(f&#34;Called configure() method of {self.__class__.__name__}.&#34;)
+        LOGGER.debug(f&#34;Called configure() method of {self.__class__.__name__}.&#34;)
 
     def flush(self):
-        LOGGER.flash_flood(f&#34;Called flush() method of {self.__class__.__name__}.&#34;)
+        LOGGER.debug(f&#34;Called flush() method of {self.__class__.__name__}.&#34;)
 
-    def send_timecode(self, timecode: int):
-        LOGGER.flash_flood(f&#34;Called send_timecode() method of {self.__class__.__name__}.&#34;)
+    def send_timecode(self, timecode: int) -&gt; int:
+        LOGGER.debug(f&#34;Called {self.__class__.__name__}.send_timecode({timecode}).&#34;)
         packet = bytes([0x91, timecode])
         self._zsock.send_multipart([self._identity, pickle.dumps(packet)])
+        return 0
 
     def read_packet(self, timeout: int = None):
 
@@ -236,29 +261,30 @@ class SpaceWireOverZeroMQ(SpaceWireInterface):
             return None, None
 
         if self._zsock not in socks:
-            # This happens most of the time, no RMAP commands, therefore commented out
+            # This happens most of the time, no RMAP commands, therefore commented out the log msg
             # LOGGER.warning(f&#34;No message received during {timeout=} seconds.&#34;)
             return None, None
 
-        LOGGER.flash_flood(f&#34;Called read_packet() method of {self.__class__.__name__}.&#34;)
+        # LOGGER.debug(f&#34;Called read_packet() method of {self.__class__.__name__}.&#34;)
 
         identity, pickle_string = self._zsock.recv_multipart()
         if not pickle_string:
             return None, None
-        LOGGER.flash_flood(f&#34;identity = {identity}, pickle_string = {type(pickle_string)}&#34;)
+        # LOGGER.debug(f&#34;identity = {identity}, pickle_string = {type(pickle_string)}&#34;)
         response = pickle.loads(pickle_string)
-        LOGGER.flash_flood(f&#34;response = {response[:20]}&#34;)
+        # LOGGER.debug(f&#34;response = {response[:20]}&#34;)
         return None, response
 
     def write_packet(self, packet: bytes):
-        LOGGER.flash_flood(f&#34;Called write_packet() method of {self.__class__.__name__}.&#34;)
+        LOGGER.debug(f&#34;Called {self.__class__.__name__}.write_packet({packet[:10]=}).&#34;)
         self._zsock.send_multipart([self._identity, pickle.dumps(packet)])
 
     def read_register(self, address: int, length: int = 4, strict: bool = True) -&gt; bytes:
-        LOGGER.flash_flood(f&#34;Called read_register() method of {self.__class__.__name__}.&#34;)
+        LOGGER.debug(f&#34;Called {self.__class__.__name__}.read_register(0x{address:0x}, {length=}).&#34;)
 
-        self._transaction_id = update_transaction_identifier(self._transaction_id)
-        buffer = create_rmap_read_request_packet(address, length, self._transaction_id, strict=strict)
+        self._transaction_id = egse.spw.update_transaction_identifier(self._transaction_id)
+
+        buffer = egse.rmap.create_rmap_read_request_packet(address, length, self._transaction_id, strict=strict)
 
         self.write_packet(buffer)
         _, data = self.read_packet()
@@ -279,13 +305,14 @@ class SpaceWireOverZeroMQ(SpaceWireInterface):
         return data
 
     def write_register(self, address: int, data: bytes):
-        LOGGER.log(10, f&#34;Called write_register() method of {self.__class__.__name__}.&#34;)
+        LOGGER.debug(f&#34;Called {self.__class__.__name__}.write_register(0x{address:0x}, {data}) method.&#34;)
 
-        self._transaction_id = update_transaction_identifier(self._transaction_id)
-        if CRITICAL_AREA_START &lt;= address &lt;= CRITICAL_AREA_END:
-            buffer = create_rmap_verified_write_packet(address, data, self._transaction_id)
+        self._transaction_id = egse.spw.update_transaction_identifier(self._transaction_id)
+
+        if egse.rmap.CRITICAL_AREA_START &lt;= address &lt;= egse.rmap.CRITICAL_AREA_END:
+            buffer = egse.rmap.create_rmap_verified_write_packet(address, data, self._transaction_id)
         else:
-            buffer = create_rmap_unverified_write_packet(
+            buffer = egse.rmap.create_rmap_unverified_write_packet(
                 address, data, len(data), self._transaction_id)
 
         self.write_packet(buffer)
@@ -299,7 +326,32 @@ class SpaceWireOverZeroMQ(SpaceWireInterface):
             LOGGER.error(f&#34;Expected RMAP write request reply packet, got {packet.__class__.__name__}&#34;)
             status = -1
 
-        return status</code></pre>
+        return status
+
+    def read_memory_map(self, address: int, length: int = 4) -&gt; bytes:
+        LOGGER.debug(f&#34;Called read_memory_map({address}, {length}) method of {self.__class__.__name__}.&#34;)
+
+        self._transaction_id = egse.spw.update_transaction_identifier(self._transaction_id)
+
+        buffer = egse.rmap.create_rmap_read_request_packet(address, length, self._transaction_id, strict=True)
+
+        self.write_packet(buffer)
+        _, data = self.read_packet()
+
+        packet = SpaceWirePacket.create_packet(data)
+
+        if isinstance(packet, ReadRequestReply):
+            data = packet.data
+
+            if len(data) != length:
+                LOGGER.warning(
+                    f&#34;Expected data to be {length} bytes, but received {len(data)} bytes. {data=}&#34;)
+        else:
+            LOGGER.error(
+                f&#34;Expected RMAP read request reply packet, got {packet.__class__.__name__}&#34;)
+            data = bytes()
+
+        return data</code></pre>
 </details>
 <h3>Ancestors</h3>
 <ul class="hlist">
@@ -317,7 +369,7 @@ class SpaceWireOverZeroMQ(SpaceWireInterface):
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def configure(self):
-    LOGGER.flash_flood(f&#34;Called configure() method of {self.__class__.__name__}.&#34;)</code></pre>
+    LOGGER.debug(f&#34;Called configure() method of {self.__class__.__name__}.&#34;)</code></pre>
 </details>
 </dd>
 <dt id="egse.zmq.spw.SpaceWireOverZeroMQ.connect"><code class="name flex">
@@ -330,7 +382,7 @@ class SpaceWireOverZeroMQ(SpaceWireInterface):
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def connect(self):
-    LOGGER.log(5, f&#34;Called connect() method of {self.__class__.__name__}.&#34;)
+    LOGGER.debug(f&#34;Called {self.__class__.__name__}.connect().&#34;)
     self._zcontext = zmq.Context.instance()
     if &#34;*&#34; in self._endpoint:
         self._zsock = self._zcontext.socket(zmq.DEALER)
@@ -369,22 +421,7 @@ class SpaceWireOverZeroMQ(SpaceWireInterface):
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def flush(self):
-    LOGGER.flash_flood(f&#34;Called flush() method of {self.__class__.__name__}.&#34;)</code></pre>
-</details>
-</dd>
-<dt id="egse.zmq.spw.SpaceWireOverZeroMQ.send_timecode"><code class="name flex">
-<span>def <span class="ident">send_timecode</span></span>(<span>self, timecode: int)</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def send_timecode(self, timecode: int):
-    LOGGER.flash_flood(f&#34;Called send_timecode() method of {self.__class__.__name__}.&#34;)
-    packet = bytes([0x91, timecode])
-    self._zsock.send_multipart([self._identity, pickle.dumps(packet)])</code></pre>
+    LOGGER.debug(f&#34;Called flush() method of {self.__class__.__name__}.&#34;)</code></pre>
 </details>
 </dd>
 </dl>
@@ -395,6 +432,7 @@ class SpaceWireOverZeroMQ(SpaceWireInterface):
 <li><code><a title="egse.spw.SpaceWireInterface.read_memory_map" href="../spw.html#egse.spw.SpaceWireInterface.read_memory_map">read_memory_map</a></code></li>
 <li><code><a title="egse.spw.SpaceWireInterface.read_packet" href="../spw.html#egse.spw.SpaceWireInterface.read_packet">read_packet</a></code></li>
 <li><code><a title="egse.spw.SpaceWireInterface.read_register" href="../spw.html#egse.spw.SpaceWireInterface.read_register">read_register</a></code></li>
+<li><code><a title="egse.spw.SpaceWireInterface.send_timecode" href="../spw.html#egse.spw.SpaceWireInterface.send_timecode">send_timecode</a></code></li>
 <li><code><a title="egse.spw.SpaceWireInterface.write_packet" href="../spw.html#egse.spw.SpaceWireInterface.write_packet">write_packet</a></code></li>
 <li><code><a title="egse.spw.SpaceWireInterface.write_register" href="../spw.html#egse.spw.SpaceWireInterface.write_register">write_register</a></code></li>
 </ul>
@@ -424,7 +462,6 @@ class SpaceWireOverZeroMQ(SpaceWireInterface):
 <li><code><a title="egse.zmq.spw.SpaceWireOverZeroMQ.connect" href="#egse.zmq.spw.SpaceWireOverZeroMQ.connect">connect</a></code></li>
 <li><code><a title="egse.zmq.spw.SpaceWireOverZeroMQ.disconnect" href="#egse.zmq.spw.SpaceWireOverZeroMQ.disconnect">disconnect</a></code></li>
 <li><code><a title="egse.zmq.spw.SpaceWireOverZeroMQ.flush" href="#egse.zmq.spw.SpaceWireOverZeroMQ.flush">flush</a></code></li>
-<li><code><a title="egse.zmq.spw.SpaceWireOverZeroMQ.send_timecode" href="#egse.zmq.spw.SpaceWireOverZeroMQ.send_timecode">send_timecode</a></code></li>
 </ul>
 </li>
 </ul>

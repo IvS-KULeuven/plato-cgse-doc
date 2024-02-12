@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="generator" content="Asciidoctor 2.0.17">
+<meta name="generator" content="Asciidoctor 2.0.20">
 <meta name="author" content="Rik Huygen, Sara Regibo">
 <title>Common–EGSE &amp; Test Scripts: User Manual</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Open+Sans:300,300italic,400,400italic,600,600italic%7CNoto+Serif:400,400italic,700,700italic%7CDroid+Sans+Mono:400,700">
@@ -85,10 +85,10 @@ code{font-family:"Droid Sans Mono","DejaVu Sans Mono",monospace;font-weight:400;
 ul,ol,dl{line-height:1.6;margin-bottom:1.25em;list-style-position:outside;font-family:inherit}
 ul,ol{margin-left:1.5em}
 ul li ul,ul li ol{margin-left:1.25em;margin-bottom:0}
-ul.square li ul,ul.circle li ul,ul.disc li ul{list-style:inherit}
-ul.square{list-style-type:square}
 ul.circle{list-style-type:circle}
 ul.disc{list-style-type:disc}
+ul.square{list-style-type:square}
+ul.circle ul:not([class]),ul.disc ul:not([class]),ul.square ul:not([class]){list-style:inherit}
 ol li ul,ol li ol{margin-left:1.25em;margin-bottom:0}
 dl dt{margin-bottom:.3125em;font-weight:bold}
 dl dd{margin-bottom:1.25em}
@@ -209,13 +209,10 @@ table.tableblock.fit-content>caption.title{white-space:nowrap;width:0}
 .admonitionblock>table td.content{padding-left:1.125em;padding-right:1.25em;border-left:1px solid #dddddf;color:rgba(0,0,0,.6);word-wrap:anywhere}
 .admonitionblock>table td.content>:last-child>:last-child{margin-bottom:0}
 .exampleblock>.content{border:1px solid #e6e6e6;margin-bottom:1.25em;padding:1.25em;background:#fff;border-radius:4px}
-.exampleblock>.content>:first-child{margin-top:0}
-.exampleblock>.content>:last-child{margin-bottom:0}
 .sidebarblock{border:1px solid #dbdbd6;margin-bottom:1.25em;padding:1.25em;background:#f3f3f2;border-radius:4px}
-.sidebarblock>:first-child{margin-top:0}
-.sidebarblock>:last-child{margin-bottom:0}
 .sidebarblock>.content>.title{color:#7a2518;margin-top:0;text-align:center}
-.exampleblock>.content>:last-child>:last-child,.exampleblock>.content .olist>ol>li:last-child>:last-child,.exampleblock>.content .ulist>ul>li:last-child>:last-child,.exampleblock>.content .qlist>ol>li:last-child>:last-child,.sidebarblock>.content>:last-child>:last-child,.sidebarblock>.content .olist>ol>li:last-child>:last-child,.sidebarblock>.content .ulist>ul>li:last-child>:last-child,.sidebarblock>.content .qlist>ol>li:last-child>:last-child{margin-bottom:0}
+.exampleblock>.content>:first-child,.sidebarblock>.content>:first-child{margin-top:0}
+.exampleblock>.content>:last-child,.exampleblock>.content>:last-child>:last-child,.exampleblock>.content .olist>ol>li:last-child>:last-child,.exampleblock>.content .ulist>ul>li:last-child>:last-child,.exampleblock>.content .qlist>ol>li:last-child>:last-child,.sidebarblock>.content>:last-child,.sidebarblock>.content>:last-child>:last-child,.sidebarblock>.content .olist>ol>li:last-child>:last-child,.sidebarblock>.content .ulist>ul>li:last-child>:last-child,.sidebarblock>.content .qlist>ol>li:last-child>:last-child{margin-bottom:0}
 .literalblock pre,.listingblock>.content>pre{border-radius:4px;overflow-x:auto;padding:1em;font-size:.8125em}
 @media screen and (min-width:768px){.literalblock pre,.listingblock>.content>pre{font-size:.90625em}}
 @media screen and (min-width:1280px){.literalblock pre,.listingblock>.content>pre{font-size:1em}}
@@ -394,7 +391,7 @@ b.conum *{color:inherit!important}
 dt,th.tableblock,td.content,div.footnote{text-rendering:optimizeLegibility}
 h1,h2,p,td.content,span.alt,summary{letter-spacing:-.01em}
 p strong,td.content strong,div.footnote strong{letter-spacing:-.005em}
-p,blockquote,dt,td.content,span.alt,summary{font-size:1.0625rem}
+p,blockquote,dt,td.content,td.hdlist1,span.alt,summary{font-size:1.0625rem}
 p{margin-bottom:1.25rem}
 .sidebarblock p,.sidebarblock dt,.sidebarblock td.content,p.tableblock{font-size:1em}
 .exampleblock>.content{background:#fffef7;border-color:#e0e0dc;box-shadow:0 1px 4px #e0e0dc}
@@ -438,73 +435,113 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 </style>
 <style>
 /*! Asciidoctor Tabs | Copyright (c) 2018-present Dan Allen | MIT License */
-.tabs > ul {
-  display: flex;
-  flex-wrap: wrap;
-  list-style: none;
-  margin: 0 -0.25em 0 0;
-  padding: 0;
-}
-
-.tabs > ul li {
-  align-items: center;
-  border: 1px solid black;
-  border-bottom: 0;
-  cursor: pointer;
-  display: flex;
-  font-weight: bold;
-  height: 2em;
-  line-height: 1;
-  margin-right: 0.25em;
-  padding: 0 1em;
-  position: relative;
-}
-
-.tabs > ul li, .tabs > ul p {
-  margin-bottom: 0;
-}
-
-.tabs > ul li + li[id] {
-  margin-top: 0;
-}
-
-.tabset {
+.tabs {
   margin-bottom: 1.25em;
 }
 
-.tabset.is-loading .tabs li:not(:first-child),
-.tabset:not(.is-loading) .tabs li:not(.is-active) {
-  background-color: black;
-  color: white;
+.tablist > ul {
+  display: flex;
+  flex-wrap: wrap;
+  list-style: none;
+  margin: 0;
+  padding: 0;
 }
 
-.tabset.is-loading .tabs li:first-child::after,
-.tabs li.is-active::after {
-  background-color: white;
+.tablist > ul li {
+  align-items: center;
+  background-color: #fff;
+  cursor: pointer;
+  display: flex;
+  font-weight: bold;
+  line-height: 1.5;
+  padding: 0.25em 1em;
+  position: relative;
+}
+
+.tablist > ul li:focus-visible {
+  outline: none;
+}
+
+.tablist.ulist,
+.tablist.ulist > ul li {
+  margin: 0;
+}
+
+.tablist.ulist > ul li + li {
+  margin-left: 0.25em;
+}
+
+.tabs .tablist li::after {
   content: "";
   display: block;
-  height: 3px; /* Chrome doesn't always paint the line accurately, so add a little extra */
+  height: 1px;
   position: absolute;
-  bottom: -1.5px;
+  bottom: -1px;
   left: 0;
   right: 0;
 }
 
-.tabset > .content {
-  border: 1px solid gray;
+.tabs.is-loading .tablist li:not(:first-child),
+.tabs:not(.is-loading) .tablist li:not(.is-selected) {
+  background-color: #f5f5f5;
+}
+
+.tabs.is-loading .tablist li:first-child::after,
+.tabs:not(.is-loading) .tablist li.is-selected::after {
+  background-color: #fff;
+}
+
+/*
+.tabs:not(.is-loading) .tablist li,
+.tabs:not(.is-loading) .tablist li::after {
+  transition: background-color 200ms ease-in-out;
+}
+*/
+
+.tablist > ul p {
+  line-height: inherit;
+  margin: 0;
+}
+
+.tabpanel {
+  background-color: #fff;
   padding: 1.25em;
 }
 
-.tabset.is-loading .tab-pane:not(:first-child),
-.tabset:not(.is-loading) .tab-pane:not(.is-active) {
+.tablist > ul li,
+.tabpanel {
+  border: 1px solid #dcdcdc;
+}
+
+.tablist > ul li {
+  border-bottom: 0;
+}
+
+.tabs.is-loading .tabpanel + .tabpanel,
+.tabs:not(.is-loading) .tabpanel.is-hidden {
   display: none;
 }
 
-.tab-pane > :first-child {
+.tabpanel > :first-child {
   margin-top: 0;
 }
 
-.tab-pane > :last-child > :last-child {
+/* #content is a signature of the Asciidoctor standalone HTML output */
+#content .tabpanel > :last-child,
+#content .tabpanel > :last-child > :last-child,
+#content .tabpanel > :last-child > :last-child > li:last-child > :last-child {
+  margin-bottom: 0;
+}
+
+.tablecontainer {
+  overflow-x: auto;
+}
+
+#content .tablecontainer {
+  margin-bottom: 1.25em;
+}
+
+#content .tablecontainer > table.tableblock {
   margin-bottom: 0;
 }
 </style>
@@ -537,38 +574,37 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <li><a href="#_client_vs_server">1.3. Client vs. Server</a></li>
 </ul>
 </li>
-<li><a href="#_update_the_common_egse_software">2. Update the Common-EGSE Software</a></li>
-<li><a href="#_starting_the_core_services">3. Starting the Core Services</a></li>
-<li><a href="#_the_graphical_user_interfaces_gui">4. The Graphical User Interfaces (GUI)</a>
+<li><a href="#_starting_the_core_services">2. Starting the Core Services</a></li>
+<li><a href="#_the_graphical_user_interfaces_gui">3. The Graphical User Interfaces (GUI)</a>
 <ul class="sectlevel2">
-<li><a href="#_icons_used_for_different_guis">4.1. Icons used for different GUIs</a></li>
-<li><a href="#pm_ui">4.2. The Process Manager GUI</a></li>
-<li><a href="#_the_csl_operator_gui">4.3. The CSL Operator GUI</a></li>
-<li><a href="#_the_hexapod_puna_gui">4.4. The Hexapod Puna GUI</a></li>
-<li><a href="#_the_huber_stages_gui">4.5. The HUBER Stages GUI</a></li>
-<li><a href="#dpu-gui">4.6. The DPU GUI</a></li>
+<li><a href="#_icons_used_for_different_guis">3.1. Icons used for different GUIs</a></li>
+<li><a href="#pm_ui">3.2. The Process Manager GUI</a></li>
+<li><a href="#_the_csl_operator_gui">3.3. The CSL Operator GUI</a></li>
+<li><a href="#_the_hexapod_puna_gui">3.4. The Hexapod Puna GUI</a></li>
+<li><a href="#_the_huber_stages_gui">3.5. The HUBER Stages GUI</a></li>
+<li><a href="#dpu-gui">3.6. The DPU GUI</a></li>
 </ul>
 </li>
-<li><a href="#_the_tasks_gui">5. The Tasks GUI</a>
+<li><a href="#_the_tasks_gui">4. The Tasks GUI</a>
 <ul class="sectlevel2">
-<li><a href="#_the_toolbar">5.1. The Toolbar</a></li>
-<li><a href="#_the_button_panel">5.2. The Button Panel</a></li>
-<li><a href="#_the_arguments_panel">5.3. The Arguments Panel</a></li>
-<li><a href="#_the_output_console">5.4. The Output Console</a></li>
-<li><a href="#execute-a-task">5.5. Execute a Task</a></li>
-<li><a href="#execute-tasks-in-jupyter-console">5.6. Execute Tasks from the Jupyter QtConsole [aka REPL]</a></li>
+<li><a href="#_the_toolbar">4.1. The Toolbar</a></li>
+<li><a href="#_the_button_panel">4.2. The Button Panel</a></li>
+<li><a href="#_the_arguments_panel">4.3. The Arguments Panel</a></li>
+<li><a href="#_the_output_console">4.4. The Output Console</a></li>
+<li><a href="#execute-a-task">4.5. Execute a Task</a></li>
+<li><a href="#execute-tasks-in-jupyter-console">4.6. Execute Tasks from the Jupyter QtConsole [aka REPL]</a></li>
 </ul>
 </li>
-<li><a href="#_frequently_asked_questions_faq">6. Frequently Asked Questions (FAQ)</a>
+<li><a href="#_frequently_asked_questions_faq">5. Frequently Asked Questions (FAQ)</a>
 <ul class="sectlevel2">
-<li><a href="#_how_can_i_check_the_installed_version_of_the_cgse_and_test_scripts">6.1. How can I check the installed version of the CGSE and Test Scripts</a></li>
-<li><a href="#_how_do_i_check_if_all_the_devices_have_been_connected_properly_and_are_active">6.2. How do I check if all the devices have been connected properly and are active?</a></li>
-<li><a href="#_how_do_i_check_if_the_storage_manager_is_running">6.3. How do I check if the Storage Manager is running?</a></li>
-<li><a href="#_how_do_i_check_if_the_configuration_manager_is_running">6.4. How do I check if the Configuration Manager is running?</a></li>
-<li><a href="#_how_do_i_check_if_the_process_manager_is_running">6.5. How do I check if the Process Manager is running?</a></li>
-<li><a href="#_how_do_i_check_if_the_synoptics_manager_is_running">6.6. How do I check if the Synoptics Manager is running?</a></li>
-<li><a href="#_how_do_i_check_if_the_logger_is_running">6.7. How do I check if the Logger is running?</a></li>
-<li><a href="#_where_can_i_find_my_test_data">6.8. Where can I find my test data?</a></li>
+<li><a href="#_how_can_i_check_the_installed_version_of_the_cgse_and_test_scripts">5.1. How can I check the installed version of the CGSE and Test Scripts</a></li>
+<li><a href="#_how_do_i_check_if_all_the_devices_have_been_connected_properly_and_are_active">5.2. How do I check if all the devices have been connected properly and are active?</a></li>
+<li><a href="#_how_do_i_check_if_the_storage_manager_is_running">5.3. How do I check if the Storage Manager is running?</a></li>
+<li><a href="#_how_do_i_check_if_the_configuration_manager_is_running">5.4. How do I check if the Configuration Manager is running?</a></li>
+<li><a href="#_how_do_i_check_if_the_process_manager_is_running">5.5. How do I check if the Process Manager is running?</a></li>
+<li><a href="#_how_do_i_check_if_the_synoptics_manager_is_running">5.6. How do I check if the Synoptics Manager is running?</a></li>
+<li><a href="#_how_do_i_check_if_the_logger_is_running">5.7. How do I check if the Logger is running?</a></li>
+<li><a href="#_where_can_i_find_my_test_data">5.8. Where can I find my test data?</a></li>
 </ul>
 </li>
 </ul>
@@ -589,12 +625,22 @@ Backlink &#8594; <a href="https://ivs-kuleuven.github.io/plato-cgse-doc/">CGSE D
 <div class="sectionbody">
 <div class="dlist">
 <dl>
+<dt class="hdlist1">12/02/2024 — v0.3</dt>
+<dd>
+<div class="ulist">
+<ul>
+<li>
+<p>Removed the chapter on updating the CGSE, see the installation guide for this.</p>
+</li>
+</ul>
+</div>
+</dd>
 <dt class="hdlist1">28/06/2023 — v0.2</dt>
 <dd>
 <div class="ulist">
 <ul>
 <li>
-<p>added a section on the DPU GUI application, see <a href="#dpu-gui">Section 4.6</a></p>
+<p>added a section on the DPU GUI application, see <a href="#dpu-gui">Section 3.6</a></p>
 </li>
 <li>
 <p>removed section on contingency GUI since those tasks are now integrated in each of the TH GUIs using shared tasks</p>
@@ -613,7 +659,7 @@ Backlink &#8594; <a href="https://ivs-kuleuven.github.io/plato-cgse-doc/">CGSE D
 <p>Introduce Changelog, this section</p>
 </li>
 <li>
-<p>Added an explanation how to execute tasks in the Jupyter Console, see <a href="#execute-tasks-in-jupyter-console">Section 5.6</a>.</p>
+<p>Added an explanation how to execute tasks in the Jupyter Console, see <a href="#execute-tasks-in-jupyter-console">Section 4.6</a>.</p>
 </li>
 </ul>
 </div>
@@ -886,6 +932,10 @@ Inspecting the data
 <td class="tableblock halign-left valign-top"><p class="tableblock">Camera</p></td>
 </tr>
 <tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">CCD</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Charged-Coupled Device</p></td>
+</tr>
+<tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">CGSE</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">Common-EGSE</p></td>
 </tr>
@@ -894,12 +944,20 @@ Inspecting the data
 <td class="tableblock halign-left valign-top"><p class="tableblock">Centre Spatial de Liège</p></td>
 </tr>
 <tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">CSV</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Comma-Separated Values</p></td>
+</tr>
+<tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">COT</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">Commercial off-the-shelf</p></td>
 </tr>
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">CTI</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">Charge Transfer Inefficiency</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">CTS</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Consent to Ship</p></td>
 </tr>
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">DPU</p></td>
@@ -918,8 +976,16 @@ Inspecting the data
 <td class="tableblock halign-left valign-top"><p class="tableblock">End Of Life</p></td>
 </tr>
 <tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">FAQ</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Frequently Asked Questions</p></td>
+</tr>
+<tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">FEE</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">Front End Electronics</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">FITS</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Flexible Image Transport System</p></td>
 </tr>
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">FPA</p></td>
@@ -928,6 +994,14 @@ Inspecting the data
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">GSE</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">Ground Support Equipment</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">GUI</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Graphical User Interface</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">HDF5</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Hierarchical Data Format version 5 (File format)</p></td>
 </tr>
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">HK</p></td>
@@ -962,6 +1036,10 @@ Inspecting the data
 <td class="tableblock halign-left valign-top"><p class="tableblock">Non-Conformance Review Board</p></td>
 </tr>
 <tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">OBSID</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Observation Identifier</p></td>
+</tr>
+<tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">OGSE</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">Optical Ground Support Equipment</p></td>
 </tr>
@@ -970,8 +1048,16 @@ Inspecting the data
 <td class="tableblock halign-left valign-top"><p class="tableblock">Operating System</p></td>
 </tr>
 <tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">PDF</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Portable Document Format</p></td>
+</tr>
+<tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">PID</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">Process Identifier</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">PLATO</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">PLAnetary Transits and Oscillations of stars</p></td>
 </tr>
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">PPID</p></td>
@@ -1000,6 +1086,10 @@ Inspecting the data
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">SpW</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">SpaceWire</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">SQL</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Structured Query Language</p></td>
 </tr>
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">SRON</p></td>
@@ -1050,12 +1140,24 @@ Inspecting the data
 <td class="tableblock halign-left valign-top"><p class="tableblock">Test Scripts</p></td>
 </tr>
 <tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">TUI</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Text-based User Interface</p></td>
+</tr>
+<tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">TV</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">Thermal Vacuum</p></td>
 </tr>
 <tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">UM</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">User Manual</p></td>
+</tr>
+<tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">USB</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">Universal Serial Bus</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">YAML</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">YAML Ain&#8217;t Markup Language</p></td>
 </tr>
 </tbody>
 </table>
@@ -1118,7 +1220,7 @@ Inspecting the data
 <p>The red and green bullets in the PM GUI describe the state of the service or process. When the bullet is green the process is running as expected, when the bullet is red the process is not running. For some devices the bullet can become orange to indicate that the control server process is running, but the device is not connected and can therefore not be commanded. The icons at the right of the processes are for starting/stopping the process. Some processes can be started in simulator mode (toggle the device icon) and some of the processes have a GUI associated that can be started from the PM GUI. Please note that none of the core services can be started from the Process Manager GUI. Core services are managed by the Systemd services of your Linux system and when stopped or crashed they will be automatically restarted.</p>
 </div>
 <div class="paragraph">
-<p>The Process Manager is fully explained in its own section <em>The Process Manager GUI</em> in <a href="#pm_ui">Section 4.2</a>.</p>
+<p>The Process Manager is fully explained in its own section <em>The Process Manager GUI</em> in <a href="#pm_ui">Section 3.2</a>.</p>
 </div>
 <div class="paragraph">
 <p>The Process Manager presents you with a view of the state of the system and allows you to start and stop device processes and start some GUIs to manipulate certain devices and services. The main task for an operator to perform camera tests or alignment procedures is however to execute the test procedure as described in the TP-0011 Google Sheet for each of the test houses and in the ambient alignment procedure PR-0011 for CSL. These documents contain step-by-step as-run procedures that describe all manual interactions, tasks and code execution needed to successfully perform a camera test. Each of the rows in these procedures describe one action that needs to be successfully finished before proceeding to the next action. As said, this can be a manual interaction with a device, a task to be executed from a specific GUI, or a code snippet that needs to be executed in the dedicated environment. The Python source code from the as-run procedure will be executed in a Python Console that is used throughout the completion of the as-run procedure.</p>
@@ -1199,43 +1301,7 @@ All processes (not the GUIs) that are started from the PM UI are actually starte
 </div>
 </div>
 <div class="sect1">
-<h2 id="_update_the_common_egse_software">2. Update the Common-EGSE Software</h2>
-<div class="sectionbody">
-<div class="listingblock">
-<div class="content">
-<pre>update_cgse develop</pre>
-</div>
-</div>
-<div class="paragraph">
-<p>To update the Common-EGSE on the operational machine, use the <code>ops</code> argument instead. An operational installation is different from a developer installation. There is no virtual environment and the all required Python packages, including the Common-EGSE are installed at a specific location. The installation process makes use of the following environment variables:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p><code>PLATO_COMMON_EGSE_PATH</code>: the location of the plato-common-egse repository
-on your machine, e.g., <code>~/git/plato-common-egse</code></p>
-</li>
-<li>
-<p><code>PLATO_INSTALL_LOCATION</code>: the location where the packages shall be
-installed, usually <code>/cgse</code></p>
-</li>
-</ul>
-</div>
-<div class="listingblock">
-<div class="content">
-<pre>update_cgse ops --tag=2022.2.2+CGSE</pre>
-</div>
-</div>
-<div class="paragraph">
-<p>There should not be any changes to files in this location, otherwise an error will be shown and the process interrupted.</p>
-</div>
-<div class="paragraph">
-<p>WHICH ERROR AND WHAT TO DO AFTERWARDS?</p>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_starting_the_core_services">3. Starting the Core Services</h2>
+<h2 id="_starting_the_core_services">2. Starting the Core Services</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>The <em>core services</em> of the Common-EGSE are those services that should be running all the time and preferably on the dedicated EGSE server. In the production environment, i.e. when we are actually running the tests in the lab, these services will be started automatically when the system boots, see the section on <a href="installation-manual.html#_setup_services_for_core_control_servers_with_systemd:">the core services in systemd</a>. During our development and when using the Common-EGSE outside of the Camera Test environment, we can start the core services on our local machine.</p>
@@ -1293,10 +1359,10 @@ Starting synoptics manager..</pre>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_the_graphical_user_interfaces_gui">4. The Graphical User Interfaces (GUI)</h2>
+<h2 id="_the_graphical_user_interfaces_gui">3. The Graphical User Interfaces (GUI)</h2>
 <div class="sectionbody">
 <div class="sect2">
-<h3 id="_icons_used_for_different_guis">4.1. Icons used for different GUIs</h3>
+<h3 id="_icons_used_for_different_guis">3.1. Icons used for different GUIs</h3>
 <table class="tableblock frame-all grid-all stretch">
 <colgroup>
 <col style="width: 25%;">
@@ -1413,7 +1479,7 @@ Starting synoptics manager..</pre>
 </table>
 </div>
 <div class="sect2">
-<h3 id="pm_ui">4.2. The Process Manager GUI</h3>
+<h3 id="pm_ui">3.2. The Process Manager GUI</h3>
 <div class="paragraph">
 <p>This section describes the Process Manager GUI.</p>
 </div>
@@ -1424,7 +1490,7 @@ Starting synoptics manager..</pre>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_the_csl_operator_gui">4.3. The CSL Operator GUI</h3>
+<h3 id="_the_csl_operator_gui">3.3. The CSL Operator GUI</h3>
 <div class="paragraph">
 <p>This section briefly describes the CSL specific task GUI, the <em>CSL Operator GUI</em>.</p>
 </div>
@@ -1437,20 +1503,20 @@ Starting synoptics manager..</pre>
 </div>
 </div>
 <div class="paragraph">
-<p>For more information on the working of the Task GUIs, please go and read the section on the Tasks GUI in <a href="#_the_tasks_gui">Chapter 5</a>.</p>
+<p>For more information on the working of the Task GUIs, please go and read the section on the Tasks GUI in <a href="#_the_tasks_gui">Chapter 4</a>.</p>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_the_hexapod_puna_gui">4.4. The Hexapod Puna GUI</h3>
+<h3 id="_the_hexapod_puna_gui">3.4. The Hexapod Puna GUI</h3>
 <div class="sect3">
-<h4 id="_monitoring_and_commanding_the_hexapod">4.4.1. Monitoring and Commanding the Hexapod</h4>
+<h4 id="_monitoring_and_commanding_the_hexapod">3.4.1. Monitoring and Commanding the Hexapod</h4>
 <div class="paragraph">
 <p>Monitoring and commanding the hexapod can be done via a designated GUI. This
 is described in the sections below.</p>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_synopsis">4.4.2. Synopsis</h4>
+<h4 id="_synopsis">3.4.2. Synopsis</h4>
 <div class="paragraph">
 <p>To start the Hexapod Puna GUI, type the following command:</p>
 </div>
@@ -1479,7 +1545,7 @@ is described in the sections below.</p>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_description">4.4.3. Description</h4>
+<h4 id="_description">3.4.3. Description</h4>
 <div class="paragraph">
 <p>A screenshot of the Hexapod Puna GUI is shown below.</p>
 </div>
@@ -1511,7 +1577,7 @@ is described in the sections below.</p>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_toolbar">4.4.4. Toolbar</h4>
+<h4 id="_toolbar">3.4.4. Toolbar</h4>
 <div class="dlist">
 <dl>
 <dt class="hdlist1">Enable/Disable Amplifier</dt>
@@ -1541,7 +1607,7 @@ the [ZeroMQ](<a href="http://zeromq.org/" class="bare">http://zeromq.org/</a>) <
 </div>
 </div>
 <div class="sect3">
-<h4 id="_states">4.4.5. States</h4>
+<h4 id="_states">3.4.5. States</h4>
 <div class="paragraph">
 <p>The left panel reports on the status of the hexapod. This is done by means of
 a series of LEDS, where a green LED indicates information, an orange LED
@@ -1553,7 +1619,7 @@ programming interface (API) of the Hexapod controller (MAN_SOFT_API).</p>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_positions">4.4.6. Positions</h4>
+<h4 id="_positions">3.4.6. Positions</h4>
 <div class="paragraph">
 <p>The middle panel displays the user and machine positions, and actuator
 lengths.</p>
@@ -1586,7 +1652,7 @@ has not been implemented yet and all actuator lengths are set to NaN.</p>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_tabs">4.4.7. Tabs</h4>
+<h4 id="_tabs">3.4.7. Tabs</h4>
 <div class="paragraph">
 <p>The tabs in the right panel allow settings, movements, maintenance, etc. The
 different tabs are discussed in the subsequent sections.</p>
@@ -1642,11 +1708,11 @@ different tabs are discussed in the subsequent sections.</p>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_the_huber_stages_gui">4.5. The HUBER Stages GUI</h3>
+<h3 id="_the_huber_stages_gui">3.5. The HUBER Stages GUI</h3>
 
 </div>
 <div class="sect2">
-<h3 id="dpu-gui">4.6. The DPU GUI</h3>
+<h3 id="dpu-gui">3.6. The DPU GUI</h3>
 <div class="paragraph">
 <p>The DPU GUI is a (near) real-time viewer for the data that is received from the N-FEE. I say <em>near</em> real-time because the data comes with a small delay due to the nature of the interface and the inner working of the N-FEE. Image data e.g. can take up to four seconds to transfer from the N-FEE to the DPU Processor just for one frame of one of the four CCDs. The housekeeping data is only sent once on every (or right after) a synchronisation pulse, which takes 6.25s for external synchronisation measurements. Because of this delay, you need to be aware of the current operating mode and the synchronisation mode of your observation to estimate how long it will take before you can inspect the data. Sometimes its quick like with internal sync measurements of a partial readout and a period of a second versus full frame external sync measurements. Since mode changes only happen on the long (400ms) pulses, it can take up to 25s before you can see the change in the GUI.</p>
 </div>
@@ -1656,19 +1722,19 @@ different tabs are discussed in the subsequent sections.</p>
 <div class="paragraph">
 <p>To start up the DPU GUI, at least the core services need to be running on the server. The DPU GUI gets its information from the DPU Processor, so as long as this process is not running, you will see a <code>CONNECTION LOST</code> message as the N-FEE mode in the 'Mode Parameters' panel. As soon as the DPU Processor starts and connects to the N-FEE, the DPU GUI will receive data and update its displays. Whenever the DPU Processor loses connection with the N-FEE (e.g. because the camera was switched off) or the DPU Processor is terminated or crashed, the N-FEE Mode will show the <code>CONNECTION LOST</code> message again.</p>
 </div>
-<div id="_tabset_1" class="tabset is-loading">
-<div class="ulist tabs">
+<div id="_tabs_1" class="openblock tabs is-loading">
+<div class="content">
+<div class="ulist tablist">
 <ul>
-<li id="_tabset_1_connection_lost">
+<li id="_tabs_1_connection_lost" class="tab">
 <p>CONNECTION LOST</p>
 </li>
-<li id="_tabset_1_on_mode">
+<li id="_tabs_1_on_mode" class="tab">
 <p>ON MODE</p>
 </li>
 </ul>
 </div>
-<div class="content">
-<div class="tab-pane" aria-labelledby="_tabset_1_connection_lost">
+<div id="_tabs_1_connection_lost--panel" class="tabpanel" aria-labelledby="_tabs_1_connection_lost">
 <div class="imageblock">
 <div class="content">
 <img src="../images/dpu_ui_started.png" alt="dpu ui started">
@@ -1676,7 +1742,7 @@ different tabs are discussed in the subsequent sections.</p>
 <div class="title">Figure 1. The DPU GUI when it is just been launched. There are no images for the CCDs, readout parameters have a default value and the N-FEE mode says 'CONNECTION LOST'. There is no connection with either the DPU Processor or the N-FEE.</div>
 </div>
 </div>
-<div class="tab-pane" aria-labelledby="_tabset_1_on_mode">
+<div id="_tabs_1_on_mode--panel" class="tabpanel" aria-labelledby="_tabs_1_on_mode">
 <div class="imageblock">
 <div class="content">
 <img src="../images/dpu_ui_started-on-mode.png" alt="dpu ui started on mode">
@@ -1966,7 +2032,7 @@ All readout parameters are updated on long pulses (400ms) only, except for the <
 </div>
 </div>
 <div class="sect1">
-<h2 id="_the_tasks_gui">5. The Tasks GUI</h2>
+<h2 id="_the_tasks_gui">4. The Tasks GUI</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>The Tasks GUI is a collective noun for all the task GUIs that we use in our CGSE and TS environment. All these GUIs have the same principle user interface since they are all based on the same Python package that generates the Graphical interface and executes the code. That package is <code>gui-executor</code> which is under development at the institute of astronomy at KU Leuven. The <code>gui-executor</code> package is open-source and can be installed from PyPI with <code>pip</code>:</p>
@@ -2015,7 +2081,7 @@ All readout parameters are updated on long pulses (400ms) only, except for the <
 <p>We will explain all of these panels in more detail next.</p>
 </div>
 <div class="sect2">
-<h3 id="_the_toolbar">5.1. The Toolbar</h3>
+<h3 id="_the_toolbar">4.1. The Toolbar</h3>
 <div class="paragraph">
 <p>The toolbar is dedicated to the Python kernel that is used to execute the tasks. The left-most button can be used to restart the kernel. Do this when you want to start a fresh new Python Interpreter or when you need to change the kernel. The second button on the toolbar is used to open a Python Console that is connected to the currently running kernel. Pressing this button will open a window with a prompt where you can enter or paste Python code to be executed. Here you can also find back the code that was executed by pressing one of the buttons.</p>
 </div>
@@ -2036,32 +2102,32 @@ All readout parameters are updated on long pulses (400ms) only, except for the <
 </div>
 </div>
 <div class="sect2">
-<h3 id="_the_button_panel">5.2. The Button Panel</h3>
+<h3 id="_the_button_panel">4.2. The Button Panel</h3>
 <div class="paragraph">
 <p>All tasks are available in the <em>Button Panel</em>. The tasks are arranged in groups and in each group in columns of four tasks.</p>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_the_arguments_panel">5.3. The Arguments Panel</h3>
+<h3 id="_the_arguments_panel">4.3. The Arguments Panel</h3>
 <div class="paragraph">
 <p>When you press a task button an associated arguments panel will appear below the button panel. Before pressing the <em>Run</em> button you can provide input for all the parameters of the task. Most of the arguments will have a simple builtin type like int, float or bool, but more complex argument types are possible and for some of those a special icon will appear on the right side to</p>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_the_output_console">5.4. The Output Console</h3>
+<h3 id="_the_output_console">4.4. The Output Console</h3>
 <div class="paragraph">
 <p>TBW</p>
 </div>
 </div>
 <div class="sect2">
-<h3 id="execute-a-task">5.5. Execute a Task</h3>
+<h3 id="execute-a-task">4.5. Execute a Task</h3>
 <div class="paragraph">
 <p>XXXXX: update text below!
 As an example, when you press a task button, it will change color to indicate this task has been selected (see screenshot above) and an arguments panel will appear in the middle of the GUI. The <code>set_trp1</code> task expects one parameter (<code>temperature</code>) for which no default was provided. The expected input is a float. When you press the <code>Run</code> button, the task will be executed <em>in the kernel</em>. All tasks are by default executed in the kernel. You will sometimes see that a task will execute in the GUI App or as a script, don&#8217;t use those options yourself unless you know what you are doing.</p>
 </div>
 </div>
 <div class="sect2">
-<h3 id="execute-tasks-in-jupyter-console">5.6. Execute Tasks from the Jupyter QtConsole [aka REPL]</h3>
+<h3 id="execute-tasks-in-jupyter-console">4.6. Execute Tasks from the Jupyter QtConsole [aka REPL]</h3>
 <div class="paragraph">
 <p>You might want to run tasks from the Jupyter QtConsole or any other REPL that you use. Since the tasks in the GUI as just like any other function, you can import the task and run the function from the Python interpreter. The only thing you need to know is where the tasks are defined, from which module they should be imported. In our PLATO project, all tasks are defined in the <code>plato-test-scripts</code> repository and they live inside the <code>camtest.tasks</code> package. It depends on the TAB and the location in that TAB where your tasks is defined. As an illustration, we start from the CSL Operator GUI (screenshot below) and select the Camera TAB and the Camera Switch ON button. This will open the arguments panel, and we see this task takes one argument, the <code>hk_frequency</code>. We would like to execute this task in the REPL instead of pressing the 'Run' button.</p>
 </div>
@@ -2232,10 +2298,10 @@ In [8]:</code></pre>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_frequently_asked_questions_faq">6. Frequently Asked Questions (FAQ)</h2>
+<h2 id="_frequently_asked_questions_faq">5. Frequently Asked Questions (FAQ)</h2>
 <div class="sectionbody">
 <div class="sect2">
-<h3 id="_how_can_i_check_the_installed_version_of_the_cgse_and_test_scripts">6.1. How can I check the installed version of the CGSE and Test Scripts</h3>
+<h3 id="_how_can_i_check_the_installed_version_of_the_cgse_and_test_scripts">5.1. How can I check the installed version of the CGSE and Test Scripts</h3>
 <div class="paragraph">
 <p>Use the following commands in a terminal:</p>
 </div>
@@ -2263,11 +2329,11 @@ CAMTEST git version = 2023.23.0+TS-0-gadedfd8</pre>
 </dl>
 </div>
 <div class="paragraph">
-<p>See the section <a href="#_update_the_common_egse_software">Chapter 2</a> on how to get the latest version installed in your environment.</p>
+<p>See the section <a href="#Update the Common-EGSE Software">[Update the Common-EGSE Software]</a> on how to get the latest version installed in your environment.</p>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_how_do_i_check_if_all_the_devices_have_been_connected_properly_and_are_active">6.2. How do I check if all the devices have been connected properly and are active?</h3>
+<h3 id="_how_do_i_check_if_all_the_devices_have_been_connected_properly_and_are_active">5.2. How do I check if all the devices have been connected properly and are active?</h3>
 <div class="paragraph">
 <p>TBW</p>
 </div>
@@ -2276,7 +2342,7 @@ CAMTEST git version = 2023.23.0+TS-0-gadedfd8</pre>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_how_do_i_check_if_the_storage_manager_is_running">6.3. How do I check if the Storage Manager is running?</h3>
+<h3 id="_how_do_i_check_if_the_storage_manager_is_running">5.3. How do I check if the Storage Manager is running?</h3>
 <div class="paragraph">
 <p>You can check this in a terminal with the following command:</p>
 </div>
@@ -2324,7 +2390,7 @@ Free disk space: 43.728 GiB (4.69%)</code></pre>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_how_do_i_check_if_the_configuration_manager_is_running">6.4. How do I check if the Configuration Manager is running?</h3>
+<h3 id="_how_do_i_check_if_the_configuration_manager_is_running">5.4. How do I check if the Configuration Manager is running?</h3>
 <div class="paragraph">
 <p>You can check this in a terminal with the following command:</p>
 </div>
@@ -2344,7 +2410,7 @@ Configuration manager:
 </div>
 </div>
 <div class="sect2">
-<h3 id="_how_do_i_check_if_the_process_manager_is_running">6.5. How do I check if the Process Manager is running?</h3>
+<h3 id="_how_do_i_check_if_the_process_manager_is_running">5.5. How do I check if the Process Manager is running?</h3>
 <div class="paragraph">
 <p>You can check this in a terminal with the following command:</p>
 </div>
@@ -2361,7 +2427,7 @@ Process Manager:
 </div>
 </div>
 <div class="sect2">
-<h3 id="_how_do_i_check_if_the_synoptics_manager_is_running">6.6. How do I check if the Synoptics Manager is running?</h3>
+<h3 id="_how_do_i_check_if_the_synoptics_manager_is_running">5.6. How do I check if the Synoptics Manager is running?</h3>
 <div class="paragraph">
 <p>You can check this in a terminal with the following command:</p>
 </div>
@@ -2378,7 +2444,7 @@ Synoptics Manager:
 </div>
 </div>
 <div class="sect2">
-<h3 id="_how_do_i_check_if_the_logger_is_running">6.7. How do I check if the Logger is running?</h3>
+<h3 id="_how_do_i_check_if_the_logger_is_running">5.7. How do I check if the Logger is running?</h3>
 <div class="paragraph">
 <p>You can check this in a terminal with the following command:</p>
 </div>
@@ -2389,7 +2455,7 @@ Synoptics Manager:
 </div>
 </div>
 <div class="sect2">
-<h3 id="_where_can_i_find_my_test_data">6.8. Where can I find my test data?</h3>
+<h3 id="_where_can_i_find_my_test_data">5.8. Where can I find my test data?</h3>
 <div class="paragraph">
 <p>TBW</p>
 </div>
@@ -2412,54 +2478,135 @@ Synoptics Manager:
 <div id="footer">
 <div id="footer-text">
 Version 0.2<br>
-Last updated 2023-06-28 20:40:16 +0200
+Last updated 2023-09-15 21:46:52 +0200
 </div>
 </div>
 <script>
-/*! Asciidoctor Tabs | Copyright (c) 2018-present Dan Allen | MIT License */
-;(function () {
+;(function () { /*! Asciidoctor Tabs | Copyright (c) 2018-present Dan Allen | MIT License */
   'use strict'
 
-  var hash = window.location.hash
-  find('.tabset').forEach(function (tabset) {
-    var active
-    var tabs = tabset.querySelector('.tabs')
-    if (tabs) {
-      var first
-      find('li', tabs).forEach(function (tab, idx) {
-        var id = (tab.querySelector('a[id]') || tab).id
-        if (!id) return
-        var pane = tabset.querySelector('.tab-pane[aria-labelledby~="' + id + '"]')
-        if (!pane) return
-        if (!idx) first = { tab: tab, pane: pane }
-        if (!active && hash === '#' + id && (active = true)) {
-          tab.classList.add('is-active')
-          if (pane) pane.classList.add('is-active')
-        } else if (!idx) {
-          tab.classList.remove('is-active')
-          if (pane) pane.classList.remove('is-active')
+  var config = (document.currentScript || {}).dataset || {}
+  var forEach = Array.prototype.forEach
+
+  init(document.querySelectorAll('.tabs'))
+
+  function init (tabsBlocks) {
+    if (!tabsBlocks.length) return
+    forEach.call(tabsBlocks, function (tabs) {
+      var syncIds = tabs.classList.contains('is-sync') ? {} : undefined
+      var tablist = tabs.querySelector('.tablist ul')
+      tablist.setAttribute('role', 'tablist')
+      var start
+      forEach.call(tablist.querySelectorAll('li'), function (tab, idx) {
+        tab.tabIndex = -1
+        tab.setAttribute('role', tab.classList.add('tab') || 'tab')
+        var id, anchor, syncId
+        if (!(id = tab.id) && (anchor = tab.querySelector('a[id]'))) {
+          id = tab.id = anchor.parentNode.removeChild(anchor).id
         }
-        tab.addEventListener('click', activateTab.bind({ tabset: tabset, tab: tab, pane: pane }))
+        var panel = id && tabs.querySelector('.tabpanel[aria-labelledby~="' + id + '"]')
+        if (!panel) return idx ? undefined : toggleSelected(tab, true) // invalid state
+        syncIds && (((syncId = tab.textContent.trim()) in syncIds) ? (syncId = undefined) : true) &&
+          (syncIds[(tab.dataset.syncId = syncId)] = tab)
+        idx || (syncIds && (start = { tab: tab, panel: panel })) ? toggleHidden(panel, true) : toggleSelected(tab, true)
+        tab.setAttribute('aria-controls', panel.id)
+        panel.setAttribute('role', 'tabpanel')
+        var onClick = syncId === undefined ? activateTab : activateTabSync
+        tab.addEventListener('click', onClick.bind({ tabs: tabs, tab: tab, panel: panel }))
       })
-      if (!active && first) {
-        first.tab.classList.add('is-active')
-        if (first.pane) first.pane.classList.add('is-active')
+      if (!tabs.closest('.tabpanel')) {
+        forEach.call(tabs.querySelectorAll('.tabpanel table.tableblock'), function (table) {
+          var container = Object.assign(document.createElement('div'), { className: 'tablecontainer' })
+          table.parentNode.insertBefore(container, table).appendChild(table)
+        })
       }
-    }
-    tabset.classList.remove('is-loading')
-  })
+      if (start) {
+        var syncGroupId
+        for (var i = 0, lst = tabs.classList, len = lst.length, className; i !== len; i++) {
+          if (!(className = lst.item(i)).startsWith('data-sync-group-id=')) continue
+          tabs.dataset.syncGroupId = syncGroupId = lst.remove(className) || className.slice(19).replace(/\u00a0/g, ' ')
+          break
+        }
+        if (syncGroupId === undefined) tabs.dataset.syncGroupId = syncGroupId = Object.keys(syncIds).sort().join('|')
+        var preferredSyncId = 'syncStorageKey' in config &&
+          window[(config.syncStorageScope || 'local') + 'Storage'].getItem(config.syncStorageKey + '-' + syncGroupId)
+        var tab = preferredSyncId && syncIds[preferredSyncId]
+        tab && Object.assign(start, { tab: tab, panel: document.getElementById(tab.getAttribute('aria-controls')) })
+        toggleSelected(start.tab, true) || toggleHidden(start.panel, false)
+      }
+    })
+    onHashChange()
+    toggleClassOnEach(tabsBlocks, 'is-loading', 'remove')
+    window.setTimeout(toggleClassOnEach.bind(null, tabsBlocks, 'is-loaded', 'add'), 0)
+    window.addEventListener('hashchange', onHashChange)
+  }
 
   function activateTab (e) {
     var tab = this.tab
-    var pane = this.pane
-    find('.tabs li, .tab-pane', this.tabset).forEach(function (it) {
-      it === tab || it === pane ? it.classList.add('is-active') : it.classList.remove('is-active')
+    var tabs = this.tabs || (this.tabs = tab.closest('.tabs'))
+    var panel = this.panel || (this.panel = document.getElementById(tab.getAttribute('aria-controls')))
+    querySelectorWithSiblings(tabs, '.tablist .tab', 'tab').forEach(function (el) {
+      toggleSelected(el, el === tab)
     })
+    querySelectorWithSiblings(tabs, '.tabpanel', 'tabpanel').forEach(function (el) {
+      toggleHidden(el, el !== panel)
+    })
+    if (!this.isSync && 'syncStorageKey' in config && 'syncGroupId' in tabs.dataset) {
+      var storageKey = config.syncStorageKey + '-' + tabs.dataset.syncGroupId
+      window[(config.syncStorageScope || 'local') + 'Storage'].setItem(storageKey, tab.dataset.syncId)
+    }
+    if (!e) return
+    var loc = window.location
+    var hashIdx = loc.hash ? loc.href.indexOf('#') : -1
+    if (~hashIdx) window.history.replaceState(null, '', loc.href.slice(0, hashIdx))
     e.preventDefault()
   }
 
-  function find (selector, from) {
-    return Array.prototype.slice.call((from || document).querySelectorAll(selector))
+  function activateTabSync (e) {
+    activateTab.call(this, e)
+    var thisTabs = this.tabs
+    var thisTab = this.tab
+    var initialY = thisTabs.getBoundingClientRect().y
+    forEach.call(document.querySelectorAll('.tabs'), function (tabs) {
+      if (tabs === thisTabs || tabs.dataset.syncGroupId !== thisTabs.dataset.syncGroupId) return
+      querySelectorWithSiblings(tabs, '.tablist .tab', 'tab').forEach(function (tab) {
+        if (tab.dataset.syncId === thisTab.dataset.syncId) activateTab.call({ tabs: tabs, tab: tab, isSync: true })
+      })
+    })
+    var shiftedBy = thisTabs.getBoundingClientRect().y - initialY
+    if (shiftedBy && (shiftedBy = Math.round(shiftedBy))) window.scrollBy({ top: shiftedBy, behavior: 'instant' })
+  }
+
+  function querySelectorWithSiblings (scope, selector, siblingClass) {
+    var el = scope.querySelector(selector)
+    if (!el) return []
+    var result = [el]
+    while ((el = el.nextElementSibling) && el.classList.contains(siblingClass)) result.push(el)
+    return result
+  }
+
+  function toggleClassOnEach (elements, className, method) {
+    forEach.call(elements, function (el) {
+      el.classList[method](className)
+    })
+  }
+
+  function toggleHidden (el, state) {
+    el.classList[(el.hidden = state) ? 'add' : 'remove']('is-hidden')
+  }
+
+  function toggleSelected (el, state) {
+    el.setAttribute('aria-selected', '' + state)
+    el.classList[state ? 'add' : 'remove']('is-selected')
+    el.tabIndex = state ? 0 : -1
+  }
+
+  function onHashChange () {
+    var id = window.location.hash.slice(1)
+    if (!id) return
+    var tab = document.getElementById(~id.indexOf('%') ? decodeURIComponent(id) : id)
+    if (!(tab && tab.classList.contains('tab'))) return
+    'syncId' in tab.dataset ? activateTabSync.call({ tab: tab }) : activateTab.call({ tab: tab })
   }
 })()
 </script>

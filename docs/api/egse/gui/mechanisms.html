@@ -41,8 +41,7 @@ from matplotlib.figure import Figure
 from egse.config import find_file
 from egse.resource import get_resource
 from egse.settings import Settings
-from egse.setup import get_setup
-from egse.state import GlobalState
+from egse.setup import load_setup
 
 FONT = QFont(&#34;Helvetica&#34;, 18)
 
@@ -118,7 +117,7 @@ class ScanMirrorAssembly(FigureCanvas):
         FigureCanvas.setSizePolicy(self, QSizePolicy.Expanding, QSizePolicy.Expanding)
         FigureCanvas.updateGeometry(self)
 
-        setup = GlobalState.setup
+        setup = load_setup()
         self.offset_alpha = setup.gse.stages.calibration.offset_alpha
         self.offset_delta_x = setup.gse.stages.calibration.offset_delta_x
 
@@ -209,7 +208,7 @@ class ScanMirrorAssembly(FigureCanvas):
         self.arrow_right.remove()
         self.arrow_left.remove()
 
-        del self.ax.lines[-1]
+        self.ax.lines[-1].remove()
 
         # Scan mirror
 
@@ -259,7 +258,7 @@ class ScanMirrorAssemblyWidget(QGroupBox):
             &#34;Current configuration of the scan mirror assembly (i.e. small rotation stage and translation stage)&#34;)
         self.setFont(FONT)
 
-        setup = get_setup()
+        setup = load_setup()
         self.offset_delta_x = setup.gse.stages.calibration.offset_delta_x
         self.offset_alpha = setup.gse.stages.calibration.offset_alpha
 
@@ -314,7 +313,7 @@ class ScanMirrorAssemblyWidget(QGroupBox):
         self.sma.update_plot(-distance, angle)
 
         self.cmd_angle_text.setText(f&#34;Commanded position for the small rotation stage: {angle:.2f}{DEGREE_SYMBOL_LABEL}&#34;)
-        self.cmd_distance_text.setText(f&#34;Commanded position for the translation stage: {distance:.2f}{DEGREE_SYMBOL_LABEL}&#34;)
+        self.cmd_distance_text.setText(f&#34;Commanded position for the translation stage: {distance:.2f}mm&#34;)
 
         self.cmd_angle_text_explanation.setText(f&#34;Commanded position for the small rotation stage: {angle:.2f}{DEGREE_SYMBOL_LABEL}&#34;)
         self.total_angle_text_explanation.setText(f&#34;Angle \u03B1 shown: {(angle + self.offset_alpha + 45):.2f}{DEGREE_SYMBOL_LABEL}&#34;)
@@ -421,7 +420,7 @@ class BigRotationStageWidget(QGroupBox):
             &#34;Current configuration of the big rotation stage (visualised as the rotation of GL_ROT w.r.t. GL_FIX)&#34;)
         self.setFont(FONT)
 
-        setup = get_setup()
+        setup = load_setup()
         self.offset_phi = setup.gse.stages.calibration.offset_phi
 
         self.explanation_window = ExplanationWindow(&#34;Configuration of the big rotation stage&#34;,
@@ -719,12 +718,12 @@ class FocusPositionWidget(QGroupBox):
 <li>matplotlib.backends.backend_qtagg.FigureCanvasQTAgg</li>
 <li>matplotlib.backends.backend_agg.FigureCanvasAgg</li>
 <li>matplotlib.backends.backend_qt.FigureCanvasQT</li>
+<li>matplotlib.backend_bases.FigureCanvasBase</li>
 <li>PyQt5.QtWidgets.QWidget</li>
 <li>PyQt5.QtCore.QObject</li>
 <li>sip.wrapper</li>
 <li>PyQt5.QtGui.QPaintDevice</li>
 <li>sip.simplewrapper</li>
-<li>matplotlib.backend_bases.FigureCanvasBase</li>
 </ul>
 <h3>Methods</h3>
 <dl>
@@ -815,8 +814,8 @@ corresponds to a counterclockwise rotation.</p></div>
 <span>class <span class="ident">BigRotationStageWidget</span></span>
 </code></dt>
 <dd>
-<div class="desc"><p>QGroupBox(parent: QWidget = None)
-QGroupBox(str, parent: QWidget = None)</p>
+<div class="desc"><p>QGroupBox(parent: typing.Optional[QWidget] = None)
+QGroupBox(title: str, parent: typing.Optional[QWidget] = None)</p>
 <p>Initialisation of a plot showing the orientation of GL_ROT w.r.t.
 GL_FIX, based on the orientation of the big rotation stage.
 Below the
@@ -840,7 +839,7 @@ plot you can find the value of the rotation angle.</p></div>
             &#34;Current configuration of the big rotation stage (visualised as the rotation of GL_ROT w.r.t. GL_FIX)&#34;)
         self.setFont(FONT)
 
-        setup = get_setup()
+        setup = load_setup()
         self.offset_phi = setup.gse.stages.calibration.offset_phi
 
         self.explanation_window = ExplanationWindow(&#34;Configuration of the big rotation stage&#34;,
@@ -951,7 +950,7 @@ corresponds to a counterclockwise rotation.</p></div>
 <span>(</span><span>title, filename)</span>
 </code></dt>
 <dd>
-<div class="desc"><p>QMainWindow(parent: QWidget = None, flags: Union[Qt.WindowFlags, Qt.WindowType] = Qt.WindowFlags())</p>
+<div class="desc"><p>QMainWindow(parent: typing.Optional[QWidget] = None, flags: Union[Qt.WindowFlags, Qt.WindowType] = Qt.WindowFlags())</p>
 <p>Initialisation of a window with more explanation about the mechanisms.</p>
 <h2 id="args">Args</h2>
 <ul>
@@ -1129,12 +1128,12 @@ corresponds to a counterclockwise rotation.</p></div>
 <li>matplotlib.backends.backend_qtagg.FigureCanvasQTAgg</li>
 <li>matplotlib.backends.backend_agg.FigureCanvasAgg</li>
 <li>matplotlib.backends.backend_qt.FigureCanvasQT</li>
+<li>matplotlib.backend_bases.FigureCanvasBase</li>
 <li>PyQt5.QtWidgets.QWidget</li>
 <li>PyQt5.QtCore.QObject</li>
 <li>sip.wrapper</li>
 <li>PyQt5.QtGui.QPaintDevice</li>
 <li>sip.simplewrapper</li>
-<li>matplotlib.backend_bases.FigureCanvasBase</li>
 </ul>
 <h3>Methods</h3>
 <dl>
@@ -1258,8 +1257,8 @@ be shown.</p></div>
 <span>class <span class="ident">FocusPositionWidget</span></span>
 </code></dt>
 <dd>
-<div class="desc"><p>QGroupBox(parent: QWidget = None)
-QGroupBox(str, parent: QWidget = None)</p>
+<div class="desc"><p>QGroupBox(parent: typing.Optional[QWidget] = None)
+QGroupBox(title: str, parent: typing.Optional[QWidget] = None)</p>
 <p>Initialisation of a plot showing L6 and FPA_SEN.</p></div>
 <details class="source">
 <summary>
@@ -1387,7 +1386,7 @@ orientation of the scan mirror (small rotation stage).</p></div>
         FigureCanvas.setSizePolicy(self, QSizePolicy.Expanding, QSizePolicy.Expanding)
         FigureCanvas.updateGeometry(self)
 
-        setup = GlobalState.setup
+        setup = load_setup()
         self.offset_alpha = setup.gse.stages.calibration.offset_alpha
         self.offset_delta_x = setup.gse.stages.calibration.offset_delta_x
 
@@ -1478,7 +1477,7 @@ orientation of the scan mirror (small rotation stage).</p></div>
         self.arrow_right.remove()
         self.arrow_left.remove()
 
-        del self.ax.lines[-1]
+        self.ax.lines[-1].remove()
 
         # Scan mirror
 
@@ -1518,12 +1517,12 @@ orientation of the scan mirror (small rotation stage).</p></div>
 <li>matplotlib.backends.backend_qtagg.FigureCanvasQTAgg</li>
 <li>matplotlib.backends.backend_agg.FigureCanvasAgg</li>
 <li>matplotlib.backends.backend_qt.FigureCanvasQT</li>
+<li>matplotlib.backend_bases.FigureCanvasBase</li>
 <li>PyQt5.QtWidgets.QWidget</li>
 <li>PyQt5.QtCore.QObject</li>
 <li>sip.wrapper</li>
 <li>PyQt5.QtGui.QPaintDevice</li>
 <li>sip.simplewrapper</li>
-<li>matplotlib.backend_bases.FigureCanvasBase</li>
 </ul>
 <h3>Methods</h3>
 <dl>
@@ -1640,7 +1639,7 @@ and the optical axis [mm].</p>
     self.arrow_right.remove()
     self.arrow_left.remove()
 
-    del self.ax.lines[-1]
+    self.ax.lines[-1].remove()
 
     # Scan mirror
 
@@ -1682,8 +1681,8 @@ and the optical axis [mm].</p>
 <span>class <span class="ident">ScanMirrorAssemblyWidget</span></span>
 </code></dt>
 <dd>
-<div class="desc"><p>QGroupBox(parent: QWidget = None)
-QGroupBox(str, parent: QWidget = None)</p>
+<div class="desc"><p>QGroupBox(parent: typing.Optional[QWidget] = None)
+QGroupBox(title: str, parent: typing.Optional[QWidget] = None)</p>
 <p>Initialisation of a plot showing the distance of the scan mirror (along the translation stage)
 from the optical axis and the orientation of the scan mirror (small rotation stage).</p></div>
 <details class="source">
@@ -1704,7 +1703,7 @@ from the optical axis and the orientation of the scan mirror (small rotation sta
             &#34;Current configuration of the scan mirror assembly (i.e. small rotation stage and translation stage)&#34;)
         self.setFont(FONT)
 
-        setup = get_setup()
+        setup = load_setup()
         self.offset_delta_x = setup.gse.stages.calibration.offset_delta_x
         self.offset_alpha = setup.gse.stages.calibration.offset_alpha
 
@@ -1759,7 +1758,7 @@ from the optical axis and the orientation of the scan mirror (small rotation sta
         self.sma.update_plot(-distance, angle)
 
         self.cmd_angle_text.setText(f&#34;Commanded position for the small rotation stage: {angle:.2f}{DEGREE_SYMBOL_LABEL}&#34;)
-        self.cmd_distance_text.setText(f&#34;Commanded position for the translation stage: {distance:.2f}{DEGREE_SYMBOL_LABEL}&#34;)
+        self.cmd_distance_text.setText(f&#34;Commanded position for the translation stage: {distance:.2f}mm&#34;)
 
         self.cmd_angle_text_explanation.setText(f&#34;Commanded position for the small rotation stage: {angle:.2f}{DEGREE_SYMBOL_LABEL}&#34;)
         self.total_angle_text_explanation.setText(f&#34;Angle \u03B1 shown: {(angle + self.offset_alpha + 45):.2f}{DEGREE_SYMBOL_LABEL}&#34;)
@@ -1804,7 +1803,7 @@ and the optical axis [mm].</p>
     self.sma.update_plot(-distance, angle)
 
     self.cmd_angle_text.setText(f&#34;Commanded position for the small rotation stage: {angle:.2f}{DEGREE_SYMBOL_LABEL}&#34;)
-    self.cmd_distance_text.setText(f&#34;Commanded position for the translation stage: {distance:.2f}{DEGREE_SYMBOL_LABEL}&#34;)
+    self.cmd_distance_text.setText(f&#34;Commanded position for the translation stage: {distance:.2f}mm&#34;)
 
     self.cmd_angle_text_explanation.setText(f&#34;Commanded position for the small rotation stage: {angle:.2f}{DEGREE_SYMBOL_LABEL}&#34;)
     self.total_angle_text_explanation.setText(f&#34;Angle \u03B1 shown: {(angle + self.offset_alpha + 45):.2f}{DEGREE_SYMBOL_LABEL}&#34;)

@@ -70,7 +70,7 @@ class cdaq9184SocketInterface(DeviceConnectionInterface, DeviceTransport):
 
     def __init__(self, hostname=None, port=None):
         self.hostname = ctrl_settings.HOSTNAME if hostname is None else hostname
-        self.port = ctrl_settings.CDAQ9184_PORT if port is None else port
+        self.port = ctrl_settings.CDAQ9174_PORT if port is None else port
         self.sock = None
 
         self.is_connection_open = False
@@ -209,18 +209,17 @@ class cdaq9184SocketInterface(DeviceConnectionInterface, DeviceTransport):
         data = data.replace(&#34;\r&#34;, &#34;,&#34;)
         data = data.replace(&#34;\x04&#34;, &#34;,&#34;)
         data = data.replace(&#34;\x12&#34;, &#34;,&#34;)
+        data = data.replace(&#34;\x0e&#34;, &#34;,&#34;)
         data = data.replace(&#34;    &#34;, &#34;,&#34;)
         data = data.replace(&#34;0^&#34;, &#34;E&#34;)
         data = data.split(&#34;,&#34;)
 
         data = [element.strip() for element in data]
 
-        # The first element of data is &#34;#&#34; and the last is an empty string so I delete them.
-        # But to avoid to delete a relevant value I check if they&#39;re well in data before deleting.
+        # The first element of data is &#34;#&#34; so I delete it.
+        # But to avoid to delete a relevant value I check if this unwanted element is well in data before deleting.
         if data[0] == &#34;#&#34;:
             del data[0]
-        if data[-1] == &#34;&#34;:
-            del data[-1]
 
         return data
 
@@ -328,7 +327,7 @@ Connects to the Labview interface via TCP/IP socket</p></div>
 
     def __init__(self, hostname=None, port=None):
         self.hostname = ctrl_settings.HOSTNAME if hostname is None else hostname
-        self.port = ctrl_settings.CDAQ9184_PORT if port is None else port
+        self.port = ctrl_settings.CDAQ9174_PORT if port is None else port
         self.sock = None
 
         self.is_connection_open = False
@@ -467,18 +466,17 @@ Connects to the Labview interface via TCP/IP socket</p></div>
         data = data.replace(&#34;\r&#34;, &#34;,&#34;)
         data = data.replace(&#34;\x04&#34;, &#34;,&#34;)
         data = data.replace(&#34;\x12&#34;, &#34;,&#34;)
+        data = data.replace(&#34;\x0e&#34;, &#34;,&#34;)
         data = data.replace(&#34;    &#34;, &#34;,&#34;)
         data = data.replace(&#34;0^&#34;, &#34;E&#34;)
         data = data.split(&#34;,&#34;)
 
         data = [element.strip() for element in data]
 
-        # The first element of data is &#34;#&#34; and the last is an empty string so I delete them.
-        # But to avoid to delete a relevant value I check if they&#39;re well in data before deleting.
+        # The first element of data is &#34;#&#34; so I delete it.
+        # But to avoid to delete a relevant value I check if this unwanted element is well in data before deleting.
         if data[0] == &#34;#&#34;:
             del data[0]
-        if data[-1] == &#34;&#34;:
-            del data[-1]
 
         return data
 

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1" />
 <meta name="generator" content="pdoc 0.10.0" />
 <title>egse.dsi.rmap API documentation</title>
-<meta name="description" content="This module provides Python wrapper functions to (most of) the library functions from the C library ESL-RMAP.c …" />
+<meta name="description" content="This module provides a Python interface to RMAP command packets." />
 <link rel="preload stylesheet" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/11.0.1/sanitize.min.css" integrity="sha256-PK9q560IAAa6WVRRh76LtCaI8pjTJ2z11v0miyNNjrs=" crossorigin>
 <link rel="preload stylesheet" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/11.0.1/typography.min.css" integrity="sha256-7l/o7C8jubJiy74VsKTidCy1yBkRtiUGbVkYBylBqUg=" crossorigin>
 <link rel="stylesheet preload" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/10.1.1/styles/github.min.css" crossorigin>
@@ -22,60 +22,43 @@
 <h1 class="title">Module <code>egse.dsi.rmap</code></h1>
 </header>
 <section id="section-intro">
-<p>This module provides Python wrapper functions to (most of) the library functions from the C library ESL-RMAP.c.</p>
-<p>We use one single Exception specific for these wrapper functions. An RMAPError is thrown whenever the C function
-returns an error from which we can not recover. This allows to cascade the python functions in a try: except: clause
-making the code much more readable.</p>
-<p>The C code depends heavily on a C structure which we had to re-define using the Structure class provided by ctypes.</p>
+<p>This module provides a Python interface to RMAP command packets.</p>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">&#34;&#34;&#34;
-This module provides Python wrapper functions to (most of) the library functions from the C library ESL-RMAP.c.
-
-We use one single Exception specific for these wrapper functions. An RMAPError is thrown whenever the C function
-returns an error from which we can not recover. This allows to cascade the python functions in a try: except: clause
-making the code much more readable.
-
-The C code depends heavily on a C structure which we had to re-define using the Structure class provided by ctypes.
-
+This module provides a Python interface to RMAP command packets.
 &#34;&#34;&#34;
+
+# Originally, the RMAP functions were wrappers to functions defined in a C library. However, that
+# library is not maintained anymore by 4Links, and we have now converted all functionality into
+# Python functions. The functions depend heavily on a C structure which we had to re-define using
+# the Structure class provided by ctypes. The RMAP Python functions are defined in `egse.rmap`.
+
 
 import ctypes
 import logging
-import struct
+import textwrap
 from contextlib import contextmanager
-from ctypes import POINTER
-from ctypes import Structure
-from ctypes import c_char_p
 from ctypes import c_int
-from ctypes import c_ubyte
-from ctypes import c_uint
-from ctypes import c_ulonglong
-from ctypes import c_void_p as c_int_p
-from ctypes import cdll
-from pathlib import Path
-from typing import Tuple
+from dataclasses import dataclass
+
+import rich
 
 import egse.dsi.constants as constants
-from egse.config import find_file
-from egse.dsi.constants import esl_rmap_error_codes
-from egse.dsi.esl import esl_flush
+import egse.rmap
+import egse.spw
 from egse.dsi.esl import esl_get_product_string
-from egse.dsi.esl import esl_p
-from egse.dsi.esl import esl_read_packet
-from egse.dsi.esl import esl_write_packet
-from egse.dsi.esl import pretty_print_packet
 from egse.settings import Settings
-from egse.system import get_os_name
-from egse.system import get_os_version
 
-logger = logging.getLogger(__name__)
+rich.print(&#34;Loading egse.dsi.rmap package...&#34;, flush=True)
+
+LOGGER = logging.getLogger(__name__)
 
 dsi_settings = Settings.load(&#34;DSI&#34;)
 
-# Maintain a transmit and receive buffer
+# Maintain a transmit and a receive buffer
 
 rxbuf = ctypes.create_string_buffer(dsi_settings.RX_BUFFER_LENGTH)
 txbuf = ctypes.create_string_buffer(dsi_settings.TX_BUFFER_LENGTH)
@@ -83,120 +66,38 @@ txbuf = ctypes.create_string_buffer(dsi_settings.TX_BUFFER_LENGTH)
 # Initialize the status variable which is a c pointer that is set by the library routines to
 # pass a status.
 
-status = c_int(0)
-status_p = ctypes.pointer(status)
-
-# NOTE: These memory areas are currently equal for N-FEE and F-FEE. Don&#39;t know if this will
-#       change in the future.
-
-CRITICAL_AREA_START = 0x0000_0000
-CRITICAL_AREA_END = 0x0000_00FC
-GENERAL_AREA_START = 0x0000_0100
-GENERAL_AREA_END = 0x0000_06FC
-HK_AREA_START = 0x0000_0700
-HK_AREA_END = 0x0000_07FC
-WINDOWING_AREA_START = 0x0080_0000
-WINDOWING_AREA_END = 0x00FF_FFFC
+# status = c_int(0)
+# status_p = ctypes.pointer(status)
 
 
-class ESL_RMAP(Structure):
-    _fields_ = [
-        (&#34;spw_device&#34;,                esl_p),
-        (&#34;target_key&#34;,                c_ubyte),
-        (&#34;target_logical_address&#34;,    c_ubyte),
-        (&#34;target_spw_address&#34;,        c_ubyte * 12),
-        (&#34;target_spw_address_len&#34;,    c_int),
-        (&#34;reply_spw_address&#34;,         c_ubyte * 12),
-        (&#34;reply_spw_address_len&#34;,     c_int),
-        (&#34;initiator_logical_address&#34;, c_ubyte),
-        (&#34;transaction_identifier&#34;,    c_uint),
-        (&#34;ESL_RMAP_error&#34;,            c_int)
-    ]
+@dataclass
+class ESL_RMAP:
+    spw_device = None
+    target_key = 0
+    target_logical_address = 0xFE
+    target_spw_address = 0x00
+    target_spw_address_len = 0
+    reply_spw_address = 0x00
+    reply_spw_address_len = 0
+    initiator_logical_address = 0xFE
+    transaction_identifier = 99
+    ESL_RMAP_error = 0
 
-
-rmap_p = POINTER(ESL_RMAP)
-
-
-class RMAPError(Exception):
-    pass
-
-
-# Depending on the OS, and the OS version, we load the dynamic library from a specific location
-# Only some OS/OS-version combinations are supported.
-
-if get_os_name() == &#39;macos&#39;:
-    in_dir = &#39;lib/macOS&#39;
-elif get_os_name() == &#39;debian&#39;:
-    in_dir = &#39;lib/Debian&#39;
-elif get_os_name() == &#39;centos&#39;:
-    in_dir = &#39;lib/CentOS-7&#39; if get_os_version().startswith(&#39;7&#39;) else &#39;lib/CentOS-8&#39;
-elif get_os_name() == &#39;ubuntu&#39;:
-    in_dir = &#39;lib/Ubuntu-20&#39; if get_os_version().startswith(&#39;20&#39;) else &#39;lib/Linux&#39;
-else:
-    in_dir = None
-
-dylib_filename = Path(dsi_settings.RMAP_DYLIB_FILENAME)
-
-logger.debug(f&#34;Locating shared library {dylib_filename} in dir &#39;{in_dir}&#39;&#34;)
-
-dylib_filename = find_file(dylib_filename, in_dir=in_dir)
-
-logger.debug(f&#34;Loading shared library: {dylib_filename}&#34;)
-
-if not dylib_filename:
-    raise FileNotFoundError(f&#34;Could not find dynamic library: {dylib_filename}&#34;)
-
-librmap = cdll.LoadLibrary(dylib_filename)
-
-# Mapping of functions.
-# Please note that when there is no need to wrap the C library function, we do not take the burden
-
-librmap_open                                = librmap.ESL_RMAP_open
-librmap_open.argtypes                       = [esl_p]
-librmap_open.restype                        = rmap_p
-
-librmap_set_verbosity                       = librmap.ESL_RMAP_set_verbosity
-librmap_set_verbosity.argtypes              = [c_int]
-
-librmap_get_target_key                      = librmap.ESL_RMAP_get_target_key
-librmap_get_target_key.argtypes             = [rmap_p]
-librmap_get_target_key.restype              = c_ubyte
-
-librmap_set_target_key                      = librmap.ESL_RMAP_set_target_key
-librmap_set_target_key.argtypes             = [rmap_p, c_ubyte]
-
-librmap_get_target_logical_address          = librmap.ESL_RMAP_get_target_logical_address
-librmap_get_target_logical_address.argtypes = [rmap_p]
-librmap_get_target_logical_address.restype  = c_ubyte
-
-librmap_set_target_logical_address          = librmap.ESL_RMAP_set_target_logical_address
-librmap_set_target_logical_address.argtypes = [rmap_p, c_ubyte]
-
-librmap_set_target_spw_address              = librmap.ESL_RMAP_set_target_spw_address
-librmap_set_target_spw_address.argtypes     = [rmap_p, c_char_p, c_int]
-
-librmap_get_initiator_logical_address          = librmap.ESL_RMAP_get_initiator_logical_address
-librmap_get_initiator_logical_address.argtypes = [rmap_p]
-librmap_get_initiator_logical_address.restype  = c_ubyte
-
-librmap_set_initiator_logical_address          = librmap.ESL_RMAP_set_initiator_logical_address
-librmap_set_initiator_logical_address.argtypes = [rmap_p, c_ubyte]
-
-librmap_crc_check                           = librmap.RMAP_crc_check
-librmap_crc_check.argtypes                  = [c_char_p, c_uint, c_uint]
-librmap_crc_check.restype                   = c_uint
-
-librmap_read                                = librmap.ESL_RMAP_read
-librmap_read.argtypes                       = [rmap_p, c_ulonglong, c_char_p, c_uint, c_int_p]
-librmap_read.restype                        = c_int
-
-librmap_read_TO                             = librmap.ESL_RMAP_read_TO
-librmap_read_TO.argtypes                    = [rmap_p, c_ulonglong, c_char_p, c_uint, c_int_p, c_int]
-librmap_read_TO.restype                     = c_int
-
-librmap_write                                = librmap.ESL_RMAP_write
-librmap_write.argtypes                       = [rmap_p, c_ulonglong, c_char_p, c_uint, c_int_p]
-librmap_write.restype                        = c_int
+    def __str__(self):
+        return textwrap.dedent(
+            f&#34;&#34;&#34;\
+            spw_device={self.spw_device}
+            target_key={self.target_key}
+            target_logical_address={self.target_logical_address}
+            target_spw_address={self.target_spw_address}
+            target_spw_address_len={self.target_spw_address_len}
+            reply_spw_address={self.reply_spw_address}
+            reply_spw_address_len={self.reply_spw_address_len}
+            initiator_logical_address={self.initiator_logical_address}
+            transaction_identifier={self.transaction_identifier}
+            ESL_RMAP_error={self.ESL_RMAP_error}
+            &#34;&#34;&#34;
+        )
 
 
 @contextmanager
@@ -208,24 +109,62 @@ def rmap_connection(esl_link):
         esl_link (ESL): the ESL structure that defines the connection to the DSI
 
     Returns:
-        an RMAP link connection
+        an RMAP link connection.
     &#34;&#34;&#34;
-    yield rmap_open_connection(esl_link)
+    rmap_link = rmap_open_connection(esl_link)
+    yield rmap_link
+
+    rmap_close_connection(rmap_link)
+
+
+def rmap_initialise(esl_link) -&gt; ESL_RMAP:
+    &#34;&#34;&#34;
+    Initialise the RMAP structure with predefined settings for PLATO.
+    &#34;&#34;&#34;
+    esl_rmap: ESL_RMAP = ESL_RMAP()
+
+    esl_rmap.spw_device = esl_link
+    esl_rmap.target_key = 0x00
+    esl_rmap.target_logical_address = 0xFE
+    esl_rmap.target_spw_address = 0x00
+    esl_rmap.target_spw_address_len = 0
+    esl_rmap.reply_spw_address = 0x0
+    esl_rmap.reply_spw_address_len = 0
+    esl_rmap.initiator_logical_address = 0xFE
+    esl_rmap.transaction_identifier = 99
+    esl_rmap.ESL_RMAP_error = 99
+
+    return esl_rmap
 
 
 def rmap_open_connection(esl_link):
+    &#34;&#34;&#34;
+    Initialises and opens an RMAP connection on an EtherSpaceLink (ESL) connection.
 
-    logger.info(f&#34;Open and setup RMAP connection to {esl_get_product_string(esl_link)}&#34;)
+    This requires a valid link to an ESL connection which shall be created with the following
+    command:
 
-    rmap_link = librmap_open(esl_link)
-    if not rmap_link:
-        raise RMAPError(f&#34;Couldn&#39;t open RMAP connection to {esl_get_product_string(esl_link)}&#34;)
+        esl_link = esl_open_connection(&lt;DSI IP Address&gt;)
 
-    rmap_set_verbosity(1)     # 1=normal; 5 or 15 for lots of debugging
+    Args:
+        esl_link: a connection link to the DSI SpaceWire interface
 
-    logger.info(&#34;RMAP connection opened successfully.&#34;)
+    Returns:
+        The RMAP connection link.
+
+    &#34;&#34;&#34;
+
+    LOGGER.info(f&#34;Open and setup RMAP connection to {esl_get_product_string(esl_link)}&#34;)
+
+    rmap_link = rmap_initialise(esl_link)
+
+    LOGGER.info(&#34;RMAP connection opened successfully.&#34;)
 
     return rmap_link
+
+
+def rmap_close_connection(rmap_link):
+    LOGGER.info(&#34;RMAP connection closed successfully.&#34;)
 
 
 def rmap_configure(rmap_link: ESL_RMAP, initiator_logical_address,
@@ -244,835 +183,294 @@ def rmap_configure(rmap_link: ESL_RMAP, initiator_logical_address,
         Nothing
 
     &#34;&#34;&#34;
-    rmap_set_initiator_logical_address(rmap_link, initiator_logical_address)
-    rmap_set_target_key(rmap_link, target_key)
-    rmap_set_target_logical_address(rmap_link, target_logical_address)
-    rmap_set_target_spw_address(rmap_link, b&#39;\x00&#39;, 0)
+    rmap_link.initiator_logical_address = initiator_logical_address
+    rmap_link.target_key = target_key
+    rmap_link.target_logical_address = target_logical_address
+    rmap_link.target_spw_address = 0x0
+    rmap_link.target_spw_address_len = 0
 
 
-# FIXME: Is this code rmap_read() still needed? We now have rmap_read_request()
-#        which handles everything this code does, except it doesn&#39;t use the ESL_RMAP
-#        dynamic library!
+# This function is not used anywhere, but I don&#39;t want to delete it yet because it was originally converted from
+# the C code provided by 4Links and contains the logic that shall be used to process RMAP packets.
+# I leave it here for future use or inspection.
 
-def rmap_read(rmap_link: ESL_RMAP, address: int, length: int, timeout: int = 1000):
-    &#34;&#34;&#34;
-    Read `length` bytes from the remote memory starting at `address`. If there is no reply
-    after the given `timeout`, TODO: WHAT WILL HAPPEN THEN?
+def process_rmap_commands(rmap_link: ESL_RMAP):
+    # Leave these imports here because they are only used by this function
 
-    .. note:: We are using the global ``rxbuf`` read buffer here.
-        The content of the buffer will be overwritten by the RMAP read request.
+    from egse.bits import crc_calc
+    from egse.dsi import constants
+    from egse.dsi.esl import ESLError
+    from egse.dsi.esl import esl_flush
+    from egse.dsi.esl import esl_get_esl_error
+    from egse.dsi.esl import esl_read_packet
+    from egse.dsi.esl import esl_write_packet
+    from egse.dsi.esl import get_extension_name
+    from egse.dsi.esl import get_terminator_name
+    from egse.dsi.esl import is_extension_code
+    from egse.dsi.esl import is_terminator_code
+    from egse.dsi.spw import handle_extension_packet
+    from egse.dsi.spw import handle_special_packet
+    from egse.rmap import create_rmap_read_request_reply_packet
+    from egse.spw import CheckError
+    from egse.spw import check_data_crc
+    from egse.spw import check_header_crc
+    from egse.spw import check_initiator_logical_address
+    from egse.spw import check_instruction
+    from egse.spw import check_key
+    from egse.spw import check_protocol_id
+    from egse.spw import check_target_logical_address
+    from egse.spw import get_address
+    from egse.spw import get_data_length
+    from egse.spw import get_instruction_field
+    from egse.spw import get_transaction_identifier
+    from egse.spw import is_command
+    from egse.spw import is_increment
+    from egse.spw import is_write
 
-    Args:
-        rmap_link: the RMAP link connection
-        address: the start address (32-bit aligned) in the remote memory
-        length: the number of bytes to read from the remote memory
-        timeout: timeout in milli-seconds
+    total_received = 0
+    packet = bytes()
 
-    Returns:
-        the buffer containing the data read from the remote memory.
+    esl_link = rmap_link.spw_device
 
-    &#34;&#34;&#34;
+    terminator, rx_buffer = esl_read_packet(esl_link)
+    bytes_received = len(rx_buffer)
 
-    data_length = librmap_read_TO(rmap_link, address, rxbuf, length, status_p, timeout)
-
-    # If data_length &lt; 0 it can have the following values:
-    # -1 = status was != 0 indicating a read error, the packet was eaten...discarded?
-    # -4 = wrong TLA field in header
-    # -5 = wrong TID field in header
-
-    # FIXME: Think about if we should raise an RMAPError here instead of returning None when result is negative.
-    #        I would go for an Exception, since we loose the information on the error anyway as code information (
-    #        None is returned, not data_length), and now the caller must check the return code from this read command.
-
-    if data_length &lt; 0:
-        logger.warning(
-            f&#34;Couldn&#39;t read data within timeout of {timeout} ms, &#34;
-            f&#34;ESL RMAP Error Code = {esl_rmap_error_codes[rmap_link.contents.ESL_RMAP_error]} &#34;
-            f&#34;[{rmap_link.contents.ESL_RMAP_error}]&#34;
+    if is_terminator_code(terminator):
+        LOGGER.debug(
+            f&#34;bytes received={bytes_received}, terminator={terminator} &#34;
+            f&#34;[{get_terminator_name(terminator)}]&#34;
         )
-        return None
+    elif is_extension_code(terminator):
+        LOGGER.debug(
+            f&#34;bytes received={bytes_received}, terminator={terminator} &#34;
+            f&#34;[{get_extension_name(terminator)}]&#34;
+        )
     else:
-        return rxbuf[:data_length]
+        LOGGER.debug(f&#34;bytes received={bytes_received}, terminator={terminator}&#34;)
 
+    # TODO:
+    #   When the link is closed from the other end (dpusim) just one byte (b&#39;\x08&#39;) is received.
+    #   So, we should try to restart the link...
 
-def rmap_read_request(rmap_link: ESL_RMAP, address: int, length: int, timeout: int = 1000) -&gt; Tuple[int, bytes]:
-    &#34;&#34;&#34;
-    Read `length` bytes from the remote memory starting at `address`.
+    if bytes_received == 1:
+        LOGGER.warning(&#34;Link was closed from the initiator side, terminating.&#34;)
+        return
 
-    .. todo:: the timeout parameter is currently not implemented
+    # First check if we encountered any errors or shutdown,
+    # if True then break the main while loop and end the connection
+    #
+    # FIXME:
+    #   We need better handling of exceptional conditions here since the FEE Simulator can never
+    #   die.
+    #       - what shall we do when a shutdown is received?
+    #       - what shall we do when a timeout has occured?
+    #       - what shall we do with a buffer overflow? When can this happen?
+    #       - some errors are related to the virtual DSI, how do we solve those?
 
-    Args:
-        rmap_link: the RMAP link connection
-        address: the start address (32-bit aligned) in the remote memory
-        length: the number of bytes to read from the remote memory
-        timeout: timeout in milli-seconds
+    if bytes_received &lt; 0:
+        error = esl_get_esl_error(esl_link)
+        if error == constants.ESL_ERROR_TIMEOUT:
+            LOGGER.debug(&#34;Received a timeout, continuing...&#34;)
+            return
+        # FIXME: We should handle all these cases in a simpler way
+        if error == constants.ESL_ERROR_RECEIVER_SHUTDOWN:
+            LOGGER.info(&#34;Shutdown detected.&#34;)
+            return
+        if error == constants.ESL_ERROR_BUFFER_OVERFLOW:
+            # FIXME: Can we recover from this situation?
+            LOGGER.error(&#34;Insufficient buffer to read full packet, bailing out.&#34;)
+            return
+        if error == constants.ESL_ERROR_RECFILE_WRITE:
+            LOGGER.error(&#34;Write error on record file, bailing out.&#34;)
+            return
 
-    Returns:
-        A tuple containing the terminator value and the RMAP Reply packet with the data read from the remote memory.
-
-    &#34;&#34;&#34;
-    buffer = create_rmap_read_request_packet(rmap_link, address, length)
-
-    logger.log(5, &#34;Pretty Print Read Request Packet:\n&#34; + pretty_print_packet(buffer))
-
-    result = esl_write_packet(rmap_link.contents.spw_device, buffer, len(buffer), constants.ESL_EOP)
-    if result:
-        raise RMAPError(
-            f&#34;Couldn&#39;t send data within timeout of {timeout} ms, &#34;
-            f&#34;ESL RMAP Error Code = {esl_rmap_error_codes[rmap_link.contents.ESL_RMAP_error]} [&#34;
-            f&#34;{rmap_link.contents.ESL_RMAP_error}]&#34;)
-
-    result = esl_flush(rmap_link.contents.spw_device)
-    if result:
-        raise RMAPError(
-            f&#34;Couldn&#39;t send data or clear buffers, &#34;
-            f&#34;ESL RMAP Error Code = {esl_rmap_error_codes[rmap_link.contents.ESL_RMAP_error]} [&#34;
-            f&#34;{rmap_link.contents.ESL_RMAP_error}]&#34;)
-
-    # Read the read request reply
-
-    terminator, rx_buffer = esl_read_packet(rmap_link.contents.spw_device)
-
-    logger.log(5, &#34;Pretty Print Read Request Reply Packet:\n&#34; + pretty_print_packet(rx_buffer))
-
-    return terminator, rx_buffer
-
-
-def rmap_write_request(rmap_link: ESL_RMAP,
-                       address: int, data: bytes, length: int = 4, timeout: int = 1000) -&gt; Tuple[int, bytes]:
-    &#34;&#34;&#34;
-    Sends an RMAP write command over the SpaceWire link.
-
-    Based on the address this function will decided to send a verified or unverified write request.
-
-    .. todo:: the timeout parameter is currently not implemented
-
-    Args:
-        rmap_link (ESL_RMAP): the RMAP link connection
-        address: the starting memory address to which the data from buffer will be written
-        data: the data that will be written into the targets memory
-        length: the number of bytes to write (the buffer maybe longer) [default=4]
-        timeout: timeout in milliseconds [default=1000]
-
-    Returns:
-        return_code: zero (0) on success.
-
-    Raises:
-        RMAPError: when data can not be written on the target.
-
-    &#34;&#34;&#34;
-
-    if CRITICAL_AREA_START &lt;= address &lt;= CRITICAL_AREA_END:
-        buffer = create_rmap_verified_write_packet(rmap_link, address, data)
-    else:
-        buffer = create_rmap_unverified_write_packet(rmap_link, address, data, length)
-
-    logger.log(5, &#34;Pretty Print Write Request Packet:\n&#34; + pretty_print_packet(buffer))
-
-    result = esl_write_packet(rmap_link.contents.spw_device, buffer, len(buffer), constants.ESL_EOP)
-    if result:
-        raise RMAPError(
-            f&#34;Couldn&#39;t send data within timeout of {timeout} ms, &#34;
-            f&#34;ESL RMAP Error Code = {esl_rmap_error_codes[rmap_link.contents.ESL_RMAP_error]} [&#34;
-            f&#34;{rmap_link.contents.ESL_RMAP_error}]&#34;)
-
-    result = esl_flush(rmap_link.contents.spw_device)
-    if result:
-        raise RMAPError(
-            f&#34;Couldn&#39;t send data or clear buffers, &#34;
-            f&#34;ESL RMAP Error Code = {esl_rmap_error_codes[rmap_link.contents.ESL_RMAP_error]} [&#34;
-            f&#34;{rmap_link.contents.ESL_RMAP_error}]&#34;)
-
-    # Read the write reply
-
-    terminator, rx_buffer = esl_read_packet(rmap_link.contents.spw_device)
-
-    logger.log(5, &#34;Pretty Print Write Request Reply Packet:\n&#34; + pretty_print_packet(rx_buffer))
-
-    return terminator, rx_buffer
-
-
-def create_rmap_read_request_packet(rmap_link: ESL_RMAP, address: int, length: int) -&gt; ctypes.Array:
-    &#34;&#34;&#34;
-    Creates an RMAP Read Request SpaceWire packet.
-
-    The read request is an RMAP command that read a number of bytes from the FEE register memory.
-
-    The function returns a ``ctypes`` character array (which is basically a bytes array) that
-    can be passed into the EtherSpaceLink library function ``esl_write_packet()``.
-
-    Address shall be within the 0x0000_0000 and 0x00FF_FFFC. The memory map (register) is divided
-    in the following areas:
-
-        0x0000_0000 - 0x0000_00FC   Critical Configuration Area (verified write)
-        0x0000_0100 - 0x0000_06FC   General Configuration Area (unverified write)
-        0x0000_0700 - 0x0000_07FC   Housekeeping area
-        0x0000_0800 - 0x007F_FFFC   Not Supported
-        0x0080_0000 - 0x00FF_FFFC   Windowing Area (unverified write)
-        0x0010_0000 - 0xFFFF_FFFC   Not Supported
-
-    All read requests to the critical area shall have a fixed data length of 4 bytes.
-    All read requests to a general area shall have a maximum data length of 256 bytes.
-    All read requests to the housekeeping area shall have a maximum data length of 256 bytes.
-    All read requests to the windowing area shall have a maximum data length of 4096 bytes.
-
-    Args:
-        rmap_link (ESL_RMAP): the RMAP link connection
-        address (int): the FEE register memory address
-        length (int): the data length
-
-    Returns:
-        a bytes array containing the full RMAP Read Request packet.
-    &#34;&#34;&#34;
-
-    check_address_and_data_length(address, length)
-
-    buf = ctypes.create_string_buffer(16)
-
-    # The transaction identifier shall be incremented for each read request
-
-    tid = update_transaction_identifier(rmap_link)
-
-    # NOTE: The first bytes would each carry the target SpW address or a destination port,
-    #       but this is not used for point-to-point connections, so we&#39;re safe.
-
-    buf[0] = 0x51  # Target N-FEE or F-FEE
-    buf[1] = 0x01  # RMAP Protocol ID
-    buf[2] = 0x4C  # Instruction: 0b1001100, RMAP Request, Read, Incrementing address, reply address = 0
-    buf[3] = 0xD1  # Destination Key
-    buf[4] = 0x50  # Initiator is always the DPU
-    buf[5] = (tid &gt;&gt; 8) &amp; 0xFF        # MSB of the Transition ID
-    buf[6] = tid &amp; 0xFF               # LSB of the Transition ID
-    buf[7] = 0x00                     # Extended address is not used
-    buf[8] = (address &gt;&gt; 24) &amp; 0xFF   # address (MSB)
-    buf[9] = (address &gt;&gt; 16) &amp; 0xFF   # address
-    buf[10] = (address &gt;&gt; 8) &amp; 0xFF   # address
-    buf[11] = address &amp; 0xFF          # address (LSB)
-    buf[12] = (length &gt;&gt; 16) &amp; 0xFF   # data length (MSB)
-    buf[13] = (length &gt;&gt; 8) &amp; 0xFF    # data length
-    buf[14] = length &amp; 0xFF           # data length (LSB)
-    buf[15] = rmap_crc_check(buf, 0, 15) &amp; 0xFF
-    return buf
-
-
-def create_rmap_write_reply_packet(rmap_link: ESL_RMAP) -&gt; ctypes.Array:
-    pass
-
-
-def create_rmap_read_reply_packet(rmap_link: ESL_RMAP, instruction_field: int, tid: int, status: int,
-                                  buffer: bytes, buffer_length: int) -&gt; ctypes.Array:
-    &#34;&#34;&#34;
-    Creates an RMAP Reply to a RMAP Read Request packet.
-
-    The function returns a ``ctypes`` character array (which is basically a bytes array) that
-    can be passed into the EtherSpaceLink library function ``esl_write_packet()``.
-
-    Args:
-        rmap_link (ESL_RMAP): the RMAP link connection
-        instruction_field (int): the instruction field of the RMAP read request packet
-        tid (int): the transaction identifier of the read request packet
-        status (int): shall be 0 if the read request was successful, contain an error code otherwise.
-        TODO: which error code?
-        buffer (bytes): the data that was read as indicated by the read request
-        buffer_length (int): the data length
-
-    Returns:
-        packet: a ctypes Array containing the full RMAP Reply packet.
-    &#34;&#34;&#34;
-
-    buf = ctypes.create_string_buffer(12 + buffer_length + 1)
-
-    buf[0] = 0x50  # Initiator address N-DPU or F-DPU
-    buf[1] = 0x01  # RMAP Protocol ID
-    buf[2] = instruction_field &amp; 0x3F  # Clear the command bit as this is a reply
-    buf[3] = status &amp; 0xFF  # Status field: 0 on success
-    buf[4] = 0x51  # Target address is always the N-FEE or F-FEE
-    buf[5] = (tid &gt;&gt; 8) &amp; 0xFF        # MSB of the Transition ID
-    buf[6] = tid &amp; 0xFF               # LSB of the Transition ID
-    buf[7] = 0x00                     # Reserved
-    buf[8] = (buffer_length &gt;&gt; 16) &amp; 0xFF    # data length (MSB)
-    buf[9] = (buffer_length &gt;&gt; 8) &amp; 0xFF     # data length
-    buf[10] = buffer_length &amp; 0xFF           # data length (LSB)
-    buf[11] = rmap_crc_check(buf, 0, 11) &amp; 0xFF  # Header CRC
-
-    # Note that we assume here that len(buffer) == buffer_length.
-
-    if len(buffer) != buffer_length:
-        logger.warning(
-            f&#34;While creating an RMAP read reply packet, the length of the buffer ({len(buffer)}) not equals &#34;
-            f&#34;the buffer_length ({buffer_length})&#34;
+        LOGGER.error(
+            f&#34;read_packet: returned error, &#34;
+            f&#34;ESL error = {constants.esl_error_codes[error]} [{error}]&#34;
         )
+        return
+
+    # When we receive an unknown terminator we just ignore, log the error and continue...
+
+    if terminator not in (
+        constants.ESL_EXTN,
+        constants.ESL_SPECIAL,
+        constants.ESL_PART_EOP_EEP,
+        constants.ESL_PART_EXTN,
+        constants.ESL_PART_SPECIAL,
+        constants.ESL_EEP,
+        constants.ESL_EOP,
+    ):
+        LOGGER.error(f&#34;Unknown terminator [{terminator}] received.&#34;)
+        return
+
+    if terminator == constants.ESL_EXTN:
+        handle_extension_packet(rx_buffer, bytes_received)
 
-    for idx, value in enumerate(buffer):
-        buf[12+idx] = value
+    if terminator == constants.ESL_SPECIAL:
+        handle_special_packet(rx_buffer, bytes_received)
 
-    buf[12 + buffer_length] = rmap_crc_check(buf, 12, 12 + buffer_length) &amp; 0xFF  # data CRC
+    if terminator in (
+        constants.ESL_PART_EOP_EEP,
+        constants.ESL_PART_EXTN,
+        constants.ESL_PART_SPECIAL,
+    ):
+        LOGGER.debug(&#34;Partial Data Packet received.&#34;)
 
-    return buf
+        total_received += bytes_received
+        packet += rx_buffer[:bytes_received]
 
+        # FIXME:
+        #   at this point we need to go for the next part of the packet
+        #   continue was used in the while loop before splitting off this code. We now do a
+        #   return, but we loose information on the total packet size etc.
+        return
 
-def create_rmap_verified_write_packet(rmap_link: ESL_RMAP, address: int, data: bytes) -&gt; ctypes.Array:
-    &#34;&#34;&#34;
-    Create an RMAP packet for a verified write request on the FEE. The length of the data is by convention always 4
-    bytes and therefore not passed as an argument.
-
-    Args:
-        rmap_link: the RMAP link structure
-        address: the start memory address on the FEE register map
-        data: the data to be written in the register map at address [4 bytes]
-
-    Returns:
-        packet: a bytes object containing the SpaceWire packet.
-    &#34;&#34;&#34;
-
-    if len(data) &lt; 4:
-        raise ValueError(f&#34;The data argument should be at least 4 bytes, but it is only {len(data)} bytes.&#34;)
-
-    if address &gt; CRITICAL_AREA_END:
-        raise ValueError(f&#34;The address range for critical configuration is [0x00 - 0xFC].&#34;)
-
-    tid = update_transaction_identifier(rmap_link)
+    if terminator == constants.ESL_EEP:
+        LOGGER.debug(&#34;Error End of Packet returned by DSI&#34;)
 
-    # Buffer length is fixed at 24 bytes since the data length is fixed at 4 bytes (32 bit addressing)
+    if terminator == constants.ESL_EOP:
+        LOGGER.debug(&#34;Normal End of Packet returned by DSI&#34;)
 
-    buf = ctypes.create_string_buffer(21)
-    offset = 0
+        total_received += bytes_received
+        packet += rx_buffer[:bytes_received]
 
-    # The values below are taken from the PLATO N-FEE to N-DPU Interface Requirements Document [PLATO-DLR-PL-ICD-0010]
+        LOGGER.debug(f&#34;total_received={total_received}&#34;)
+        LOGGER.debug(f&#34;{packet}&#34;)
 
-    buf[offset+0] = 0x51  # Logical Address
-    buf[offset+1] = 0x01  # Protocol ID
-    buf[offset+2] = 0x7C  # Instruction
-    buf[offset+3] = 0xD1  # Key
-    buf[offset+4] = 0x50  # Initiator Address
-    buf[offset+5] = (tid &gt;&gt; 8) &amp; 0xFF        # MSB of the Transition ID
-    buf[offset+6] = tid &amp; 0xFF               # LSB of the Transition ID
-    buf[offset+7] = 0x00                     # Extended address
-    buf[offset+8] = (address &gt;&gt; 24) &amp; 0xFF   # address (MSB)
-    buf[offset+9] = (address &gt;&gt; 16) &amp; 0xFF   # address
-    buf[offset+10] = (address &gt;&gt; 8) &amp; 0xFF   # address
-    buf[offset+11] = address &amp; 0xFF          # address (LSB)
-    buf[offset+12] = 0x00                    # data length (MSB)
-    buf[offset+13] = 0x00                    # data length
-    buf[offset+14] = 0x04                    # data length (LSB)
-    buf[offset+15] = rmap_crc_check(buf, 0, 15) &amp; 0xFF  # header CRC
-    buf[offset+16] = data[0]
-    buf[offset+17] = data[1]
-    buf[offset+18] = data[2]
-    buf[offset+19] = data[3]
-    buf[offset+20] = rmap_crc_check(buf, 16, 4) &amp; 0xFF  # data CRC
+        # Deal with RMAP request packet
+        # FIXME: shouldn&#39;t this all be checked on packet instead of rx_buffer?
 
-    return buf
+        try:
+            # Run a number of checks on the received packet
 
+            check_target_logical_address(rx_buffer, dsi_settings.TARGET_LOGICAL_ADDRESS)
+            check_protocol_id(rx_buffer)
+            check_instruction(rx_buffer)
+            check_key(rx_buffer, rmap_link.target_key)
+            check_initiator_logical_address(rx_buffer, dsi_settings.INITIATOR_LOGICAL_ADDRESS)
+            check_header_crc(rx_buffer)
 
-def create_rmap_unverified_write_packet(rmap_link: ESL_RMAP, address: int, data: bytes, length: int) -&gt; ctypes.Array:
-    &#34;&#34;&#34;
-    Create an RMAP packet for a unverified write request on the FEE.
+            # Extract information from the packet that we need further on
 
-    Args:
-        rmap_link: the RMAP link structure
-        address: the start memory address on the FEE register map
-        data: the data to be written in the register map at address
-        length: the length of the data
+            tid = get_transaction_identifier(rx_buffer)
+            address = get_address(rx_buffer)
+            data_length = get_data_length(rx_buffer)
+        except CheckError as ce:
+            LOGGER.error(f&#34;{ce.message}, status = {ce.status}&#34;)
+            status = ce.status
+            # FIXME:
+            #   Something is wrong with the packet here, do proper exception handling.
+            #   We are not anymore in the while loop after we have split off this code,
+            #   so continue doesn&#39;t work anymore...
+            # continue
+            raise ce
 
-    Returns:
-        packet: a bytes object containing the SpaceWire packet.
-    &#34;&#34;&#34;
+        # Do something with the packet received
 
-    # We can only handle data for which the length &gt;= the given length argument.
+        instruction_field = get_instruction_field(packet)
 
-    if len(data) &lt; length:
-        raise ValueError(
-            f&#34;The length of the data argument ({len(data)}) is smaller than &#34;
-            f&#34;the given length argument ({length}).&#34;
-        )
+        if is_command(instruction_field):
 
-    if len(data) &gt; length:
-        logger.warning(
-            f&#34;The length of the data argument ({len(data)}) is larger than &#34;
-            f&#34;the given length argument ({length}). The data will be truncated &#34;
-            f&#34;when copied into the packet.&#34;
-        )
+            status = constants.RMAP_SUCCESS
 
-    if address &lt;= CRITICAL_AREA_END:
-        raise ValueError(f&#34;The given address (0x{address:08X}) is in the range for critical configuration is [0x00 - &#34;
-                         f&#34;0xFC]. Use the verified write function for this.&#34;)
+            if (
+                not dsi_settings.RMAP_BASE_ADDRESS
+                &lt;= address
+                &lt; (dsi_settings.RMAP_BASE_ADDRESS + dsi_settings.RMAP_MEMORY_SIZE)
+            ):
+                LOGGER.error(f&#34;ERROR: Access outside of RMAP memory area, address=0x{address:010X}&#34;)
+                status = constants.RMAP_GENERAL_ERROR
 
-    tid = update_transaction_identifier(rmap_link)
+            # Handling an RMAP Write Command
+            #
+            # - Send a reply
+            # - Check Data CRC before writing
+            # - Write the data into memory
 
-    # Buffer length is fixed at 24 bytes since the data length is fixed at 4 bytes (32 bit addressing)
+            if is_write(instruction_field):
 
-    buf = ctypes.create_string_buffer(16 + length + 1)
-    offset = 0
+                LOGGER.debug(&#34;RMAP write command received, sending reply packet...&#34;)
 
-    buf[offset+0] = 0x51  # Logical Address
-    buf[offset+1] = 0x01  # Protocol ID
-    buf[offset+2] = 0x6C  # Instruction
-    buf[offset+3] = 0xD1  # Key
-    buf[offset+4] = 0x50  # Initiator Address
-    buf[offset+5] = (tid &gt;&gt; 8) &amp; 0xFF        # MSB of the Transition ID
-    buf[offset+6] = tid &amp; 0xFF               # LSB of the Transition ID
-    buf[offset+7] = 0x00                     # Extended address
-    buf[offset+8] = (address &gt;&gt; 24) &amp; 0xFF   # address (MSB)
-    buf[offset+9] = (address &gt;&gt; 16) &amp; 0xFF   # address
-    buf[offset+10] = (address &gt;&gt; 8) &amp; 0xFF   # address
-    buf[offset+11] = address &amp; 0xFF          # address (LSB)
-    buf[offset+12] = (length &gt;&gt; 16) &amp; 0xFF   # data length (MSB)
-    buf[offset+13] = (length &gt;&gt; 8) &amp; 0xFF    # data length
-    buf[offset+14] = length &amp; 0xFF           # data length (LSB)
-    buf[offset+15] = rmap_crc_check(buf, 0, 15) &amp; 0xFF  # header CRC
+                # FIXME: need some work here!!!!
 
-    offset = offset + 16
+                # Create the target memory map and fill it with a pattern.
+                # This is just to simplify checking the correct write command.
+                # TODO: this should be replaced with the RegistryMap
 
-    for idx, value in enumerate(data):
-        buf[offset+idx] = value
+                rmap_target_memory = ctypes.create_string_buffer(
+                    bytes([x &amp; 0xFF for x in range(dsi_settings.RMAP_MEMORY_SIZE)])
+                )
 
-    buf[offset + length] = rmap_crc_check(buf, offset, length) &amp; 0xFF  # data CRC
+                tx_buffer = ctypes.create_string_buffer(dsi_settings.TX_BUFFER_LENGTH)
 
-    return buf
+                tx_buffer[7] = crc_calc(tx_buffer, 0, 7)
 
+                result = esl_write_packet(esl_link, tx_buffer, 8, constants.ESL_EOP)
 
-def rmap_set_verbosity(flags):
-    &#34;&#34;&#34;
-    Set vebosity of the RMAP API.
+                esl_flush(esl_link)
 
-    Report errors by default:
+                # When no errors, then write the data into memory at the given position
 
-    * bitval  1 : output textual error messages
-    * bitval  2 : output SpaceWire read/write packet tracing
-    * bitval  4 : output API function call tracing
-    * bitval  8 : output API parameter  / data packet tracing
-    * bitval 16 : output API data packet tracing
+                if status == constants.RMAP_SUCCESS:
 
-    Args:
-        flags (int): verbosy level
+                    # Check the Data CRC
 
-    Returns:
-        None
+                    try:
+                        check_data_crc(rx_buffer)
+                    except CheckError as ce:
+                        LOGGER.error(f&#34;{ce}, status = {ce.status}&#34;)
+                        raise ce
 
-    &#34;&#34;&#34;
-    librmap_set_verbosity(flags)
+                    # Write the data into the target memory map
 
+                    # FIXME: I do not understand why this is !!!!
 
-def rmap_get_target_key(rmap_link):
-    logger.debug(&#34;Calling rmap_get_target_key(rmap_link)&#34;)
-    return librmap_get_target_key(rmap_link)
+                    if is_increment(instruction_field):
+                        # change this code to work with RegisterMap
+                        # rmap_target_memory[address:address + data_length] = get_data(rx_buffer)
+                        pass
+                    else:
+                        # change this code to work with RegisterMap
+                        # Overwrite all the data into the same memory address, why?
+                        # for b in get_data(rx_buffer):
+                        #    rmap_target_memory[address] = b
+                        pass
 
+            # Handling an RMAP Read Command
 
-def rmap_set_target_key(rmap_link, key):
-    logger.debug(f&#34;Calling rmap_set_target_key({key})&#34;)
-    librmap_set_target_key(rmap_link, key)
+            else:
+                if status:
+                    data_length = 0
 
+                LOGGER.warning(
+                    &#34;Commented out this code, work needs to be done on RMAP read command&#34;
+                )
+                # data = self.register_map.get_data(address, data_length)
+                data = b&#34;\x00\x01\x02\x03&#34;
 
-def rmap_get_target_logical_address(rmap_link):
-    logger.debug(&#34;Calling rmap_get_target_logical_address(rmap_link)&#34;)
-    return librmap_get_target_logical_address(rmap_link)
+                tx_buffer = create_rmap_read_request_reply_packet(instruction_field, tid, status, data, data_length)
 
+                result = esl_write_packet(esl_link, tx_buffer, len(tx_buffer), constants.ESL_EOP)
 
-def rmap_set_target_logical_address(rmap_link, address):
-    logger.debug(f&#34;Calling rmap_set_target_logical_address(rmap_link, 0x{address:02X})&#34;)
-    librmap_set_target_logical_address(rmap_link, address)
+                result = esl_flush(
+                    esl_link
+                )  # FIXME: This will mask previous ESL_error if there was one
 
+                if result:
+                    raise ESLError(
+                        f&#34;Could not write the packet, &#34;
+                        f&#34;ESL error code = {constants.esl_error_codes[esl_link.contents.ESL_error]} &#34;
+                        f&#34;[{esl_link.contents.ESL_error}]&#34;
+                    )
 
-def rmap_set_target_spw_address(rmap_link, spw_address, spw_address_length):
-    logger.debug(f&#34;Calling rmap_set_target_spw_address(rmap_link, spw_address, {spw_address_length})&#34;)
-    librmap_set_target_spw_address(rmap_link, spw_address, spw_address_length)
+        else:
+            LOGGER.warning(&#34;The packet is not an RMAP read/write command.&#34;)
 
+        total_received = 0
+        packet = bytes()
 
-def rmap_get_initiator_logical_address(rmap_link):
-    # logger.debug(&#34;Calling rmap_get_initiator_logical_address(rmap_link)&#34;)
-    return librmap_get_initiator_logical_address(rmap_link)
-
-
-def rmap_set_initiator_logical_address(rmap_link, address):
-    # logger.debug(f&#34;Calling rmap_set_initiator_logical_address(rmap_link, 0x{address:02X})&#34;)
-    librmap_set_initiator_logical_address(rmap_link, address)
-
-
-def rmap_crc_check(data, start, length):
-    # logger.debug(f&#34;Calling rmap_crc_check(data, {start}, {length})&#34;)
-    return librmap_crc_check(data, start, length)
-
-
-class CheckError(RMAPError):
-    &#34;&#34;&#34;
-    Raised when a check fails and you want to pass a status values along with the message.
-    &#34;&#34;&#34;
-
-    def __init__(self, message, status):
-        self.message = message
-        self.status  = status
-
-
-def is_rmap(rx_buffer):
-    return get_protocol_id(rx_buffer) == constants.RMAP_PROTOCOL_ID
-
-
-# Functions to interpret the Instrument Field
-
-def is_reserved(instruction):
-    &#34;&#34;&#34;The reserved bit of the 2-bit packet type field from the instruction field.
-
-    For PLATO this bit shall be zero as the 0b10 and 0b11 packet field values are reserved.
-
-    Returns:
-        bit value: 1 or 0.
-    &#34;&#34;&#34;
-    return (instruction &amp; 0b10000000) &gt;&gt; 7
-
-
-def is_command(instruction):
-    &#34;&#34;&#34;Returns True if the RMAP packet is a command packet.&#34;&#34;&#34;
-    return (instruction &amp; 0b01000000) &gt;&gt; 6
-
-
-def is_reply(instruction):
-    &#34;&#34;&#34;Returns True if the RMAP packet is a reply to a previous command packet.&#34;&#34;&#34;
-    return not is_command(instruction)
-
-
-def is_write(instruction):
-    &#34;&#34;&#34;Returns True if the RMAP packet is a write request command packet.&#34;&#34;&#34;
-    return (instruction &amp; 0b00100000) &gt;&gt; 5
-
-
-def is_read(instruction):
-    &#34;&#34;&#34;Returns True if the RMAP packet is a read request command packet.&#34;&#34;&#34;
-    return not is_write(instruction)
-
-
-def is_verify(instruction):
-    &#34;&#34;&#34;Returns True if the RMAP packet needs to do a verify before write.&#34;&#34;&#34;
-    return (instruction &amp; 0b00010000) &gt;&gt; 4
-
-
-def is_reply_required(instruction):
-    &#34;&#34;&#34;Returns True if the reply bit is set in the instruction field.
-
-    Args:
-        instruction (int): the instruction field of an RMAP packet
-
-    .. note:: the name of this function might be confusing.
-
-        This function does **not** test if the packet is a reply packet, but it checks
-        if the command requests a reply from the target. If you need to test if the
-        packet is a command or a reply, use the is_command() or is_reply() function.
-
-    &#34;&#34;&#34;
-    return (instruction &amp; 0b00001000) &gt;&gt; 3
-
-
-def is_increment(instruction):
-    &#34;&#34;&#34;Returns True if the data is written to sequential memory addresses.&#34;&#34;&#34;
-    return (instruction &amp; 0b00000100) &gt;&gt; 2
-
-
-def reply_address_length(instruction):
-    &#34;&#34;&#34;Returns the content of the replay address length field.
-
-    The size of the replay address field is then decoded from the following table:
-
-        Address Field Length  |  Size of Address Field
-        ----------------------+-----------------------
-             0b00             |      0 bytes
-             0b01             |      4 bytes
-             0b10             |      8 bytes
-             0b11             |     12 bytes
-
-    &#34;&#34;&#34;
-    return (instruction &amp; 0b00000011) &lt;&lt; 2
-
-# Helper Functions ---------------------------------------------------------------------------------
-
-
-def get_protocol_id(rx_buffer):
-    return rx_buffer[1]
-
-
-def get_reply_address_field_length(rx_buffer) -&gt; int:
-    &#34;&#34;&#34;Returns the size of reply address field.
-
-    This function returns the actual size of the reply address field. It doesn&#39;t return the content of the
-    reply address length field. If you need that information, use the reply_address_length() function that work on
-    the instruction field.
-
-    Returns:
-         length: the size of the reply address field.
-    &#34;&#34;&#34;
-    instruction = get_instruction_field(rx_buffer)
-    return reply_address_length(instruction) * 4
-
-
-def get_data(rxbuf) -&gt; bytes:
-    &#34;&#34;&#34;Return the data from the RMAP packet.
-
-    Raises:
-        ValueError: if there is no data section in the packet (TODO: not yet implemented)
-    &#34;&#34;&#34;
-    instruction_field = get_instruction_field(rxbuf)
-    address_length = get_reply_address_field_length(rxbuf)
-    data_length = get_data_length(rxbuf)
-
-    offset = 12 if is_read(instruction_field) else 16
-
-    return rxbuf[offset + address_length:offset + address_length + data_length]
-
-
-def check_data_crc(rxbuf):
-    instruction_field = get_instruction_field(rxbuf)
-    address_length = get_reply_address_field_length(rxbuf)
-    data_length = get_data_length(rxbuf)
-
-    offset = 12 if is_read(instruction_field) else 16
-    idx = offset + address_length
-
-    d_crc = rxbuf[idx + data_length]
-    c_crc = rmap_crc_check(rxbuf, idx, data_length) &amp; 0xFF
-    if d_crc != c_crc:
-        raise CheckError(
-            f&#34;Data CRC doesn&#39;t match calculated CRC, d_crc=0x{d_crc:02X} &amp; c_crc=0x{c_crc:02X}&#34;,
-            constants.RMAP_GENERAL_ERROR
-        )
-
-
-def check_header_crc(rxbuf):
-    instruction_field = get_instruction_field(rxbuf)
-    if is_command(instruction_field):
-        offset = 15
-    elif is_write(instruction_field):
-        offset = 7
-    else:
-        offset = 11
-
-    idx = offset + get_reply_address_field_length(rxbuf)
-    h_crc = rxbuf[idx]
-    c_crc = rmap_crc_check(rxbuf, 0, idx)
-    if h_crc != c_crc:
-        raise CheckError(&#34;Header CRC doesn&#39;t match calculated CRC, h_crc=0x{:X} &amp; c_crc=0x{:X}&#34;
-                             .format(h_crc, c_crc), constants.RMAP_GENERAL_ERROR)
-
-
-def get_data_length(rxbuf) -&gt; int:
-    &#34;&#34;&#34;Returns the length of the data in bytes.
-
-    Raises:
-        TypeError: when this method is used on a Write Request Reply packet (which has no
-            data length).
-    &#34;&#34;&#34;
-    instruction_field = get_instruction_field(rxbuf)
-
-    if not is_command(instruction_field) and is_write(instruction_field):
-        raise TypeError(&#34;There is no data length field for Write Request Reply packets, &#34;
-                        &#34;asking for the data length is an invalid operation.&#34;)
-
-    offset = 12 if is_command(instruction_field) else 8
-    idx = offset + get_reply_address_field_length(rxbuf)
-
-    # We could use two alternative decoding methods here:
-    #   int.from_bytes(rxbuf[idx:idx+3], byteorder=&#39;big&#39;)    (timeit=1.166s)
-    #   struct.unpack(&#39;&gt;L&#39;, b&#39;\x00&#39; + rxbuf[idx:idx+3])[0]   (timeit=0.670s)
-    data_length = struct.unpack(&#39;&gt;L&#39;, b&#39;\x00&#39; + rxbuf[idx:idx + 3])[0]
-    return data_length
-
-
-def get_address(rxbuf) -&gt; int:
-    &#34;&#34;&#34;Returns the address field (including the extended address field if the address is 40-bits).
-
-    Raises:
-        TypeError: when this method is used on a Reply packet (which has no address field).
-    &#34;&#34;&#34;
-    instruction_field = get_instruction_field(rxbuf)
-
-    if not is_command(instruction_field):
-        raise TypeError(&#34;There is no address field for Reply packets, asking for the address is &#34;
-                        &#34;an invalid operation.&#34;)
-
-    idx = 7 + get_reply_address_field_length(rxbuf)
-    extended_address = rxbuf[idx]
-    idx += 1
-    address = struct.unpack(&#39;&gt;L&#39;, rxbuf[idx:idx + 4])[0]
-    if extended_address:
-        address = address + (extended_address &lt;&lt; 32)
-    return address
-
-
-def get_transaction_identifier(rxbuf):
-    idx = 5 + get_reply_address_field_length(rxbuf)
-    tid = struct.unpack(&#39;&gt;h&#39;, rxbuf[idx:idx + 2])[0]
-    return tid
-
-
-def get_initiator_logical_address(rxbuf):
-    idx = 4 + get_reply_address_field_length(rxbuf)
-    ila_rxbuf = rxbuf[idx]
-    return ila_rxbuf
-
-
-def check_initiator_logical_address(rxbuf, ila):
-    ila_rxbuf = get_initiator_logical_address(rxbuf)
-    if ila != ila_rxbuf:
-        raise CheckError(
-            f&#34;Initiator Logical Address doesn&#39;t match, ila=0x{ila:02X} &amp; ila_rxbuf=0x{ila_rxbuf:02X}&#34;,
-            constants.RMAP_GENERAL_ERROR
-        )
-
-
-def check_key(rmap_link, rxbuf):
-    idx = 3
-    key = rmap_get_target_key(rmap_link)
-    key_rxbuf = rxbuf[idx]
-    if key != key_rxbuf:
-        raise CheckError(
-            f&#34;Key doesn&#39;t match, key={key} &amp; key_rxbuf={key_rxbuf}&#34;, constants.RMAP_INVALID_KEY
-        )
-
-
-def get_instruction_field(rxbuf):
-    idx = 2
-    return rxbuf[idx]
-
-
-def check_instruction(rx_buffer) -&gt; None:
-    &#34;&#34;&#34;
-    Check the instruction field for inconsistencies and report the values in the logger at DEBUG level.
-
-
-    Args:
-        rx_buffer (bytes): The read buffer which contains the SpW packet
-
-    Raises:
-        CheckError: when the reserved bit is not zero,
-
-    Returns:
-        None.
-    &#34;&#34;&#34;
-    # The Instruction Field is the third byte (base=0) of the packet buffer.
-    # Description of the Instruction Field can be found in ECSS-E-ST-50-52C.
-
-    instruction = get_instruction_field(rx_buffer)
-    if is_reserved(instruction):
-        raise CheckError(
-            f&#34;Instruction field [{instruction:08b}] reserved bit is not 0x00&#34;,
-            constants.RMAP_NOT_IMPLEMENTED_AUTHORISED
-        )
-
-    msg = &#34;RMAP Instruction Field: &#34;
-    msg += &#34;Command; &#34; if is_command(instruction) else &#34;Reply; &#34;
-    msg += &#34;write; &#34; if is_write(instruction) else &#34;read; &#34;
-    msg += &#34;verify; &#34; if is_verify(instruction) else &#34;don&#39;t verify; &#34;
-    msg += &#34;reply; &#34; if is_reply_required(instruction) else &#34;don&#39;t reply; &#34;
-    msg += &#34;increment; &#34; if is_increment(instruction) else &#34;no increment; &#34;
-
-    logger.debug(msg)
-    if reply_address_length(instruction):
-        logger.debug(f&#34;Reply address length = {reply_address_length(instruction)} bytes.&#34;)
-
-
-def check_protocol_id(rxbuf):
-    idx = 1
-    protocol_id = rxbuf[idx]
-    if protocol_id != constants.RMAP_PROTOCOL_ID:
-        raise CheckError(
-            f&#34;Protocol id is not the expected value {protocol_id}, expected {constants.RMAP_PROTOCOL_ID}&#34;,
-            constants.RMAP_GENERAL_ERROR)
-
-
-def get_target_logical_address(rmap_link: ESL_RMAP, rxbuf: bytes) -&gt; int:
-    tla_idx = 0
-    tla_rxbuf = rxbuf[tla_idx]
-    return tla_rxbuf
-
-
-def check_target_logical_address(rmap_link, rxbuf, tla):
-    tla_rxbuf = get_target_logical_address(rmap_link, rxbuf)
-    if tla != tla_rxbuf:
-        raise CheckError(
-            f&#34;Target Logical Address doesn&#39;t match, tla=0x{tla:02X} &amp; rxbuf[0]=0x{tla_rxbuf:02X}&#34;,
-            constants.RMAP_GENERAL_ERROR
-        )
-
-
-def update_transaction_identifier(rmap_link) -&gt; int:
-    &#34;&#34;&#34;
-    Updates the transaction identifier and returns the new value.
-
-    Args:
-        rmap_link (ESL_RMAP): the RMAP link connection
-
-    Returns:
-        the updated transaction identifier (int).
-    &#34;&#34;&#34;
-    tid = rmap_link.contents.transaction_identifier
-    tid = (tid + 1) &amp; 0xFFFF
-    rmap_link.contents.transaction_identifier = tid
-    return tid
-
-
-def check_address_and_data_length(address: int, length: int) -&gt; None:
-    &#34;&#34;&#34;
-    Checks the address and length in the range of memory areas used by the FEE.
-
-    The ranges are taken from the PLATO-DLR-PL-ICD-0010 N-FEE to N-DPU IRD.
-
-    Args:
-        address (int): the memory address of the FEE Register
-        length (int): the number of bytes requested
-
-    Raises:
-        RMAPError: when address + length fall outside any specified area.
-    &#34;&#34;&#34;
-
-    # All these restrictions have been relaxed on the N-FEE.
-    # We are returning here immediately instead of removing or commenting out the code.
-    # These reason is that we can then bring back restriction easier and gradually.
-
-    return
-
-    if length % 4:
-        raise RMAPError(&#34;The requested data length shall be a multiple of 4 bytes.&#34;, address, length)
-
-    if address % 4:
-        raise RMAPError(&#34;The address shall be a multiple of 4 bytes.&#34;, address, length)
-
-    # Note that when checking the given data length, at the defined area end, we can still read 4 bytes.
-
-    if CRITICAL_AREA_START &lt;= address &lt;= CRITICAL_AREA_END:
-        if length != 4:
-            raise RMAPError(&#34;Read requests to the critical area have a fixed data length of 4 bytes.&#34;,
-                                address, length)
-
-    elif GENERAL_AREA_START &lt;= address &lt;= GENERAL_AREA_END:
-        if length &gt; 256:
-            raise RMAPError(f&#34;Read requests to the general area have a maximum data length of 256 bytes.&#34;,
-                                address, length)
-        if address + length &gt; GENERAL_AREA_END + 4:
-            raise RMAPError(
-                f&#34;The requested data length for the general area is too large.\n&#34;
-                f&#34;The address + length exceeds the general area boundaries.\n&#34;, address, length
-            )
-
-    elif HK_AREA_START &lt;= address &lt;= HK_AREA_END:
-        if length &gt; 256:
-            raise RMAPError(f&#34;Read requests to the housekeeping area have a maximum data length of 256 bytes.&#34;,
-                                address, length)
-        if address + length &gt; HK_AREA_END + 4:
-            raise RMAPError(
-                f&#34;The requested data length for the housekeeping area is too large.\n&#34;
-                f&#34;The address + length exceeds the housekeeping area boundaries.\n&#34;, address, length
-            )
-
-    elif WINDOWING_AREA_START &lt;= address &lt;= WINDOWING_AREA_END:
-        if length &gt; 4096:
-            raise RMAPError(f&#34;Read requests to the windowing area have a maximum data length of 4096 bytes.&#34;,
-                                address, length)
-        if address + length &gt; WINDOWING_AREA_END + 4:
-            raise RMAPError(
-                f&#34;The requested data length for the windowing area is too large.\n&#34;
-                f&#34;The address + length exceeds the windowing area boundaries.\n&#34;, address, length
-            )
-
-    else:
-        raise RMAPError(f&#34;Register address for RMAP read requests is invalid.&#34;, address, length)</code></pre>
+    LOGGER.debug(&#34;Going for the next SpaceWire packet...&#34;)</code></pre>
 </details>
 </section>
 <section>
@@ -1082,224 +480,296 @@ def check_address_and_data_length(address: int, length: int) -&gt; None:
 <section>
 <h2 class="section-title" id="header-functions">Functions</h2>
 <dl>
-<dt id="egse.dsi.rmap.check_address_and_data_length"><code class="name flex">
-<span>def <span class="ident">check_address_and_data_length</span></span>(<span>address: int, length: int) ‑> None</span>
+<dt id="egse.dsi.rmap.process_rmap_commands"><code class="name flex">
+<span>def <span class="ident">process_rmap_commands</span></span>(<span>rmap_link: <a title="egse.dsi.rmap.ESL_RMAP" href="#egse.dsi.rmap.ESL_RMAP">ESL_RMAP</a>)</span>
 </code></dt>
 <dd>
-<div class="desc"><p>Checks the address and length in the range of memory areas used by the FEE.</p>
-<p>The ranges are taken from the PLATO-DLR-PL-ICD-0010 N-FEE to N-DPU IRD.</p>
-<h2 id="args">Args</h2>
-<dl>
-<dt><strong><code>address</code></strong> :&ensp;<code>int</code></dt>
-<dd>the memory address of the FEE Register</dd>
-<dt><strong><code>length</code></strong> :&ensp;<code>int</code></dt>
-<dd>the number of bytes requested</dd>
-</dl>
-<h2 id="raises">Raises</h2>
-<dl>
-<dt><code><a title="egse.dsi.rmap.RMAPError" href="#egse.dsi.rmap.RMAPError">RMAPError</a></code></dt>
-<dd>when address + length fall outside any specified area.</dd>
-</dl></div>
+<div class="desc"></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def check_address_and_data_length(address: int, length: int) -&gt; None:
-    &#34;&#34;&#34;
-    Checks the address and length in the range of memory areas used by the FEE.
+<pre><code class="python">def process_rmap_commands(rmap_link: ESL_RMAP):
+    # Leave these imports here because they are only used by this function
 
-    The ranges are taken from the PLATO-DLR-PL-ICD-0010 N-FEE to N-DPU IRD.
+    from egse.bits import crc_calc
+    from egse.dsi import constants
+    from egse.dsi.esl import ESLError
+    from egse.dsi.esl import esl_flush
+    from egse.dsi.esl import esl_get_esl_error
+    from egse.dsi.esl import esl_read_packet
+    from egse.dsi.esl import esl_write_packet
+    from egse.dsi.esl import get_extension_name
+    from egse.dsi.esl import get_terminator_name
+    from egse.dsi.esl import is_extension_code
+    from egse.dsi.esl import is_terminator_code
+    from egse.dsi.spw import handle_extension_packet
+    from egse.dsi.spw import handle_special_packet
+    from egse.rmap import create_rmap_read_request_reply_packet
+    from egse.spw import CheckError
+    from egse.spw import check_data_crc
+    from egse.spw import check_header_crc
+    from egse.spw import check_initiator_logical_address
+    from egse.spw import check_instruction
+    from egse.spw import check_key
+    from egse.spw import check_protocol_id
+    from egse.spw import check_target_logical_address
+    from egse.spw import get_address
+    from egse.spw import get_data_length
+    from egse.spw import get_instruction_field
+    from egse.spw import get_transaction_identifier
+    from egse.spw import is_command
+    from egse.spw import is_increment
+    from egse.spw import is_write
 
-    Args:
-        address (int): the memory address of the FEE Register
-        length (int): the number of bytes requested
+    total_received = 0
+    packet = bytes()
 
-    Raises:
-        RMAPError: when address + length fall outside any specified area.
-    &#34;&#34;&#34;
+    esl_link = rmap_link.spw_device
 
-    # All these restrictions have been relaxed on the N-FEE.
-    # We are returning here immediately instead of removing or commenting out the code.
-    # These reason is that we can then bring back restriction easier and gradually.
+    terminator, rx_buffer = esl_read_packet(esl_link)
+    bytes_received = len(rx_buffer)
 
-    return
-
-    if length % 4:
-        raise RMAPError(&#34;The requested data length shall be a multiple of 4 bytes.&#34;, address, length)
-
-    if address % 4:
-        raise RMAPError(&#34;The address shall be a multiple of 4 bytes.&#34;, address, length)
-
-    # Note that when checking the given data length, at the defined area end, we can still read 4 bytes.
-
-    if CRITICAL_AREA_START &lt;= address &lt;= CRITICAL_AREA_END:
-        if length != 4:
-            raise RMAPError(&#34;Read requests to the critical area have a fixed data length of 4 bytes.&#34;,
-                                address, length)
-
-    elif GENERAL_AREA_START &lt;= address &lt;= GENERAL_AREA_END:
-        if length &gt; 256:
-            raise RMAPError(f&#34;Read requests to the general area have a maximum data length of 256 bytes.&#34;,
-                                address, length)
-        if address + length &gt; GENERAL_AREA_END + 4:
-            raise RMAPError(
-                f&#34;The requested data length for the general area is too large.\n&#34;
-                f&#34;The address + length exceeds the general area boundaries.\n&#34;, address, length
-            )
-
-    elif HK_AREA_START &lt;= address &lt;= HK_AREA_END:
-        if length &gt; 256:
-            raise RMAPError(f&#34;Read requests to the housekeeping area have a maximum data length of 256 bytes.&#34;,
-                                address, length)
-        if address + length &gt; HK_AREA_END + 4:
-            raise RMAPError(
-                f&#34;The requested data length for the housekeeping area is too large.\n&#34;
-                f&#34;The address + length exceeds the housekeeping area boundaries.\n&#34;, address, length
-            )
-
-    elif WINDOWING_AREA_START &lt;= address &lt;= WINDOWING_AREA_END:
-        if length &gt; 4096:
-            raise RMAPError(f&#34;Read requests to the windowing area have a maximum data length of 4096 bytes.&#34;,
-                                address, length)
-        if address + length &gt; WINDOWING_AREA_END + 4:
-            raise RMAPError(
-                f&#34;The requested data length for the windowing area is too large.\n&#34;
-                f&#34;The address + length exceeds the windowing area boundaries.\n&#34;, address, length
-            )
-
+    if is_terminator_code(terminator):
+        LOGGER.debug(
+            f&#34;bytes received={bytes_received}, terminator={terminator} &#34;
+            f&#34;[{get_terminator_name(terminator)}]&#34;
+        )
+    elif is_extension_code(terminator):
+        LOGGER.debug(
+            f&#34;bytes received={bytes_received}, terminator={terminator} &#34;
+            f&#34;[{get_extension_name(terminator)}]&#34;
+        )
     else:
-        raise RMAPError(f&#34;Register address for RMAP read requests is invalid.&#34;, address, length)</code></pre>
-</details>
-</dd>
-<dt id="egse.dsi.rmap.check_data_crc"><code class="name flex">
-<span>def <span class="ident">check_data_crc</span></span>(<span>rxbuf)</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def check_data_crc(rxbuf):
-    instruction_field = get_instruction_field(rxbuf)
-    address_length = get_reply_address_field_length(rxbuf)
-    data_length = get_data_length(rxbuf)
+        LOGGER.debug(f&#34;bytes received={bytes_received}, terminator={terminator}&#34;)
 
-    offset = 12 if is_read(instruction_field) else 16
-    idx = offset + address_length
+    # TODO:
+    #   When the link is closed from the other end (dpusim) just one byte (b&#39;\x08&#39;) is received.
+    #   So, we should try to restart the link...
 
-    d_crc = rxbuf[idx + data_length]
-    c_crc = rmap_crc_check(rxbuf, idx, data_length) &amp; 0xFF
-    if d_crc != c_crc:
-        raise CheckError(
-            f&#34;Data CRC doesn&#39;t match calculated CRC, d_crc=0x{d_crc:02X} &amp; c_crc=0x{c_crc:02X}&#34;,
-            constants.RMAP_GENERAL_ERROR
-        )</code></pre>
-</details>
-</dd>
-<dt id="egse.dsi.rmap.check_header_crc"><code class="name flex">
-<span>def <span class="ident">check_header_crc</span></span>(<span>rxbuf)</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def check_header_crc(rxbuf):
-    instruction_field = get_instruction_field(rxbuf)
-    if is_command(instruction_field):
-        offset = 15
-    elif is_write(instruction_field):
-        offset = 7
-    else:
-        offset = 11
+    if bytes_received == 1:
+        LOGGER.warning(&#34;Link was closed from the initiator side, terminating.&#34;)
+        return
 
-    idx = offset + get_reply_address_field_length(rxbuf)
-    h_crc = rxbuf[idx]
-    c_crc = rmap_crc_check(rxbuf, 0, idx)
-    if h_crc != c_crc:
-        raise CheckError(&#34;Header CRC doesn&#39;t match calculated CRC, h_crc=0x{:X} &amp; c_crc=0x{:X}&#34;
-                             .format(h_crc, c_crc), constants.RMAP_GENERAL_ERROR)</code></pre>
-</details>
-</dd>
-<dt id="egse.dsi.rmap.check_initiator_logical_address"><code class="name flex">
-<span>def <span class="ident">check_initiator_logical_address</span></span>(<span>rxbuf, ila)</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def check_initiator_logical_address(rxbuf, ila):
-    ila_rxbuf = get_initiator_logical_address(rxbuf)
-    if ila != ila_rxbuf:
-        raise CheckError(
-            f&#34;Initiator Logical Address doesn&#39;t match, ila=0x{ila:02X} &amp; ila_rxbuf=0x{ila_rxbuf:02X}&#34;,
-            constants.RMAP_GENERAL_ERROR
-        )</code></pre>
-</details>
-</dd>
-<dt id="egse.dsi.rmap.check_instruction"><code class="name flex">
-<span>def <span class="ident">check_instruction</span></span>(<span>rx_buffer) ‑> None</span>
-</code></dt>
-<dd>
-<div class="desc"><p>Check the instruction field for inconsistencies and report the values in the logger at DEBUG level.</p>
-<h2 id="args">Args</h2>
-<dl>
-<dt><strong><code>rx_buffer</code></strong> :&ensp;<code>bytes</code></dt>
-<dd>The read buffer which contains the SpW packet</dd>
-</dl>
-<h2 id="raises">Raises</h2>
-<dl>
-<dt><code><a title="egse.dsi.rmap.CheckError" href="#egse.dsi.rmap.CheckError">CheckError</a></code></dt>
-<dd>when the reserved bit is not zero,</dd>
-</dl>
-<h2 id="returns">Returns</h2>
-<p>None.</p></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def check_instruction(rx_buffer) -&gt; None:
-    &#34;&#34;&#34;
-    Check the instruction field for inconsistencies and report the values in the logger at DEBUG level.
+    # First check if we encountered any errors or shutdown,
+    # if True then break the main while loop and end the connection
+    #
+    # FIXME:
+    #   We need better handling of exceptional conditions here since the FEE Simulator can never
+    #   die.
+    #       - what shall we do when a shutdown is received?
+    #       - what shall we do when a timeout has occured?
+    #       - what shall we do with a buffer overflow? When can this happen?
+    #       - some errors are related to the virtual DSI, how do we solve those?
 
+    if bytes_received &lt; 0:
+        error = esl_get_esl_error(esl_link)
+        if error == constants.ESL_ERROR_TIMEOUT:
+            LOGGER.debug(&#34;Received a timeout, continuing...&#34;)
+            return
+        # FIXME: We should handle all these cases in a simpler way
+        if error == constants.ESL_ERROR_RECEIVER_SHUTDOWN:
+            LOGGER.info(&#34;Shutdown detected.&#34;)
+            return
+        if error == constants.ESL_ERROR_BUFFER_OVERFLOW:
+            # FIXME: Can we recover from this situation?
+            LOGGER.error(&#34;Insufficient buffer to read full packet, bailing out.&#34;)
+            return
+        if error == constants.ESL_ERROR_RECFILE_WRITE:
+            LOGGER.error(&#34;Write error on record file, bailing out.&#34;)
+            return
 
-    Args:
-        rx_buffer (bytes): The read buffer which contains the SpW packet
-
-    Raises:
-        CheckError: when the reserved bit is not zero,
-
-    Returns:
-        None.
-    &#34;&#34;&#34;
-    # The Instruction Field is the third byte (base=0) of the packet buffer.
-    # Description of the Instruction Field can be found in ECSS-E-ST-50-52C.
-
-    instruction = get_instruction_field(rx_buffer)
-    if is_reserved(instruction):
-        raise CheckError(
-            f&#34;Instruction field [{instruction:08b}] reserved bit is not 0x00&#34;,
-            constants.RMAP_NOT_IMPLEMENTED_AUTHORISED
+        LOGGER.error(
+            f&#34;read_packet: returned error, &#34;
+            f&#34;ESL error = {constants.esl_error_codes[error]} [{error}]&#34;
         )
+        return
 
-    msg = &#34;RMAP Instruction Field: &#34;
-    msg += &#34;Command; &#34; if is_command(instruction) else &#34;Reply; &#34;
-    msg += &#34;write; &#34; if is_write(instruction) else &#34;read; &#34;
-    msg += &#34;verify; &#34; if is_verify(instruction) else &#34;don&#39;t verify; &#34;
-    msg += &#34;reply; &#34; if is_reply_required(instruction) else &#34;don&#39;t reply; &#34;
-    msg += &#34;increment; &#34; if is_increment(instruction) else &#34;no increment; &#34;
+    # When we receive an unknown terminator we just ignore, log the error and continue...
 
-    logger.debug(msg)
-    if reply_address_length(instruction):
-        logger.debug(f&#34;Reply address length = {reply_address_length(instruction)} bytes.&#34;)</code></pre>
+    if terminator not in (
+        constants.ESL_EXTN,
+        constants.ESL_SPECIAL,
+        constants.ESL_PART_EOP_EEP,
+        constants.ESL_PART_EXTN,
+        constants.ESL_PART_SPECIAL,
+        constants.ESL_EEP,
+        constants.ESL_EOP,
+    ):
+        LOGGER.error(f&#34;Unknown terminator [{terminator}] received.&#34;)
+        return
+
+    if terminator == constants.ESL_EXTN:
+        handle_extension_packet(rx_buffer, bytes_received)
+
+    if terminator == constants.ESL_SPECIAL:
+        handle_special_packet(rx_buffer, bytes_received)
+
+    if terminator in (
+        constants.ESL_PART_EOP_EEP,
+        constants.ESL_PART_EXTN,
+        constants.ESL_PART_SPECIAL,
+    ):
+        LOGGER.debug(&#34;Partial Data Packet received.&#34;)
+
+        total_received += bytes_received
+        packet += rx_buffer[:bytes_received]
+
+        # FIXME:
+        #   at this point we need to go for the next part of the packet
+        #   continue was used in the while loop before splitting off this code. We now do a
+        #   return, but we loose information on the total packet size etc.
+        return
+
+    if terminator == constants.ESL_EEP:
+        LOGGER.debug(&#34;Error End of Packet returned by DSI&#34;)
+
+    if terminator == constants.ESL_EOP:
+        LOGGER.debug(&#34;Normal End of Packet returned by DSI&#34;)
+
+        total_received += bytes_received
+        packet += rx_buffer[:bytes_received]
+
+        LOGGER.debug(f&#34;total_received={total_received}&#34;)
+        LOGGER.debug(f&#34;{packet}&#34;)
+
+        # Deal with RMAP request packet
+        # FIXME: shouldn&#39;t this all be checked on packet instead of rx_buffer?
+
+        try:
+            # Run a number of checks on the received packet
+
+            check_target_logical_address(rx_buffer, dsi_settings.TARGET_LOGICAL_ADDRESS)
+            check_protocol_id(rx_buffer)
+            check_instruction(rx_buffer)
+            check_key(rx_buffer, rmap_link.target_key)
+            check_initiator_logical_address(rx_buffer, dsi_settings.INITIATOR_LOGICAL_ADDRESS)
+            check_header_crc(rx_buffer)
+
+            # Extract information from the packet that we need further on
+
+            tid = get_transaction_identifier(rx_buffer)
+            address = get_address(rx_buffer)
+            data_length = get_data_length(rx_buffer)
+        except CheckError as ce:
+            LOGGER.error(f&#34;{ce.message}, status = {ce.status}&#34;)
+            status = ce.status
+            # FIXME:
+            #   Something is wrong with the packet here, do proper exception handling.
+            #   We are not anymore in the while loop after we have split off this code,
+            #   so continue doesn&#39;t work anymore...
+            # continue
+            raise ce
+
+        # Do something with the packet received
+
+        instruction_field = get_instruction_field(packet)
+
+        if is_command(instruction_field):
+
+            status = constants.RMAP_SUCCESS
+
+            if (
+                not dsi_settings.RMAP_BASE_ADDRESS
+                &lt;= address
+                &lt; (dsi_settings.RMAP_BASE_ADDRESS + dsi_settings.RMAP_MEMORY_SIZE)
+            ):
+                LOGGER.error(f&#34;ERROR: Access outside of RMAP memory area, address=0x{address:010X}&#34;)
+                status = constants.RMAP_GENERAL_ERROR
+
+            # Handling an RMAP Write Command
+            #
+            # - Send a reply
+            # - Check Data CRC before writing
+            # - Write the data into memory
+
+            if is_write(instruction_field):
+
+                LOGGER.debug(&#34;RMAP write command received, sending reply packet...&#34;)
+
+                # FIXME: need some work here!!!!
+
+                # Create the target memory map and fill it with a pattern.
+                # This is just to simplify checking the correct write command.
+                # TODO: this should be replaced with the RegistryMap
+
+                rmap_target_memory = ctypes.create_string_buffer(
+                    bytes([x &amp; 0xFF for x in range(dsi_settings.RMAP_MEMORY_SIZE)])
+                )
+
+                tx_buffer = ctypes.create_string_buffer(dsi_settings.TX_BUFFER_LENGTH)
+
+                tx_buffer[7] = crc_calc(tx_buffer, 0, 7)
+
+                result = esl_write_packet(esl_link, tx_buffer, 8, constants.ESL_EOP)
+
+                esl_flush(esl_link)
+
+                # When no errors, then write the data into memory at the given position
+
+                if status == constants.RMAP_SUCCESS:
+
+                    # Check the Data CRC
+
+                    try:
+                        check_data_crc(rx_buffer)
+                    except CheckError as ce:
+                        LOGGER.error(f&#34;{ce}, status = {ce.status}&#34;)
+                        raise ce
+
+                    # Write the data into the target memory map
+
+                    # FIXME: I do not understand why this is !!!!
+
+                    if is_increment(instruction_field):
+                        # change this code to work with RegisterMap
+                        # rmap_target_memory[address:address + data_length] = get_data(rx_buffer)
+                        pass
+                    else:
+                        # change this code to work with RegisterMap
+                        # Overwrite all the data into the same memory address, why?
+                        # for b in get_data(rx_buffer):
+                        #    rmap_target_memory[address] = b
+                        pass
+
+            # Handling an RMAP Read Command
+
+            else:
+                if status:
+                    data_length = 0
+
+                LOGGER.warning(
+                    &#34;Commented out this code, work needs to be done on RMAP read command&#34;
+                )
+                # data = self.register_map.get_data(address, data_length)
+                data = b&#34;\x00\x01\x02\x03&#34;
+
+                tx_buffer = create_rmap_read_request_reply_packet(instruction_field, tid, status, data, data_length)
+
+                result = esl_write_packet(esl_link, tx_buffer, len(tx_buffer), constants.ESL_EOP)
+
+                result = esl_flush(
+                    esl_link
+                )  # FIXME: This will mask previous ESL_error if there was one
+
+                if result:
+                    raise ESLError(
+                        f&#34;Could not write the packet, &#34;
+                        f&#34;ESL error code = {constants.esl_error_codes[esl_link.contents.ESL_error]} &#34;
+                        f&#34;[{esl_link.contents.ESL_error}]&#34;
+                    )
+
+        else:
+            LOGGER.warning(&#34;The packet is not an RMAP read/write command.&#34;)
+
+        total_received = 0
+        packet = bytes()
+
+    LOGGER.debug(&#34;Going for the next SpaceWire packet...&#34;)</code></pre>
 </details>
 </dd>
-<dt id="egse.dsi.rmap.check_key"><code class="name flex">
-<span>def <span class="ident">check_key</span></span>(<span>rmap_link, rxbuf)</span>
+<dt id="egse.dsi.rmap.rmap_close_connection"><code class="name flex">
+<span>def <span class="ident">rmap_close_connection</span></span>(<span>rmap_link)</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -1307,814 +777,8 @@ def check_address_and_data_length(address: int, length: int) -&gt; None:
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def check_key(rmap_link, rxbuf):
-    idx = 3
-    key = rmap_get_target_key(rmap_link)
-    key_rxbuf = rxbuf[idx]
-    if key != key_rxbuf:
-        raise CheckError(
-            f&#34;Key doesn&#39;t match, key={key} &amp; key_rxbuf={key_rxbuf}&#34;, constants.RMAP_INVALID_KEY
-        )</code></pre>
-</details>
-</dd>
-<dt id="egse.dsi.rmap.check_protocol_id"><code class="name flex">
-<span>def <span class="ident">check_protocol_id</span></span>(<span>rxbuf)</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def check_protocol_id(rxbuf):
-    idx = 1
-    protocol_id = rxbuf[idx]
-    if protocol_id != constants.RMAP_PROTOCOL_ID:
-        raise CheckError(
-            f&#34;Protocol id is not the expected value {protocol_id}, expected {constants.RMAP_PROTOCOL_ID}&#34;,
-            constants.RMAP_GENERAL_ERROR)</code></pre>
-</details>
-</dd>
-<dt id="egse.dsi.rmap.check_target_logical_address"><code class="name flex">
-<span>def <span class="ident">check_target_logical_address</span></span>(<span>rmap_link, rxbuf, tla)</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def check_target_logical_address(rmap_link, rxbuf, tla):
-    tla_rxbuf = get_target_logical_address(rmap_link, rxbuf)
-    if tla != tla_rxbuf:
-        raise CheckError(
-            f&#34;Target Logical Address doesn&#39;t match, tla=0x{tla:02X} &amp; rxbuf[0]=0x{tla_rxbuf:02X}&#34;,
-            constants.RMAP_GENERAL_ERROR
-        )</code></pre>
-</details>
-</dd>
-<dt id="egse.dsi.rmap.create_rmap_read_reply_packet"><code class="name flex">
-<span>def <span class="ident">create_rmap_read_reply_packet</span></span>(<span>rmap_link: <a title="egse.dsi.rmap.ESL_RMAP" href="#egse.dsi.rmap.ESL_RMAP">ESL_RMAP</a>, instruction_field: int, tid: int, status: int, buffer: bytes, buffer_length: int) ‑> _ctypes.Array</span>
-</code></dt>
-<dd>
-<div class="desc"><p>Creates an RMAP Reply to a RMAP Read Request packet.</p>
-<p>The function returns a <code>ctypes</code> character array (which is basically a bytes array) that
-can be passed into the EtherSpaceLink library function <code>esl_write_packet()</code>.</p>
-<h2 id="args">Args</h2>
-<dl>
-<dt><strong><code>rmap_link</code></strong> :&ensp;<code><a title="egse.dsi.rmap.ESL_RMAP" href="#egse.dsi.rmap.ESL_RMAP">ESL_RMAP</a></code></dt>
-<dd>the RMAP link connection</dd>
-<dt><strong><code>instruction_field</code></strong> :&ensp;<code>int</code></dt>
-<dd>the instruction field of the RMAP read request packet</dd>
-<dt><strong><code>tid</code></strong> :&ensp;<code>int</code></dt>
-<dd>the transaction identifier of the read request packet</dd>
-<dt><strong><code>status</code></strong> :&ensp;<code>int</code></dt>
-<dd>shall be 0 if the read request was successful, contain an error code otherwise.</dd>
-<dt><strong><code>TODO</code></strong></dt>
-<dd>which error code?</dd>
-<dt><strong><code>buffer</code></strong> :&ensp;<code>bytes</code></dt>
-<dd>the data that was read as indicated by the read request</dd>
-<dt><strong><code>buffer_length</code></strong> :&ensp;<code>int</code></dt>
-<dd>the data length</dd>
-</dl>
-<h2 id="returns">Returns</h2>
-<dl>
-<dt><code>packet</code></dt>
-<dd>a ctypes Array containing the full RMAP Reply packet.</dd>
-</dl></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def create_rmap_read_reply_packet(rmap_link: ESL_RMAP, instruction_field: int, tid: int, status: int,
-                                  buffer: bytes, buffer_length: int) -&gt; ctypes.Array:
-    &#34;&#34;&#34;
-    Creates an RMAP Reply to a RMAP Read Request packet.
-
-    The function returns a ``ctypes`` character array (which is basically a bytes array) that
-    can be passed into the EtherSpaceLink library function ``esl_write_packet()``.
-
-    Args:
-        rmap_link (ESL_RMAP): the RMAP link connection
-        instruction_field (int): the instruction field of the RMAP read request packet
-        tid (int): the transaction identifier of the read request packet
-        status (int): shall be 0 if the read request was successful, contain an error code otherwise.
-        TODO: which error code?
-        buffer (bytes): the data that was read as indicated by the read request
-        buffer_length (int): the data length
-
-    Returns:
-        packet: a ctypes Array containing the full RMAP Reply packet.
-    &#34;&#34;&#34;
-
-    buf = ctypes.create_string_buffer(12 + buffer_length + 1)
-
-    buf[0] = 0x50  # Initiator address N-DPU or F-DPU
-    buf[1] = 0x01  # RMAP Protocol ID
-    buf[2] = instruction_field &amp; 0x3F  # Clear the command bit as this is a reply
-    buf[3] = status &amp; 0xFF  # Status field: 0 on success
-    buf[4] = 0x51  # Target address is always the N-FEE or F-FEE
-    buf[5] = (tid &gt;&gt; 8) &amp; 0xFF        # MSB of the Transition ID
-    buf[6] = tid &amp; 0xFF               # LSB of the Transition ID
-    buf[7] = 0x00                     # Reserved
-    buf[8] = (buffer_length &gt;&gt; 16) &amp; 0xFF    # data length (MSB)
-    buf[9] = (buffer_length &gt;&gt; 8) &amp; 0xFF     # data length
-    buf[10] = buffer_length &amp; 0xFF           # data length (LSB)
-    buf[11] = rmap_crc_check(buf, 0, 11) &amp; 0xFF  # Header CRC
-
-    # Note that we assume here that len(buffer) == buffer_length.
-
-    if len(buffer) != buffer_length:
-        logger.warning(
-            f&#34;While creating an RMAP read reply packet, the length of the buffer ({len(buffer)}) not equals &#34;
-            f&#34;the buffer_length ({buffer_length})&#34;
-        )
-
-    for idx, value in enumerate(buffer):
-        buf[12+idx] = value
-
-    buf[12 + buffer_length] = rmap_crc_check(buf, 12, 12 + buffer_length) &amp; 0xFF  # data CRC
-
-    return buf</code></pre>
-</details>
-</dd>
-<dt id="egse.dsi.rmap.create_rmap_read_request_packet"><code class="name flex">
-<span>def <span class="ident">create_rmap_read_request_packet</span></span>(<span>rmap_link: <a title="egse.dsi.rmap.ESL_RMAP" href="#egse.dsi.rmap.ESL_RMAP">ESL_RMAP</a>, address: int, length: int) ‑> _ctypes.Array</span>
-</code></dt>
-<dd>
-<div class="desc"><p>Creates an RMAP Read Request SpaceWire packet.</p>
-<p>The read request is an RMAP command that read a number of bytes from the FEE register memory.</p>
-<p>The function returns a <code>ctypes</code> character array (which is basically a bytes array) that
-can be passed into the EtherSpaceLink library function <code>esl_write_packet()</code>.</p>
-<p>Address shall be within the 0x0000_0000 and 0x00FF_FFFC. The memory map (register) is divided
-in the following areas:</p>
-<pre><code>0x0000_0000 - 0x0000_00FC   Critical Configuration Area (verified write)
-0x0000_0100 - 0x0000_06FC   General Configuration Area (unverified write)
-0x0000_0700 - 0x0000_07FC   Housekeeping area
-0x0000_0800 - 0x007F_FFFC   Not Supported
-0x0080_0000 - 0x00FF_FFFC   Windowing Area (unverified write)
-0x0010_0000 - 0xFFFF_FFFC   Not Supported
-</code></pre>
-<p>All read requests to the critical area shall have a fixed data length of 4 bytes.
-All read requests to a general area shall have a maximum data length of 256 bytes.
-All read requests to the housekeeping area shall have a maximum data length of 256 bytes.
-All read requests to the windowing area shall have a maximum data length of 4096 bytes.</p>
-<h2 id="args">Args</h2>
-<dl>
-<dt><strong><code>rmap_link</code></strong> :&ensp;<code><a title="egse.dsi.rmap.ESL_RMAP" href="#egse.dsi.rmap.ESL_RMAP">ESL_RMAP</a></code></dt>
-<dd>the RMAP link connection</dd>
-<dt><strong><code>address</code></strong> :&ensp;<code>int</code></dt>
-<dd>the FEE register memory address</dd>
-<dt><strong><code>length</code></strong> :&ensp;<code>int</code></dt>
-<dd>the data length</dd>
-</dl>
-<h2 id="returns">Returns</h2>
-<p>a bytes array containing the full RMAP Read Request packet.</p></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def create_rmap_read_request_packet(rmap_link: ESL_RMAP, address: int, length: int) -&gt; ctypes.Array:
-    &#34;&#34;&#34;
-    Creates an RMAP Read Request SpaceWire packet.
-
-    The read request is an RMAP command that read a number of bytes from the FEE register memory.
-
-    The function returns a ``ctypes`` character array (which is basically a bytes array) that
-    can be passed into the EtherSpaceLink library function ``esl_write_packet()``.
-
-    Address shall be within the 0x0000_0000 and 0x00FF_FFFC. The memory map (register) is divided
-    in the following areas:
-
-        0x0000_0000 - 0x0000_00FC   Critical Configuration Area (verified write)
-        0x0000_0100 - 0x0000_06FC   General Configuration Area (unverified write)
-        0x0000_0700 - 0x0000_07FC   Housekeeping area
-        0x0000_0800 - 0x007F_FFFC   Not Supported
-        0x0080_0000 - 0x00FF_FFFC   Windowing Area (unverified write)
-        0x0010_0000 - 0xFFFF_FFFC   Not Supported
-
-    All read requests to the critical area shall have a fixed data length of 4 bytes.
-    All read requests to a general area shall have a maximum data length of 256 bytes.
-    All read requests to the housekeeping area shall have a maximum data length of 256 bytes.
-    All read requests to the windowing area shall have a maximum data length of 4096 bytes.
-
-    Args:
-        rmap_link (ESL_RMAP): the RMAP link connection
-        address (int): the FEE register memory address
-        length (int): the data length
-
-    Returns:
-        a bytes array containing the full RMAP Read Request packet.
-    &#34;&#34;&#34;
-
-    check_address_and_data_length(address, length)
-
-    buf = ctypes.create_string_buffer(16)
-
-    # The transaction identifier shall be incremented for each read request
-
-    tid = update_transaction_identifier(rmap_link)
-
-    # NOTE: The first bytes would each carry the target SpW address or a destination port,
-    #       but this is not used for point-to-point connections, so we&#39;re safe.
-
-    buf[0] = 0x51  # Target N-FEE or F-FEE
-    buf[1] = 0x01  # RMAP Protocol ID
-    buf[2] = 0x4C  # Instruction: 0b1001100, RMAP Request, Read, Incrementing address, reply address = 0
-    buf[3] = 0xD1  # Destination Key
-    buf[4] = 0x50  # Initiator is always the DPU
-    buf[5] = (tid &gt;&gt; 8) &amp; 0xFF        # MSB of the Transition ID
-    buf[6] = tid &amp; 0xFF               # LSB of the Transition ID
-    buf[7] = 0x00                     # Extended address is not used
-    buf[8] = (address &gt;&gt; 24) &amp; 0xFF   # address (MSB)
-    buf[9] = (address &gt;&gt; 16) &amp; 0xFF   # address
-    buf[10] = (address &gt;&gt; 8) &amp; 0xFF   # address
-    buf[11] = address &amp; 0xFF          # address (LSB)
-    buf[12] = (length &gt;&gt; 16) &amp; 0xFF   # data length (MSB)
-    buf[13] = (length &gt;&gt; 8) &amp; 0xFF    # data length
-    buf[14] = length &amp; 0xFF           # data length (LSB)
-    buf[15] = rmap_crc_check(buf, 0, 15) &amp; 0xFF
-    return buf</code></pre>
-</details>
-</dd>
-<dt id="egse.dsi.rmap.create_rmap_unverified_write_packet"><code class="name flex">
-<span>def <span class="ident">create_rmap_unverified_write_packet</span></span>(<span>rmap_link: <a title="egse.dsi.rmap.ESL_RMAP" href="#egse.dsi.rmap.ESL_RMAP">ESL_RMAP</a>, address: int, data: bytes, length: int) ‑> _ctypes.Array</span>
-</code></dt>
-<dd>
-<div class="desc"><p>Create an RMAP packet for a unverified write request on the FEE.</p>
-<h2 id="args">Args</h2>
-<dl>
-<dt><strong><code>rmap_link</code></strong></dt>
-<dd>the RMAP link structure</dd>
-<dt><strong><code>address</code></strong></dt>
-<dd>the start memory address on the FEE register map</dd>
-<dt><strong><code>data</code></strong></dt>
-<dd>the data to be written in the register map at address</dd>
-<dt><strong><code>length</code></strong></dt>
-<dd>the length of the data</dd>
-</dl>
-<h2 id="returns">Returns</h2>
-<dl>
-<dt><code>packet</code></dt>
-<dd>a bytes object containing the SpaceWire packet.</dd>
-</dl></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def create_rmap_unverified_write_packet(rmap_link: ESL_RMAP, address: int, data: bytes, length: int) -&gt; ctypes.Array:
-    &#34;&#34;&#34;
-    Create an RMAP packet for a unverified write request on the FEE.
-
-    Args:
-        rmap_link: the RMAP link structure
-        address: the start memory address on the FEE register map
-        data: the data to be written in the register map at address
-        length: the length of the data
-
-    Returns:
-        packet: a bytes object containing the SpaceWire packet.
-    &#34;&#34;&#34;
-
-    # We can only handle data for which the length &gt;= the given length argument.
-
-    if len(data) &lt; length:
-        raise ValueError(
-            f&#34;The length of the data argument ({len(data)}) is smaller than &#34;
-            f&#34;the given length argument ({length}).&#34;
-        )
-
-    if len(data) &gt; length:
-        logger.warning(
-            f&#34;The length of the data argument ({len(data)}) is larger than &#34;
-            f&#34;the given length argument ({length}). The data will be truncated &#34;
-            f&#34;when copied into the packet.&#34;
-        )
-
-    if address &lt;= CRITICAL_AREA_END:
-        raise ValueError(f&#34;The given address (0x{address:08X}) is in the range for critical configuration is [0x00 - &#34;
-                         f&#34;0xFC]. Use the verified write function for this.&#34;)
-
-    tid = update_transaction_identifier(rmap_link)
-
-    # Buffer length is fixed at 24 bytes since the data length is fixed at 4 bytes (32 bit addressing)
-
-    buf = ctypes.create_string_buffer(16 + length + 1)
-    offset = 0
-
-    buf[offset+0] = 0x51  # Logical Address
-    buf[offset+1] = 0x01  # Protocol ID
-    buf[offset+2] = 0x6C  # Instruction
-    buf[offset+3] = 0xD1  # Key
-    buf[offset+4] = 0x50  # Initiator Address
-    buf[offset+5] = (tid &gt;&gt; 8) &amp; 0xFF        # MSB of the Transition ID
-    buf[offset+6] = tid &amp; 0xFF               # LSB of the Transition ID
-    buf[offset+7] = 0x00                     # Extended address
-    buf[offset+8] = (address &gt;&gt; 24) &amp; 0xFF   # address (MSB)
-    buf[offset+9] = (address &gt;&gt; 16) &amp; 0xFF   # address
-    buf[offset+10] = (address &gt;&gt; 8) &amp; 0xFF   # address
-    buf[offset+11] = address &amp; 0xFF          # address (LSB)
-    buf[offset+12] = (length &gt;&gt; 16) &amp; 0xFF   # data length (MSB)
-    buf[offset+13] = (length &gt;&gt; 8) &amp; 0xFF    # data length
-    buf[offset+14] = length &amp; 0xFF           # data length (LSB)
-    buf[offset+15] = rmap_crc_check(buf, 0, 15) &amp; 0xFF  # header CRC
-
-    offset = offset + 16
-
-    for idx, value in enumerate(data):
-        buf[offset+idx] = value
-
-    buf[offset + length] = rmap_crc_check(buf, offset, length) &amp; 0xFF  # data CRC
-
-    return buf</code></pre>
-</details>
-</dd>
-<dt id="egse.dsi.rmap.create_rmap_verified_write_packet"><code class="name flex">
-<span>def <span class="ident">create_rmap_verified_write_packet</span></span>(<span>rmap_link: <a title="egse.dsi.rmap.ESL_RMAP" href="#egse.dsi.rmap.ESL_RMAP">ESL_RMAP</a>, address: int, data: bytes) ‑> _ctypes.Array</span>
-</code></dt>
-<dd>
-<div class="desc"><p>Create an RMAP packet for a verified write request on the FEE. The length of the data is by convention always 4
-bytes and therefore not passed as an argument.</p>
-<h2 id="args">Args</h2>
-<dl>
-<dt><strong><code>rmap_link</code></strong></dt>
-<dd>the RMAP link structure</dd>
-<dt><strong><code>address</code></strong></dt>
-<dd>the start memory address on the FEE register map</dd>
-<dt><strong><code>data</code></strong></dt>
-<dd>the data to be written in the register map at address [4 bytes]</dd>
-</dl>
-<h2 id="returns">Returns</h2>
-<dl>
-<dt><code>packet</code></dt>
-<dd>a bytes object containing the SpaceWire packet.</dd>
-</dl></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def create_rmap_verified_write_packet(rmap_link: ESL_RMAP, address: int, data: bytes) -&gt; ctypes.Array:
-    &#34;&#34;&#34;
-    Create an RMAP packet for a verified write request on the FEE. The length of the data is by convention always 4
-    bytes and therefore not passed as an argument.
-
-    Args:
-        rmap_link: the RMAP link structure
-        address: the start memory address on the FEE register map
-        data: the data to be written in the register map at address [4 bytes]
-
-    Returns:
-        packet: a bytes object containing the SpaceWire packet.
-    &#34;&#34;&#34;
-
-    if len(data) &lt; 4:
-        raise ValueError(f&#34;The data argument should be at least 4 bytes, but it is only {len(data)} bytes.&#34;)
-
-    if address &gt; CRITICAL_AREA_END:
-        raise ValueError(f&#34;The address range for critical configuration is [0x00 - 0xFC].&#34;)
-
-    tid = update_transaction_identifier(rmap_link)
-
-    # Buffer length is fixed at 24 bytes since the data length is fixed at 4 bytes (32 bit addressing)
-
-    buf = ctypes.create_string_buffer(21)
-    offset = 0
-
-    # The values below are taken from the PLATO N-FEE to N-DPU Interface Requirements Document [PLATO-DLR-PL-ICD-0010]
-
-    buf[offset+0] = 0x51  # Logical Address
-    buf[offset+1] = 0x01  # Protocol ID
-    buf[offset+2] = 0x7C  # Instruction
-    buf[offset+3] = 0xD1  # Key
-    buf[offset+4] = 0x50  # Initiator Address
-    buf[offset+5] = (tid &gt;&gt; 8) &amp; 0xFF        # MSB of the Transition ID
-    buf[offset+6] = tid &amp; 0xFF               # LSB of the Transition ID
-    buf[offset+7] = 0x00                     # Extended address
-    buf[offset+8] = (address &gt;&gt; 24) &amp; 0xFF   # address (MSB)
-    buf[offset+9] = (address &gt;&gt; 16) &amp; 0xFF   # address
-    buf[offset+10] = (address &gt;&gt; 8) &amp; 0xFF   # address
-    buf[offset+11] = address &amp; 0xFF          # address (LSB)
-    buf[offset+12] = 0x00                    # data length (MSB)
-    buf[offset+13] = 0x00                    # data length
-    buf[offset+14] = 0x04                    # data length (LSB)
-    buf[offset+15] = rmap_crc_check(buf, 0, 15) &amp; 0xFF  # header CRC
-    buf[offset+16] = data[0]
-    buf[offset+17] = data[1]
-    buf[offset+18] = data[2]
-    buf[offset+19] = data[3]
-    buf[offset+20] = rmap_crc_check(buf, 16, 4) &amp; 0xFF  # data CRC
-
-    return buf</code></pre>
-</details>
-</dd>
-<dt id="egse.dsi.rmap.create_rmap_write_reply_packet"><code class="name flex">
-<span>def <span class="ident">create_rmap_write_reply_packet</span></span>(<span>rmap_link: <a title="egse.dsi.rmap.ESL_RMAP" href="#egse.dsi.rmap.ESL_RMAP">ESL_RMAP</a>) ‑> _ctypes.Array</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def create_rmap_write_reply_packet(rmap_link: ESL_RMAP) -&gt; ctypes.Array:
-    pass</code></pre>
-</details>
-</dd>
-<dt id="egse.dsi.rmap.get_address"><code class="name flex">
-<span>def <span class="ident">get_address</span></span>(<span>rxbuf) ‑> int</span>
-</code></dt>
-<dd>
-<div class="desc"><p>Returns the address field (including the extended address field if the address is 40-bits).</p>
-<h2 id="raises">Raises</h2>
-<dl>
-<dt><code>TypeError</code></dt>
-<dd>when this method is used on a Reply packet (which has no address field).</dd>
-</dl></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def get_address(rxbuf) -&gt; int:
-    &#34;&#34;&#34;Returns the address field (including the extended address field if the address is 40-bits).
-
-    Raises:
-        TypeError: when this method is used on a Reply packet (which has no address field).
-    &#34;&#34;&#34;
-    instruction_field = get_instruction_field(rxbuf)
-
-    if not is_command(instruction_field):
-        raise TypeError(&#34;There is no address field for Reply packets, asking for the address is &#34;
-                        &#34;an invalid operation.&#34;)
-
-    idx = 7 + get_reply_address_field_length(rxbuf)
-    extended_address = rxbuf[idx]
-    idx += 1
-    address = struct.unpack(&#39;&gt;L&#39;, rxbuf[idx:idx + 4])[0]
-    if extended_address:
-        address = address + (extended_address &lt;&lt; 32)
-    return address</code></pre>
-</details>
-</dd>
-<dt id="egse.dsi.rmap.get_data"><code class="name flex">
-<span>def <span class="ident">get_data</span></span>(<span>rxbuf) ‑> bytes</span>
-</code></dt>
-<dd>
-<div class="desc"><p>Return the data from the RMAP packet.</p>
-<h2 id="raises">Raises</h2>
-<dl>
-<dt><code>ValueError</code></dt>
-<dd>if there is no data section in the packet (TODO: not yet implemented)</dd>
-</dl></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def get_data(rxbuf) -&gt; bytes:
-    &#34;&#34;&#34;Return the data from the RMAP packet.
-
-    Raises:
-        ValueError: if there is no data section in the packet (TODO: not yet implemented)
-    &#34;&#34;&#34;
-    instruction_field = get_instruction_field(rxbuf)
-    address_length = get_reply_address_field_length(rxbuf)
-    data_length = get_data_length(rxbuf)
-
-    offset = 12 if is_read(instruction_field) else 16
-
-    return rxbuf[offset + address_length:offset + address_length + data_length]</code></pre>
-</details>
-</dd>
-<dt id="egse.dsi.rmap.get_data_length"><code class="name flex">
-<span>def <span class="ident">get_data_length</span></span>(<span>rxbuf) ‑> int</span>
-</code></dt>
-<dd>
-<div class="desc"><p>Returns the length of the data in bytes.</p>
-<h2 id="raises">Raises</h2>
-<dl>
-<dt><code>TypeError</code></dt>
-<dd>when this method is used on a Write Request Reply packet (which has no
-data length).</dd>
-</dl></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def get_data_length(rxbuf) -&gt; int:
-    &#34;&#34;&#34;Returns the length of the data in bytes.
-
-    Raises:
-        TypeError: when this method is used on a Write Request Reply packet (which has no
-            data length).
-    &#34;&#34;&#34;
-    instruction_field = get_instruction_field(rxbuf)
-
-    if not is_command(instruction_field) and is_write(instruction_field):
-        raise TypeError(&#34;There is no data length field for Write Request Reply packets, &#34;
-                        &#34;asking for the data length is an invalid operation.&#34;)
-
-    offset = 12 if is_command(instruction_field) else 8
-    idx = offset + get_reply_address_field_length(rxbuf)
-
-    # We could use two alternative decoding methods here:
-    #   int.from_bytes(rxbuf[idx:idx+3], byteorder=&#39;big&#39;)    (timeit=1.166s)
-    #   struct.unpack(&#39;&gt;L&#39;, b&#39;\x00&#39; + rxbuf[idx:idx+3])[0]   (timeit=0.670s)
-    data_length = struct.unpack(&#39;&gt;L&#39;, b&#39;\x00&#39; + rxbuf[idx:idx + 3])[0]
-    return data_length</code></pre>
-</details>
-</dd>
-<dt id="egse.dsi.rmap.get_initiator_logical_address"><code class="name flex">
-<span>def <span class="ident">get_initiator_logical_address</span></span>(<span>rxbuf)</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def get_initiator_logical_address(rxbuf):
-    idx = 4 + get_reply_address_field_length(rxbuf)
-    ila_rxbuf = rxbuf[idx]
-    return ila_rxbuf</code></pre>
-</details>
-</dd>
-<dt id="egse.dsi.rmap.get_instruction_field"><code class="name flex">
-<span>def <span class="ident">get_instruction_field</span></span>(<span>rxbuf)</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def get_instruction_field(rxbuf):
-    idx = 2
-    return rxbuf[idx]</code></pre>
-</details>
-</dd>
-<dt id="egse.dsi.rmap.get_protocol_id"><code class="name flex">
-<span>def <span class="ident">get_protocol_id</span></span>(<span>rx_buffer)</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def get_protocol_id(rx_buffer):
-    return rx_buffer[1]</code></pre>
-</details>
-</dd>
-<dt id="egse.dsi.rmap.get_reply_address_field_length"><code class="name flex">
-<span>def <span class="ident">get_reply_address_field_length</span></span>(<span>rx_buffer) ‑> int</span>
-</code></dt>
-<dd>
-<div class="desc"><p>Returns the size of reply address field.</p>
-<p>This function returns the actual size of the reply address field. It doesn't return the content of the
-reply address length field. If you need that information, use the reply_address_length() function that work on
-the instruction field.</p>
-<h2 id="returns">Returns</h2>
-<dl>
-<dt><code>length</code></dt>
-<dd>the size of the reply address field.</dd>
-</dl></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def get_reply_address_field_length(rx_buffer) -&gt; int:
-    &#34;&#34;&#34;Returns the size of reply address field.
-
-    This function returns the actual size of the reply address field. It doesn&#39;t return the content of the
-    reply address length field. If you need that information, use the reply_address_length() function that work on
-    the instruction field.
-
-    Returns:
-         length: the size of the reply address field.
-    &#34;&#34;&#34;
-    instruction = get_instruction_field(rx_buffer)
-    return reply_address_length(instruction) * 4</code></pre>
-</details>
-</dd>
-<dt id="egse.dsi.rmap.get_target_logical_address"><code class="name flex">
-<span>def <span class="ident">get_target_logical_address</span></span>(<span>rmap_link: <a title="egse.dsi.rmap.ESL_RMAP" href="#egse.dsi.rmap.ESL_RMAP">ESL_RMAP</a>, rxbuf: bytes) ‑> int</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def get_target_logical_address(rmap_link: ESL_RMAP, rxbuf: bytes) -&gt; int:
-    tla_idx = 0
-    tla_rxbuf = rxbuf[tla_idx]
-    return tla_rxbuf</code></pre>
-</details>
-</dd>
-<dt id="egse.dsi.rmap.get_transaction_identifier"><code class="name flex">
-<span>def <span class="ident">get_transaction_identifier</span></span>(<span>rxbuf)</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def get_transaction_identifier(rxbuf):
-    idx = 5 + get_reply_address_field_length(rxbuf)
-    tid = struct.unpack(&#39;&gt;h&#39;, rxbuf[idx:idx + 2])[0]
-    return tid</code></pre>
-</details>
-</dd>
-<dt id="egse.dsi.rmap.is_command"><code class="name flex">
-<span>def <span class="ident">is_command</span></span>(<span>instruction)</span>
-</code></dt>
-<dd>
-<div class="desc"><p>Returns True if the RMAP packet is a command packet.</p></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def is_command(instruction):
-    &#34;&#34;&#34;Returns True if the RMAP packet is a command packet.&#34;&#34;&#34;
-    return (instruction &amp; 0b01000000) &gt;&gt; 6</code></pre>
-</details>
-</dd>
-<dt id="egse.dsi.rmap.is_increment"><code class="name flex">
-<span>def <span class="ident">is_increment</span></span>(<span>instruction)</span>
-</code></dt>
-<dd>
-<div class="desc"><p>Returns True if the data is written to sequential memory addresses.</p></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def is_increment(instruction):
-    &#34;&#34;&#34;Returns True if the data is written to sequential memory addresses.&#34;&#34;&#34;
-    return (instruction &amp; 0b00000100) &gt;&gt; 2</code></pre>
-</details>
-</dd>
-<dt id="egse.dsi.rmap.is_read"><code class="name flex">
-<span>def <span class="ident">is_read</span></span>(<span>instruction)</span>
-</code></dt>
-<dd>
-<div class="desc"><p>Returns True if the RMAP packet is a read request command packet.</p></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def is_read(instruction):
-    &#34;&#34;&#34;Returns True if the RMAP packet is a read request command packet.&#34;&#34;&#34;
-    return not is_write(instruction)</code></pre>
-</details>
-</dd>
-<dt id="egse.dsi.rmap.is_reply"><code class="name flex">
-<span>def <span class="ident">is_reply</span></span>(<span>instruction)</span>
-</code></dt>
-<dd>
-<div class="desc"><p>Returns True if the RMAP packet is a reply to a previous command packet.</p></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def is_reply(instruction):
-    &#34;&#34;&#34;Returns True if the RMAP packet is a reply to a previous command packet.&#34;&#34;&#34;
-    return not is_command(instruction)</code></pre>
-</details>
-</dd>
-<dt id="egse.dsi.rmap.is_reply_required"><code class="name flex">
-<span>def <span class="ident">is_reply_required</span></span>(<span>instruction)</span>
-</code></dt>
-<dd>
-<div class="desc"><p>Returns True if the reply bit is set in the instruction field.</p>
-<h2 id="args">Args</h2>
-<dl>
-<dt><strong><code>instruction</code></strong> :&ensp;<code>int</code></dt>
-<dd>the instruction field of an RMAP packet</dd>
-</dl>
-<div class="admonition note">
-<p class="admonition-title">Note:&ensp;the name of this function might be confusing.</p>
-<p>This function does <strong>not</strong> test if the packet is a reply packet, but it checks
-if the command requests a reply from the target. If you need to test if the
-packet is a command or a reply, use the is_command() or is_reply() function.</p>
-</div></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def is_reply_required(instruction):
-    &#34;&#34;&#34;Returns True if the reply bit is set in the instruction field.
-
-    Args:
-        instruction (int): the instruction field of an RMAP packet
-
-    .. note:: the name of this function might be confusing.
-
-        This function does **not** test if the packet is a reply packet, but it checks
-        if the command requests a reply from the target. If you need to test if the
-        packet is a command or a reply, use the is_command() or is_reply() function.
-
-    &#34;&#34;&#34;
-    return (instruction &amp; 0b00001000) &gt;&gt; 3</code></pre>
-</details>
-</dd>
-<dt id="egse.dsi.rmap.is_reserved"><code class="name flex">
-<span>def <span class="ident">is_reserved</span></span>(<span>instruction)</span>
-</code></dt>
-<dd>
-<div class="desc"><p>The reserved bit of the 2-bit packet type field from the instruction field.</p>
-<p>For PLATO this bit shall be zero as the 0b10 and 0b11 packet field values are reserved.</p>
-<h2 id="returns">Returns</h2>
-<dl>
-<dt><code>bit value</code></dt>
-<dd>1 or 0.</dd>
-</dl></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def is_reserved(instruction):
-    &#34;&#34;&#34;The reserved bit of the 2-bit packet type field from the instruction field.
-
-    For PLATO this bit shall be zero as the 0b10 and 0b11 packet field values are reserved.
-
-    Returns:
-        bit value: 1 or 0.
-    &#34;&#34;&#34;
-    return (instruction &amp; 0b10000000) &gt;&gt; 7</code></pre>
-</details>
-</dd>
-<dt id="egse.dsi.rmap.is_rmap"><code class="name flex">
-<span>def <span class="ident">is_rmap</span></span>(<span>rx_buffer)</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def is_rmap(rx_buffer):
-    return get_protocol_id(rx_buffer) == constants.RMAP_PROTOCOL_ID</code></pre>
-</details>
-</dd>
-<dt id="egse.dsi.rmap.is_verify"><code class="name flex">
-<span>def <span class="ident">is_verify</span></span>(<span>instruction)</span>
-</code></dt>
-<dd>
-<div class="desc"><p>Returns True if the RMAP packet needs to do a verify before write.</p></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def is_verify(instruction):
-    &#34;&#34;&#34;Returns True if the RMAP packet needs to do a verify before write.&#34;&#34;&#34;
-    return (instruction &amp; 0b00010000) &gt;&gt; 4</code></pre>
-</details>
-</dd>
-<dt id="egse.dsi.rmap.is_write"><code class="name flex">
-<span>def <span class="ident">is_write</span></span>(<span>instruction)</span>
-</code></dt>
-<dd>
-<div class="desc"><p>Returns True if the RMAP packet is a write request command packet.</p></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def is_write(instruction):
-    &#34;&#34;&#34;Returns True if the RMAP packet is a write request command packet.&#34;&#34;&#34;
-    return (instruction &amp; 0b00100000) &gt;&gt; 5</code></pre>
-</details>
-</dd>
-<dt id="egse.dsi.rmap.reply_address_length"><code class="name flex">
-<span>def <span class="ident">reply_address_length</span></span>(<span>instruction)</span>
-</code></dt>
-<dd>
-<div class="desc"><p>Returns the content of the replay address length field.</p>
-<p>The size of the replay address field is then decoded from the following table:</p>
-<pre><code>Address Field Length  |  Size of Address Field
-----------------------+-----------------------
-     0b00             |      0 bytes
-     0b01             |      4 bytes
-     0b10             |      8 bytes
-     0b11             |     12 bytes
-</code></pre></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def reply_address_length(instruction):
-    &#34;&#34;&#34;Returns the content of the replay address length field.
-
-    The size of the replay address field is then decoded from the following table:
-
-        Address Field Length  |  Size of Address Field
-        ----------------------+-----------------------
-             0b00             |      0 bytes
-             0b01             |      4 bytes
-             0b10             |      8 bytes
-             0b11             |     12 bytes
-
-    &#34;&#34;&#34;
-    return (instruction &amp; 0b00000011) &lt;&lt; 2</code></pre>
+<pre><code class="python">def rmap_close_connection(rmap_link):
+    LOGGER.info(&#34;RMAP connection closed successfully.&#34;)</code></pre>
 </details>
 </dd>
 <dt id="egse.dsi.rmap.rmap_configure"><code class="name flex">
@@ -2155,10 +819,11 @@ packet is a command or a reply, use the is_command() or is_reply() function.</p>
         Nothing
 
     &#34;&#34;&#34;
-    rmap_set_initiator_logical_address(rmap_link, initiator_logical_address)
-    rmap_set_target_key(rmap_link, target_key)
-    rmap_set_target_logical_address(rmap_link, target_logical_address)
-    rmap_set_target_spw_address(rmap_link, b&#39;\x00&#39;, 0)</code></pre>
+    rmap_link.initiator_logical_address = initiator_logical_address
+    rmap_link.target_key = target_key
+    rmap_link.target_logical_address = target_logical_address
+    rmap_link.target_spw_address = 0x0
+    rmap_link.target_spw_address_len = 0</code></pre>
 </details>
 </dd>
 <dt id="egse.dsi.rmap.rmap_connection"><code class="name flex">
@@ -2172,7 +837,7 @@ packet is a command or a reply, use the is_command() or is_reply() function.</p>
 <dd>the ESL structure that defines the connection to the DSI</dd>
 </dl>
 <h2 id="returns">Returns</h2>
-<p>an RMAP link connection</p></div>
+<p>an RMAP link connection.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
@@ -2186,456 +851,87 @@ def rmap_connection(esl_link):
         esl_link (ESL): the ESL structure that defines the connection to the DSI
 
     Returns:
-        an RMAP link connection
+        an RMAP link connection.
     &#34;&#34;&#34;
-    yield rmap_open_connection(esl_link)</code></pre>
+    rmap_link = rmap_open_connection(esl_link)
+    yield rmap_link
+
+    rmap_close_connection(rmap_link)</code></pre>
 </details>
 </dd>
-<dt id="egse.dsi.rmap.rmap_crc_check"><code class="name flex">
-<span>def <span class="ident">rmap_crc_check</span></span>(<span>data, start, length)</span>
+<dt id="egse.dsi.rmap.rmap_initialise"><code class="name flex">
+<span>def <span class="ident">rmap_initialise</span></span>(<span>esl_link) ‑> <a title="egse.dsi.rmap.ESL_RMAP" href="#egse.dsi.rmap.ESL_RMAP">ESL_RMAP</a></span>
 </code></dt>
 <dd>
-<div class="desc"></div>
+<div class="desc"><p>Initialise the RMAP structure with predefined settings for PLATO.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def rmap_crc_check(data, start, length):
-    # logger.debug(f&#34;Calling rmap_crc_check(data, {start}, {length})&#34;)
-    return librmap_crc_check(data, start, length)</code></pre>
-</details>
-</dd>
-<dt id="egse.dsi.rmap.rmap_get_initiator_logical_address"><code class="name flex">
-<span>def <span class="ident">rmap_get_initiator_logical_address</span></span>(<span>rmap_link)</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def rmap_get_initiator_logical_address(rmap_link):
-    # logger.debug(&#34;Calling rmap_get_initiator_logical_address(rmap_link)&#34;)
-    return librmap_get_initiator_logical_address(rmap_link)</code></pre>
-</details>
-</dd>
-<dt id="egse.dsi.rmap.rmap_get_target_key"><code class="name flex">
-<span>def <span class="ident">rmap_get_target_key</span></span>(<span>rmap_link)</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def rmap_get_target_key(rmap_link):
-    logger.debug(&#34;Calling rmap_get_target_key(rmap_link)&#34;)
-    return librmap_get_target_key(rmap_link)</code></pre>
-</details>
-</dd>
-<dt id="egse.dsi.rmap.rmap_get_target_logical_address"><code class="name flex">
-<span>def <span class="ident">rmap_get_target_logical_address</span></span>(<span>rmap_link)</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def rmap_get_target_logical_address(rmap_link):
-    logger.debug(&#34;Calling rmap_get_target_logical_address(rmap_link)&#34;)
-    return librmap_get_target_logical_address(rmap_link)</code></pre>
+<pre><code class="python">def rmap_initialise(esl_link) -&gt; ESL_RMAP:
+    &#34;&#34;&#34;
+    Initialise the RMAP structure with predefined settings for PLATO.
+    &#34;&#34;&#34;
+    esl_rmap: ESL_RMAP = ESL_RMAP()
+
+    esl_rmap.spw_device = esl_link
+    esl_rmap.target_key = 0x00
+    esl_rmap.target_logical_address = 0xFE
+    esl_rmap.target_spw_address = 0x00
+    esl_rmap.target_spw_address_len = 0
+    esl_rmap.reply_spw_address = 0x0
+    esl_rmap.reply_spw_address_len = 0
+    esl_rmap.initiator_logical_address = 0xFE
+    esl_rmap.transaction_identifier = 99
+    esl_rmap.ESL_RMAP_error = 99
+
+    return esl_rmap</code></pre>
 </details>
 </dd>
 <dt id="egse.dsi.rmap.rmap_open_connection"><code class="name flex">
 <span>def <span class="ident">rmap_open_connection</span></span>(<span>esl_link)</span>
 </code></dt>
 <dd>
-<div class="desc"></div>
+<div class="desc"><p>Initialises and opens an RMAP connection on an EtherSpaceLink (ESL) connection.</p>
+<p>This requires a valid link to an ESL connection which shall be created with the following
+command:</p>
+<pre><code>esl_link = esl_open_connection(&lt;DSI IP Address&gt;)
+</code></pre>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>esl_link</code></strong></dt>
+<dd>a connection link to the DSI SpaceWire interface</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<p>The RMAP connection link.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def rmap_open_connection(esl_link):
+    &#34;&#34;&#34;
+    Initialises and opens an RMAP connection on an EtherSpaceLink (ESL) connection.
 
-    logger.info(f&#34;Open and setup RMAP connection to {esl_get_product_string(esl_link)}&#34;)
+    This requires a valid link to an ESL connection which shall be created with the following
+    command:
 
-    rmap_link = librmap_open(esl_link)
-    if not rmap_link:
-        raise RMAPError(f&#34;Couldn&#39;t open RMAP connection to {esl_get_product_string(esl_link)}&#34;)
+        esl_link = esl_open_connection(&lt;DSI IP Address&gt;)
 
-    rmap_set_verbosity(1)     # 1=normal; 5 or 15 for lots of debugging
+    Args:
+        esl_link: a connection link to the DSI SpaceWire interface
 
-    logger.info(&#34;RMAP connection opened successfully.&#34;)
+    Returns:
+        The RMAP connection link.
+
+    &#34;&#34;&#34;
+
+    LOGGER.info(f&#34;Open and setup RMAP connection to {esl_get_product_string(esl_link)}&#34;)
+
+    rmap_link = rmap_initialise(esl_link)
+
+    LOGGER.info(&#34;RMAP connection opened successfully.&#34;)
 
     return rmap_link</code></pre>
-</details>
-</dd>
-<dt id="egse.dsi.rmap.rmap_read"><code class="name flex">
-<span>def <span class="ident">rmap_read</span></span>(<span>rmap_link: <a title="egse.dsi.rmap.ESL_RMAP" href="#egse.dsi.rmap.ESL_RMAP">ESL_RMAP</a>, address: int, length: int, timeout: int = 1000)</span>
-</code></dt>
-<dd>
-<div class="desc"><p>Read <code>length</code> bytes from the remote memory starting at <code>address</code>. If there is no reply
-after the given <code>timeout</code>, TODO: WHAT WILL HAPPEN THEN?</p>
-<div class="admonition note">
-<p class="admonition-title">Note:&ensp;We are using the global <code>rxbuf</code> read buffer here.</p>
-<p>The content of the buffer will be overwritten by the RMAP read request.</p>
-</div>
-<h2 id="args">Args</h2>
-<dl>
-<dt><strong><code>rmap_link</code></strong></dt>
-<dd>the RMAP link connection</dd>
-<dt><strong><code>address</code></strong></dt>
-<dd>the start address (32-bit aligned) in the remote memory</dd>
-<dt><strong><code>length</code></strong></dt>
-<dd>the number of bytes to read from the remote memory</dd>
-<dt><strong><code>timeout</code></strong></dt>
-<dd>timeout in milli-seconds</dd>
-</dl>
-<h2 id="returns">Returns</h2>
-<p>the buffer containing the data read from the remote memory.</p></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def rmap_read(rmap_link: ESL_RMAP, address: int, length: int, timeout: int = 1000):
-    &#34;&#34;&#34;
-    Read `length` bytes from the remote memory starting at `address`. If there is no reply
-    after the given `timeout`, TODO: WHAT WILL HAPPEN THEN?
-
-    .. note:: We are using the global ``rxbuf`` read buffer here.
-        The content of the buffer will be overwritten by the RMAP read request.
-
-    Args:
-        rmap_link: the RMAP link connection
-        address: the start address (32-bit aligned) in the remote memory
-        length: the number of bytes to read from the remote memory
-        timeout: timeout in milli-seconds
-
-    Returns:
-        the buffer containing the data read from the remote memory.
-
-    &#34;&#34;&#34;
-
-    data_length = librmap_read_TO(rmap_link, address, rxbuf, length, status_p, timeout)
-
-    # If data_length &lt; 0 it can have the following values:
-    # -1 = status was != 0 indicating a read error, the packet was eaten...discarded?
-    # -4 = wrong TLA field in header
-    # -5 = wrong TID field in header
-
-    # FIXME: Think about if we should raise an RMAPError here instead of returning None when result is negative.
-    #        I would go for an Exception, since we loose the information on the error anyway as code information (
-    #        None is returned, not data_length), and now the caller must check the return code from this read command.
-
-    if data_length &lt; 0:
-        logger.warning(
-            f&#34;Couldn&#39;t read data within timeout of {timeout} ms, &#34;
-            f&#34;ESL RMAP Error Code = {esl_rmap_error_codes[rmap_link.contents.ESL_RMAP_error]} &#34;
-            f&#34;[{rmap_link.contents.ESL_RMAP_error}]&#34;
-        )
-        return None
-    else:
-        return rxbuf[:data_length]</code></pre>
-</details>
-</dd>
-<dt id="egse.dsi.rmap.rmap_read_request"><code class="name flex">
-<span>def <span class="ident">rmap_read_request</span></span>(<span>rmap_link: <a title="egse.dsi.rmap.ESL_RMAP" href="#egse.dsi.rmap.ESL_RMAP">ESL_RMAP</a>, address: int, length: int, timeout: int = 1000) ‑> Tuple[int, bytes]</span>
-</code></dt>
-<dd>
-<div class="desc"><p>Read <code>length</code> bytes from the remote memory starting at <code>address</code>.</p>
-<div class="admonition todo">
-<p class="admonition-title">TODO</p>
-<p>the timeout parameter is currently not implemented</p>
-</div>
-<h2 id="args">Args</h2>
-<dl>
-<dt><strong><code>rmap_link</code></strong></dt>
-<dd>the RMAP link connection</dd>
-<dt><strong><code>address</code></strong></dt>
-<dd>the start address (32-bit aligned) in the remote memory</dd>
-<dt><strong><code>length</code></strong></dt>
-<dd>the number of bytes to read from the remote memory</dd>
-<dt><strong><code>timeout</code></strong></dt>
-<dd>timeout in milli-seconds</dd>
-</dl>
-<h2 id="returns">Returns</h2>
-<p>A tuple containing the terminator value and the RMAP Reply packet with the data read from the remote memory.</p></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def rmap_read_request(rmap_link: ESL_RMAP, address: int, length: int, timeout: int = 1000) -&gt; Tuple[int, bytes]:
-    &#34;&#34;&#34;
-    Read `length` bytes from the remote memory starting at `address`.
-
-    .. todo:: the timeout parameter is currently not implemented
-
-    Args:
-        rmap_link: the RMAP link connection
-        address: the start address (32-bit aligned) in the remote memory
-        length: the number of bytes to read from the remote memory
-        timeout: timeout in milli-seconds
-
-    Returns:
-        A tuple containing the terminator value and the RMAP Reply packet with the data read from the remote memory.
-
-    &#34;&#34;&#34;
-    buffer = create_rmap_read_request_packet(rmap_link, address, length)
-
-    logger.log(5, &#34;Pretty Print Read Request Packet:\n&#34; + pretty_print_packet(buffer))
-
-    result = esl_write_packet(rmap_link.contents.spw_device, buffer, len(buffer), constants.ESL_EOP)
-    if result:
-        raise RMAPError(
-            f&#34;Couldn&#39;t send data within timeout of {timeout} ms, &#34;
-            f&#34;ESL RMAP Error Code = {esl_rmap_error_codes[rmap_link.contents.ESL_RMAP_error]} [&#34;
-            f&#34;{rmap_link.contents.ESL_RMAP_error}]&#34;)
-
-    result = esl_flush(rmap_link.contents.spw_device)
-    if result:
-        raise RMAPError(
-            f&#34;Couldn&#39;t send data or clear buffers, &#34;
-            f&#34;ESL RMAP Error Code = {esl_rmap_error_codes[rmap_link.contents.ESL_RMAP_error]} [&#34;
-            f&#34;{rmap_link.contents.ESL_RMAP_error}]&#34;)
-
-    # Read the read request reply
-
-    terminator, rx_buffer = esl_read_packet(rmap_link.contents.spw_device)
-
-    logger.log(5, &#34;Pretty Print Read Request Reply Packet:\n&#34; + pretty_print_packet(rx_buffer))
-
-    return terminator, rx_buffer</code></pre>
-</details>
-</dd>
-<dt id="egse.dsi.rmap.rmap_set_initiator_logical_address"><code class="name flex">
-<span>def <span class="ident">rmap_set_initiator_logical_address</span></span>(<span>rmap_link, address)</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def rmap_set_initiator_logical_address(rmap_link, address):
-    # logger.debug(f&#34;Calling rmap_set_initiator_logical_address(rmap_link, 0x{address:02X})&#34;)
-    librmap_set_initiator_logical_address(rmap_link, address)</code></pre>
-</details>
-</dd>
-<dt id="egse.dsi.rmap.rmap_set_target_key"><code class="name flex">
-<span>def <span class="ident">rmap_set_target_key</span></span>(<span>rmap_link, key)</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def rmap_set_target_key(rmap_link, key):
-    logger.debug(f&#34;Calling rmap_set_target_key({key})&#34;)
-    librmap_set_target_key(rmap_link, key)</code></pre>
-</details>
-</dd>
-<dt id="egse.dsi.rmap.rmap_set_target_logical_address"><code class="name flex">
-<span>def <span class="ident">rmap_set_target_logical_address</span></span>(<span>rmap_link, address)</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def rmap_set_target_logical_address(rmap_link, address):
-    logger.debug(f&#34;Calling rmap_set_target_logical_address(rmap_link, 0x{address:02X})&#34;)
-    librmap_set_target_logical_address(rmap_link, address)</code></pre>
-</details>
-</dd>
-<dt id="egse.dsi.rmap.rmap_set_target_spw_address"><code class="name flex">
-<span>def <span class="ident">rmap_set_target_spw_address</span></span>(<span>rmap_link, spw_address, spw_address_length)</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def rmap_set_target_spw_address(rmap_link, spw_address, spw_address_length):
-    logger.debug(f&#34;Calling rmap_set_target_spw_address(rmap_link, spw_address, {spw_address_length})&#34;)
-    librmap_set_target_spw_address(rmap_link, spw_address, spw_address_length)</code></pre>
-</details>
-</dd>
-<dt id="egse.dsi.rmap.rmap_set_verbosity"><code class="name flex">
-<span>def <span class="ident">rmap_set_verbosity</span></span>(<span>flags)</span>
-</code></dt>
-<dd>
-<div class="desc"><p>Set vebosity of the RMAP API.</p>
-<p>Report errors by default:</p>
-<ul>
-<li>bitval
-1 : output textual error messages</li>
-<li>bitval
-2 : output SpaceWire read/write packet tracing</li>
-<li>bitval
-4 : output API function call tracing</li>
-<li>bitval
-8 : output API parameter
-/ data packet tracing</li>
-<li>bitval 16 : output API data packet tracing</li>
-</ul>
-<h2 id="args">Args</h2>
-<dl>
-<dt><strong><code>flags</code></strong> :&ensp;<code>int</code></dt>
-<dd>verbosy level</dd>
-</dl>
-<h2 id="returns">Returns</h2>
-<p>None</p></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def rmap_set_verbosity(flags):
-    &#34;&#34;&#34;
-    Set vebosity of the RMAP API.
-
-    Report errors by default:
-
-    * bitval  1 : output textual error messages
-    * bitval  2 : output SpaceWire read/write packet tracing
-    * bitval  4 : output API function call tracing
-    * bitval  8 : output API parameter  / data packet tracing
-    * bitval 16 : output API data packet tracing
-
-    Args:
-        flags (int): verbosy level
-
-    Returns:
-        None
-
-    &#34;&#34;&#34;
-    librmap_set_verbosity(flags)</code></pre>
-</details>
-</dd>
-<dt id="egse.dsi.rmap.rmap_write_request"><code class="name flex">
-<span>def <span class="ident">rmap_write_request</span></span>(<span>rmap_link: <a title="egse.dsi.rmap.ESL_RMAP" href="#egse.dsi.rmap.ESL_RMAP">ESL_RMAP</a>, address: int, data: bytes, length: int = 4, timeout: int = 1000) ‑> Tuple[int, bytes]</span>
-</code></dt>
-<dd>
-<div class="desc"><p>Sends an RMAP write command over the SpaceWire link.</p>
-<p>Based on the address this function will decided to send a verified or unverified write request.</p>
-<div class="admonition todo">
-<p class="admonition-title">TODO</p>
-<p>the timeout parameter is currently not implemented</p>
-</div>
-<h2 id="args">Args</h2>
-<dl>
-<dt><strong><code>rmap_link</code></strong> :&ensp;<code><a title="egse.dsi.rmap.ESL_RMAP" href="#egse.dsi.rmap.ESL_RMAP">ESL_RMAP</a></code></dt>
-<dd>the RMAP link connection</dd>
-<dt><strong><code>address</code></strong></dt>
-<dd>the starting memory address to which the data from buffer will be written</dd>
-<dt><strong><code>data</code></strong></dt>
-<dd>the data that will be written into the targets memory</dd>
-<dt><strong><code>length</code></strong></dt>
-<dd>the number of bytes to write (the buffer maybe longer) [default=4]</dd>
-<dt><strong><code>timeout</code></strong></dt>
-<dd>timeout in milliseconds [default=1000]</dd>
-</dl>
-<h2 id="returns">Returns</h2>
-<dl>
-<dt><code>return_code</code></dt>
-<dd>zero (0) on success.</dd>
-</dl>
-<h2 id="raises">Raises</h2>
-<dl>
-<dt><code><a title="egse.dsi.rmap.RMAPError" href="#egse.dsi.rmap.RMAPError">RMAPError</a></code></dt>
-<dd>when data can not be written on the target.</dd>
-</dl></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def rmap_write_request(rmap_link: ESL_RMAP,
-                       address: int, data: bytes, length: int = 4, timeout: int = 1000) -&gt; Tuple[int, bytes]:
-    &#34;&#34;&#34;
-    Sends an RMAP write command over the SpaceWire link.
-
-    Based on the address this function will decided to send a verified or unverified write request.
-
-    .. todo:: the timeout parameter is currently not implemented
-
-    Args:
-        rmap_link (ESL_RMAP): the RMAP link connection
-        address: the starting memory address to which the data from buffer will be written
-        data: the data that will be written into the targets memory
-        length: the number of bytes to write (the buffer maybe longer) [default=4]
-        timeout: timeout in milliseconds [default=1000]
-
-    Returns:
-        return_code: zero (0) on success.
-
-    Raises:
-        RMAPError: when data can not be written on the target.
-
-    &#34;&#34;&#34;
-
-    if CRITICAL_AREA_START &lt;= address &lt;= CRITICAL_AREA_END:
-        buffer = create_rmap_verified_write_packet(rmap_link, address, data)
-    else:
-        buffer = create_rmap_unverified_write_packet(rmap_link, address, data, length)
-
-    logger.log(5, &#34;Pretty Print Write Request Packet:\n&#34; + pretty_print_packet(buffer))
-
-    result = esl_write_packet(rmap_link.contents.spw_device, buffer, len(buffer), constants.ESL_EOP)
-    if result:
-        raise RMAPError(
-            f&#34;Couldn&#39;t send data within timeout of {timeout} ms, &#34;
-            f&#34;ESL RMAP Error Code = {esl_rmap_error_codes[rmap_link.contents.ESL_RMAP_error]} [&#34;
-            f&#34;{rmap_link.contents.ESL_RMAP_error}]&#34;)
-
-    result = esl_flush(rmap_link.contents.spw_device)
-    if result:
-        raise RMAPError(
-            f&#34;Couldn&#39;t send data or clear buffers, &#34;
-            f&#34;ESL RMAP Error Code = {esl_rmap_error_codes[rmap_link.contents.ESL_RMAP_error]} [&#34;
-            f&#34;{rmap_link.contents.ESL_RMAP_error}]&#34;)
-
-    # Read the write reply
-
-    terminator, rx_buffer = esl_read_packet(rmap_link.contents.spw_device)
-
-    logger.log(5, &#34;Pretty Print Write Request Reply Packet:\n&#34; + pretty_print_packet(rx_buffer))
-
-    return terminator, rx_buffer</code></pre>
-</details>
-</dd>
-<dt id="egse.dsi.rmap.update_transaction_identifier"><code class="name flex">
-<span>def <span class="ident">update_transaction_identifier</span></span>(<span>rmap_link) ‑> int</span>
-</code></dt>
-<dd>
-<div class="desc"><p>Updates the transaction identifier and returns the new value.</p>
-<h2 id="args">Args</h2>
-<dl>
-<dt><strong><code>rmap_link</code></strong> :&ensp;<code><a title="egse.dsi.rmap.ESL_RMAP" href="#egse.dsi.rmap.ESL_RMAP">ESL_RMAP</a></code></dt>
-<dd>the RMAP link connection</dd>
-</dl>
-<h2 id="returns">Returns</h2>
-<p>the updated transaction identifier (int).</p></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def update_transaction_identifier(rmap_link) -&gt; int:
-    &#34;&#34;&#34;
-    Updates the transaction identifier and returns the new value.
-
-    Args:
-        rmap_link (ESL_RMAP): the RMAP link connection
-
-    Returns:
-        the updated transaction identifier (int).
-    &#34;&#34;&#34;
-    tid = rmap_link.contents.transaction_identifier
-    tid = (tid + 1) &amp; 0xFFFF
-    rmap_link.contents.transaction_identifier = tid
-    return tid</code></pre>
 </details>
 </dd>
 </dl>
@@ -2643,139 +939,86 @@ after the given <code>timeout</code>, TODO: WHAT WILL HAPPEN THEN?</p>
 <section>
 <h2 class="section-title" id="header-classes">Classes</h2>
 <dl>
-<dt id="egse.dsi.rmap.CheckError"><code class="flex name class">
-<span>class <span class="ident">CheckError</span></span>
-<span>(</span><span>message, status)</span>
-</code></dt>
-<dd>
-<div class="desc"><p>Raised when a check fails and you want to pass a status values along with the message.</p></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">class CheckError(RMAPError):
-    &#34;&#34;&#34;
-    Raised when a check fails and you want to pass a status values along with the message.
-    &#34;&#34;&#34;
-
-    def __init__(self, message, status):
-        self.message = message
-        self.status  = status</code></pre>
-</details>
-<h3>Ancestors</h3>
-<ul class="hlist">
-<li><a title="egse.dsi.rmap.RMAPError" href="#egse.dsi.rmap.RMAPError">RMAPError</a></li>
-<li>builtins.Exception</li>
-<li>builtins.BaseException</li>
-</ul>
-</dd>
 <dt id="egse.dsi.rmap.ESL_RMAP"><code class="flex name class">
 <span>class <span class="ident">ESL_RMAP</span></span>
-<span>(</span><span>*args, **kwargs)</span>
 </code></dt>
 <dd>
-<div class="desc"><p>Structure base class</p></div>
+<div class="desc"><p>ESL_RMAP()</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">class ESL_RMAP(Structure):
-    _fields_ = [
-        (&#34;spw_device&#34;,                esl_p),
-        (&#34;target_key&#34;,                c_ubyte),
-        (&#34;target_logical_address&#34;,    c_ubyte),
-        (&#34;target_spw_address&#34;,        c_ubyte * 12),
-        (&#34;target_spw_address_len&#34;,    c_int),
-        (&#34;reply_spw_address&#34;,         c_ubyte * 12),
-        (&#34;reply_spw_address_len&#34;,     c_int),
-        (&#34;initiator_logical_address&#34;, c_ubyte),
-        (&#34;transaction_identifier&#34;,    c_uint),
-        (&#34;ESL_RMAP_error&#34;,            c_int)
-    ]</code></pre>
+<pre><code class="python">class ESL_RMAP:
+    spw_device = None
+    target_key = 0
+    target_logical_address = 0xFE
+    target_spw_address = 0x00
+    target_spw_address_len = 0
+    reply_spw_address = 0x00
+    reply_spw_address_len = 0
+    initiator_logical_address = 0xFE
+    transaction_identifier = 99
+    ESL_RMAP_error = 0
+
+    def __str__(self):
+        return textwrap.dedent(
+            f&#34;&#34;&#34;\
+            spw_device={self.spw_device}
+            target_key={self.target_key}
+            target_logical_address={self.target_logical_address}
+            target_spw_address={self.target_spw_address}
+            target_spw_address_len={self.target_spw_address_len}
+            reply_spw_address={self.reply_spw_address}
+            reply_spw_address_len={self.reply_spw_address_len}
+            initiator_logical_address={self.initiator_logical_address}
+            transaction_identifier={self.transaction_identifier}
+            ESL_RMAP_error={self.ESL_RMAP_error}
+            &#34;&#34;&#34;
+        )</code></pre>
 </details>
-<h3>Ancestors</h3>
-<ul class="hlist">
-<li>_ctypes.Structure</li>
-<li>_ctypes._CData</li>
-</ul>
-<h3>Instance variables</h3>
+<h3>Class variables</h3>
 <dl>
 <dt id="egse.dsi.rmap.ESL_RMAP.ESL_RMAP_error"><code class="name">var <span class="ident">ESL_RMAP_error</span></code></dt>
 <dd>
-<div class="desc"><p>Structure/Union member</p></div>
+<div class="desc"></div>
 </dd>
 <dt id="egse.dsi.rmap.ESL_RMAP.initiator_logical_address"><code class="name">var <span class="ident">initiator_logical_address</span></code></dt>
 <dd>
-<div class="desc"><p>Structure/Union member</p></div>
+<div class="desc"></div>
 </dd>
 <dt id="egse.dsi.rmap.ESL_RMAP.reply_spw_address"><code class="name">var <span class="ident">reply_spw_address</span></code></dt>
 <dd>
-<div class="desc"><p>Structure/Union member</p></div>
+<div class="desc"></div>
 </dd>
 <dt id="egse.dsi.rmap.ESL_RMAP.reply_spw_address_len"><code class="name">var <span class="ident">reply_spw_address_len</span></code></dt>
 <dd>
-<div class="desc"><p>Structure/Union member</p></div>
+<div class="desc"></div>
 </dd>
 <dt id="egse.dsi.rmap.ESL_RMAP.spw_device"><code class="name">var <span class="ident">spw_device</span></code></dt>
 <dd>
-<div class="desc"><p>Structure/Union member</p></div>
+<div class="desc"></div>
 </dd>
 <dt id="egse.dsi.rmap.ESL_RMAP.target_key"><code class="name">var <span class="ident">target_key</span></code></dt>
 <dd>
-<div class="desc"><p>Structure/Union member</p></div>
+<div class="desc"></div>
 </dd>
 <dt id="egse.dsi.rmap.ESL_RMAP.target_logical_address"><code class="name">var <span class="ident">target_logical_address</span></code></dt>
 <dd>
-<div class="desc"><p>Structure/Union member</p></div>
+<div class="desc"></div>
 </dd>
 <dt id="egse.dsi.rmap.ESL_RMAP.target_spw_address"><code class="name">var <span class="ident">target_spw_address</span></code></dt>
 <dd>
-<div class="desc"><p>Structure/Union member</p></div>
+<div class="desc"></div>
 </dd>
 <dt id="egse.dsi.rmap.ESL_RMAP.target_spw_address_len"><code class="name">var <span class="ident">target_spw_address_len</span></code></dt>
 <dd>
-<div class="desc"><p>Structure/Union member</p></div>
+<div class="desc"></div>
 </dd>
 <dt id="egse.dsi.rmap.ESL_RMAP.transaction_identifier"><code class="name">var <span class="ident">transaction_identifier</span></code></dt>
 <dd>
-<div class="desc"><p>Structure/Union member</p></div>
+<div class="desc"></div>
 </dd>
 </dl>
-</dd>
-<dt id="egse.dsi.rmap.LP_ESL_RMAP"><code class="flex name class">
-<span>class <span class="ident">rmap_p</span></span>
-<span>(</span><span>*args, **kwargs)</span>
-</code></dt>
-<dd>
-<div class="desc"><p>XXX to be provided</p></div>
-<h3>Ancestors</h3>
-<ul class="hlist">
-<li>_ctypes._Pointer</li>
-<li>_ctypes._CData</li>
-</ul>
-</dd>
-<dt id="egse.dsi.rmap.RMAPError"><code class="flex name class">
-<span>class <span class="ident">RMAPError</span></span>
-<span>(</span><span>*args, **kwargs)</span>
-</code></dt>
-<dd>
-<div class="desc"><p>Common base class for all non-exit exceptions.</p></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">class RMAPError(Exception):
-    pass</code></pre>
-</details>
-<h3>Ancestors</h3>
-<ul class="hlist">
-<li>builtins.Exception</li>
-<li>builtins.BaseException</li>
-</ul>
-<h3>Subclasses</h3>
-<ul class="hlist">
-<li><a title="egse.dsi.rmap.CheckError" href="#egse.dsi.rmap.CheckError">CheckError</a></li>
-</ul>
 </dd>
 </dl>
 </section>
@@ -2793,61 +1036,16 @@ after the given <code>timeout</code>, TODO: WHAT WILL HAPPEN THEN?</p>
 </li>
 <li><h3><a href="#header-functions">Functions</a></h3>
 <ul class="">
-<li><code><a title="egse.dsi.rmap.check_address_and_data_length" href="#egse.dsi.rmap.check_address_and_data_length">check_address_and_data_length</a></code></li>
-<li><code><a title="egse.dsi.rmap.check_data_crc" href="#egse.dsi.rmap.check_data_crc">check_data_crc</a></code></li>
-<li><code><a title="egse.dsi.rmap.check_header_crc" href="#egse.dsi.rmap.check_header_crc">check_header_crc</a></code></li>
-<li><code><a title="egse.dsi.rmap.check_initiator_logical_address" href="#egse.dsi.rmap.check_initiator_logical_address">check_initiator_logical_address</a></code></li>
-<li><code><a title="egse.dsi.rmap.check_instruction" href="#egse.dsi.rmap.check_instruction">check_instruction</a></code></li>
-<li><code><a title="egse.dsi.rmap.check_key" href="#egse.dsi.rmap.check_key">check_key</a></code></li>
-<li><code><a title="egse.dsi.rmap.check_protocol_id" href="#egse.dsi.rmap.check_protocol_id">check_protocol_id</a></code></li>
-<li><code><a title="egse.dsi.rmap.check_target_logical_address" href="#egse.dsi.rmap.check_target_logical_address">check_target_logical_address</a></code></li>
-<li><code><a title="egse.dsi.rmap.create_rmap_read_reply_packet" href="#egse.dsi.rmap.create_rmap_read_reply_packet">create_rmap_read_reply_packet</a></code></li>
-<li><code><a title="egse.dsi.rmap.create_rmap_read_request_packet" href="#egse.dsi.rmap.create_rmap_read_request_packet">create_rmap_read_request_packet</a></code></li>
-<li><code><a title="egse.dsi.rmap.create_rmap_unverified_write_packet" href="#egse.dsi.rmap.create_rmap_unverified_write_packet">create_rmap_unverified_write_packet</a></code></li>
-<li><code><a title="egse.dsi.rmap.create_rmap_verified_write_packet" href="#egse.dsi.rmap.create_rmap_verified_write_packet">create_rmap_verified_write_packet</a></code></li>
-<li><code><a title="egse.dsi.rmap.create_rmap_write_reply_packet" href="#egse.dsi.rmap.create_rmap_write_reply_packet">create_rmap_write_reply_packet</a></code></li>
-<li><code><a title="egse.dsi.rmap.get_address" href="#egse.dsi.rmap.get_address">get_address</a></code></li>
-<li><code><a title="egse.dsi.rmap.get_data" href="#egse.dsi.rmap.get_data">get_data</a></code></li>
-<li><code><a title="egse.dsi.rmap.get_data_length" href="#egse.dsi.rmap.get_data_length">get_data_length</a></code></li>
-<li><code><a title="egse.dsi.rmap.get_initiator_logical_address" href="#egse.dsi.rmap.get_initiator_logical_address">get_initiator_logical_address</a></code></li>
-<li><code><a title="egse.dsi.rmap.get_instruction_field" href="#egse.dsi.rmap.get_instruction_field">get_instruction_field</a></code></li>
-<li><code><a title="egse.dsi.rmap.get_protocol_id" href="#egse.dsi.rmap.get_protocol_id">get_protocol_id</a></code></li>
-<li><code><a title="egse.dsi.rmap.get_reply_address_field_length" href="#egse.dsi.rmap.get_reply_address_field_length">get_reply_address_field_length</a></code></li>
-<li><code><a title="egse.dsi.rmap.get_target_logical_address" href="#egse.dsi.rmap.get_target_logical_address">get_target_logical_address</a></code></li>
-<li><code><a title="egse.dsi.rmap.get_transaction_identifier" href="#egse.dsi.rmap.get_transaction_identifier">get_transaction_identifier</a></code></li>
-<li><code><a title="egse.dsi.rmap.is_command" href="#egse.dsi.rmap.is_command">is_command</a></code></li>
-<li><code><a title="egse.dsi.rmap.is_increment" href="#egse.dsi.rmap.is_increment">is_increment</a></code></li>
-<li><code><a title="egse.dsi.rmap.is_read" href="#egse.dsi.rmap.is_read">is_read</a></code></li>
-<li><code><a title="egse.dsi.rmap.is_reply" href="#egse.dsi.rmap.is_reply">is_reply</a></code></li>
-<li><code><a title="egse.dsi.rmap.is_reply_required" href="#egse.dsi.rmap.is_reply_required">is_reply_required</a></code></li>
-<li><code><a title="egse.dsi.rmap.is_reserved" href="#egse.dsi.rmap.is_reserved">is_reserved</a></code></li>
-<li><code><a title="egse.dsi.rmap.is_rmap" href="#egse.dsi.rmap.is_rmap">is_rmap</a></code></li>
-<li><code><a title="egse.dsi.rmap.is_verify" href="#egse.dsi.rmap.is_verify">is_verify</a></code></li>
-<li><code><a title="egse.dsi.rmap.is_write" href="#egse.dsi.rmap.is_write">is_write</a></code></li>
-<li><code><a title="egse.dsi.rmap.reply_address_length" href="#egse.dsi.rmap.reply_address_length">reply_address_length</a></code></li>
+<li><code><a title="egse.dsi.rmap.process_rmap_commands" href="#egse.dsi.rmap.process_rmap_commands">process_rmap_commands</a></code></li>
+<li><code><a title="egse.dsi.rmap.rmap_close_connection" href="#egse.dsi.rmap.rmap_close_connection">rmap_close_connection</a></code></li>
 <li><code><a title="egse.dsi.rmap.rmap_configure" href="#egse.dsi.rmap.rmap_configure">rmap_configure</a></code></li>
 <li><code><a title="egse.dsi.rmap.rmap_connection" href="#egse.dsi.rmap.rmap_connection">rmap_connection</a></code></li>
-<li><code><a title="egse.dsi.rmap.rmap_crc_check" href="#egse.dsi.rmap.rmap_crc_check">rmap_crc_check</a></code></li>
-<li><code><a title="egse.dsi.rmap.rmap_get_initiator_logical_address" href="#egse.dsi.rmap.rmap_get_initiator_logical_address">rmap_get_initiator_logical_address</a></code></li>
-<li><code><a title="egse.dsi.rmap.rmap_get_target_key" href="#egse.dsi.rmap.rmap_get_target_key">rmap_get_target_key</a></code></li>
-<li><code><a title="egse.dsi.rmap.rmap_get_target_logical_address" href="#egse.dsi.rmap.rmap_get_target_logical_address">rmap_get_target_logical_address</a></code></li>
+<li><code><a title="egse.dsi.rmap.rmap_initialise" href="#egse.dsi.rmap.rmap_initialise">rmap_initialise</a></code></li>
 <li><code><a title="egse.dsi.rmap.rmap_open_connection" href="#egse.dsi.rmap.rmap_open_connection">rmap_open_connection</a></code></li>
-<li><code><a title="egse.dsi.rmap.rmap_read" href="#egse.dsi.rmap.rmap_read">rmap_read</a></code></li>
-<li><code><a title="egse.dsi.rmap.rmap_read_request" href="#egse.dsi.rmap.rmap_read_request">rmap_read_request</a></code></li>
-<li><code><a title="egse.dsi.rmap.rmap_set_initiator_logical_address" href="#egse.dsi.rmap.rmap_set_initiator_logical_address">rmap_set_initiator_logical_address</a></code></li>
-<li><code><a title="egse.dsi.rmap.rmap_set_target_key" href="#egse.dsi.rmap.rmap_set_target_key">rmap_set_target_key</a></code></li>
-<li><code><a title="egse.dsi.rmap.rmap_set_target_logical_address" href="#egse.dsi.rmap.rmap_set_target_logical_address">rmap_set_target_logical_address</a></code></li>
-<li><code><a title="egse.dsi.rmap.rmap_set_target_spw_address" href="#egse.dsi.rmap.rmap_set_target_spw_address">rmap_set_target_spw_address</a></code></li>
-<li><code><a title="egse.dsi.rmap.rmap_set_verbosity" href="#egse.dsi.rmap.rmap_set_verbosity">rmap_set_verbosity</a></code></li>
-<li><code><a title="egse.dsi.rmap.rmap_write_request" href="#egse.dsi.rmap.rmap_write_request">rmap_write_request</a></code></li>
-<li><code><a title="egse.dsi.rmap.update_transaction_identifier" href="#egse.dsi.rmap.update_transaction_identifier">update_transaction_identifier</a></code></li>
 </ul>
 </li>
 <li><h3><a href="#header-classes">Classes</a></h3>
 <ul>
-<li>
-<h4><code><a title="egse.dsi.rmap.CheckError" href="#egse.dsi.rmap.CheckError">CheckError</a></code></h4>
-</li>
 <li>
 <h4><code><a title="egse.dsi.rmap.ESL_RMAP" href="#egse.dsi.rmap.ESL_RMAP">ESL_RMAP</a></code></h4>
 <ul class="">
@@ -2862,12 +1060,6 @@ after the given <code>timeout</code>, TODO: WHAT WILL HAPPEN THEN?</p>
 <li><code><a title="egse.dsi.rmap.ESL_RMAP.target_spw_address_len" href="#egse.dsi.rmap.ESL_RMAP.target_spw_address_len">target_spw_address_len</a></code></li>
 <li><code><a title="egse.dsi.rmap.ESL_RMAP.transaction_identifier" href="#egse.dsi.rmap.ESL_RMAP.transaction_identifier">transaction_identifier</a></code></li>
 </ul>
-</li>
-<li>
-<h4><code><a title="egse.dsi.rmap.LP_ESL_RMAP" href="#egse.dsi.rmap.LP_ESL_RMAP">LP_ESL_RMAP</a></code></h4>
-</li>
-<li>
-<h4><code><a title="egse.dsi.rmap.RMAPError" href="#egse.dsi.rmap.RMAPError">RMAPError</a></code></h4>
 </li>
 </ul>
 </li>

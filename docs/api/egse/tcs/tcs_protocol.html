@@ -39,6 +39,7 @@ from egse.device import DeviceTimeoutError
 from egse.metrics import define_metrics
 from egse.protocol import DynamicCommandProtocol
 from egse.settings import Settings
+from egse.setup import load_setup, Setup
 from egse.system import format_datetime
 from egse.tcs.tcs import TCSController
 from egse.tcs.tcs import TCSParameterNaming
@@ -59,8 +60,8 @@ class TCSCommand(ClientServerCommand):
 
 class TCSMetrics:
     &#34;&#34;&#34;Defines the metrics for the TCS EGSE that are maintained by the TCSProtocol class.&#34;&#34;&#34;
-    def __init__(self, origin: str, dashboard: str):
-        self.metrics = define_metrics(origin=origin, dashboard=dashboard)
+    def __init__(self, origin: str, dashboard: str, setup: Setup):
+        self.metrics = define_metrics(origin=origin, dashboard=dashboard, setup=setup)
 
     def __contains__(self, item):
         return self.metrics.__contains__(item)
@@ -78,15 +79,17 @@ class TCSProtocol(DynamicCommandProtocol):
     def __init__(self, control_server: ControlServer):
         super().__init__(control_server)
 
+        setup = load_setup()
+
         # Read the configuration metrics from the tm-dictionary
 
         self._metrics = TCSMetrics(origin=control_server.get_storage_mnemonic(),
-                                   dashboard=&#34;TCS_CONFIGURATION_MON&#34;)
+                                   dashboard=&#34;TCS_CONFIGURATION_MON&#34;, setup=setup)
 
         # Device naming is different from CGSE naming, the conversion is handled in the
         # TCSParameterNaming class.
 
-        self._hk_names = TCSParameterNaming(origin=control_server.get_storage_mnemonic())
+        self._hk_names = TCSParameterNaming(origin=control_server.get_storage_mnemonic(), setup=setup)
 
         # Set up two queue&#39;s to communicate with the TCS Telemetry Process.
         # The command queue is joinable because the Controller needs to wait for a response in
@@ -268,7 +271,7 @@ Arguments can be positional or keyword arguments, not both.</p></div>
 </dd>
 <dt id="egse.tcs.tcs_protocol.TCSMetrics"><code class="flex name class">
 <span>class <span class="ident">TCSMetrics</span></span>
-<span>(</span><span>origin: str, dashboard: str)</span>
+<span>(</span><span>origin: str, dashboard: str, setup: <a title="egse.setup.Setup" href="../setup.html#egse.setup.Setup">Setup</a>)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Defines the metrics for the TCS EGSE that are maintained by the TCSProtocol class.</p></div>
@@ -278,8 +281,8 @@ Arguments can be positional or keyword arguments, not both.</p></div>
 </summary>
 <pre><code class="python">class TCSMetrics:
     &#34;&#34;&#34;Defines the metrics for the TCS EGSE that are maintained by the TCSProtocol class.&#34;&#34;&#34;
-    def __init__(self, origin: str, dashboard: str):
-        self.metrics = define_metrics(origin=origin, dashboard=dashboard)
+    def __init__(self, origin: str, dashboard: str, setup: Setup):
+        self.metrics = define_metrics(origin=origin, dashboard=dashboard, setup=setup)
 
     def __contains__(self, item):
         return self.metrics.__contains__(item)
@@ -340,15 +343,17 @@ update of its state by calling the <code>update_connection_state()</code> method
     def __init__(self, control_server: ControlServer):
         super().__init__(control_server)
 
+        setup = load_setup()
+
         # Read the configuration metrics from the tm-dictionary
 
         self._metrics = TCSMetrics(origin=control_server.get_storage_mnemonic(),
-                                   dashboard=&#34;TCS_CONFIGURATION_MON&#34;)
+                                   dashboard=&#34;TCS_CONFIGURATION_MON&#34;, setup=setup)
 
         # Device naming is different from CGSE naming, the conversion is handled in the
         # TCSParameterNaming class.
 
-        self._hk_names = TCSParameterNaming(origin=control_server.get_storage_mnemonic())
+        self._hk_names = TCSParameterNaming(origin=control_server.get_storage_mnemonic(), setup=setup)
 
         # Set up two queue&#39;s to communicate with the TCS Telemetry Process.
         # The command queue is joinable because the Controller needs to wait for a response in

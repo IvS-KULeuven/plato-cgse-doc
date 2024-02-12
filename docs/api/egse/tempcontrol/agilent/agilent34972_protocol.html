@@ -30,11 +30,9 @@
 
 from prometheus_client import Gauge
 
-from egse.confman import ConfigurationManagerProxy
-# from egse.fdir.fdir_manager import FdirManagerProxy
 from egse.protocol import CommandProtocol
 from egse.settings import Settings
-from egse.setup import get_setup
+from egse.setup import load_setup
 from egse.synoptics import SynopticsManagerProxy
 from egse.system import format_datetime
 from egse.tempcontrol.agilent.agilent34972 import Agilent34972Controller
@@ -42,7 +40,6 @@ from egse.tempcontrol.agilent.agilent34972 import Agilent34972Interface
 from egse.tempcontrol.agilent.agilent34972 import Agilent34972Simulator
 from egse.tempcontrol.agilent.agilent34972_devif import Agilent34972Command
 from egse.zmq_ser import bind_address
-from egse.synoptics import SynopticsManagerProxy
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +67,7 @@ class Agilent34972Protocol(CommandProtocol):
         self.build_device_method_lookup_table(self.agilent)
 
         # Get scan list from setup
-        setup = get_setup()
+        setup = load_setup()
 
         self._setup = setup[&#39;gse&#39;][f&#39;agilent34972_{device_index}&#39;]
         self._conversions = self._setup[&#39;conversion&#39;]
@@ -174,7 +171,7 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
         self.build_device_method_lookup_table(self.agilent)
 
         # Get scan list from setup
-        setup = get_setup()
+        setup = load_setup()
 
         self._setup = setup[&#39;gse&#39;][f&#39;agilent34972_{device_index}&#39;]
         self._conversions = self._setup[&#39;conversion&#39;]

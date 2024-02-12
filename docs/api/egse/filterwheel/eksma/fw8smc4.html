@@ -41,17 +41,12 @@ import logging
 
 import numpy as np
 
-from egse.confman import ConfigurationManagerProxy
 from egse.decorators import dynamic_interface
 from egse.device import DeviceInterface
 from egse.filterwheel import FilterWheelError
-from egse.filterwheel.eksma.fw8smc4_devif import FilterWheel8SMC4Error
-from egse.filterwheel.eksma.fw8smc4_devif import FilterWheel8SMC4EthernetInterface
-from egse.filterwheel.eksma.fw8smc4_devif import FilterWheel8SMC4USBInterface
-
-
 from egse.proxy import Proxy
 from egse.settings import Settings
+from egse.setup import load_setup
 from egse.zmq_ser import connect_address
 
 LOGGER = logging.getLogger(__name__)
@@ -78,7 +73,6 @@ class FilterWheel8SMC4Interface(DeviceInterface):
         Gets the attenuation setup configuration loaded from the configuration manager proxy
         &#34;&#34;&#34;
         return NotImplemented
-
 
     @dynamic_interface
     def set_position(self):
@@ -187,22 +181,22 @@ class FilterWheel8SMC4Simulator(FilterWheel8SMC4Interface):
         # when the wheel factor is a character, the filter is a spectral filter
         # will be late replaced by the setup configuration
         self.wheel1 = {0: 0,
-                      1: 2,
-                      2: 1,
-                      3: 0.03,
-                      4: &#34;T4K&#34;,
-                      5: &#34;T5K&#34;,
-                      6: &#34;T6K&#34;,
-                      7: &#34;T6.5K&#34;}
+                       1: 2,
+                       2: 1,
+                       3: 0.03,
+                       4: &#34;T4K&#34;,
+                       5: &#34;T5K&#34;,
+                       6: &#34;T6K&#34;,
+                       7: &#34;T6.5K&#34;}
 
         self.wheel2 = {0: 0,
-                      1: 0.3,
-                      2: 0.05,
-                      3: 5,
-                      4: 2,
-                      5: 0.1,
-                      6: 0.15,
-                      7: 3}
+                       1: 0.3,
+                       2: 0.05,
+                       3: 5,
+                       4: 2,
+                       5: 0.1,
+                       6: 0.15,
+                       7: 3}
         self._setup = None
         self._att_level = [self.wheel1, self.wheel2, 0]
 
@@ -236,7 +230,6 @@ class FilterWheel8SMC4Simulator(FilterWheel8SMC4Interface):
                              &#34;Current Motor 2&#34;: 0,
                              &#34;Current Motor 3&#34;: 0}
 
-
     def is_connected(self):
         return True
 
@@ -253,8 +246,7 @@ class FilterWheel8SMC4Simulator(FilterWheel8SMC4Interface):
         self.connect()
 
     def load_wheels(self):
-        with ConfigurationManagerProxy() as cm:
-            self._setup = cm.get_setup()
+        self._setup = load_setup()
         #todo: still some work here to manage the default setup to be loaded
         return self._setup
 
@@ -395,18 +387,24 @@ class FilterWheel8SMC4Controller(FilterWheel8SMC4Interface):
 
         super().__init__()
 
+        from egse.filterwheel.eksma.fw8smc4_devif import FilterWheel8SMC4Error
+        from egse.filterwheel.eksma.fw8smc4_devif import FilterWheel8SMC4EthernetInterface
+        from egse.filterwheel.eksma.fw8smc4_devif import FilterWheel8SMC4USBInterface
+
+        self._setup = None
+
         LOGGER.debug(&#34;Initializing Filter Wheel 8SMC4 Controller&#34;)
         # when the wheel factor is 0 there is no filter in the wheel, if OD units are considered
         # when the wheel factor is a character, the filter is a spectral filter
         # will be late replaced by the setup configuration
         self.wheel1 = {0: 0,
-                      1: 2,
-                      2: 1,
-                      3: 0.03,
-                      4: &#34;T4K&#34;,
-                      5: &#34;T5K&#34;,
-                      6: &#34;T6K&#34;,
-                      7: &#34;T6.5K&#34;}
+                       1: 2,
+                       2: 1,
+                       3: 0.03,
+                       4: &#34;T4K&#34;,
+                       5: &#34;T5K&#34;,
+                       6: &#34;T6K&#34;,
+                       7: &#34;T6.5K&#34;}
 
         self.wheel2 = {0: 0,
                        1: 0.3,
@@ -490,14 +488,12 @@ class FilterWheel8SMC4Controller(FilterWheel8SMC4Interface):
         return False
 
     def load_wheels(self):
-        with ConfigurationManagerProxy() as cm:
-            self._setup = cm.get_setup()
-        #todo: still some work here to manage the default setup to be loaded
+        self._setup = load_setup()
+        # todo: still some work here to manage the default setup to be loaded
         return self._setup
 
     def get_id(self):
         return self.fw.get_id()
-
 
     def get_response(self, cmd_string):
         response = self.fw.get_response(cmd_string)
@@ -721,18 +717,24 @@ class FilterWheel8SMC4Proxy(Proxy, FilterWheel8SMC4Interface):
 
         super().__init__()
 
+        from egse.filterwheel.eksma.fw8smc4_devif import FilterWheel8SMC4Error
+        from egse.filterwheel.eksma.fw8smc4_devif import FilterWheel8SMC4EthernetInterface
+        from egse.filterwheel.eksma.fw8smc4_devif import FilterWheel8SMC4USBInterface
+
+        self._setup = None
+
         LOGGER.debug(&#34;Initializing Filter Wheel 8SMC4 Controller&#34;)
         # when the wheel factor is 0 there is no filter in the wheel, if OD units are considered
         # when the wheel factor is a character, the filter is a spectral filter
         # will be late replaced by the setup configuration
         self.wheel1 = {0: 0,
-                      1: 2,
-                      2: 1,
-                      3: 0.03,
-                      4: &#34;T4K&#34;,
-                      5: &#34;T5K&#34;,
-                      6: &#34;T6K&#34;,
-                      7: &#34;T6.5K&#34;}
+                       1: 2,
+                       2: 1,
+                       3: 0.03,
+                       4: &#34;T4K&#34;,
+                       5: &#34;T5K&#34;,
+                       6: &#34;T6K&#34;,
+                       7: &#34;T6.5K&#34;}
 
         self.wheel2 = {0: 0,
                        1: 0.3,
@@ -816,14 +818,12 @@ class FilterWheel8SMC4Proxy(Proxy, FilterWheel8SMC4Interface):
         return False
 
     def load_wheels(self):
-        with ConfigurationManagerProxy() as cm:
-            self._setup = cm.get_setup()
-        #todo: still some work here to manage the default setup to be loaded
+        self._setup = load_setup()
+        # todo: still some work here to manage the default setup to be loaded
         return self._setup
 
     def get_id(self):
         return self.fw.get_id()
-
 
     def get_response(self, cmd_string):
         response = self.fw.get_response(cmd_string)
@@ -1202,7 +1202,6 @@ to the home position</p></div>
         Gets the attenuation setup configuration loaded from the configuration manager proxy
         &#34;&#34;&#34;
         return NotImplemented
-
 
     @dynamic_interface
     def set_position(self):
@@ -1687,22 +1686,22 @@ during initialization, a ConnectionError will be raised.</p>
         # when the wheel factor is a character, the filter is a spectral filter
         # will be late replaced by the setup configuration
         self.wheel1 = {0: 0,
-                      1: 2,
-                      2: 1,
-                      3: 0.03,
-                      4: &#34;T4K&#34;,
-                      5: &#34;T5K&#34;,
-                      6: &#34;T6K&#34;,
-                      7: &#34;T6.5K&#34;}
+                       1: 2,
+                       2: 1,
+                       3: 0.03,
+                       4: &#34;T4K&#34;,
+                       5: &#34;T5K&#34;,
+                       6: &#34;T6K&#34;,
+                       7: &#34;T6.5K&#34;}
 
         self.wheel2 = {0: 0,
-                      1: 0.3,
-                      2: 0.05,
-                      3: 5,
-                      4: 2,
-                      5: 0.1,
-                      6: 0.15,
-                      7: 3}
+                       1: 0.3,
+                       2: 0.05,
+                       3: 5,
+                       4: 2,
+                       5: 0.1,
+                       6: 0.15,
+                       7: 3}
         self._setup = None
         self._att_level = [self.wheel1, self.wheel2, 0]
 
@@ -1736,7 +1735,6 @@ during initialization, a ConnectionError will be raised.</p>
                              &#34;Current Motor 2&#34;: 0,
                              &#34;Current Motor 3&#34;: 0}
 
-
     def is_connected(self):
         return True
 
@@ -1753,8 +1751,7 @@ during initialization, a ConnectionError will be raised.</p>
         self.connect()
 
     def load_wheels(self):
-        with ConfigurationManagerProxy() as cm:
-            self._setup = cm.get_setup()
+        self._setup = load_setup()
         #todo: still some work here to manage the default setup to be loaded
         return self._setup
 

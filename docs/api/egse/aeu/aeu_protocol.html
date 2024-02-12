@@ -37,7 +37,7 @@ from egse.device import DeviceTimeoutError
 from egse.hk import read_conversion_dict, convert_hk_names
 from egse.protocol import CommandProtocol
 from egse.settings import Settings
-from egse.state import GlobalState
+from egse.setup import load_setup
 from egse.system import format_datetime, SignalCatcher
 from egse.zmq_ser import bind_address
 
@@ -145,6 +145,7 @@ class AEUProtocol(CommandProtocol):
         super().__init__()
 
         self.control_server = control_server
+        self.setup = load_setup()
 
     def get_bind_address(self):
         &#34;&#34;&#34; Return the address for the AEU protocol to bind to.
@@ -186,7 +187,8 @@ class CRIOProtocol(AEUProtocol):
 
         super(CRIOProtocol, self).__init__(control_server)
 
-        self.hk_conversion_table = read_conversion_dict(self.control_server.get_storage_mnemonic(), use_site=False)
+        self.hk_conversion_table = read_conversion_dict(self.control_server.get_storage_mnemonic(), use_site=False,
+                                                        setup=self.setup)
 
         if Settings.simulation_mode():
 
@@ -464,8 +466,6 @@ class AWGProtocol(AEUProtocol):
 
         self.build_device_method_lookup_table(self.awg)
 
-        self.setup = GlobalState.setup
-
     def get_housekeeping(self) -&gt; dict:
         &#34;&#34;&#34; Return the housekeeping.
 
@@ -528,6 +528,7 @@ class AWGProtocol(AEUProtocol):
         super().__init__()
 
         self.control_server = control_server
+        self.setup = load_setup()
 
     def get_bind_address(self):
         &#34;&#34;&#34; Return the address for the AEU protocol to bind to.
@@ -811,8 +812,6 @@ Returns: Command string for the AWG.</li>
 
         self.build_device_method_lookup_table(self.awg)
 
-        self.setup = GlobalState.setup
-
     def get_housekeeping(self) -&gt; dict:
         &#34;&#34;&#34; Return the housekeeping.
 
@@ -975,7 +974,8 @@ Returns: Command string for the cRIO.</li>
 
         super(CRIOProtocol, self).__init__(control_server)
 
-        self.hk_conversion_table = read_conversion_dict(self.control_server.get_storage_mnemonic(), use_site=False)
+        self.hk_conversion_table = read_conversion_dict(self.control_server.get_storage_mnemonic(), use_site=False,
+                                                        setup=self.setup)
 
         if Settings.simulation_mode():
 

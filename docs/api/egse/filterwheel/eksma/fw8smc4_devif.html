@@ -158,16 +158,7 @@ class FilterWheel8SMC4USBInterface:
                 f&#34;{x_device_information.Minor!r}.&#34;
                 f&#34;{x_device_information.Release!r}&#34;
             )
-            # version = repr(x_device_information.Major) + &#34;.&#34; + \
-            #           repr(x_device_information.Minor) + &#34;.&#34; + \
-            #           repr(x_device_information.Release)
             description = f&#34;{string_at(x_device_information.ProductDescription).decode()!r}&#34;
-            logger.debug(
-                f&#34;Device information:Product Description: {description}, version: {version}&#34;
-            )
-            # logger.info(&#34;\nDevice information:&#34; + &#34;\nProduct Description:&#34; +
-            #             repr(string_at(x_device_information.ProductDescription).decode()) +
-            #             &#34;\nVersion: &#34; + version)
             device_id = {
                 &#34;Product Description&#34;: description,
                 &#34;Version&#34;: version
@@ -191,26 +182,24 @@ class FilterWheel8SMC4USBInterface:
         self.move_wheel(9)
 
         self.command_zero()
-        logging.info(f&#34;New zero position reached:({self.get_position()[0]})&#34;)
-        logging.info(f&#34;Commanding the wheels to the equalized position:({position})&#34;)
-
+        
         self.move_wheel(position+1)
-        logging.info(f&#34;New equalized position reached at:({self.get_position()[0]})&#34;)
 
     def move_wheel(self, steps):
-        print(&#34;moving wheel to the following number of x25 steps:&#34;, steps)
         steps = steps - 1
         try:
             ximc.command_move(self._devId, steps*25, 0)
-            time.sleep(0.3)
-            while self.is_moving() != 0:
-                logger.info(&#34;The wheel is moving ...&#34;)
-                time.sleep(0.03)
-            logger.info(&#34;... the wheel stopped its movement&#34;)
+            time.sleep(2)
+            while self.get_speed() != 0:
+                time.sleep(1)
         except AssertionError:
             logger.warning(&#34;Something went wrong when moving the filterwheel&#34;)
 
     def set_pos(self, pos_wheel2, pos_wheel1):
+        self.homing()
+        while self.get_speed() != 0:
+            time.sleep(1)
+
         # delay so the commands don&#39;t overlap
         # the wheel 2 is the one that moves (opposite side of the motor)
         # gets the actual position
@@ -222,7 +211,6 @@ class FilterWheel8SMC4USBInterface:
         # 1 turn of the wheel has 200 steps, so each transition is reached by 25 steps.
         if pos_wheel1 == pos_wheel2:
             self.equalize_wheels(pos_wheel2)
-            logger.info(&#34;position 1&amp;2 reached&#34;)
 
         elif pos_wheel1 &lt; pos_wheel2:
             if abs(pos) &lt; pos_wheel1*25:
@@ -230,9 +218,7 @@ class FilterWheel8SMC4USBInterface:
             else:
                 self.equalize_wheels(pos_wheel1)
 
-            logger.info(&#34;position 1 reached&#34;)
             self.move_wheel(pos_wheel2-7)
-            logger.info(&#34;position 2 reached&#34;)
 
         elif pos_wheel1 &gt; pos_wheel2:
 
@@ -241,41 +227,27 @@ class FilterWheel8SMC4USBInterface:
 
             else:
                 self.equalize_wheels(pos_wheel1)
-            logger.info(&#34;position 1 reached&#34;)
             self.move_wheel(pos_wheel2+1)
-            logger.info(&#34;position 2 reached&#34;)
 
-        _output = self.wait_stop(10)
-        if _output == 0:
-            logger.info(&#34;Movement finished&#34;)
-        if _output &gt; 0:
-            logger.warning(&#34;Movement finished after forcing the wait_stop&#34;)
-        if _output &lt; 0:
-            logger.error(&#34;Error on movement&#34;)
-        return _output
+
+        return 0
 
     def command_zero(self):
         logger.warning(&#34;Commanding the wheels to zero position&#34;)
         try:
             ximc.command_zero(self._devId)
-            time.sleep(0.3)
-            while self.is_moving() != 0:
-                logger.info(&#34;The wheel is moving to zero...&#34;)
+            while self.get_speed() != 0:
                 time.sleep(0.03)
-            logger.info(&#34;... the wheel stopped its movement&#34;)
         except AssertionError:
             logger.warning(&#34;Something went wrong when moving the filterwheel&#34;)
 
     def homing(self):
-        logger.info(&#34;Starting homing sequence ...&#34;)
-
+        logger.info(&#34;Starting homing sequence&#34;)
         ximc.command_homezero(self._devId)
 
-        logger.info(&#34;... Wheels homing succeeded&#34;)
 
     def get_status(self):
         status = status_t()
-
         ximc.get_status(self._devId, byref(status))
 
         return status
@@ -284,30 +256,6 @@ class FilterWheel8SMC4USBInterface:
         _speed = self.get_status()
         return _speed.CurSpeed
 
-    #fixme: this is not working, so don&#39;t use it for the moment. Replaced with time.sleeps
-    def wait_stop(self, t):
-        _output = None
-        timeout = time.time() + t
-        time.sleep(0.3)
-        _speed = self.get_speed()
-        while time.time() &lt; timeout:
-            time.sleep(0.03)
-            _speed = self.get_speed()
-            if _speed == 0:
-                break
-        if _speed != 0:
-            logger.warning(&#34;wait_stop timeout over but the motor is still running, forcing the wheel to stop&#34;)
-            result = lib.command_wait_for_stop(self._devId, 10)
-            if result.Result == Ok:
-                logger.warning(&#34;The wheel stopped after forcing command&#34;)
-                _output = 1
-            else:
-                logger.error(&#34;An error occurred during the movement&#34;)
-                _output = -1
-        else:
-            _output = 0
-        return _output
-
     def get_flags(self):
         status = self.get_status()
         return (status.Flags)
@@ -315,6 +263,7 @@ class FilterWheel8SMC4USBInterface:
     def is_moving(self):
         mvt = self.get_status()
         return mvt.MoveSts
+
 
 
 
@@ -391,12 +340,6 @@ class FilterWheel8SMC4EthernetInterface:
             #           repr(x_device_information.Minor) + &#34;.&#34; + \
             #           repr(x_device_information.Release)
             description = f&#34;{string_at(x_device_information.ProductDescription).decode()!r}&#34;
-            logger.debug(
-                f&#34;Device information:Product Description: {description}, version: {version}&#34;
-            )
-            # logger.info(&#34;\nDevice information:&#34; + &#34;\nProduct Description:&#34; +
-            #             repr(string_at(x_device_information.ProductDescription).decode()) +
-            #             &#34;\nVersion: &#34; + version)
             device_id = {
                 &#34;Product Description&#34;: description,
                 &#34;Version&#34;: version
@@ -432,14 +375,15 @@ class FilterWheel8SMC4EthernetInterface:
         try:
             lib.command_move(self._fw, steps*25, 0)
             time.sleep(0.3)
+            logger.info(&#34;The wheel is moving ...&#34;)
             while self.is_moving() != 0:
-                logger.info(&#34;The wheel is moving ...&#34;)
-                time.sleep(0.03)
+                time.sleep(0.3)
             logger.info(&#34;... the wheel stopped its movement&#34;)
         except AssertionError:
             logger.warning(&#34;Something went wrong when moving the filterwheel&#34;)
 
     def set_pos(self, pos_wheel1, pos_wheel2):
+        self.homing()
         # delay so the commands don&#39;t overlap
         # the wheel 2 is the one that moves (opposite side of the motor)
         # gets the actual position
@@ -451,7 +395,7 @@ class FilterWheel8SMC4EthernetInterface:
         # 1 turn of the wheel has 200 steps, so each transition is reached by 25 steps.
         if pos_wheel1 == pos_wheel2:
             self.equalize_wheels(pos_wheel2)
-            logger.info(&#34;position 1&amp;2 reached&#34;)
+            logger.info(&#34;Positions reached for both wheels&#34;)
 
         elif pos_wheel1 &lt; pos_wheel2:
             if abs(pos) &lt; pos_wheel1*25:
@@ -488,9 +432,9 @@ class FilterWheel8SMC4EthernetInterface:
         try:
             lib.command_zero(self._fw)
             time.sleep(0.3)
+            logger.info(&#34;The wheel is moving to zero...&#34;)
             while self.is_moving() != 0:
-                logger.info(&#34;The wheel is moving to zero...&#34;)
-                time.sleep(0.03)
+                time.sleep(0.3)
             logger.info(&#34;... the wheel stopped its movement&#34;)
         except AssertionError:
             logger.warning(&#34;Something went wrong when moving the filterwheel&#34;)
@@ -718,12 +662,6 @@ Arguments can be positional or keyword arguments, not both.</p></div>
             #           repr(x_device_information.Minor) + &#34;.&#34; + \
             #           repr(x_device_information.Release)
             description = f&#34;{string_at(x_device_information.ProductDescription).decode()!r}&#34;
-            logger.debug(
-                f&#34;Device information:Product Description: {description}, version: {version}&#34;
-            )
-            # logger.info(&#34;\nDevice information:&#34; + &#34;\nProduct Description:&#34; +
-            #             repr(string_at(x_device_information.ProductDescription).decode()) +
-            #             &#34;\nVersion: &#34; + version)
             device_id = {
                 &#34;Product Description&#34;: description,
                 &#34;Version&#34;: version
@@ -759,14 +697,15 @@ Arguments can be positional or keyword arguments, not both.</p></div>
         try:
             lib.command_move(self._fw, steps*25, 0)
             time.sleep(0.3)
+            logger.info(&#34;The wheel is moving ...&#34;)
             while self.is_moving() != 0:
-                logger.info(&#34;The wheel is moving ...&#34;)
-                time.sleep(0.03)
+                time.sleep(0.3)
             logger.info(&#34;... the wheel stopped its movement&#34;)
         except AssertionError:
             logger.warning(&#34;Something went wrong when moving the filterwheel&#34;)
 
     def set_pos(self, pos_wheel1, pos_wheel2):
+        self.homing()
         # delay so the commands don&#39;t overlap
         # the wheel 2 is the one that moves (opposite side of the motor)
         # gets the actual position
@@ -778,7 +717,7 @@ Arguments can be positional or keyword arguments, not both.</p></div>
         # 1 turn of the wheel has 200 steps, so each transition is reached by 25 steps.
         if pos_wheel1 == pos_wheel2:
             self.equalize_wheels(pos_wheel2)
-            logger.info(&#34;position 1&amp;2 reached&#34;)
+            logger.info(&#34;Positions reached for both wheels&#34;)
 
         elif pos_wheel1 &lt; pos_wheel2:
             if abs(pos) &lt; pos_wheel1*25:
@@ -815,9 +754,9 @@ Arguments can be positional or keyword arguments, not both.</p></div>
         try:
             lib.command_zero(self._fw)
             time.sleep(0.3)
+            logger.info(&#34;The wheel is moving to zero...&#34;)
             while self.is_moving() != 0:
-                logger.info(&#34;The wheel is moving to zero...&#34;)
-                time.sleep(0.03)
+                time.sleep(0.3)
             logger.info(&#34;... the wheel stopped its movement&#34;)
         except AssertionError:
             logger.warning(&#34;Something went wrong when moving the filterwheel&#34;)
@@ -899,9 +838,9 @@ Arguments can be positional or keyword arguments, not both.</p></div>
     try:
         lib.command_zero(self._fw)
         time.sleep(0.3)
+        logger.info(&#34;The wheel is moving to zero...&#34;)
         while self.is_moving() != 0:
-            logger.info(&#34;The wheel is moving to zero...&#34;)
-            time.sleep(0.03)
+            time.sleep(0.3)
         logger.info(&#34;... the wheel stopped its movement&#34;)
     except AssertionError:
         logger.warning(&#34;Something went wrong when moving the filterwheel&#34;)</code></pre>
@@ -1017,12 +956,6 @@ Arguments can be positional or keyword arguments, not both.</p></div>
         #           repr(x_device_information.Minor) + &#34;.&#34; + \
         #           repr(x_device_information.Release)
         description = f&#34;{string_at(x_device_information.ProductDescription).decode()!r}&#34;
-        logger.debug(
-            f&#34;Device information:Product Description: {description}, version: {version}&#34;
-        )
-        # logger.info(&#34;\nDevice information:&#34; + &#34;\nProduct Description:&#34; +
-        #             repr(string_at(x_device_information.ProductDescription).decode()) +
-        #             &#34;\nVersion: &#34; + version)
         device_id = {
             &#34;Product Description&#34;: description,
             &#34;Version&#34;: version
@@ -1180,9 +1113,9 @@ and validate the answer.</p>
     try:
         lib.command_move(self._fw, steps*25, 0)
         time.sleep(0.3)
+        logger.info(&#34;The wheel is moving ...&#34;)
         while self.is_moving() != 0:
-            logger.info(&#34;The wheel is moving ...&#34;)
-            time.sleep(0.03)
+            time.sleep(0.3)
         logger.info(&#34;... the wheel stopped its movement&#34;)
     except AssertionError:
         logger.warning(&#34;Something went wrong when moving the filterwheel&#34;)</code></pre>
@@ -1198,6 +1131,7 @@ and validate the answer.</p>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def set_pos(self, pos_wheel1, pos_wheel2):
+    self.homing()
     # delay so the commands don&#39;t overlap
     # the wheel 2 is the one that moves (opposite side of the motor)
     # gets the actual position
@@ -1209,7 +1143,7 @@ and validate the answer.</p>
     # 1 turn of the wheel has 200 steps, so each transition is reached by 25 steps.
     if pos_wheel1 == pos_wheel2:
         self.equalize_wheels(pos_wheel2)
-        logger.info(&#34;position 1&amp;2 reached&#34;)
+        logger.info(&#34;Positions reached for both wheels&#34;)
 
     elif pos_wheel1 &lt; pos_wheel2:
         if abs(pos) &lt; pos_wheel1*25:
@@ -1339,16 +1273,7 @@ connected via USB. It uses a wrapped c library (ximc) to communicate with the de
                 f&#34;{x_device_information.Minor!r}.&#34;
                 f&#34;{x_device_information.Release!r}&#34;
             )
-            # version = repr(x_device_information.Major) + &#34;.&#34; + \
-            #           repr(x_device_information.Minor) + &#34;.&#34; + \
-            #           repr(x_device_information.Release)
             description = f&#34;{string_at(x_device_information.ProductDescription).decode()!r}&#34;
-            logger.debug(
-                f&#34;Device information:Product Description: {description}, version: {version}&#34;
-            )
-            # logger.info(&#34;\nDevice information:&#34; + &#34;\nProduct Description:&#34; +
-            #             repr(string_at(x_device_information.ProductDescription).decode()) +
-            #             &#34;\nVersion: &#34; + version)
             device_id = {
                 &#34;Product Description&#34;: description,
                 &#34;Version&#34;: version
@@ -1372,26 +1297,24 @@ connected via USB. It uses a wrapped c library (ximc) to communicate with the de
         self.move_wheel(9)
 
         self.command_zero()
-        logging.info(f&#34;New zero position reached:({self.get_position()[0]})&#34;)
-        logging.info(f&#34;Commanding the wheels to the equalized position:({position})&#34;)
-
+        
         self.move_wheel(position+1)
-        logging.info(f&#34;New equalized position reached at:({self.get_position()[0]})&#34;)
 
     def move_wheel(self, steps):
-        print(&#34;moving wheel to the following number of x25 steps:&#34;, steps)
         steps = steps - 1
         try:
             ximc.command_move(self._devId, steps*25, 0)
-            time.sleep(0.3)
-            while self.is_moving() != 0:
-                logger.info(&#34;The wheel is moving ...&#34;)
-                time.sleep(0.03)
-            logger.info(&#34;... the wheel stopped its movement&#34;)
+            time.sleep(2)
+            while self.get_speed() != 0:
+                time.sleep(1)
         except AssertionError:
             logger.warning(&#34;Something went wrong when moving the filterwheel&#34;)
 
     def set_pos(self, pos_wheel2, pos_wheel1):
+        self.homing()
+        while self.get_speed() != 0:
+            time.sleep(1)
+
         # delay so the commands don&#39;t overlap
         # the wheel 2 is the one that moves (opposite side of the motor)
         # gets the actual position
@@ -1403,7 +1326,6 @@ connected via USB. It uses a wrapped c library (ximc) to communicate with the de
         # 1 turn of the wheel has 200 steps, so each transition is reached by 25 steps.
         if pos_wheel1 == pos_wheel2:
             self.equalize_wheels(pos_wheel2)
-            logger.info(&#34;position 1&amp;2 reached&#34;)
 
         elif pos_wheel1 &lt; pos_wheel2:
             if abs(pos) &lt; pos_wheel1*25:
@@ -1411,9 +1333,7 @@ connected via USB. It uses a wrapped c library (ximc) to communicate with the de
             else:
                 self.equalize_wheels(pos_wheel1)
 
-            logger.info(&#34;position 1 reached&#34;)
             self.move_wheel(pos_wheel2-7)
-            logger.info(&#34;position 2 reached&#34;)
 
         elif pos_wheel1 &gt; pos_wheel2:
 
@@ -1422,41 +1342,27 @@ connected via USB. It uses a wrapped c library (ximc) to communicate with the de
 
             else:
                 self.equalize_wheels(pos_wheel1)
-            logger.info(&#34;position 1 reached&#34;)
             self.move_wheel(pos_wheel2+1)
-            logger.info(&#34;position 2 reached&#34;)
 
-        _output = self.wait_stop(10)
-        if _output == 0:
-            logger.info(&#34;Movement finished&#34;)
-        if _output &gt; 0:
-            logger.warning(&#34;Movement finished after forcing the wait_stop&#34;)
-        if _output &lt; 0:
-            logger.error(&#34;Error on movement&#34;)
-        return _output
+
+        return 0
 
     def command_zero(self):
         logger.warning(&#34;Commanding the wheels to zero position&#34;)
         try:
             ximc.command_zero(self._devId)
-            time.sleep(0.3)
-            while self.is_moving() != 0:
-                logger.info(&#34;The wheel is moving to zero...&#34;)
+            while self.get_speed() != 0:
                 time.sleep(0.03)
-            logger.info(&#34;... the wheel stopped its movement&#34;)
         except AssertionError:
             logger.warning(&#34;Something went wrong when moving the filterwheel&#34;)
 
     def homing(self):
-        logger.info(&#34;Starting homing sequence ...&#34;)
-
+        logger.info(&#34;Starting homing sequence&#34;)
         ximc.command_homezero(self._devId)
 
-        logger.info(&#34;... Wheels homing succeeded&#34;)
 
     def get_status(self):
         status = status_t()
-
         ximc.get_status(self._devId, byref(status))
 
         return status
@@ -1464,30 +1370,6 @@ connected via USB. It uses a wrapped c library (ximc) to communicate with the de
     def get_speed(self):
         _speed = self.get_status()
         return _speed.CurSpeed
-
-    #fixme: this is not working, so don&#39;t use it for the moment. Replaced with time.sleeps
-    def wait_stop(self, t):
-        _output = None
-        timeout = time.time() + t
-        time.sleep(0.3)
-        _speed = self.get_speed()
-        while time.time() &lt; timeout:
-            time.sleep(0.03)
-            _speed = self.get_speed()
-            if _speed == 0:
-                break
-        if _speed != 0:
-            logger.warning(&#34;wait_stop timeout over but the motor is still running, forcing the wheel to stop&#34;)
-            result = lib.command_wait_for_stop(self._devId, 10)
-            if result.Result == Ok:
-                logger.warning(&#34;The wheel stopped after forcing command&#34;)
-                _output = 1
-            else:
-                logger.error(&#34;An error occurred during the movement&#34;)
-                _output = -1
-        else:
-            _output = 0
-        return _output
 
     def get_flags(self):
         status = self.get_status()
@@ -1512,11 +1394,8 @@ connected via USB. It uses a wrapped c library (ximc) to communicate with the de
     logger.warning(&#34;Commanding the wheels to zero position&#34;)
     try:
         ximc.command_zero(self._devId)
-        time.sleep(0.3)
-        while self.is_moving() != 0:
-            logger.info(&#34;The wheel is moving to zero...&#34;)
+        while self.get_speed() != 0:
             time.sleep(0.03)
-        logger.info(&#34;... the wheel stopped its movement&#34;)
     except AssertionError:
         logger.warning(&#34;Something went wrong when moving the filterwheel&#34;)</code></pre>
 </details>
@@ -1579,11 +1458,8 @@ connected via USB. It uses a wrapped c library (ximc) to communicate with the de
     self.move_wheel(9)
 
     self.command_zero()
-    logging.info(f&#34;New zero position reached:({self.get_position()[0]})&#34;)
-    logging.info(f&#34;Commanding the wheels to the equalized position:({position})&#34;)
-
-    self.move_wheel(position+1)
-    logging.info(f&#34;New equalized position reached at:({self.get_position()[0]})&#34;)</code></pre>
+    
+    self.move_wheel(position+1)</code></pre>
 </details>
 </dd>
 <dt id="egse.filterwheel.eksma.fw8smc4_devif.FilterWheel8SMC4USBInterface.get_flags"><code class="name flex">
@@ -1619,16 +1495,7 @@ connected via USB. It uses a wrapped c library (ximc) to communicate with the de
             f&#34;{x_device_information.Minor!r}.&#34;
             f&#34;{x_device_information.Release!r}&#34;
         )
-        # version = repr(x_device_information.Major) + &#34;.&#34; + \
-        #           repr(x_device_information.Minor) + &#34;.&#34; + \
-        #           repr(x_device_information.Release)
         description = f&#34;{string_at(x_device_information.ProductDescription).decode()!r}&#34;
-        logger.debug(
-            f&#34;Device information:Product Description: {description}, version: {version}&#34;
-        )
-        # logger.info(&#34;\nDevice information:&#34; + &#34;\nProduct Description:&#34; +
-        #             repr(string_at(x_device_information.ProductDescription).decode()) +
-        #             &#34;\nVersion: &#34; + version)
         device_id = {
             &#34;Product Description&#34;: description,
             &#34;Version&#34;: version
@@ -1692,7 +1559,6 @@ connected via USB. It uses a wrapped c library (ximc) to communicate with the de
 </summary>
 <pre><code class="python">def get_status(self):
     status = status_t()
-
     ximc.get_status(self._devId, byref(status))
 
     return status</code></pre>
@@ -1708,11 +1574,8 @@ connected via USB. It uses a wrapped c library (ximc) to communicate with the de
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def homing(self):
-    logger.info(&#34;Starting homing sequence ...&#34;)
-
-    ximc.command_homezero(self._devId)
-
-    logger.info(&#34;... Wheels homing succeeded&#34;)</code></pre>
+    logger.info(&#34;Starting homing sequence&#34;)
+    ximc.command_homezero(self._devId)</code></pre>
 </details>
 </dd>
 <dt id="egse.filterwheel.eksma.fw8smc4_devif.FilterWheel8SMC4USBInterface.is_connected"><code class="name flex">
@@ -1752,15 +1615,12 @@ connected via USB. It uses a wrapped c library (ximc) to communicate with the de
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def move_wheel(self, steps):
-    print(&#34;moving wheel to the following number of x25 steps:&#34;, steps)
     steps = steps - 1
     try:
         ximc.command_move(self._devId, steps*25, 0)
-        time.sleep(0.3)
-        while self.is_moving() != 0:
-            logger.info(&#34;The wheel is moving ...&#34;)
-            time.sleep(0.03)
-        logger.info(&#34;... the wheel stopped its movement&#34;)
+        time.sleep(2)
+        while self.get_speed() != 0:
+            time.sleep(1)
     except AssertionError:
         logger.warning(&#34;Something went wrong when moving the filterwheel&#34;)</code></pre>
 </details>
@@ -1775,6 +1635,10 @@ connected via USB. It uses a wrapped c library (ximc) to communicate with the de
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def set_pos(self, pos_wheel2, pos_wheel1):
+    self.homing()
+    while self.get_speed() != 0:
+        time.sleep(1)
+
     # delay so the commands don&#39;t overlap
     # the wheel 2 is the one that moves (opposite side of the motor)
     # gets the actual position
@@ -1786,7 +1650,6 @@ connected via USB. It uses a wrapped c library (ximc) to communicate with the de
     # 1 turn of the wheel has 200 steps, so each transition is reached by 25 steps.
     if pos_wheel1 == pos_wheel2:
         self.equalize_wheels(pos_wheel2)
-        logger.info(&#34;position 1&amp;2 reached&#34;)
 
     elif pos_wheel1 &lt; pos_wheel2:
         if abs(pos) &lt; pos_wheel1*25:
@@ -1794,9 +1657,7 @@ connected via USB. It uses a wrapped c library (ximc) to communicate with the de
         else:
             self.equalize_wheels(pos_wheel1)
 
-        logger.info(&#34;position 1 reached&#34;)
         self.move_wheel(pos_wheel2-7)
-        logger.info(&#34;position 2 reached&#34;)
 
     elif pos_wheel1 &gt; pos_wheel2:
 
@@ -1805,51 +1666,10 @@ connected via USB. It uses a wrapped c library (ximc) to communicate with the de
 
         else:
             self.equalize_wheels(pos_wheel1)
-        logger.info(&#34;position 1 reached&#34;)
         self.move_wheel(pos_wheel2+1)
-        logger.info(&#34;position 2 reached&#34;)
 
-    _output = self.wait_stop(10)
-    if _output == 0:
-        logger.info(&#34;Movement finished&#34;)
-    if _output &gt; 0:
-        logger.warning(&#34;Movement finished after forcing the wait_stop&#34;)
-    if _output &lt; 0:
-        logger.error(&#34;Error on movement&#34;)
-    return _output</code></pre>
-</details>
-</dd>
-<dt id="egse.filterwheel.eksma.fw8smc4_devif.FilterWheel8SMC4USBInterface.wait_stop"><code class="name flex">
-<span>def <span class="ident">wait_stop</span></span>(<span>self, t)</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def wait_stop(self, t):
-    _output = None
-    timeout = time.time() + t
-    time.sleep(0.3)
-    _speed = self.get_speed()
-    while time.time() &lt; timeout:
-        time.sleep(0.03)
-        _speed = self.get_speed()
-        if _speed == 0:
-            break
-    if _speed != 0:
-        logger.warning(&#34;wait_stop timeout over but the motor is still running, forcing the wheel to stop&#34;)
-        result = lib.command_wait_for_stop(self._devId, 10)
-        if result.Result == Ok:
-            logger.warning(&#34;The wheel stopped after forcing command&#34;)
-            _output = 1
-        else:
-            logger.error(&#34;An error occurred during the movement&#34;)
-            _output = -1
-    else:
-        _output = 0
-    return _output</code></pre>
+
+    return 0</code></pre>
 </details>
 </dd>
 </dl>
@@ -1918,7 +1738,6 @@ connected via USB. It uses a wrapped c library (ximc) to communicate with the de
 <li><code><a title="egse.filterwheel.eksma.fw8smc4_devif.FilterWheel8SMC4USBInterface.is_moving" href="#egse.filterwheel.eksma.fw8smc4_devif.FilterWheel8SMC4USBInterface.is_moving">is_moving</a></code></li>
 <li><code><a title="egse.filterwheel.eksma.fw8smc4_devif.FilterWheel8SMC4USBInterface.move_wheel" href="#egse.filterwheel.eksma.fw8smc4_devif.FilterWheel8SMC4USBInterface.move_wheel">move_wheel</a></code></li>
 <li><code><a title="egse.filterwheel.eksma.fw8smc4_devif.FilterWheel8SMC4USBInterface.set_pos" href="#egse.filterwheel.eksma.fw8smc4_devif.FilterWheel8SMC4USBInterface.set_pos">set_pos</a></code></li>
-<li><code><a title="egse.filterwheel.eksma.fw8smc4_devif.FilterWheel8SMC4USBInterface.wait_stop" href="#egse.filterwheel.eksma.fw8smc4_devif.FilterWheel8SMC4USBInterface.wait_stop">wait_stop</a></code></li>
 </ul>
 </li>
 </ul>

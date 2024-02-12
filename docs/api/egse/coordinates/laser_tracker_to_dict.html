@@ -41,8 +41,10 @@ Created on Sat Oct  3 11:53:23 2020
 import sys
 import pandas
 
+from egse.setup import Setup
 
-def laser_tracker_to_dict(filexls, setup):
+
+def laser_tracker_to_dict(filexls, setup: Setup):
     &#34;&#34;&#34;
     laser_tracker_to_dict(filexls)
 
@@ -60,7 +62,7 @@ def laser_tracker_to_dict(filexls, setup):
                 hardcoding them would cause trouble when ingesting a partial model
         - the ReferenceFrames references are included, but they are based
           on a hardcoded model.
-          In particular it is assumed that gliso is the master!
+          In particular, it is assumed that gliso is the master!
           
         - a &#34;Master&#34; ReferenceFrame is enforced, with the name &#34;Master&#34; (capital)
 
@@ -68,9 +70,9 @@ def laser_tracker_to_dict(filexls, setup):
           (&#34;Master&#34; is an exception)
 
     &#34;&#34;&#34;
-    
+
     # Predefined model -- gliso ~ master
-    
+
     &#34;&#34;&#34;
     predef_refs={}
     predef_refs[&#39;gltab&#39;]  = &#39;glfix&#39;
@@ -98,7 +100,7 @@ def laser_tracker_to_dict(filexls, setup):
     predef_refs[&#39;cambor&#39;] = &#39;toualn&#39;
     &#34;&#34;&#34;
 
-    predef_refs=setup.csl_model.default_refs
+    predef_refs = setup.csl_model.default_refs
 
     # Read input file
 
@@ -110,39 +112,39 @@ def laser_tracker_to_dict(filexls, setup):
     colx = pan[&#34;x&#34;].values
     coly = pan[&#34;y&#34;].values
     colz = pan[&#34;z&#34;].values
-    
-    refFrames = {}
+
+    refFrames = dict()
     refFrames[&#34;Master&#34;] = &#39;ReferenceFrame//([0.0000,0.0000,0.0000 | [0.0000,0.0000,0.0000 | Master | Master | [])&#39;
-    
+
     links = &#39;[]&#39;
-    
-    i,frame = -1,-1
-    while (i&lt;nrows):
+
+    i, frame = -1, -1
+    while i &lt; nrows:
         i += 1
-        
+
         try:
             frame = desc[i].find(&#34;Frame&#34;)
         except:
             frame = -1
             continue
-    
-        if (frame &gt;= 0):   
-              
-            try:
-              name = desc[i][desc[i].find(&#34;::&#34;)+2:].lower().replace(&#34;_&#34;,&#34;&#34;)
-        
-              if (desc[i+2].lower().find(&#34;translation&#34;)&lt;0) or (desc[i+3].lower().find(&#39;rotation&#39;)&lt;0):
-                  raise Exception(f&#34;Unexpected File Structure after row {i} : {desc[i]}&#34;)
 
-              translation = f&#34;[{float(colx[i+2]):.6f},{float(coly[i+2]):.6f},{float(colz[i+2]):.6f}&#34;
-              rotation    = f&#34;[{float(colx[i+3]):.6f},{float(coly[i+3]):.6f},{float(colz[i+3]):.6f}&#34;
-            
-              if name in predef_refs.keys():
+        if frame &gt;= 0:
+
+            try:
+                name = desc[i][desc[i].find(&#34;::&#34;)+2:].lower().replace(&#34;_&#34;, &#34;&#34;)
+
+                if (desc[i+2].lower().find(&#34;translation&#34;)&lt;0) or (desc[i+3].lower().find(&#39;rotation&#39;) &lt; 0):
+                    raise Exception(f&#34;Unexpected File Structure after row {i} : {desc[i]}&#34;)
+
+                translation = f&#34;[{float(colx[i+2]):.6f},{float(coly[i+2]):.6f},{float(colz[i+2]):.6f}&#34;
+                rotation = f&#34;[{float(colx[i+3]):.6f},{float(coly[i+3]):.6f},{float(colz[i+3]):.6f}&#34;
+
+                if name in predef_refs.keys():
                     ref = predef_refs[name]
-              else:
+                else:
                     ref = &#39;None&#39;
 
-              refFrames[name] = f&#34;ReferenceFrame//({translation} | {rotation} | {name} | {ref} | {links})&#34;
+                refFrames[name] = f&#34;ReferenceFrame//({translation} | {rotation} | {name} | {ref} | {links})&#34;
 
             except:
                 print(f&#34;Frame extraction issue after row {i} : {desc[i]}&#34;)
@@ -159,7 +161,7 @@ def laser_tracker_to_dict(filexls, setup):
 <h2 class="section-title" id="header-functions">Functions</h2>
 <dl>
 <dt id="egse.coordinates.laser_tracker_to_dict.laser_tracker_to_dict"><code class="name flex">
-<span>def <span class="ident">laser_tracker_to_dict</span></span>(<span>filexls, setup)</span>
+<span>def <span class="ident">laser_tracker_to_dict</span></span>(<span>filexls, setup: <a title="egse.setup.Setup" href="../setup.html#egse.setup.Setup">Setup</a>)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>laser_tracker_to_dict(filexls)</p>
@@ -173,7 +175,7 @@ the links are not in the xls file
 hardcoding them would cause trouble when ingesting a partial model
 - the ReferenceFrames references are included, but they are based
 on a hardcoded model.
-In particular it is assumed that gliso is the master!</p>
+In particular, it is assumed that gliso is the master!</p>
 <pre><code>- a "Master" ReferenceFrame is enforced, with the name "Master" (capital)
 
 - the names of the reference frames are returned lowercase, without '_'
@@ -183,7 +185,7 @@ In particular it is assumed that gliso is the master!</p>
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def laser_tracker_to_dict(filexls, setup):
+<pre><code class="python">def laser_tracker_to_dict(filexls, setup: Setup):
     &#34;&#34;&#34;
     laser_tracker_to_dict(filexls)
 
@@ -201,7 +203,7 @@ In particular it is assumed that gliso is the master!</p>
                 hardcoding them would cause trouble when ingesting a partial model
         - the ReferenceFrames references are included, but they are based
           on a hardcoded model.
-          In particular it is assumed that gliso is the master!
+          In particular, it is assumed that gliso is the master!
           
         - a &#34;Master&#34; ReferenceFrame is enforced, with the name &#34;Master&#34; (capital)
 
@@ -209,9 +211,9 @@ In particular it is assumed that gliso is the master!</p>
           (&#34;Master&#34; is an exception)
 
     &#34;&#34;&#34;
-    
+
     # Predefined model -- gliso ~ master
-    
+
     &#34;&#34;&#34;
     predef_refs={}
     predef_refs[&#39;gltab&#39;]  = &#39;glfix&#39;
@@ -239,7 +241,7 @@ In particular it is assumed that gliso is the master!</p>
     predef_refs[&#39;cambor&#39;] = &#39;toualn&#39;
     &#34;&#34;&#34;
 
-    predef_refs=setup.csl_model.default_refs
+    predef_refs = setup.csl_model.default_refs
 
     # Read input file
 
@@ -251,39 +253,39 @@ In particular it is assumed that gliso is the master!</p>
     colx = pan[&#34;x&#34;].values
     coly = pan[&#34;y&#34;].values
     colz = pan[&#34;z&#34;].values
-    
-    refFrames = {}
+
+    refFrames = dict()
     refFrames[&#34;Master&#34;] = &#39;ReferenceFrame//([0.0000,0.0000,0.0000 | [0.0000,0.0000,0.0000 | Master | Master | [])&#39;
-    
+
     links = &#39;[]&#39;
-    
-    i,frame = -1,-1
-    while (i&lt;nrows):
+
+    i, frame = -1, -1
+    while i &lt; nrows:
         i += 1
-        
+
         try:
             frame = desc[i].find(&#34;Frame&#34;)
         except:
             frame = -1
             continue
-    
-        if (frame &gt;= 0):   
-              
-            try:
-              name = desc[i][desc[i].find(&#34;::&#34;)+2:].lower().replace(&#34;_&#34;,&#34;&#34;)
-        
-              if (desc[i+2].lower().find(&#34;translation&#34;)&lt;0) or (desc[i+3].lower().find(&#39;rotation&#39;)&lt;0):
-                  raise Exception(f&#34;Unexpected File Structure after row {i} : {desc[i]}&#34;)
 
-              translation = f&#34;[{float(colx[i+2]):.6f},{float(coly[i+2]):.6f},{float(colz[i+2]):.6f}&#34;
-              rotation    = f&#34;[{float(colx[i+3]):.6f},{float(coly[i+3]):.6f},{float(colz[i+3]):.6f}&#34;
-            
-              if name in predef_refs.keys():
+        if frame &gt;= 0:
+
+            try:
+                name = desc[i][desc[i].find(&#34;::&#34;)+2:].lower().replace(&#34;_&#34;, &#34;&#34;)
+
+                if (desc[i+2].lower().find(&#34;translation&#34;)&lt;0) or (desc[i+3].lower().find(&#39;rotation&#39;) &lt; 0):
+                    raise Exception(f&#34;Unexpected File Structure after row {i} : {desc[i]}&#34;)
+
+                translation = f&#34;[{float(colx[i+2]):.6f},{float(coly[i+2]):.6f},{float(colz[i+2]):.6f}&#34;
+                rotation = f&#34;[{float(colx[i+3]):.6f},{float(coly[i+3]):.6f},{float(colz[i+3]):.6f}&#34;
+
+                if name in predef_refs.keys():
                     ref = predef_refs[name]
-              else:
+                else:
                     ref = &#39;None&#39;
 
-              refFrames[name] = f&#34;ReferenceFrame//({translation} | {rotation} | {name} | {ref} | {links})&#34;
+                refFrames[name] = f&#34;ReferenceFrame//({translation} | {rotation} | {name} | {ref} | {links})&#34;
 
             except:
                 print(f&#34;Frame extraction issue after row {i} : {desc[i]}&#34;)

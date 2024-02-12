@@ -27,137 +27,1064 @@
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">import importlib
+import logging
+import pickle
+import ssl
+import threading
+from collections import namedtuple
+from smtplib import SMTP
 
 import numpy as np
-from time import time
-from smtplib import SMTP
-from ssl import create_default_context
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
+import time
+import zmq
 
-from egse.control import is_control_server_active
-from egse.procman import ProcessManagerProxy
-from egse.zmq_ser import connect_address
-from egse.system import replace_environment_variable, EPOCH_1958_1970
-from egse.hk import get_housekeeping
 from egse.alert.gsm.beaglebone import BeagleboneProxy
+from egse.command import ClientServerCommand
+from egse.control import ControlServer, is_control_server_active
+from egse.decorators import dynamic_interface
+from egse.device import DeviceInterface
+from egse.fdir.fdir_manager import FdirManagerProxy
+from egse.hk import get_housekeeping, HKError
+from egse.procman import ProcessManagerProxy
+from egse.protocol import CommandProtocol
+from egse.proxy import Proxy
 from egse.settings import Settings
+from egse.setup import load_setup
+from egse.system import format_datetime, EPOCH_1958_1970
+from egse.system import replace_environment_variable, find_class
+from egse.zmq_ser import connect_address, bind_address
+
+logger = logging.getLogger(__name__)
 
 CTRL_SETTINGS = Settings.load(&#34;Alert Manager Control Server&#34;)
+DEVICE_SETTINGS = Settings.load(filename=&#39;alertman.yaml&#39;)
 
-# The rate of change is calculated according to 
-def calculate_roc(metric_name: str, window: int):
-    timestamp, values = get_housekeeping(hk_name=metric_name, time_window=window)
-    deltaY = float(values[-1]) - float(values[0])
-    deltaX = float(timestamp[-1]) - float(timestamp[0])
-    roc    = deltaY / deltaX
-    if time() - (float(timestamp[-1]) - EPOCH_1958_1970) &gt; 20:
-        raise Exception(f&#34;HK value {metric_name} is more than 20 seconds old&#34;)
+CS_STATUS = [&#39;Offline&#39;, &#39;Controller disconnected&#39;, &#39;Online&#39;]
+
+LIMIT = 0
+SETPOINT = 1
+RATEOFCHANGE = 2
+MASK = 3
+
+class AlertException(BaseException):
+    &#34;&#34;&#34;
+    Base class for all expcetion related to the Alerts
+    &#34;&#34;&#34;
+    pass             
+
+
+
+class AlertManagerCommand(ClientServerCommand):
+    &#34;&#34;&#34;
+    Command (client-server) for process management.
+    &#34;&#34;&#34;
+    pass
+
+
+
+def load_alert_configuration(phase):
+    &#34;&#34;&#34; Load the alert configuration for the configration file.
+    
+    Returns all the alerts defined in the given file. Uses defaults for missing fields.
+    &#34;&#34;&#34;
+    AlertConfiguration = namedtuple(&#39;AlertConfiguration&#39;, [&#39;name&#39;,
+                                                           &#39;metric&#39;,
+                                                           &#39;timeout&#39;,
+                                                           &#39;unit&#39;,
+                                                           &#39;actions&#39;,
+                                                           &#39;maximum_age&#39;,
+                                                           &#39;fdir_code&#39;,
+                                                           &#39;sample_rate&#39;,
+                                                           &#39;alert_type&#39;,
+                                                           &#39;limits&#39;])
+    
+    try:
+        configuration = load_setup().gse.alert_manager.configuration[phase]
+    except AttributeError as ex:
+        raise AlertException(&#34;Could not find a configuration for the {} phase in the setup&#34;.format(phase)) from ex 
     else:
-        return roc
-    
-def is_control_server_active_in_thread(addr, timeout, return_array, idx):
-    return_array[idx] = is_control_server_active(addr, timeout)
-    
-def _get_commanding_addresses():
-    processes = {}
-    commanding_addresses = {}
-    with ProcessManagerProxy() as pm:
-        core    = pm.get_core()
-        devices = pm.get_devices()
+        alerts = {}
 
-        processes.update(core)
-        processes.update(devices)
-
-        for process_name, process_info in processes.items():
-            proxy_type  = process_info[0]
-            device_args = process_info[1]    
-
-            module_name = proxy_type[7:].rsplit(&#34;.&#34;, 1)[0]
-                
-            # PLEASE REMOVE THIS IF YOU SEE THIS!! IT IS ONLY FOR LOCAL DEVELOPMENT!
-            if &#34;egse.fdir.gsm&#34; in module_name:
-                continue
-                
-                
-            module = importlib.import_module(module_name)
-                
-            ctrl_settings = module.CTRL_SETTINGS
-
-            transport = ctrl_settings.PROTOCOL
-            hostname = ctrl_settings.HOSTNAME
-
-            if module_name == &#34;egse.aeu.aeu&#34; or &#34;egse.tempcontrol.agilent.agilent3497&#34; in module_name:
-                name = process_name.split(&#34; &#34;)[1].upper()
-                commanding_port = ctrl_settings[name][&#34;COMMANDING_PORT&#34;]
-            else:
-
-                commanding_port = ctrl_settings.COMMANDING_PORT
+        for name, config in configuration[&#39;alerts&#39;].items():
+            try:
+                if   &#39;operational_limit&#39;    in config:
+                    alert_type = LIMIT
                     
-                # This is needed when checking whether or not the CS is active
-            commanding_addresses[process_name] = connect_address(transport, hostname, commanding_port)
-        return commanding_addresses   
+                    limits = {
+                        &#39;min&#39; : config[&#39;operational_limit&#39;].get(&#39;min&#39;, None),
+                        &#39;max&#39; : config[&#39;operational_limit&#39;].get(&#39;max&#39;, None)
+                    }
+                    
+                elif &#39;rate_of_change&#39;       in config:
+                    alert_type = RATEOFCHANGE
+                    
+                    limits = {
+                        &#39;limit&#39; : config[&#39;rate_of_change&#39;].get(&#39;limit&#39;, None),
+                        &#39;time_window&#39; : config[&#39;rate_of_change&#39;].get(&#39;time_window&#39;, 60)
+                    }
+                
+                    if limits[&#39;limit&#39;] is None:
+                        raise AlertException(\
+                                    &#34;Invalid configuration: No limit defined in the configuration&#34;)
+                    
+                elif &#39;mask&#39;                 in config:
+                    alert_type = MASK
+                    limits = {&#39;mask&#39;:  config[&#39;mask&#39;]}
+                    
+                elif &#39;setpoint&#39;             in config:
+                    alert_type = SETPOINT
+                    
+                    limits = {
+                        &#39;metric&#39; : None,
+                        &#39;value&#39;  : None,
+                        &#39;offset&#39; : config[&#39;setpoint&#39;].get(&#39;offset&#39;, 2)
+                    }
+                    
+                    if &#39;setpoint&#39; in config:
+                        if &#39;sensor&#39; not in config[&#39;setpoint&#39;] and \
+                        &#39;value&#39; not in config[&#39;setpoint&#39;]:
+                            raise AlertException(\
+                                &#34;Invalid configuration: No metric or value defined in configuration&#34;)
+                        elif &#39;sensor&#39; in config[&#39;setpoint&#39;] and \
+                            &#39;value&#39; in config[&#39;setpoint&#39;]:
+                            raise AlertException(\
+                                &#34;Invalid configuration: Can not have both a metric and value in configuration&#34;)
+                        else:
+                            if &#39;sensor&#39; in config[&#39;setpoint&#39;]:
+                                limits[&#39;metric&#39;] = config[&#39;setpoint&#39;][&#39;sensor&#39;]
+                            if &#39;value&#39; in config[&#39;setpoint&#39;]:
+                                limits[&#39;value&#39;] = config[&#39;setpoint&#39;][&#39;value&#39;]       
+                else:
+                    raise AlertException(&#34;Invalid configuration: No alert type was defined in the configuration&#34;)
+                
+                alerts[name] = AlertConfiguration(
+                    name,
+                    config[&#39;sensor&#39;],
+                    config.get(&#39;timeout&#39;, 5),
+                    config.get(&#39;unit&#39;, &#39;&#39;),
+                    config.get(&#39;actions&#39;, []),
+                    config.get(&#39;maxAge&#39;, 30),
+                    config.get(&#39;fdir&#39;, &#39;&#39;),
+                    config.get(&#39;sampleRate&#39;, 5),
+                    alert_type,
+                    limits
+                )
+                
+            except Exception as ex:
+                logger.warning(&#34;Could not create configuration for alert &#39;%s&#39; : %s&#34; % (name, ex))
+            
+        return configuration, alerts
+
+
+
+class Alert:
+    &#34;&#34;&#34;
+    Alert class representing a single alert
     
-def send_sms(level: int):
-    with BeagleboneProxy() as gsm:
-        gsm.set_alert(level)
-    # print(f&#34;A level {level} alert was triggred and an SMS was send to the operators&#34;)
-    # logger.info(f&#34;A level {level} alert was triggred and an SMS was send to the operators&#34;)
+    An alert has one main function self.update() which retrieves data from housekeeping and compares
+    it to the limits defined in the configuration. The Alert Manager Controller runs this method in
+    a thread. Sanity checks have been added to prevent false positives.
+    &#34;&#34;&#34;
+    def __init__(self, configuration, notification_worker):
+        &#34;&#34;&#34; Initialization of a new alert, to be used by the Alert Manager
+        
 
+        Args:
+            configuration (_type_): _description_
+            notification_worker (_type_): _description_
+        &#34;&#34;&#34;
+        self.configuration          = configuration
+        self.notification_worker    = notification_worker
+        self.value                  = 0.0
+        self.triggered              = False
+        self.notified               = False
+        self.active                 = False
+        self.timed_out              = 0.0
+        self.cycle_check            = False
+        self.cycle_timeout          = 0.0
+        self.lastTimestamp          = 0.0
+        self.last_update            = 0.0
+        self.thread                 = threading.Thread()
+    
+    def metric_is_available(self):
+        &#34;&#34;&#34; Check whether a metric is available in the HK files &#34;&#34;&#34;
+        try:
+            timestamp, _ = get_housekeeping(hk_name=self.configuration.metric)
+            if time.time() - (float(timestamp) - EPOCH_1958_1970) &gt; self.configuration.maximum_age:
+                raise
+        except:
+            logger.warning(f&#34;Alert &#39;{self.configuration.name}&#39; : &#34; \
+                           f&#34;Metric: &#39;{self.configuration.metric}&#39; is currently unavailable.&#34; \
+                            f&#34;Please restart this alert when metric is available.&#34;)
+            return False
+        else:
+            return True
+    
+    def daily_cycle_check(self):
+        &#34;&#34;&#34; When a metric is not found in housekeeping, keeping trying for 60 seconds.
+        This makes sure that alerts don&#39;t crash during the daily cycle of housekeeping files
+
+        Returns:
+            bool: Whether the file has cycled or not
+        &#34;&#34;&#34;
+        try:
+            _, _ = get_housekeeping(hk_name=self.configuration.metric)
+        except HKError as ex:
+            if not self.cycle_check:
+                self.cycle_check = True
+                self.cycle_timeout = time.time()
+            
+            if (time.time() - self.cycle_timeout) &gt; 300:
+                logger.info(f&#34;Alert &#39;{self.configuration.name}&#39; : No daily file found after 5 minutes. Housekeeping is unavailable: {ex}&#34;)
+                self.active = False
+                self.triggered = False
+                self.timed_out = 0.0
+                
+            return False
+        else:
+            logger.debug(f&#34;Alert &#39;{self.configuration.name}&#39; : Daily file has been cycled&#34;)
+            self.cycle_check = False
+            return True
 
     
-def send_email(subject: str, message: str, recipients: str):
-    sender      = replace_environment_variable(CTRL_SETTINGS.EMAIL_SENDER)
-    server      = replace_environment_variable(CTRL_SETTINGS.EMAIL_SERVER)
-    port        = 25
+    def generate_alert_message(self):
+        &#34;&#34;&#34; Generates the email body for the alert based on the alert type
+        &#34;&#34;&#34;
+        body = &#34;&#34;
+        
+        fdir_code = self.configuration.fdir_code
+        actions   = self.configuration.actions
+        
+        if self.configuration.alert_type == LIMIT:
+            if self.configuration.limits[&#39;min&#39;] != None and self.configuration.limits[&#39;max&#39;] != None:
+                body += f&#34;- {self.configuration.name} exceeded its operational limits of {float(self.configuration.limits[&#39;min&#39;]):.3e} &amp; {float(self.configuration.limits[&#39;max&#39;]):.3e}. Current value: {float(self.value):.3e}\n&#34;
+            elif self.configuration.limits[&#39;min&#39;] != None:
+                body += f&#34;- {self.configuration.name} exceeded its operatinoal limits of {float(self.configuration.limits[&#39;min&#39;]):.3e}. Current value: {float(self.value):.3e}\n&#34;
+            elif self.configuration.limits[&#39;max&#39;] != None:
+                body += f&#34;- {self.configuration.name} exceeded its operational limits of {float(self.configuration.limits[&#39;max&#39;]):.3e}. Current value: {float(self.value):.3e}\n&#34;
+        elif self.configuration.alert_type is SETPOINT:
+            body += f&#34;- {self.configuration.name} setpoint offset was larger than {float(self.configuration.limits[&#39;offset&#39;]):.3e}. Current value: {float(self.value):.3e}\n&#34;
+        elif self.configuration.alert_type is MASK:
+            body += f&#34;- {self.configuration.name} is {bool(self.value)}&#34;
+        elif self.configuration.alert_type is RATEOFCHANGE:
+            body += f&#34;- {self.configuration.name} has exceeded its RoC limit of {float(self.configuration.limits[&#39;limit&#39;]):.3e}. Current value: {float(self.value):.3e}\n&#34;
+        
+        if fdir_code:
+            body += f&#34;\t- FDIR code: &#39;{self.configuration.fdir_code}&#39; was fired\n&#34;
+        
+        if actions:
+            body += f&#34;\t- Corrective actions:\n&#34;
+            for action in actions:
+                body += f&#34;\t\t\t-   {action}\n&#34;
+        
+        return body
+    
+    def trigger_alert(self):
+        &#34;&#34;&#34; Send a notifcation and FDIR signal, also ensures that alerts are only triggered once
+        &#34;&#34;&#34;
+        if not self.notified:
+            self.triggered = True
+            logger.critical(f&#34;Alert &#39;{self.configuration.name}&#39; : triggered!&#34;)
+            
+            self.notification_worker.add_notification(0, self.generate_alert_message())
+            
+            self.signal_fdir()
 
-    # Create ssl context
-    context = create_default_context()
+            self.notified = True
+    
+    def clear_alert(self):
+        &#34;&#34;&#34; Resets the alert after it being triggered
+        &#34;&#34;&#34;
+        if self.triggered:
+            logger.info(f&#34;Alert &#39;{self.configuration.name}&#39; : Alert status has been reset.&#34;)
+            self.triggered = False
+            self.timed_out = 0.0
+            self.notified  = False 
+    
+    def signal_fdir(self):
+        &#34;&#34;&#34; Signal the FDIR manager, if a fidr code was configured
+        &#34;&#34;&#34;
+        if self.configuration.fdir_code:
+            try:
+                logger.info(f&#34;Signaled fdir: &#39;{self.configuration.fdir_code}&#39;&#34;)
+                with FdirManagerProxy() as fdir:
+                    fdir.signal_fdir(self.configuration.fdir_code, self.configuration.metric)
+            except Exception as e:
+                logger.critical(f&#34;Alert &#39;{self.configuration.name}&#39; : Could not signal FDIR manager. {e}&#34;)
+        else:
+            logger.info(f&#34;Alert &#39;{self.configuration.name}&#39; Does not have a configured FDIR code.&#34;)
+    
+    def get_housekeeping(self, metric, time_window=None):
+        &#34;&#34;&#34; Retrieves housekeeping from the HK files. Checks whether the value actually exists,
+            and if the age is still appropiate.
+        &#34;&#34;&#34;
+        try:
+            timestamps, values = get_housekeeping(hk_name=metric, time_window=time_window)
+        except HKError:
+            if self.daily_cycle_check():
+                timestamps, values = get_housekeeping(hk_name=metric, time_window=time_window)
+            else:
+                raise AlertException(f&#34;{self.configuration.name} : Daily file cycle is being checked&#34;)
+
+
+        most_recent_timestamp = float(timestamps[-1]) if type(timestamps) == np.ndarray else timestamps
+
+        self.lastTimestamp = most_recent_timestamp
         
-    mail = MIMEMultipart(&#39;alternative&#39;)
-    mail[&#39;Subject&#39;] = subject
-    mail[&#39;From&#39;]    = sender
-    mail[&#39;To&#39;]      = recipients
+        is_alive = time.time() - (most_recent_timestamp - EPOCH_1958_1970) &gt; self.configuration.maximum_age
+        value_exists = values[-1] if type(values) == np.ndarray else values
+
+        if is_alive:
+            self.active = False
+            logger.critical(f&#34;Alert &#39;{self.configuration.name}&#39; : Last housekeeping value was older than {self.configuration.maximum_age} seconds&#34;)
+            raise Exception(f&#34;Alert &#39;{self.configuration.name}&#39; : Last housekeeping value was older than {self.configuration.maximum_age} seconds&#34;)
+
+        if not value_exists:
+            logger.critical(f&#34;Alert &#39;{self.configuration.name}&#39; : Housekeeping returned an emptry string as latest value&#34;)
+            self.active = False
+            raise Exception(f&#34;Alert &#39;{self.configuration.name}&#39; : Housekeeping returned an emptry string as latest value&#34;)
+            
+        return timestamps, values
+                
+    def limit_check(self, value):
+        &#34;&#34;&#34; Compares a given value to the configured upper and lower limits
+        &#34;&#34;&#34; 
+        min_triggered = False
+        max_triggered = False
         
-    body = message
-    body += &#34;\n\nKind regards,\n&#34; \
-            &#34;Your friendly PLATO notification bot\n\n&#34; \
-            &#34;If I am not working as expected, please contact: s.n.gomashie@sron.nl&#34;
+        self.value = value
         
-    mail.attach(MIMEText(body, &#39;plain&#39;))
+        if self.configuration.limits[&#39;max&#39;]:
+            if float(value) &gt; self.configuration.limits[&#39;max&#39;]:
+                self.timed_out = time.time() if self.timed_out == 0.0 else self.timed_out
+                if (time.time() - self.timed_out) &gt; self.configuration.timeout:
+                    max_triggered = True
+
+        if self.configuration.limits[&#39;min&#39;]:
+            if float(value) &lt; self.configuration.limits[&#39;min&#39;]:
+                self.timed_out = time.time() if self.timed_out == 0.0 else self.timed_out
+                if (time.time() - self.timed_out) &gt; self.configuration.timeout:
+                    min_triggered = True
+                   
+        if min_triggered or max_triggered:
+            self.trigger_alert()
+        else:
+            self.clear_alert()
+
+    def setpoint_check(self, value):
+        &#34;&#34;&#34; Compares a given value to the configured setpoint (dynamic/static setpoint)
+        &#34;&#34;&#34;
+        self.value = value
         
-    with SMTP(server, port) as smtp:
-        smtp.starttls(context=context)
-        smtp.sendmail(mail[&#39;From&#39;], mail[&#39;To&#39;].split(&#39;,&#39;), mail.as_string())
-        smtp.quit()
-        # logger.info(f&#34;An alert was triggered and an email was send to {recipients}&#34;)
-        # print(f&#34;Email was send to {recipients}&#34;)</code></pre>
+        if self.configuration.limits[&#39;metric&#39;]:
+            try:
+                _, sp_value = self.get_housekeeping(self.configuration.limits[&#39;metric&#39;], None)
+            except Exception as ex:
+                logger.warning(ex, exc_info=True)
+                self.active = False
+                return
+        
+        else:
+            sp_value = self.configuration.limits[&#39;value&#39;]
+            
+        if not (float(sp_value) - self.configuration.limits[&#39;offset&#39;]) &lt;= float(value) &lt;= (float(sp_value) + self.configuration.limits[&#39;offset&#39;]):
+            self.timed_out = time.time() if self.timed_out == 0.0 else self.timed_out
+            if (time.time() - self.timed_out) &gt; self.configuration.timeout:
+                self.trigger_alert()
+        else:
+            self.clear_alert()
+        
+      
+    def rate_of_change_check(self, timestamps, values):
+        &#34;&#34;&#34; Compares a given value to the configured rate-of-change setpoint
+        &#34;&#34;&#34;
+        deltaY = float(values[-1]) - float(values[0])
+        deltaX = float(timestamps[-1]) - float(timestamps[0])
+        
+        self.value = deltaY / deltaX
+        
+        if self.configuration.limits[&#39;limit&#39;] &lt; 0:
+            if self.value &lt; self.configuration.limits[&#39;limit&#39;]:
+                self.timed_out = time.time() if self.timed_out == 0.0 else self.timed_out
+                if (time.time() - self.timed_out) &gt; self.configuration.timeout:
+                    self.trigger_alert()
+            else:
+                self.clear_alert()
+        else:
+            if self.value &gt; self.configuration.limits[&#39;limit&#39;]:
+                self.timed_out = time.time() if self.timed_out == 0.0 else self.timed_out
+                if (time.time() - self.timed_out) &gt; self.configuration.timeout:
+                    self.trigger_alert()
+            else:
+                self.clear_alert()
+            
+    
+    def mask_check(self, value):
+        &#34;&#34;&#34; Masks a bitmap and check the state of a single bit
+        &#34;&#34;&#34;
+        if isinstance(value, str):
+            value = eval(value)
+        
+        self.value = int(value)
+        
+        if (self.value &gt;&gt; self.configuration.limits[&#39;mask&#39;]) &amp; 0b1:
+            self.timed_out = time.time() if self.timed_out == 0.0 else self.timed_out
+            if (time.time() - self.timed_out) &gt; self.configuration.maximum_age:
+                self.trigger_alert()
+        else:
+            self.clear_alert()
+
+    def update(self):
+        &#34;&#34;&#34; Update current alert status
+        &#34;&#34;&#34;
+        if self.active:
+            if (time.time() - self.last_update) &gt; self.configuration.sample_rate:
+                try:
+                    timestamps, values = self.get_housekeeping(self.configuration.metric,
+                                                            self.configuration.limits.get(&#39;time_window&#39;, None))
+                except Exception as ex:
+                    logger.warning(ex)
+                    self.active = False
+                    return
+                except AlertException as a_ex:
+                    logger.warning(a_ex)
+                    self.last_update = (time.time() + 10) # Increase delay before next check
+                    return
+                else:
+                    self.cycle_check = False
+                
+                try:
+                    if self.configuration.alert_type == LIMIT:
+                        self.limit_check(values)
+                    elif self.configuration.alert_type is SETPOINT:
+                        self.setpoint_check(values)
+                    elif self.configuration.alert_type is MASK:
+                        self.mask_check(values)
+                    elif self.configuration.alert_type is RATEOFCHANGE:
+                        self.rate_of_change_check(timestamps, values)
+                except Exception as ex:
+                    logger.warning(ex)
+                    raise AlertException(ex)
+                
+                self.last_update = time.time()
+       
+       
+        
+class ControlServerWorker:
+    &#34;&#34;&#34; Worker to monitor all running control servers
+    &#34;&#34;&#34;
+    def __init__(self, notifyer):
+        self.pm_proxy = ProcessManagerProxy()
+        self.devices  = self.pm_proxy.get_devices()
+        self.notifyer = notifyer
+        self.thread   = threading.Thread() 
+        self.active   = False
+        self.monitors = {}
+        
+        for process_name, process_info in self.devices.items():
+            
+            if (&#39;alert&#39; in process_name.lower()) or (&#39;fdir&#39; in process_name.lower()) or (&#39;dpu&#39; in process_name.lower()):
+                continue
+            
+            self.monitors[process_name] = {&#39;name&#39; : process_name,
+                                           &#39;type&#39; : process_info[0],
+                                           &#39;type_as_type&#39; : find_class(process_info[0][7:]),
+                                           &#39;device_args&#39; : process_info[1],
+                                           &#39;socket&#39; : None,
+                                           &#39;timeout&#39; : 0.5,
+                                           &#39;connected&#39; : False,
+                                           &#39;address&#39; : None,
+                                           &#39;prev_status&#39; : False}
+        
+        self.fdir_codes = {}
+        
+        self.connect_to_sockets() 
+
+    
+    def load_fdir_codes(self, configuration):
+        if &#39;hardware&#39; in configuration:
+            self.fdir_codes =  configuration[&#39;hardware&#39;]
+        else:
+            self.fdir_codes = []
+    
+    def connect_to_sockets(self):
+        &#34;&#34;&#34; Connect to commanding/monitoring socket of control servers
+        &#34;&#34;&#34;
+        for monitor in self.monitors.values():
+            try:
+                module_name     = monitor[&#39;type&#39;][7:].rsplit(&#34;.&#34;, 1)[0]
+                module          = importlib.import_module(module_name)
+                
+                ctrl_settings   = module.CTRL_SETTINGS
+                transport       = ctrl_settings.PROTOCOL
+                hostname        = ctrl_settings.HOSTNAME
+                
+                if module_name == &#34;egse.aeu.aeu&#34; or &#34;egse.tempcontrol.agilent.agilent3497&#34; in module_name:
+                    name = monitor[&#39;name&#39;].split(&#34; &#34;)[1].upper()
+                    
+                    commanding_port = ctrl_settings[name][&#39;COMMANDING_PORT&#39;]
+                    monitoring_port = ctrl_settings[name][&#39;MONITORING_PORT&#39;]
+                else:
+                    commanding_port = ctrl_settings.COMMANDING_PORT
+                    monitoring_port = ctrl_settings.MONITORING_PORT
+                 
+                monitoring_address = connect_address(transport, hostname, monitoring_port)
+
+                monitor[&#39;socket&#39;] = zmq.Context().socket(zmq.SUB)
+                monitor[&#39;socket&#39;].connect(monitoring_address)
+                monitor[&#39;socket&#39;].setsockopt_string(zmq.SUBSCRIBE, &#34;&#34;)
+                
+                monitor[&#39;address&#39;] = connect_address(transport, hostname, commanding_port)
+                monitor[&#39;connected&#39;] = True                
+                
+            except AttributeError as attr_er:
+                logger.exception(attr_er)
+                monitor[&#39;connected&#39;] = False
+            
+            # break
+    
+    def get_device_status(self, monitor):  
+        &#34;&#34;&#34; Retreive the current status of a control server
+        &#34;&#34;&#34;
+        status    = 0
+
+        try:
+            with find_class(monitor[&#39;type&#39;])(*monitor[&#39;device_args&#39;]) as proxy:
+                if isinstance(proxy, DeviceInterface):
+                    try:
+                        if proxy.is_connected():
+                            # CS connected to controller
+                            status = 2
+                        else:
+                            # CS not connected to controller
+                            status = 1
+                    except AttributeError:                        
+                            status = 1
+                    
+                else:
+                    status      = 2
+                    
+        except ConnectionError:
+            pass
+        
+        return status
+                    
+    def start(self):
+        &#34;&#34;&#34; Start Control server monitor worker
+        &#34;&#34;&#34;
+        logger.info(&#34;Starting control server monitoring loop&#34;)
+        
+        if self.thread != None:
+            if self.thread.is_alive():
+                return
+        
+        self.thread = threading.Thread(target=self.run)
+        self.thread.start()
+        
+        
+    def stop(self):
+        &#34;&#34;&#34; Stop Control server monitor worker
+        &#34;&#34;&#34;
+        self.active = False
+        if self.thread != None:
+            if self.thread.is_alive():
+                self.thread.join()
+                return
+        logger.info(&#34;Control server monitor has been stopped&#34;)
+    
+    def run(self):
+        &#34;&#34;&#34; Control server monitoring loop
+        &#34;&#34;&#34;
+        self.active = True
+        
+        while self.active:
+            for monitor in self.monitors.values():
+                if monitor[&#39;connected&#39;]:
+                    status = 0
+                    try:
+                        socket_list, _, _ = zmq.select([monitor[&#39;socket&#39;]], [], [], timeout=monitor[&#39;timeout&#39;])
+                        
+                        if monitor[&#39;socket&#39;] in socket_list:
+                            pickle_string   = monitor[&#39;socket&#39;].recv()
+                            monitoring_info = pickle.loads(pickle_string)
+
+                            monitor[&#39;timeout&#39;] = monitoring_info[&#39;delay&#39;] / 1000 + 0.5 # [s]
+                            
+                            status = self.get_device_status(monitor)
+                                
+                    except zmq.ZMQError:
+                        pass    
+
+                    # Timeout occured
+                    else:
+                        if not is_control_server_active(endpoint=monitor[&#39;address&#39;], timeout=30):
+                            status = 0
+                        else:
+                            monitor[&#39;timeout&#39;] += 0.5
+                
+                    if monitor[&#39;prev_status&#39;] != status:
+                        
+                        if monitor[&#39;prev_status&#39;] &gt;= 1 and status == 0:
+                            
+                            msg = f&#34;-  {monitor[&#39;name&#39;]} Contol Server has gone offline.&#34;
+                            
+                            self.notifyer.add_notification(-1, msg)
+                            
+                            logger.warning(f&#34;{monitor[&#39;name&#39;]} has stopped. Signalling FDIR to attempt a restart&#34;)
+                            
+                            try:
+                                with FdirManagerProxy() as fdir:
+                                    fdir.signal_fdir(&#39;FDIR_CS_STOPPED&#39;, [monitor[&#39;name&#39;]])
+                            except Exception as ex:
+                                logger.critical(f&#34;Could not send FDIR signal: {ex}&#34;)
+                                
+                        elif monitor[&#39;prev_status&#39;] == 2 and status == 1:
+                            
+                            msg = f&#34;-  {monitor[&#39;name&#39;]} Control Server has lost connection to the device controller&#34;
+                            
+                            self.notifyer.add_notification(-1, msg)
+
+                            if self.fdir_codes != {}:
+                                if monitor[&#39;name&#39;] in self.fdir_codes:
+                                    fdir_code = self.fdir_codes[monitor[&#39;name&#39;]]
+                                    try:
+                                        with FdirManagerProxy() as fdir:
+                                            fdir.signal_fdir(f&#34;FDIR_{fdir_code[&#39;code&#39;]}_HW&#34;, [f&#34;{fdir_code[&#39;arg&#39;]}&#34;])
+                                    except Exception as ex:
+                                        logger.critical(f&#34;Could not send FDIR signal: {ex}&#34;)
+                            
+                            logger.warning(f&#34;{monitor[&#39;name&#39;]} has lost connection to the device. Signalling FDIR to recover&#34;)
+                            
+                        monitor[&#39;prev_status&#39;] = status
+                        
+                logger.debug(f&#34;{monitor[&#39;name&#39;]} Control Server status: {CS_STATUS[monitor[&#39;prev_status&#39;]]}&#34;)
+            time.sleep(60)
+
+
+
+class AlertNotificationWorker:
+    &#34;&#34;&#34;
+    Worker for handling the pushing of notification
+    &#34;&#34;&#34;
+    def __init__(self):
+        self.sender     = replace_environment_variable(CTRL_SETTINGS.EMAIL_SENDER)
+        self.recipients = replace_environment_variable(CTRL_SETTINGS.EMAIL_CS_RECIPIENTS)
+        
+        self._server    = replace_environment_variable(CTRL_SETTINGS.EMAIL_SERVER)
+        self._port      = 25
+        self._context   = ssl.create_default_context()
+        
+        self.gsm_module = BeagleboneProxy()
+        
+        self.alert_messages = []
+        self.cs_messages    = []
+        
+        self.thread = threading.Thread()
+
+    def notify(self):
+        &#39;&#39;&#39;
+        Threaded method that waits 30 seconds for new messages before pushing the notification 
+        &#39;&#39;&#39;
+        # Check if message buffer is empty
+        n = len(self.alert_messages) + len(self.cs_messages)
+        
+        if n != 0:
+            start_time = time.time()
+            
+            # Wait until no new messages are added to the buffer in the last 30 seconds
+            while time.time() - start_time &lt; 60:
+                n2 = len(self.alert_messages) + len(self.cs_messages)
+                
+                if n2 is not n:
+                    start_time = time.time()
+                    n = n2
+                time.sleep(1)
+            
+            self.send_mail()
+            self.send_sms()
+            
+            self.clear_notifications()
+
+    
+    def add_notification(self, nType, msg: str):
+        &#34;&#34;&#34;
+        Adds a message to the notification queue and start the threaded method, if it is not running
+        &#34;&#34;&#34;
+        
+        # Add notification to message buffer
+        if nType in [LIMIT, SETPOINT, RATEOFCHANGE, MASK]:
+            self.alert_messages.append(msg)
+        else:
+            self.cs_messages.append(msg)
+        # See if notification thread has already been started 
+        if not self.thread.is_alive():
+            self.thread.__init__(target=self.notify, daemon=True)
+            self.thread.start()
+        
+    def clear_notifications(self):
+        &#34;&#34;&#34;
+        Clears the notification queue&#39;s
+        &#34;&#34;&#34;
+        self.alert_messages = []
+        self.cs_messages    = []
+
+    def send_mail(self):
+        &#34;&#34;&#34;
+        &#34;&#34;&#34;
+        message = &#34;&#34;&#34;\
+Subject: Plato Common-EGSE Notification
+
+&#34;&#34;&#34;
+        # message = &#34;&#34;&#34;Subject: Plato Common-EGSE Notification&#34;&#34;&#34;
+        if len(self.alert_messages) &gt; 0:
+            message += &#39;&#39;.join(self.alert_messages)
+        
+        if len(self.cs_messages) &gt; 0:
+            message += &#39;&#39;.join(self.cs_messages)
+        
+        message += &#34;\n\nKind regards,\n&#34; \
+                &#34;Your friendly PLATO notification bot\n\n&#34; \
+                &#34;If I am not working as expected, please contact: s.n.gomashie@sron.nl&#34;
+        try:
+            with SMTP(self._server, self._port) as server:
+                server.sendmail(self.sender, self.recipients.split(&#39;,&#39;), message)
+        except Exception as ex:
+            logger.critical(f&#34;Notification worker could not send an email: {ex}&#34;)
+            
+        logger.debug(f&#34;Email send: {self.sender} {self.recipients}&#34;)
+
+    def send_sms(self):
+        self.gsm_module.set_alert(1)
+
+class AlertManagerInterface:
+    &#34;&#34;&#34;
+    Interface for dynamic loading of the command for Alert Management.
+    &#34;&#34;&#34;
+    @dynamic_interface
+    def load_configuration(self, phase = &#39;none&#39;):
+        &#34;&#34;&#34; Load a new phase into the alert manager. &#34;&#34;&#34;
+    
+        raise NotImplementedError
+        
+    @dynamic_interface
+    def status(self, name = None) -&gt; dict:
+        &#34;&#34;&#34; Returns the status of all configured alerts &#34;&#34;&#34;
+        
+        raise NotImplementedError
+        
+    @dynamic_interface
+    def stop_cs_monitor(self):
+        &#34;&#34;&#34; Stops the control server monitor &#34;&#34;&#34;
+        
+        raise NotImplementedError
+    
+    @dynamic_interface
+    def start_cs_monitor(self):
+        &#34;&#34;&#34; Starts the control server monitor &#34;&#34;&#34;
+        
+        raise NotImplementedError
+        
+    @dynamic_interface
+    def start_alert(self, name = None):
+        &#34;&#34;&#34; Start the alert monitor &#34;&#34;&#34;
+        
+        raise NotImplementedError
+        
+    @dynamic_interface
+    def stop_alert(self, name = None):
+        &#34;&#34;&#34; Stop the alert monitor &#34;&#34;&#34;
+        
+        raise NotImplementedError
+  
+  
+     
+class AlertManagerController(AlertManagerInterface):
+    
+    &#34;&#34;&#34;
+    Controller for Alert Management
+    &#34;&#34;&#34;
+    
+    def __init__(self, phase=&#39;none&#39;):
+        &#34;&#34;&#34; Initialization for the Alert Manager Controller.
+
+        Args:
+            phase (str, optional): _description_. Defaults to &#39;none&#39;.
+        &#34;&#34;&#34;
+        self.phase                  = phase
+        self.active                 = False
+        self.alerts                 = {}
+        self.notification_worker    = AlertNotificationWorker()
+        self.control_server_worker  = ControlServerWorker(self.notification_worker)
+        
+        self.thread                 = threading.Thread()
+        
+        self.load_configuration(phase)
+        self.control_server_worker.start()
+
+    def load_configuration(self, phase = &#39;none&#39;):
+        &#34;&#34;&#34; Load a new phase into the alert manager. &#34;&#34;&#34;
+        if phase != &#39;none&#39;:
+            self.stop_alert()
+            
+            try:
+                self.configuration, alerts = load_alert_configuration(phase)
+                self.alerts = self.initialize_alerts(alerts)
+                
+                self.control_server_worker.load_fdir_codes(self.configuration)
+            except Exception as ex:
+                logger.warning(f&#34;Could not load {phase} phase: {ex}&#34;)
+            else:
+                self.phase = phase
+        
+        else:
+            self.stop_alert()
+            self.alerts = {}
+            self.phase = phase
+
+        logger.info(f&#34;Alert manager has been configured for the {self.phase} phase&#34;)
+    
+    def initialize_alerts(self, alerts):
+        &#34;&#34;&#34; Initialize the alerts
+        &#34;&#34;&#34;
+        for key, configuration in alerts.items():
+            try:
+                alerts[key] = Alert(configuration, self.notification_worker)
+            except Exception as ex:
+                logger.warning(f&#34;Could not create alert &#39;{key}&#39;: {ex}&#34;)
+        return alerts
+    
+    def status(self, name = None) -&gt; dict:
+        &#34;&#34;&#34; Returns the status of all configured alerts &#34;&#34;&#34;
+        status = {}
+        if self.alerts:
+            for key, alert in self.alerts.items():
+                status[key] = {
+                    &#39;active&#39;            : alert.active,
+                    &#39;triggered&#39;         : alert.triggered,
+                    &#39;value&#39;             : alert.value,
+                    &#39;lastTimestamp&#39;         : alert.lastTimestamp
+                }
+            if name and (name in status):
+                return  status[name]
+            else:
+                return status
+        
+    def stop_cs_monitor(self):
+        &#34;&#34;&#34; Stops the control server monitor 
+        &#34;&#34;&#34;
+        self.control_server_worker.stop()
+    
+    def start_cs_monitor(self):
+        &#34;&#34;&#34; Starts the control server monitor 
+        &#34;&#34;&#34;
+        self.control_server_worker.start()
+    
+    def start_alert(self, name = None):
+        &#34;&#34;&#34; Start one or all alert monitors
+        &#34;&#34;&#34;
+        if name != None:
+            self.alerts[name].active = True
+        else:
+            for alert in self.alerts.values():
+                alert.active = True
+        
+        if self.thread.is_alive():
+            return
+
+        logger.info(f&#34;Starting alert monitor in {self.phase} phase&#34;)
+    
+        self.thread.__init__(target=self.run)
+        self.thread.setDaemon(True)
+        self.thread.start()
+    
+    def stop_alert(self, name = None):
+        &#34;&#34;&#34; Stop one or all alert monitors
+        &#34;&#34;&#34;
+        if name != None:
+            self.alerts[name].active = False
+        else:
+            
+            self.active = False
+            for alert in self.alerts.values():
+                alert.active = False
+                
+            if self.thread.is_alive():
+                self.thread.join()
+    
+    def run(self):
+        &#34;&#34;&#34; The alert monitoring loop
+        &#34;&#34;&#34;
+        self.active = True
+
+        while self.active:
+            for alert in self.alerts.values():
+                if alert.active:
+                    try:
+                        alert.update()
+                    except Exception as ex:
+                        logger.info(ex)
+                time.sleep(0.1)
+                    
+
+
+
+class AlertManagerProxy(Proxy, AlertManagerInterface):
+    &#34;&#34;&#34;
+    Proxy for Alert Management, used to connect to the Alert Manager
+    Control Server and send commands remotely.
+    &#34;&#34;&#34;
+
+    def __init__(
+        self,
+        protocol=CTRL_SETTINGS.PROTOCOL,
+        hostname=CTRL_SETTINGS.HOSTNAME,
+        port=CTRL_SETTINGS.COMMANDING_PORT,
+    ):
+        &#34;&#34;&#34;Initialisation of a new Proxy for Alert Management.
+
+        If no connection details (transport protocol, hostname, and port) are
+        not provided, these are taken from the settings file.
+
+        Args:
+            - protocol: Transport protocol [default is taken from settings
+                        file].
+            - hostname: Location of the control server (IP address) [default
+                        is taken from settings file].
+            - port: TCP port on which the Control Server is listening for
+                    commands [default is taken from settings file].
+        &#34;&#34;&#34;
+
+        super().__init__(connect_address(protocol, hostname, port))
+
+
+
+class AlertManagerProtocol(CommandProtocol):
+    &#34;&#34;&#34;
+    Command Protocol for Alert Management.
+    &#34;&#34;&#34;
+    def __init__(self, control_server: ControlServer, phase):
+        &#34;&#34;&#34;Initialisation of a new Protocol for Alert Management.
+
+        The initialisation of this Protocol consists of the following steps:
+
+            - create a Controller to which the given Control Server should send commands;
+            - load the commands;
+            - build a look-up table for the commands.
+
+        Args:
+            - control_server: Control Server via which commands should be sent
+                              to the Controller.
+        &#34;&#34;&#34;
+
+        super().__init__()
+
+        # Control Server for Alert Management
+
+        self.control_server = control_server
+
+        # Create a new Controller for Alert Management
+
+        self.controller = AlertManagerController(phase)
+
+        # Load the commands (for commanding of the AM Controller) from the
+        # YAML file into a dictionary, stored in the AM Protocol
+
+        self.load_commands(
+            DEVICE_SETTINGS.Commands, AlertManagerCommand, AlertManagerController
+        )
+
+        # Build a look-up table for the methods
+
+        self.build_device_method_lookup_table(self.controller)
+
+
+    def get_bind_address(self):
+        &#34;&#34;&#34;Returns the address to bind a socket to.
+
+        This bind address is a properly formatted URL, based on the
+        communication protocol and the commanding port.
+
+        Returns:
+            - Properly formatted URL to bind a socket to.
+        &#34;&#34;&#34;
+
+        return bind_address(
+            self.control_server.get_communication_protocol(),
+            self.control_server.get_commanding_port(),
+        )
+
+    def get_status(self) -&gt; dict:
+        &#34;&#34;&#34;Returns the status information for the Control Server.
+
+        This status information is returned in the form of a dictionary that
+        contains the following information about the Control Server for
+        Alert Management:
+
+            - timestamp (str): string representation of the current datetime;
+            - PID (int): process ID for the Control Server;
+            - Up (float): uptime of the Control Server [s];
+            - UUID (uuid1): Universally Unique Identifier for the Control
+                            Server;
+            - RSS (int): &#39;Resident Set Size&#39;, this is the non-swapped physical
+                         memory a process has used [byte];
+            - USS (int): &#39;Unique Set Size&#39;, this is the memory which is unique
+                         to a process [byte];
+            - CPU User (float): time spent in user mode [s];
+            - CPU System (float): time spent in kernel mode [s];
+            - CPU count: number of CPU cores in use by the process;
+            - CPU% (float): process CPU utilization as a percentage [%].
+            - Alert Status (dict): The status of all active alerts
+            - Alert Phase (int): The enumerate value of the current phase
+
+        Returns:
+            - Dictionary with status information for the Control Server for
+              Alert Management.
+        &#34;&#34;&#34;
+
+        status = super().get_status()
+
+        status[&#39;alert_status&#39;] = self.controller.status()
+        status[&#39;phase&#39;]        = self.controller.phase
+        
+        return status
+
+    def get_housekeeping(self) -&gt; dict:
+        &#34;&#34;&#34;Returns the housekeeping data for the Control Server.
+
+        This housekeeping data is returns in the form of a dictionary that
+        contains the following information about the Control Server for
+        Alert Management:
+
+            - timestamp (str): string representation of the current datetime.
+
+        Returns:
+            - Dictionary with housekeeping data for the Control Server for
+              Alert Management.
+        &#34;&#34;&#34;
+
+        return {&#34;timestamp&#34;: format_datetime()}
+
+    def quit(self):
+        self.controller.quit()
+    
+    
+    
+def main():
+    
+    dev = AlertManagerController()
+    
+if __name__ == &#34;__main__&#34;:
+    main()</code></pre>
 </details>
 </section>
 <section>
 <h2 class="section-title" id="header-submodules">Sub-modules</h2>
 <dl>
-<dt><code class="name"><a title="egse.alert.alert_manager" href="alert_manager.html">egse.alert.alert_manager</a></code></dt>
+<dt><code class="name"><a title="egse.alert.alertman_cs" href="alertman_cs.html">egse.alert.alertman_cs</a></code></dt>
 <dd>
 <div class="desc"></div>
 </dd>
-<dt><code class="name"><a title="egse.alert.alert_manager_controller" href="alert_manager_controller.html">egse.alert.alert_manager_controller</a></code></dt>
-<dd>
-<div class="desc"></div>
-</dd>
-<dt><code class="name"><a title="egse.alert.alert_manager_cs" href="alert_manager_cs.html">egse.alert.alert_manager_cs</a></code></dt>
-<dd>
-<div class="desc"></div>
-</dd>
-<dt><code class="name"><a title="egse.alert.alert_manager_interface" href="alert_manager_interface.html">egse.alert.alert_manager_interface</a></code></dt>
-<dd>
-<div class="desc"></div>
-</dd>
-<dt><code class="name"><a title="egse.alert.alert_ui" href="alert_ui.html">egse.alert.alert_ui</a></code></dt>
-<dd>
-<div class="desc"></div>
-</dd>
-<dt><code class="name"><a title="egse.alert.alert_workers" href="alert_workers.html">egse.alert.alert_workers</a></code></dt>
+<dt><code class="name"><a title="egse.alert.alertman_ui" href="alertman_ui.html">egse.alert.alertman_ui</a></code></dt>
 <dd>
 <div class="desc"></div>
 </dd>
@@ -172,78 +1099,112 @@ def send_email(subject: str, message: str, recipients: str):
 <section>
 <h2 class="section-title" id="header-functions">Functions</h2>
 <dl>
-<dt id="egse.alert.calculate_roc"><code class="name flex">
-<span>def <span class="ident">calculate_roc</span></span>(<span>metric_name: str, window: int)</span>
+<dt id="egse.alert.load_alert_configuration"><code class="name flex">
+<span>def <span class="ident">load_alert_configuration</span></span>(<span>phase)</span>
 </code></dt>
 <dd>
-<div class="desc"></div>
+<div class="desc"><p>Load the alert configuration for the configration file.</p>
+<p>Returns all the alerts defined in the given file. Uses defaults for missing fields.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def calculate_roc(metric_name: str, window: int):
-    timestamp, values = get_housekeeping(hk_name=metric_name, time_window=window)
-    deltaY = float(values[-1]) - float(values[0])
-    deltaX = float(timestamp[-1]) - float(timestamp[0])
-    roc    = deltaY / deltaX
-    if time() - (float(timestamp[-1]) - EPOCH_1958_1970) &gt; 20:
-        raise Exception(f&#34;HK value {metric_name} is more than 20 seconds old&#34;)
+<pre><code class="python">def load_alert_configuration(phase):
+    &#34;&#34;&#34; Load the alert configuration for the configration file.
+    
+    Returns all the alerts defined in the given file. Uses defaults for missing fields.
+    &#34;&#34;&#34;
+    AlertConfiguration = namedtuple(&#39;AlertConfiguration&#39;, [&#39;name&#39;,
+                                                           &#39;metric&#39;,
+                                                           &#39;timeout&#39;,
+                                                           &#39;unit&#39;,
+                                                           &#39;actions&#39;,
+                                                           &#39;maximum_age&#39;,
+                                                           &#39;fdir_code&#39;,
+                                                           &#39;sample_rate&#39;,
+                                                           &#39;alert_type&#39;,
+                                                           &#39;limits&#39;])
+    
+    try:
+        configuration = load_setup().gse.alert_manager.configuration[phase]
+    except AttributeError as ex:
+        raise AlertException(&#34;Could not find a configuration for the {} phase in the setup&#34;.format(phase)) from ex 
     else:
-        return roc</code></pre>
-</details>
-</dd>
-<dt id="egse.alert.is_control_server_active_in_thread"><code class="name flex">
-<span>def <span class="ident">is_control_server_active_in_thread</span></span>(<span>addr, timeout, return_array, idx)</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def is_control_server_active_in_thread(addr, timeout, return_array, idx):
-    return_array[idx] = is_control_server_active(addr, timeout)</code></pre>
-</details>
-</dd>
-<dt id="egse.alert.send_email"><code class="name flex">
-<span>def <span class="ident">send_email</span></span>(<span>subject: str, message: str, recipients: str)</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def send_email(subject: str, message: str, recipients: str):
-    sender      = replace_environment_variable(CTRL_SETTINGS.EMAIL_SENDER)
-    server      = replace_environment_variable(CTRL_SETTINGS.EMAIL_SERVER)
-    port        = 25
+        alerts = {}
 
-    # Create ssl context
-    context = create_default_context()
-        
-    mail = MIMEMultipart(&#39;alternative&#39;)
-    mail[&#39;Subject&#39;] = subject
-    mail[&#39;From&#39;]    = sender
-    mail[&#39;To&#39;]      = recipients
-        
-    body = message
-    body += &#34;\n\nKind regards,\n&#34; \
-            &#34;Your friendly PLATO notification bot\n\n&#34; \
-            &#34;If I am not working as expected, please contact: s.n.gomashie@sron.nl&#34;
-        
-    mail.attach(MIMEText(body, &#39;plain&#39;))
-        
-    with SMTP(server, port) as smtp:
-        smtp.starttls(context=context)
-        smtp.sendmail(mail[&#39;From&#39;], mail[&#39;To&#39;].split(&#39;,&#39;), mail.as_string())
-        smtp.quit()
-        # logger.info(f&#34;An alert was triggered and an email was send to {recipients}&#34;)
-        # print(f&#34;Email was send to {recipients}&#34;)</code></pre>
+        for name, config in configuration[&#39;alerts&#39;].items():
+            try:
+                if   &#39;operational_limit&#39;    in config:
+                    alert_type = LIMIT
+                    
+                    limits = {
+                        &#39;min&#39; : config[&#39;operational_limit&#39;].get(&#39;min&#39;, None),
+                        &#39;max&#39; : config[&#39;operational_limit&#39;].get(&#39;max&#39;, None)
+                    }
+                    
+                elif &#39;rate_of_change&#39;       in config:
+                    alert_type = RATEOFCHANGE
+                    
+                    limits = {
+                        &#39;limit&#39; : config[&#39;rate_of_change&#39;].get(&#39;limit&#39;, None),
+                        &#39;time_window&#39; : config[&#39;rate_of_change&#39;].get(&#39;time_window&#39;, 60)
+                    }
+                
+                    if limits[&#39;limit&#39;] is None:
+                        raise AlertException(\
+                                    &#34;Invalid configuration: No limit defined in the configuration&#34;)
+                    
+                elif &#39;mask&#39;                 in config:
+                    alert_type = MASK
+                    limits = {&#39;mask&#39;:  config[&#39;mask&#39;]}
+                    
+                elif &#39;setpoint&#39;             in config:
+                    alert_type = SETPOINT
+                    
+                    limits = {
+                        &#39;metric&#39; : None,
+                        &#39;value&#39;  : None,
+                        &#39;offset&#39; : config[&#39;setpoint&#39;].get(&#39;offset&#39;, 2)
+                    }
+                    
+                    if &#39;setpoint&#39; in config:
+                        if &#39;sensor&#39; not in config[&#39;setpoint&#39;] and \
+                        &#39;value&#39; not in config[&#39;setpoint&#39;]:
+                            raise AlertException(\
+                                &#34;Invalid configuration: No metric or value defined in configuration&#34;)
+                        elif &#39;sensor&#39; in config[&#39;setpoint&#39;] and \
+                            &#39;value&#39; in config[&#39;setpoint&#39;]:
+                            raise AlertException(\
+                                &#34;Invalid configuration: Can not have both a metric and value in configuration&#34;)
+                        else:
+                            if &#39;sensor&#39; in config[&#39;setpoint&#39;]:
+                                limits[&#39;metric&#39;] = config[&#39;setpoint&#39;][&#39;sensor&#39;]
+                            if &#39;value&#39; in config[&#39;setpoint&#39;]:
+                                limits[&#39;value&#39;] = config[&#39;setpoint&#39;][&#39;value&#39;]       
+                else:
+                    raise AlertException(&#34;Invalid configuration: No alert type was defined in the configuration&#34;)
+                
+                alerts[name] = AlertConfiguration(
+                    name,
+                    config[&#39;sensor&#39;],
+                    config.get(&#39;timeout&#39;, 5),
+                    config.get(&#39;unit&#39;, &#39;&#39;),
+                    config.get(&#39;actions&#39;, []),
+                    config.get(&#39;maxAge&#39;, 30),
+                    config.get(&#39;fdir&#39;, &#39;&#39;),
+                    config.get(&#39;sampleRate&#39;, 5),
+                    alert_type,
+                    limits
+                )
+                
+            except Exception as ex:
+                logger.warning(&#34;Could not create configuration for alert &#39;%s&#39; : %s&#34; % (name, ex))
+            
+        return configuration, alerts</code></pre>
 </details>
 </dd>
-<dt id="egse.alert.send_sms"><code class="name flex">
-<span>def <span class="ident">send_sms</span></span>(<span>level: int)</span>
+<dt id="egse.alert.main"><code class="name flex">
+<span>def <span class="ident">main</span></span>(<span>)</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -251,16 +1212,2220 @@ def send_email(subject: str, message: str, recipients: str):
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def send_sms(level: int):
-    with BeagleboneProxy() as gsm:
-        gsm.set_alert(level)
-    # print(f&#34;A level {level} alert was triggred and an SMS was send to the operators&#34;)
-    # logger.info(f&#34;A level {level} alert was triggred and an SMS was send to the operators&#34;)</code></pre>
+<pre><code class="python">def main():
+    
+    dev = AlertManagerController()</code></pre>
 </details>
 </dd>
 </dl>
 </section>
 <section>
+<h2 class="section-title" id="header-classes">Classes</h2>
+<dl>
+<dt id="egse.alert.Alert"><code class="flex name class">
+<span>class <span class="ident">Alert</span></span>
+<span>(</span><span>configuration, notification_worker)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Alert class representing a single alert</p>
+<p>An alert has one main function self.update() which retrieves data from housekeeping and compares
+it to the limits defined in the configuration. The Alert Manager Controller runs this method in
+a thread. Sanity checks have been added to prevent false positives.</p>
+<p>Initialization of a new alert, to be used by the Alert Manager</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>configuration</code></strong> :&ensp;<code>_type_</code></dt>
+<dd><em>description</em></dd>
+<dt><strong><code>notification_worker</code></strong> :&ensp;<code>_type_</code></dt>
+<dd><em>description</em></dd>
+</dl></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Alert:
+    &#34;&#34;&#34;
+    Alert class representing a single alert
+    
+    An alert has one main function self.update() which retrieves data from housekeeping and compares
+    it to the limits defined in the configuration. The Alert Manager Controller runs this method in
+    a thread. Sanity checks have been added to prevent false positives.
+    &#34;&#34;&#34;
+    def __init__(self, configuration, notification_worker):
+        &#34;&#34;&#34; Initialization of a new alert, to be used by the Alert Manager
+        
+
+        Args:
+            configuration (_type_): _description_
+            notification_worker (_type_): _description_
+        &#34;&#34;&#34;
+        self.configuration          = configuration
+        self.notification_worker    = notification_worker
+        self.value                  = 0.0
+        self.triggered              = False
+        self.notified               = False
+        self.active                 = False
+        self.timed_out              = 0.0
+        self.cycle_check            = False
+        self.cycle_timeout          = 0.0
+        self.lastTimestamp          = 0.0
+        self.last_update            = 0.0
+        self.thread                 = threading.Thread()
+    
+    def metric_is_available(self):
+        &#34;&#34;&#34; Check whether a metric is available in the HK files &#34;&#34;&#34;
+        try:
+            timestamp, _ = get_housekeeping(hk_name=self.configuration.metric)
+            if time.time() - (float(timestamp) - EPOCH_1958_1970) &gt; self.configuration.maximum_age:
+                raise
+        except:
+            logger.warning(f&#34;Alert &#39;{self.configuration.name}&#39; : &#34; \
+                           f&#34;Metric: &#39;{self.configuration.metric}&#39; is currently unavailable.&#34; \
+                            f&#34;Please restart this alert when metric is available.&#34;)
+            return False
+        else:
+            return True
+    
+    def daily_cycle_check(self):
+        &#34;&#34;&#34; When a metric is not found in housekeeping, keeping trying for 60 seconds.
+        This makes sure that alerts don&#39;t crash during the daily cycle of housekeeping files
+
+        Returns:
+            bool: Whether the file has cycled or not
+        &#34;&#34;&#34;
+        try:
+            _, _ = get_housekeeping(hk_name=self.configuration.metric)
+        except HKError as ex:
+            if not self.cycle_check:
+                self.cycle_check = True
+                self.cycle_timeout = time.time()
+            
+            if (time.time() - self.cycle_timeout) &gt; 300:
+                logger.info(f&#34;Alert &#39;{self.configuration.name}&#39; : No daily file found after 5 minutes. Housekeeping is unavailable: {ex}&#34;)
+                self.active = False
+                self.triggered = False
+                self.timed_out = 0.0
+                
+            return False
+        else:
+            logger.debug(f&#34;Alert &#39;{self.configuration.name}&#39; : Daily file has been cycled&#34;)
+            self.cycle_check = False
+            return True
+
+    
+    def generate_alert_message(self):
+        &#34;&#34;&#34; Generates the email body for the alert based on the alert type
+        &#34;&#34;&#34;
+        body = &#34;&#34;
+        
+        fdir_code = self.configuration.fdir_code
+        actions   = self.configuration.actions
+        
+        if self.configuration.alert_type == LIMIT:
+            if self.configuration.limits[&#39;min&#39;] != None and self.configuration.limits[&#39;max&#39;] != None:
+                body += f&#34;- {self.configuration.name} exceeded its operational limits of {float(self.configuration.limits[&#39;min&#39;]):.3e} &amp; {float(self.configuration.limits[&#39;max&#39;]):.3e}. Current value: {float(self.value):.3e}\n&#34;
+            elif self.configuration.limits[&#39;min&#39;] != None:
+                body += f&#34;- {self.configuration.name} exceeded its operatinoal limits of {float(self.configuration.limits[&#39;min&#39;]):.3e}. Current value: {float(self.value):.3e}\n&#34;
+            elif self.configuration.limits[&#39;max&#39;] != None:
+                body += f&#34;- {self.configuration.name} exceeded its operational limits of {float(self.configuration.limits[&#39;max&#39;]):.3e}. Current value: {float(self.value):.3e}\n&#34;
+        elif self.configuration.alert_type is SETPOINT:
+            body += f&#34;- {self.configuration.name} setpoint offset was larger than {float(self.configuration.limits[&#39;offset&#39;]):.3e}. Current value: {float(self.value):.3e}\n&#34;
+        elif self.configuration.alert_type is MASK:
+            body += f&#34;- {self.configuration.name} is {bool(self.value)}&#34;
+        elif self.configuration.alert_type is RATEOFCHANGE:
+            body += f&#34;- {self.configuration.name} has exceeded its RoC limit of {float(self.configuration.limits[&#39;limit&#39;]):.3e}. Current value: {float(self.value):.3e}\n&#34;
+        
+        if fdir_code:
+            body += f&#34;\t- FDIR code: &#39;{self.configuration.fdir_code}&#39; was fired\n&#34;
+        
+        if actions:
+            body += f&#34;\t- Corrective actions:\n&#34;
+            for action in actions:
+                body += f&#34;\t\t\t-   {action}\n&#34;
+        
+        return body
+    
+    def trigger_alert(self):
+        &#34;&#34;&#34; Send a notifcation and FDIR signal, also ensures that alerts are only triggered once
+        &#34;&#34;&#34;
+        if not self.notified:
+            self.triggered = True
+            logger.critical(f&#34;Alert &#39;{self.configuration.name}&#39; : triggered!&#34;)
+            
+            self.notification_worker.add_notification(0, self.generate_alert_message())
+            
+            self.signal_fdir()
+
+            self.notified = True
+    
+    def clear_alert(self):
+        &#34;&#34;&#34; Resets the alert after it being triggered
+        &#34;&#34;&#34;
+        if self.triggered:
+            logger.info(f&#34;Alert &#39;{self.configuration.name}&#39; : Alert status has been reset.&#34;)
+            self.triggered = False
+            self.timed_out = 0.0
+            self.notified  = False 
+    
+    def signal_fdir(self):
+        &#34;&#34;&#34; Signal the FDIR manager, if a fidr code was configured
+        &#34;&#34;&#34;
+        if self.configuration.fdir_code:
+            try:
+                logger.info(f&#34;Signaled fdir: &#39;{self.configuration.fdir_code}&#39;&#34;)
+                with FdirManagerProxy() as fdir:
+                    fdir.signal_fdir(self.configuration.fdir_code, self.configuration.metric)
+            except Exception as e:
+                logger.critical(f&#34;Alert &#39;{self.configuration.name}&#39; : Could not signal FDIR manager. {e}&#34;)
+        else:
+            logger.info(f&#34;Alert &#39;{self.configuration.name}&#39; Does not have a configured FDIR code.&#34;)
+    
+    def get_housekeeping(self, metric, time_window=None):
+        &#34;&#34;&#34; Retrieves housekeeping from the HK files. Checks whether the value actually exists,
+            and if the age is still appropiate.
+        &#34;&#34;&#34;
+        try:
+            timestamps, values = get_housekeeping(hk_name=metric, time_window=time_window)
+        except HKError:
+            if self.daily_cycle_check():
+                timestamps, values = get_housekeeping(hk_name=metric, time_window=time_window)
+            else:
+                raise AlertException(f&#34;{self.configuration.name} : Daily file cycle is being checked&#34;)
+
+
+        most_recent_timestamp = float(timestamps[-1]) if type(timestamps) == np.ndarray else timestamps
+
+        self.lastTimestamp = most_recent_timestamp
+        
+        is_alive = time.time() - (most_recent_timestamp - EPOCH_1958_1970) &gt; self.configuration.maximum_age
+        value_exists = values[-1] if type(values) == np.ndarray else values
+
+        if is_alive:
+            self.active = False
+            logger.critical(f&#34;Alert &#39;{self.configuration.name}&#39; : Last housekeeping value was older than {self.configuration.maximum_age} seconds&#34;)
+            raise Exception(f&#34;Alert &#39;{self.configuration.name}&#39; : Last housekeeping value was older than {self.configuration.maximum_age} seconds&#34;)
+
+        if not value_exists:
+            logger.critical(f&#34;Alert &#39;{self.configuration.name}&#39; : Housekeeping returned an emptry string as latest value&#34;)
+            self.active = False
+            raise Exception(f&#34;Alert &#39;{self.configuration.name}&#39; : Housekeeping returned an emptry string as latest value&#34;)
+            
+        return timestamps, values
+                
+    def limit_check(self, value):
+        &#34;&#34;&#34; Compares a given value to the configured upper and lower limits
+        &#34;&#34;&#34; 
+        min_triggered = False
+        max_triggered = False
+        
+        self.value = value
+        
+        if self.configuration.limits[&#39;max&#39;]:
+            if float(value) &gt; self.configuration.limits[&#39;max&#39;]:
+                self.timed_out = time.time() if self.timed_out == 0.0 else self.timed_out
+                if (time.time() - self.timed_out) &gt; self.configuration.timeout:
+                    max_triggered = True
+
+        if self.configuration.limits[&#39;min&#39;]:
+            if float(value) &lt; self.configuration.limits[&#39;min&#39;]:
+                self.timed_out = time.time() if self.timed_out == 0.0 else self.timed_out
+                if (time.time() - self.timed_out) &gt; self.configuration.timeout:
+                    min_triggered = True
+                   
+        if min_triggered or max_triggered:
+            self.trigger_alert()
+        else:
+            self.clear_alert()
+
+    def setpoint_check(self, value):
+        &#34;&#34;&#34; Compares a given value to the configured setpoint (dynamic/static setpoint)
+        &#34;&#34;&#34;
+        self.value = value
+        
+        if self.configuration.limits[&#39;metric&#39;]:
+            try:
+                _, sp_value = self.get_housekeeping(self.configuration.limits[&#39;metric&#39;], None)
+            except Exception as ex:
+                logger.warning(ex, exc_info=True)
+                self.active = False
+                return
+        
+        else:
+            sp_value = self.configuration.limits[&#39;value&#39;]
+            
+        if not (float(sp_value) - self.configuration.limits[&#39;offset&#39;]) &lt;= float(value) &lt;= (float(sp_value) + self.configuration.limits[&#39;offset&#39;]):
+            self.timed_out = time.time() if self.timed_out == 0.0 else self.timed_out
+            if (time.time() - self.timed_out) &gt; self.configuration.timeout:
+                self.trigger_alert()
+        else:
+            self.clear_alert()
+        
+      
+    def rate_of_change_check(self, timestamps, values):
+        &#34;&#34;&#34; Compares a given value to the configured rate-of-change setpoint
+        &#34;&#34;&#34;
+        deltaY = float(values[-1]) - float(values[0])
+        deltaX = float(timestamps[-1]) - float(timestamps[0])
+        
+        self.value = deltaY / deltaX
+        
+        if self.configuration.limits[&#39;limit&#39;] &lt; 0:
+            if self.value &lt; self.configuration.limits[&#39;limit&#39;]:
+                self.timed_out = time.time() if self.timed_out == 0.0 else self.timed_out
+                if (time.time() - self.timed_out) &gt; self.configuration.timeout:
+                    self.trigger_alert()
+            else:
+                self.clear_alert()
+        else:
+            if self.value &gt; self.configuration.limits[&#39;limit&#39;]:
+                self.timed_out = time.time() if self.timed_out == 0.0 else self.timed_out
+                if (time.time() - self.timed_out) &gt; self.configuration.timeout:
+                    self.trigger_alert()
+            else:
+                self.clear_alert()
+            
+    
+    def mask_check(self, value):
+        &#34;&#34;&#34; Masks a bitmap and check the state of a single bit
+        &#34;&#34;&#34;
+        if isinstance(value, str):
+            value = eval(value)
+        
+        self.value = int(value)
+        
+        if (self.value &gt;&gt; self.configuration.limits[&#39;mask&#39;]) &amp; 0b1:
+            self.timed_out = time.time() if self.timed_out == 0.0 else self.timed_out
+            if (time.time() - self.timed_out) &gt; self.configuration.maximum_age:
+                self.trigger_alert()
+        else:
+            self.clear_alert()
+
+    def update(self):
+        &#34;&#34;&#34; Update current alert status
+        &#34;&#34;&#34;
+        if self.active:
+            if (time.time() - self.last_update) &gt; self.configuration.sample_rate:
+                try:
+                    timestamps, values = self.get_housekeeping(self.configuration.metric,
+                                                            self.configuration.limits.get(&#39;time_window&#39;, None))
+                except Exception as ex:
+                    logger.warning(ex)
+                    self.active = False
+                    return
+                except AlertException as a_ex:
+                    logger.warning(a_ex)
+                    self.last_update = (time.time() + 10) # Increase delay before next check
+                    return
+                else:
+                    self.cycle_check = False
+                
+                try:
+                    if self.configuration.alert_type == LIMIT:
+                        self.limit_check(values)
+                    elif self.configuration.alert_type is SETPOINT:
+                        self.setpoint_check(values)
+                    elif self.configuration.alert_type is MASK:
+                        self.mask_check(values)
+                    elif self.configuration.alert_type is RATEOFCHANGE:
+                        self.rate_of_change_check(timestamps, values)
+                except Exception as ex:
+                    logger.warning(ex)
+                    raise AlertException(ex)
+                
+                self.last_update = time.time()</code></pre>
+</details>
+<h3>Methods</h3>
+<dl>
+<dt id="egse.alert.Alert.clear_alert"><code class="name flex">
+<span>def <span class="ident">clear_alert</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Resets the alert after it being triggered</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def clear_alert(self):
+    &#34;&#34;&#34; Resets the alert after it being triggered
+    &#34;&#34;&#34;
+    if self.triggered:
+        logger.info(f&#34;Alert &#39;{self.configuration.name}&#39; : Alert status has been reset.&#34;)
+        self.triggered = False
+        self.timed_out = 0.0
+        self.notified  = False </code></pre>
+</details>
+</dd>
+<dt id="egse.alert.Alert.daily_cycle_check"><code class="name flex">
+<span>def <span class="ident">daily_cycle_check</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>When a metric is not found in housekeeping, keeping trying for 60 seconds.
+This makes sure that alerts don't crash during the daily cycle of housekeeping files</p>
+<h2 id="returns">Returns</h2>
+<dl>
+<dt><code>bool</code></dt>
+<dd>Whether the file has cycled or not</dd>
+</dl></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def daily_cycle_check(self):
+    &#34;&#34;&#34; When a metric is not found in housekeeping, keeping trying for 60 seconds.
+    This makes sure that alerts don&#39;t crash during the daily cycle of housekeeping files
+
+    Returns:
+        bool: Whether the file has cycled or not
+    &#34;&#34;&#34;
+    try:
+        _, _ = get_housekeeping(hk_name=self.configuration.metric)
+    except HKError as ex:
+        if not self.cycle_check:
+            self.cycle_check = True
+            self.cycle_timeout = time.time()
+        
+        if (time.time() - self.cycle_timeout) &gt; 300:
+            logger.info(f&#34;Alert &#39;{self.configuration.name}&#39; : No daily file found after 5 minutes. Housekeeping is unavailable: {ex}&#34;)
+            self.active = False
+            self.triggered = False
+            self.timed_out = 0.0
+            
+        return False
+    else:
+        logger.debug(f&#34;Alert &#39;{self.configuration.name}&#39; : Daily file has been cycled&#34;)
+        self.cycle_check = False
+        return True</code></pre>
+</details>
+</dd>
+<dt id="egse.alert.Alert.generate_alert_message"><code class="name flex">
+<span>def <span class="ident">generate_alert_message</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Generates the email body for the alert based on the alert type</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def generate_alert_message(self):
+    &#34;&#34;&#34; Generates the email body for the alert based on the alert type
+    &#34;&#34;&#34;
+    body = &#34;&#34;
+    
+    fdir_code = self.configuration.fdir_code
+    actions   = self.configuration.actions
+    
+    if self.configuration.alert_type == LIMIT:
+        if self.configuration.limits[&#39;min&#39;] != None and self.configuration.limits[&#39;max&#39;] != None:
+            body += f&#34;- {self.configuration.name} exceeded its operational limits of {float(self.configuration.limits[&#39;min&#39;]):.3e} &amp; {float(self.configuration.limits[&#39;max&#39;]):.3e}. Current value: {float(self.value):.3e}\n&#34;
+        elif self.configuration.limits[&#39;min&#39;] != None:
+            body += f&#34;- {self.configuration.name} exceeded its operatinoal limits of {float(self.configuration.limits[&#39;min&#39;]):.3e}. Current value: {float(self.value):.3e}\n&#34;
+        elif self.configuration.limits[&#39;max&#39;] != None:
+            body += f&#34;- {self.configuration.name} exceeded its operational limits of {float(self.configuration.limits[&#39;max&#39;]):.3e}. Current value: {float(self.value):.3e}\n&#34;
+    elif self.configuration.alert_type is SETPOINT:
+        body += f&#34;- {self.configuration.name} setpoint offset was larger than {float(self.configuration.limits[&#39;offset&#39;]):.3e}. Current value: {float(self.value):.3e}\n&#34;
+    elif self.configuration.alert_type is MASK:
+        body += f&#34;- {self.configuration.name} is {bool(self.value)}&#34;
+    elif self.configuration.alert_type is RATEOFCHANGE:
+        body += f&#34;- {self.configuration.name} has exceeded its RoC limit of {float(self.configuration.limits[&#39;limit&#39;]):.3e}. Current value: {float(self.value):.3e}\n&#34;
+    
+    if fdir_code:
+        body += f&#34;\t- FDIR code: &#39;{self.configuration.fdir_code}&#39; was fired\n&#34;
+    
+    if actions:
+        body += f&#34;\t- Corrective actions:\n&#34;
+        for action in actions:
+            body += f&#34;\t\t\t-   {action}\n&#34;
+    
+    return body</code></pre>
+</details>
+</dd>
+<dt id="egse.alert.Alert.get_housekeeping"><code class="name flex">
+<span>def <span class="ident">get_housekeeping</span></span>(<span>self, metric, time_window=None)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Retrieves housekeeping from the HK files. Checks whether the value actually exists,
+and if the age is still appropiate.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_housekeeping(self, metric, time_window=None):
+    &#34;&#34;&#34; Retrieves housekeeping from the HK files. Checks whether the value actually exists,
+        and if the age is still appropiate.
+    &#34;&#34;&#34;
+    try:
+        timestamps, values = get_housekeeping(hk_name=metric, time_window=time_window)
+    except HKError:
+        if self.daily_cycle_check():
+            timestamps, values = get_housekeeping(hk_name=metric, time_window=time_window)
+        else:
+            raise AlertException(f&#34;{self.configuration.name} : Daily file cycle is being checked&#34;)
+
+
+    most_recent_timestamp = float(timestamps[-1]) if type(timestamps) == np.ndarray else timestamps
+
+    self.lastTimestamp = most_recent_timestamp
+    
+    is_alive = time.time() - (most_recent_timestamp - EPOCH_1958_1970) &gt; self.configuration.maximum_age
+    value_exists = values[-1] if type(values) == np.ndarray else values
+
+    if is_alive:
+        self.active = False
+        logger.critical(f&#34;Alert &#39;{self.configuration.name}&#39; : Last housekeeping value was older than {self.configuration.maximum_age} seconds&#34;)
+        raise Exception(f&#34;Alert &#39;{self.configuration.name}&#39; : Last housekeeping value was older than {self.configuration.maximum_age} seconds&#34;)
+
+    if not value_exists:
+        logger.critical(f&#34;Alert &#39;{self.configuration.name}&#39; : Housekeeping returned an emptry string as latest value&#34;)
+        self.active = False
+        raise Exception(f&#34;Alert &#39;{self.configuration.name}&#39; : Housekeeping returned an emptry string as latest value&#34;)
+        
+    return timestamps, values</code></pre>
+</details>
+</dd>
+<dt id="egse.alert.Alert.limit_check"><code class="name flex">
+<span>def <span class="ident">limit_check</span></span>(<span>self, value)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Compares a given value to the configured upper and lower limits</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def limit_check(self, value):
+    &#34;&#34;&#34; Compares a given value to the configured upper and lower limits
+    &#34;&#34;&#34; 
+    min_triggered = False
+    max_triggered = False
+    
+    self.value = value
+    
+    if self.configuration.limits[&#39;max&#39;]:
+        if float(value) &gt; self.configuration.limits[&#39;max&#39;]:
+            self.timed_out = time.time() if self.timed_out == 0.0 else self.timed_out
+            if (time.time() - self.timed_out) &gt; self.configuration.timeout:
+                max_triggered = True
+
+    if self.configuration.limits[&#39;min&#39;]:
+        if float(value) &lt; self.configuration.limits[&#39;min&#39;]:
+            self.timed_out = time.time() if self.timed_out == 0.0 else self.timed_out
+            if (time.time() - self.timed_out) &gt; self.configuration.timeout:
+                min_triggered = True
+               
+    if min_triggered or max_triggered:
+        self.trigger_alert()
+    else:
+        self.clear_alert()</code></pre>
+</details>
+</dd>
+<dt id="egse.alert.Alert.mask_check"><code class="name flex">
+<span>def <span class="ident">mask_check</span></span>(<span>self, value)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Masks a bitmap and check the state of a single bit</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def mask_check(self, value):
+    &#34;&#34;&#34; Masks a bitmap and check the state of a single bit
+    &#34;&#34;&#34;
+    if isinstance(value, str):
+        value = eval(value)
+    
+    self.value = int(value)
+    
+    if (self.value &gt;&gt; self.configuration.limits[&#39;mask&#39;]) &amp; 0b1:
+        self.timed_out = time.time() if self.timed_out == 0.0 else self.timed_out
+        if (time.time() - self.timed_out) &gt; self.configuration.maximum_age:
+            self.trigger_alert()
+    else:
+        self.clear_alert()</code></pre>
+</details>
+</dd>
+<dt id="egse.alert.Alert.metric_is_available"><code class="name flex">
+<span>def <span class="ident">metric_is_available</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Check whether a metric is available in the HK files</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def metric_is_available(self):
+    &#34;&#34;&#34; Check whether a metric is available in the HK files &#34;&#34;&#34;
+    try:
+        timestamp, _ = get_housekeeping(hk_name=self.configuration.metric)
+        if time.time() - (float(timestamp) - EPOCH_1958_1970) &gt; self.configuration.maximum_age:
+            raise
+    except:
+        logger.warning(f&#34;Alert &#39;{self.configuration.name}&#39; : &#34; \
+                       f&#34;Metric: &#39;{self.configuration.metric}&#39; is currently unavailable.&#34; \
+                        f&#34;Please restart this alert when metric is available.&#34;)
+        return False
+    else:
+        return True</code></pre>
+</details>
+</dd>
+<dt id="egse.alert.Alert.rate_of_change_check"><code class="name flex">
+<span>def <span class="ident">rate_of_change_check</span></span>(<span>self, timestamps, values)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Compares a given value to the configured rate-of-change setpoint</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def rate_of_change_check(self, timestamps, values):
+    &#34;&#34;&#34; Compares a given value to the configured rate-of-change setpoint
+    &#34;&#34;&#34;
+    deltaY = float(values[-1]) - float(values[0])
+    deltaX = float(timestamps[-1]) - float(timestamps[0])
+    
+    self.value = deltaY / deltaX
+    
+    if self.configuration.limits[&#39;limit&#39;] &lt; 0:
+        if self.value &lt; self.configuration.limits[&#39;limit&#39;]:
+            self.timed_out = time.time() if self.timed_out == 0.0 else self.timed_out
+            if (time.time() - self.timed_out) &gt; self.configuration.timeout:
+                self.trigger_alert()
+        else:
+            self.clear_alert()
+    else:
+        if self.value &gt; self.configuration.limits[&#39;limit&#39;]:
+            self.timed_out = time.time() if self.timed_out == 0.0 else self.timed_out
+            if (time.time() - self.timed_out) &gt; self.configuration.timeout:
+                self.trigger_alert()
+        else:
+            self.clear_alert()</code></pre>
+</details>
+</dd>
+<dt id="egse.alert.Alert.setpoint_check"><code class="name flex">
+<span>def <span class="ident">setpoint_check</span></span>(<span>self, value)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Compares a given value to the configured setpoint (dynamic/static setpoint)</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def setpoint_check(self, value):
+    &#34;&#34;&#34; Compares a given value to the configured setpoint (dynamic/static setpoint)
+    &#34;&#34;&#34;
+    self.value = value
+    
+    if self.configuration.limits[&#39;metric&#39;]:
+        try:
+            _, sp_value = self.get_housekeeping(self.configuration.limits[&#39;metric&#39;], None)
+        except Exception as ex:
+            logger.warning(ex, exc_info=True)
+            self.active = False
+            return
+    
+    else:
+        sp_value = self.configuration.limits[&#39;value&#39;]
+        
+    if not (float(sp_value) - self.configuration.limits[&#39;offset&#39;]) &lt;= float(value) &lt;= (float(sp_value) + self.configuration.limits[&#39;offset&#39;]):
+        self.timed_out = time.time() if self.timed_out == 0.0 else self.timed_out
+        if (time.time() - self.timed_out) &gt; self.configuration.timeout:
+            self.trigger_alert()
+    else:
+        self.clear_alert()</code></pre>
+</details>
+</dd>
+<dt id="egse.alert.Alert.signal_fdir"><code class="name flex">
+<span>def <span class="ident">signal_fdir</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Signal the FDIR manager, if a fidr code was configured</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def signal_fdir(self):
+    &#34;&#34;&#34; Signal the FDIR manager, if a fidr code was configured
+    &#34;&#34;&#34;
+    if self.configuration.fdir_code:
+        try:
+            logger.info(f&#34;Signaled fdir: &#39;{self.configuration.fdir_code}&#39;&#34;)
+            with FdirManagerProxy() as fdir:
+                fdir.signal_fdir(self.configuration.fdir_code, self.configuration.metric)
+        except Exception as e:
+            logger.critical(f&#34;Alert &#39;{self.configuration.name}&#39; : Could not signal FDIR manager. {e}&#34;)
+    else:
+        logger.info(f&#34;Alert &#39;{self.configuration.name}&#39; Does not have a configured FDIR code.&#34;)</code></pre>
+</details>
+</dd>
+<dt id="egse.alert.Alert.trigger_alert"><code class="name flex">
+<span>def <span class="ident">trigger_alert</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Send a notifcation and FDIR signal, also ensures that alerts are only triggered once</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def trigger_alert(self):
+    &#34;&#34;&#34; Send a notifcation and FDIR signal, also ensures that alerts are only triggered once
+    &#34;&#34;&#34;
+    if not self.notified:
+        self.triggered = True
+        logger.critical(f&#34;Alert &#39;{self.configuration.name}&#39; : triggered!&#34;)
+        
+        self.notification_worker.add_notification(0, self.generate_alert_message())
+        
+        self.signal_fdir()
+
+        self.notified = True</code></pre>
+</details>
+</dd>
+<dt id="egse.alert.Alert.update"><code class="name flex">
+<span>def <span class="ident">update</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Update current alert status</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def update(self):
+    &#34;&#34;&#34; Update current alert status
+    &#34;&#34;&#34;
+    if self.active:
+        if (time.time() - self.last_update) &gt; self.configuration.sample_rate:
+            try:
+                timestamps, values = self.get_housekeeping(self.configuration.metric,
+                                                        self.configuration.limits.get(&#39;time_window&#39;, None))
+            except Exception as ex:
+                logger.warning(ex)
+                self.active = False
+                return
+            except AlertException as a_ex:
+                logger.warning(a_ex)
+                self.last_update = (time.time() + 10) # Increase delay before next check
+                return
+            else:
+                self.cycle_check = False
+            
+            try:
+                if self.configuration.alert_type == LIMIT:
+                    self.limit_check(values)
+                elif self.configuration.alert_type is SETPOINT:
+                    self.setpoint_check(values)
+                elif self.configuration.alert_type is MASK:
+                    self.mask_check(values)
+                elif self.configuration.alert_type is RATEOFCHANGE:
+                    self.rate_of_change_check(timestamps, values)
+            except Exception as ex:
+                logger.warning(ex)
+                raise AlertException(ex)
+            
+            self.last_update = time.time()</code></pre>
+</details>
+</dd>
+</dl>
+</dd>
+<dt id="egse.alert.AlertException"><code class="flex name class">
+<span>class <span class="ident">AlertException</span></span>
+<span>(</span><span>*args, **kwargs)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Base class for all expcetion related to the Alerts</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class AlertException(BaseException):
+    &#34;&#34;&#34;
+    Base class for all expcetion related to the Alerts
+    &#34;&#34;&#34;
+    pass             </code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>builtins.BaseException</li>
+</ul>
+</dd>
+<dt id="egse.alert.AlertManagerCommand"><code class="flex name class">
+<span>class <span class="ident">AlertManagerCommand</span></span>
+<span>(</span><span>name, cmd, response=None, wait=None, check=None, description=None, device_method=None)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Command (client-server) for process management.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class AlertManagerCommand(ClientServerCommand):
+    &#34;&#34;&#34;
+    Command (client-server) for process management.
+    &#34;&#34;&#34;
+    pass</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="egse.command.ClientServerCommand" href="../command.html#egse.command.ClientServerCommand">ClientServerCommand</a></li>
+<li><a title="egse.command.Command" href="../command.html#egse.command.Command">Command</a></li>
+</ul>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="egse.command.ClientServerCommand" href="../command.html#egse.command.ClientServerCommand">ClientServerCommand</a></b></code>:
+<ul class="hlist">
+<li><code><a title="egse.command.ClientServerCommand.client_call" href="../command.html#egse.command.ClientServerCommand.client_call">client_call</a></code></li>
+<li><code><a title="egse.command.ClientServerCommand.server_call" href="../command.html#egse.command.ClientServerCommand.server_call">server_call</a></code></li>
+</ul>
+</li>
+</ul>
+</dd>
+<dt id="egse.alert.AlertManagerController"><code class="flex name class">
+<span>class <span class="ident">AlertManagerController</span></span>
+<span>(</span><span>phase='none')</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Controller for Alert Management</p>
+<p>Initialization for the Alert Manager Controller.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>phase</code></strong> :&ensp;<code>str</code>, optional</dt>
+<dd><em>description</em>. Defaults to 'none'.</dd>
+</dl></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class AlertManagerController(AlertManagerInterface):
+    
+    &#34;&#34;&#34;
+    Controller for Alert Management
+    &#34;&#34;&#34;
+    
+    def __init__(self, phase=&#39;none&#39;):
+        &#34;&#34;&#34; Initialization for the Alert Manager Controller.
+
+        Args:
+            phase (str, optional): _description_. Defaults to &#39;none&#39;.
+        &#34;&#34;&#34;
+        self.phase                  = phase
+        self.active                 = False
+        self.alerts                 = {}
+        self.notification_worker    = AlertNotificationWorker()
+        self.control_server_worker  = ControlServerWorker(self.notification_worker)
+        
+        self.thread                 = threading.Thread()
+        
+        self.load_configuration(phase)
+        self.control_server_worker.start()
+
+    def load_configuration(self, phase = &#39;none&#39;):
+        &#34;&#34;&#34; Load a new phase into the alert manager. &#34;&#34;&#34;
+        if phase != &#39;none&#39;:
+            self.stop_alert()
+            
+            try:
+                self.configuration, alerts = load_alert_configuration(phase)
+                self.alerts = self.initialize_alerts(alerts)
+                
+                self.control_server_worker.load_fdir_codes(self.configuration)
+            except Exception as ex:
+                logger.warning(f&#34;Could not load {phase} phase: {ex}&#34;)
+            else:
+                self.phase = phase
+        
+        else:
+            self.stop_alert()
+            self.alerts = {}
+            self.phase = phase
+
+        logger.info(f&#34;Alert manager has been configured for the {self.phase} phase&#34;)
+    
+    def initialize_alerts(self, alerts):
+        &#34;&#34;&#34; Initialize the alerts
+        &#34;&#34;&#34;
+        for key, configuration in alerts.items():
+            try:
+                alerts[key] = Alert(configuration, self.notification_worker)
+            except Exception as ex:
+                logger.warning(f&#34;Could not create alert &#39;{key}&#39;: {ex}&#34;)
+        return alerts
+    
+    def status(self, name = None) -&gt; dict:
+        &#34;&#34;&#34; Returns the status of all configured alerts &#34;&#34;&#34;
+        status = {}
+        if self.alerts:
+            for key, alert in self.alerts.items():
+                status[key] = {
+                    &#39;active&#39;            : alert.active,
+                    &#39;triggered&#39;         : alert.triggered,
+                    &#39;value&#39;             : alert.value,
+                    &#39;lastTimestamp&#39;         : alert.lastTimestamp
+                }
+            if name and (name in status):
+                return  status[name]
+            else:
+                return status
+        
+    def stop_cs_monitor(self):
+        &#34;&#34;&#34; Stops the control server monitor 
+        &#34;&#34;&#34;
+        self.control_server_worker.stop()
+    
+    def start_cs_monitor(self):
+        &#34;&#34;&#34; Starts the control server monitor 
+        &#34;&#34;&#34;
+        self.control_server_worker.start()
+    
+    def start_alert(self, name = None):
+        &#34;&#34;&#34; Start one or all alert monitors
+        &#34;&#34;&#34;
+        if name != None:
+            self.alerts[name].active = True
+        else:
+            for alert in self.alerts.values():
+                alert.active = True
+        
+        if self.thread.is_alive():
+            return
+
+        logger.info(f&#34;Starting alert monitor in {self.phase} phase&#34;)
+    
+        self.thread.__init__(target=self.run)
+        self.thread.setDaemon(True)
+        self.thread.start()
+    
+    def stop_alert(self, name = None):
+        &#34;&#34;&#34; Stop one or all alert monitors
+        &#34;&#34;&#34;
+        if name != None:
+            self.alerts[name].active = False
+        else:
+            
+            self.active = False
+            for alert in self.alerts.values():
+                alert.active = False
+                
+            if self.thread.is_alive():
+                self.thread.join()
+    
+    def run(self):
+        &#34;&#34;&#34; The alert monitoring loop
+        &#34;&#34;&#34;
+        self.active = True
+
+        while self.active:
+            for alert in self.alerts.values():
+                if alert.active:
+                    try:
+                        alert.update()
+                    except Exception as ex:
+                        logger.info(ex)
+                time.sleep(0.1)</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="egse.alert.AlertManagerInterface" href="#egse.alert.AlertManagerInterface">AlertManagerInterface</a></li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="egse.alert.AlertManagerController.initialize_alerts"><code class="name flex">
+<span>def <span class="ident">initialize_alerts</span></span>(<span>self, alerts)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Initialize the alerts</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def initialize_alerts(self, alerts):
+    &#34;&#34;&#34; Initialize the alerts
+    &#34;&#34;&#34;
+    for key, configuration in alerts.items():
+        try:
+            alerts[key] = Alert(configuration, self.notification_worker)
+        except Exception as ex:
+            logger.warning(f&#34;Could not create alert &#39;{key}&#39;: {ex}&#34;)
+    return alerts</code></pre>
+</details>
+</dd>
+<dt id="egse.alert.AlertManagerController.run"><code class="name flex">
+<span>def <span class="ident">run</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>The alert monitoring loop</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def run(self):
+    &#34;&#34;&#34; The alert monitoring loop
+    &#34;&#34;&#34;
+    self.active = True
+
+    while self.active:
+        for alert in self.alerts.values():
+            if alert.active:
+                try:
+                    alert.update()
+                except Exception as ex:
+                    logger.info(ex)
+            time.sleep(0.1)</code></pre>
+</details>
+</dd>
+<dt id="egse.alert.AlertManagerController.start_alert"><code class="name flex">
+<span>def <span class="ident">start_alert</span></span>(<span>self, name=None)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Start one or all alert monitors</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def start_alert(self, name = None):
+    &#34;&#34;&#34; Start one or all alert monitors
+    &#34;&#34;&#34;
+    if name != None:
+        self.alerts[name].active = True
+    else:
+        for alert in self.alerts.values():
+            alert.active = True
+    
+    if self.thread.is_alive():
+        return
+
+    logger.info(f&#34;Starting alert monitor in {self.phase} phase&#34;)
+
+    self.thread.__init__(target=self.run)
+    self.thread.setDaemon(True)
+    self.thread.start()</code></pre>
+</details>
+</dd>
+<dt id="egse.alert.AlertManagerController.stop_alert"><code class="name flex">
+<span>def <span class="ident">stop_alert</span></span>(<span>self, name=None)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Stop one or all alert monitors</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def stop_alert(self, name = None):
+    &#34;&#34;&#34; Stop one or all alert monitors
+    &#34;&#34;&#34;
+    if name != None:
+        self.alerts[name].active = False
+    else:
+        
+        self.active = False
+        for alert in self.alerts.values():
+            alert.active = False
+            
+        if self.thread.is_alive():
+            self.thread.join()</code></pre>
+</details>
+</dd>
+</dl>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="egse.alert.AlertManagerInterface" href="#egse.alert.AlertManagerInterface">AlertManagerInterface</a></b></code>:
+<ul class="hlist">
+<li><code><a title="egse.alert.AlertManagerInterface.load_configuration" href="#egse.alert.AlertManagerInterface.load_configuration">load_configuration</a></code></li>
+<li><code><a title="egse.alert.AlertManagerInterface.start_cs_monitor" href="#egse.alert.AlertManagerInterface.start_cs_monitor">start_cs_monitor</a></code></li>
+<li><code><a title="egse.alert.AlertManagerInterface.status" href="#egse.alert.AlertManagerInterface.status">status</a></code></li>
+<li><code><a title="egse.alert.AlertManagerInterface.stop_cs_monitor" href="#egse.alert.AlertManagerInterface.stop_cs_monitor">stop_cs_monitor</a></code></li>
+</ul>
+</li>
+</ul>
+</dd>
+<dt id="egse.alert.AlertManagerInterface"><code class="flex name class">
+<span>class <span class="ident">AlertManagerInterface</span></span>
+</code></dt>
+<dd>
+<div class="desc"><p>Interface for dynamic loading of the command for Alert Management.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class AlertManagerInterface:
+    &#34;&#34;&#34;
+    Interface for dynamic loading of the command for Alert Management.
+    &#34;&#34;&#34;
+    @dynamic_interface
+    def load_configuration(self, phase = &#39;none&#39;):
+        &#34;&#34;&#34; Load a new phase into the alert manager. &#34;&#34;&#34;
+    
+        raise NotImplementedError
+        
+    @dynamic_interface
+    def status(self, name = None) -&gt; dict:
+        &#34;&#34;&#34; Returns the status of all configured alerts &#34;&#34;&#34;
+        
+        raise NotImplementedError
+        
+    @dynamic_interface
+    def stop_cs_monitor(self):
+        &#34;&#34;&#34; Stops the control server monitor &#34;&#34;&#34;
+        
+        raise NotImplementedError
+    
+    @dynamic_interface
+    def start_cs_monitor(self):
+        &#34;&#34;&#34; Starts the control server monitor &#34;&#34;&#34;
+        
+        raise NotImplementedError
+        
+    @dynamic_interface
+    def start_alert(self, name = None):
+        &#34;&#34;&#34; Start the alert monitor &#34;&#34;&#34;
+        
+        raise NotImplementedError
+        
+    @dynamic_interface
+    def stop_alert(self, name = None):
+        &#34;&#34;&#34; Stop the alert monitor &#34;&#34;&#34;
+        
+        raise NotImplementedError</code></pre>
+</details>
+<h3>Subclasses</h3>
+<ul class="hlist">
+<li><a title="egse.alert.AlertManagerController" href="#egse.alert.AlertManagerController">AlertManagerController</a></li>
+<li><a title="egse.alert.AlertManagerProxy" href="#egse.alert.AlertManagerProxy">AlertManagerProxy</a></li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="egse.alert.AlertManagerInterface.load_configuration"><code class="name flex">
+<span>def <span class="ident">load_configuration</span></span>(<span>self, phase='none')</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Load a new phase into the alert manager.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@dynamic_interface
+def load_configuration(self, phase = &#39;none&#39;):
+    &#34;&#34;&#34; Load a new phase into the alert manager. &#34;&#34;&#34;
+
+    raise NotImplementedError</code></pre>
+</details>
+</dd>
+<dt id="egse.alert.AlertManagerInterface.start_alert"><code class="name flex">
+<span>def <span class="ident">start_alert</span></span>(<span>self, name=None)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Start the alert monitor</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@dynamic_interface
+def start_alert(self, name = None):
+    &#34;&#34;&#34; Start the alert monitor &#34;&#34;&#34;
+    
+    raise NotImplementedError</code></pre>
+</details>
+</dd>
+<dt id="egse.alert.AlertManagerInterface.start_cs_monitor"><code class="name flex">
+<span>def <span class="ident">start_cs_monitor</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Starts the control server monitor</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@dynamic_interface
+def start_cs_monitor(self):
+    &#34;&#34;&#34; Starts the control server monitor &#34;&#34;&#34;
+    
+    raise NotImplementedError</code></pre>
+</details>
+</dd>
+<dt id="egse.alert.AlertManagerInterface.status"><code class="name flex">
+<span>def <span class="ident">status</span></span>(<span>self, name=None) ‑> dict</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Returns the status of all configured alerts</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@dynamic_interface
+def status(self, name = None) -&gt; dict:
+    &#34;&#34;&#34; Returns the status of all configured alerts &#34;&#34;&#34;
+    
+    raise NotImplementedError</code></pre>
+</details>
+</dd>
+<dt id="egse.alert.AlertManagerInterface.stop_alert"><code class="name flex">
+<span>def <span class="ident">stop_alert</span></span>(<span>self, name=None)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Stop the alert monitor</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@dynamic_interface
+def stop_alert(self, name = None):
+    &#34;&#34;&#34; Stop the alert monitor &#34;&#34;&#34;
+    
+    raise NotImplementedError</code></pre>
+</details>
+</dd>
+<dt id="egse.alert.AlertManagerInterface.stop_cs_monitor"><code class="name flex">
+<span>def <span class="ident">stop_cs_monitor</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Stops the control server monitor</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@dynamic_interface
+def stop_cs_monitor(self):
+    &#34;&#34;&#34; Stops the control server monitor &#34;&#34;&#34;
+    
+    raise NotImplementedError</code></pre>
+</details>
+</dd>
+</dl>
+</dd>
+<dt id="egse.alert.AlertManagerProtocol"><code class="flex name class">
+<span>class <span class="ident">AlertManagerProtocol</span></span>
+<span>(</span><span>control_server: <a title="egse.control.ControlServer" href="../control.html#egse.control.ControlServer">ControlServer</a>, phase)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Command Protocol for Alert Management.</p>
+<p>Initialisation of a new Protocol for Alert Management.</p>
+<p>The initialisation of this Protocol consists of the following steps:</p>
+<pre><code>- create a Controller to which the given Control Server should send commands;
+- load the commands;
+- build a look-up table for the commands.
+</code></pre>
+<h2 id="args">Args</h2>
+<ul>
+<li>control_server: Control Server via which commands should be sent
+to the Controller.</li>
+</ul></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class AlertManagerProtocol(CommandProtocol):
+    &#34;&#34;&#34;
+    Command Protocol for Alert Management.
+    &#34;&#34;&#34;
+    def __init__(self, control_server: ControlServer, phase):
+        &#34;&#34;&#34;Initialisation of a new Protocol for Alert Management.
+
+        The initialisation of this Protocol consists of the following steps:
+
+            - create a Controller to which the given Control Server should send commands;
+            - load the commands;
+            - build a look-up table for the commands.
+
+        Args:
+            - control_server: Control Server via which commands should be sent
+                              to the Controller.
+        &#34;&#34;&#34;
+
+        super().__init__()
+
+        # Control Server for Alert Management
+
+        self.control_server = control_server
+
+        # Create a new Controller for Alert Management
+
+        self.controller = AlertManagerController(phase)
+
+        # Load the commands (for commanding of the AM Controller) from the
+        # YAML file into a dictionary, stored in the AM Protocol
+
+        self.load_commands(
+            DEVICE_SETTINGS.Commands, AlertManagerCommand, AlertManagerController
+        )
+
+        # Build a look-up table for the methods
+
+        self.build_device_method_lookup_table(self.controller)
+
+
+    def get_bind_address(self):
+        &#34;&#34;&#34;Returns the address to bind a socket to.
+
+        This bind address is a properly formatted URL, based on the
+        communication protocol and the commanding port.
+
+        Returns:
+            - Properly formatted URL to bind a socket to.
+        &#34;&#34;&#34;
+
+        return bind_address(
+            self.control_server.get_communication_protocol(),
+            self.control_server.get_commanding_port(),
+        )
+
+    def get_status(self) -&gt; dict:
+        &#34;&#34;&#34;Returns the status information for the Control Server.
+
+        This status information is returned in the form of a dictionary that
+        contains the following information about the Control Server for
+        Alert Management:
+
+            - timestamp (str): string representation of the current datetime;
+            - PID (int): process ID for the Control Server;
+            - Up (float): uptime of the Control Server [s];
+            - UUID (uuid1): Universally Unique Identifier for the Control
+                            Server;
+            - RSS (int): &#39;Resident Set Size&#39;, this is the non-swapped physical
+                         memory a process has used [byte];
+            - USS (int): &#39;Unique Set Size&#39;, this is the memory which is unique
+                         to a process [byte];
+            - CPU User (float): time spent in user mode [s];
+            - CPU System (float): time spent in kernel mode [s];
+            - CPU count: number of CPU cores in use by the process;
+            - CPU% (float): process CPU utilization as a percentage [%].
+            - Alert Status (dict): The status of all active alerts
+            - Alert Phase (int): The enumerate value of the current phase
+
+        Returns:
+            - Dictionary with status information for the Control Server for
+              Alert Management.
+        &#34;&#34;&#34;
+
+        status = super().get_status()
+
+        status[&#39;alert_status&#39;] = self.controller.status()
+        status[&#39;phase&#39;]        = self.controller.phase
+        
+        return status
+
+    def get_housekeeping(self) -&gt; dict:
+        &#34;&#34;&#34;Returns the housekeeping data for the Control Server.
+
+        This housekeeping data is returns in the form of a dictionary that
+        contains the following information about the Control Server for
+        Alert Management:
+
+            - timestamp (str): string representation of the current datetime.
+
+        Returns:
+            - Dictionary with housekeeping data for the Control Server for
+              Alert Management.
+        &#34;&#34;&#34;
+
+        return {&#34;timestamp&#34;: format_datetime()}
+
+    def quit(self):
+        self.controller.quit()</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="egse.protocol.CommandProtocol" href="../protocol.html#egse.protocol.CommandProtocol">CommandProtocol</a></li>
+<li><a title="egse.device.DeviceConnectionObserver" href="../device.html#egse.device.DeviceConnectionObserver">DeviceConnectionObserver</a></li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="egse.alert.AlertManagerProtocol.get_bind_address"><code class="name flex">
+<span>def <span class="ident">get_bind_address</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Returns the address to bind a socket to.</p>
+<p>This bind address is a properly formatted URL, based on the
+communication protocol and the commanding port.</p>
+<h2 id="returns">Returns</h2>
+<ul>
+<li>Properly formatted URL to bind a socket to.</li>
+</ul></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_bind_address(self):
+    &#34;&#34;&#34;Returns the address to bind a socket to.
+
+    This bind address is a properly formatted URL, based on the
+    communication protocol and the commanding port.
+
+    Returns:
+        - Properly formatted URL to bind a socket to.
+    &#34;&#34;&#34;
+
+    return bind_address(
+        self.control_server.get_communication_protocol(),
+        self.control_server.get_commanding_port(),
+    )</code></pre>
+</details>
+</dd>
+<dt id="egse.alert.AlertManagerProtocol.get_housekeeping"><code class="name flex">
+<span>def <span class="ident">get_housekeeping</span></span>(<span>self) ‑> dict</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Returns the housekeeping data for the Control Server.</p>
+<p>This housekeeping data is returns in the form of a dictionary that
+contains the following information about the Control Server for
+Alert Management:</p>
+<pre><code>- timestamp (str): string representation of the current datetime.
+</code></pre>
+<h2 id="returns">Returns</h2>
+<ul>
+<li>Dictionary with housekeeping data for the Control Server for
+Alert Management.</li>
+</ul></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_housekeeping(self) -&gt; dict:
+    &#34;&#34;&#34;Returns the housekeeping data for the Control Server.
+
+    This housekeeping data is returns in the form of a dictionary that
+    contains the following information about the Control Server for
+    Alert Management:
+
+        - timestamp (str): string representation of the current datetime.
+
+    Returns:
+        - Dictionary with housekeeping data for the Control Server for
+          Alert Management.
+    &#34;&#34;&#34;
+
+    return {&#34;timestamp&#34;: format_datetime()}</code></pre>
+</details>
+</dd>
+<dt id="egse.alert.AlertManagerProtocol.get_status"><code class="name flex">
+<span>def <span class="ident">get_status</span></span>(<span>self) ‑> dict</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Returns the status information for the Control Server.</p>
+<p>This status information is returned in the form of a dictionary that
+contains the following information about the Control Server for
+Alert Management:</p>
+<pre><code>- timestamp (str): string representation of the current datetime;
+- PID (int): process ID for the Control Server;
+- Up (float): uptime of the Control Server [s];
+- UUID (uuid1): Universally Unique Identifier for the Control
+                Server;
+- RSS (int): 'Resident Set Size', this is the non-swapped physical
+             memory a process has used [byte];
+- USS (int): 'Unique Set Size', this is the memory which is unique
+             to a process [byte];
+- CPU User (float): time spent in user mode [s];
+- CPU System (float): time spent in kernel mode [s];
+- CPU count: number of CPU cores in use by the process;
+- CPU% (float): process CPU utilization as a percentage [%].
+- Alert Status (dict): The status of all active alerts
+- Alert Phase (int): The enumerate value of the current phase
+</code></pre>
+<h2 id="returns">Returns</h2>
+<ul>
+<li>Dictionary with status information for the Control Server for
+Alert Management.</li>
+</ul></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_status(self) -&gt; dict:
+    &#34;&#34;&#34;Returns the status information for the Control Server.
+
+    This status information is returned in the form of a dictionary that
+    contains the following information about the Control Server for
+    Alert Management:
+
+        - timestamp (str): string representation of the current datetime;
+        - PID (int): process ID for the Control Server;
+        - Up (float): uptime of the Control Server [s];
+        - UUID (uuid1): Universally Unique Identifier for the Control
+                        Server;
+        - RSS (int): &#39;Resident Set Size&#39;, this is the non-swapped physical
+                     memory a process has used [byte];
+        - USS (int): &#39;Unique Set Size&#39;, this is the memory which is unique
+                     to a process [byte];
+        - CPU User (float): time spent in user mode [s];
+        - CPU System (float): time spent in kernel mode [s];
+        - CPU count: number of CPU cores in use by the process;
+        - CPU% (float): process CPU utilization as a percentage [%].
+        - Alert Status (dict): The status of all active alerts
+        - Alert Phase (int): The enumerate value of the current phase
+
+    Returns:
+        - Dictionary with status information for the Control Server for
+          Alert Management.
+    &#34;&#34;&#34;
+
+    status = super().get_status()
+
+    status[&#39;alert_status&#39;] = self.controller.status()
+    status[&#39;phase&#39;]        = self.controller.phase
+    
+    return status</code></pre>
+</details>
+</dd>
+</dl>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="egse.protocol.CommandProtocol" href="../protocol.html#egse.protocol.CommandProtocol">CommandProtocol</a></b></code>:
+<ul class="hlist">
+<li><code><a title="egse.protocol.CommandProtocol.bind" href="../protocol.html#egse.protocol.CommandProtocol.bind">bind</a></code></li>
+<li><code><a title="egse.protocol.CommandProtocol.build_device_method_lookup_table" href="../protocol.html#egse.protocol.CommandProtocol.build_device_method_lookup_table">build_device_method_lookup_table</a></code></li>
+<li><code><a title="egse.protocol.CommandProtocol.handle_device_method" href="../protocol.html#egse.protocol.CommandProtocol.handle_device_method">handle_device_method</a></code></li>
+<li><code><a title="egse.protocol.CommandProtocol.is_alive" href="../protocol.html#egse.protocol.CommandProtocol.is_alive">is_alive</a></code></li>
+<li><code><a title="egse.protocol.CommandProtocol.load_commands" href="../protocol.html#egse.protocol.CommandProtocol.load_commands">load_commands</a></code></li>
+<li><code><a title="egse.protocol.CommandProtocol.quit" href="../protocol.html#egse.protocol.CommandProtocol.quit">quit</a></code></li>
+<li><code><a title="egse.protocol.CommandProtocol.receive" href="../protocol.html#egse.protocol.CommandProtocol.receive">receive</a></code></li>
+<li><code><a title="egse.protocol.CommandProtocol.send" href="../protocol.html#egse.protocol.CommandProtocol.send">send</a></code></li>
+<li><code><a title="egse.protocol.CommandProtocol.send_commands" href="../protocol.html#egse.protocol.CommandProtocol.send_commands">send_commands</a></code></li>
+<li><code><a title="egse.protocol.CommandProtocol.state" href="../device.html#egse.device.DeviceConnectionObserver.state">state</a></code></li>
+<li><code><a title="egse.protocol.CommandProtocol.update_connection_state" href="../device.html#egse.device.DeviceConnectionObserver.update_connection_state">update_connection_state</a></code></li>
+</ul>
+</li>
+</ul>
+</dd>
+<dt id="egse.alert.AlertManagerProxy"><code class="flex name class">
+<span>class <span class="ident">AlertManagerProxy</span></span>
+<span>(</span><span>protocol='tcp', hostname='localhost', port=6309)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Proxy for Alert Management, used to connect to the Alert Manager
+Control Server and send commands remotely.</p>
+<p>Initialisation of a new Proxy for Alert Management.</p>
+<p>If no connection details (transport protocol, hostname, and port) are
+not provided, these are taken from the settings file.</p>
+<h2 id="args">Args</h2>
+<ul>
+<li>protocol: Transport protocol [default is taken from settings
+file].</li>
+<li>hostname: Location of the control server (IP address) [default
+is taken from settings file].</li>
+<li>port: TCP port on which the Control Server is listening for
+commands [default is taken from settings file].</li>
+</ul></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class AlertManagerProxy(Proxy, AlertManagerInterface):
+    &#34;&#34;&#34;
+    Proxy for Alert Management, used to connect to the Alert Manager
+    Control Server and send commands remotely.
+    &#34;&#34;&#34;
+
+    def __init__(
+        self,
+        protocol=CTRL_SETTINGS.PROTOCOL,
+        hostname=CTRL_SETTINGS.HOSTNAME,
+        port=CTRL_SETTINGS.COMMANDING_PORT,
+    ):
+        &#34;&#34;&#34;Initialisation of a new Proxy for Alert Management.
+
+        If no connection details (transport protocol, hostname, and port) are
+        not provided, these are taken from the settings file.
+
+        Args:
+            - protocol: Transport protocol [default is taken from settings
+                        file].
+            - hostname: Location of the control server (IP address) [default
+                        is taken from settings file].
+            - port: TCP port on which the Control Server is listening for
+                    commands [default is taken from settings file].
+        &#34;&#34;&#34;
+
+        super().__init__(connect_address(protocol, hostname, port))</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="egse.proxy.Proxy" href="../proxy.html#egse.proxy.Proxy">Proxy</a></li>
+<li><a title="egse.proxy.BaseProxy" href="../proxy.html#egse.proxy.BaseProxy">BaseProxy</a></li>
+<li><a title="egse.proxy.ControlServerConnectionInterface" href="../proxy.html#egse.proxy.ControlServerConnectionInterface">ControlServerConnectionInterface</a></li>
+<li><a title="egse.alert.AlertManagerInterface" href="#egse.alert.AlertManagerInterface">AlertManagerInterface</a></li>
+</ul>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="egse.proxy.Proxy" href="../proxy.html#egse.proxy.Proxy">Proxy</a></b></code>:
+<ul class="hlist">
+<li><code><a title="egse.proxy.Proxy.connect_cs" href="../proxy.html#egse.proxy.ControlServerConnectionInterface.connect_cs">connect_cs</a></code></li>
+<li><code><a title="egse.proxy.Proxy.disconnect_cs" href="../proxy.html#egse.proxy.ControlServerConnectionInterface.disconnect_cs">disconnect_cs</a></code></li>
+<li><code><a title="egse.proxy.Proxy.get_commanding_port" href="../proxy.html#egse.proxy.BaseProxy.get_commanding_port">get_commanding_port</a></code></li>
+<li><code><a title="egse.proxy.Proxy.get_commands" href="../proxy.html#egse.proxy.Proxy.get_commands">get_commands</a></code></li>
+<li><code><a title="egse.proxy.Proxy.get_endpoint" href="../proxy.html#egse.proxy.Proxy.get_endpoint">get_endpoint</a></code></li>
+<li><code><a title="egse.proxy.Proxy.get_ip_address" href="../proxy.html#egse.proxy.BaseProxy.get_ip_address">get_ip_address</a></code></li>
+<li><code><a title="egse.proxy.Proxy.get_monitoring_port" href="../proxy.html#egse.proxy.BaseProxy.get_monitoring_port">get_monitoring_port</a></code></li>
+<li><code><a title="egse.proxy.Proxy.get_service_port" href="../proxy.html#egse.proxy.BaseProxy.get_service_port">get_service_port</a></code></li>
+<li><code><a title="egse.proxy.Proxy.get_service_proxy" href="../proxy.html#egse.proxy.BaseProxy.get_service_proxy">get_service_proxy</a></code></li>
+<li><code><a title="egse.proxy.Proxy.has_commands" href="../proxy.html#egse.proxy.Proxy.has_commands">has_commands</a></code></li>
+<li><code><a title="egse.proxy.Proxy.is_cs_connected" href="../proxy.html#egse.proxy.ControlServerConnectionInterface.is_cs_connected">is_cs_connected</a></code></li>
+<li><code><a title="egse.proxy.Proxy.load_commands" href="../proxy.html#egse.proxy.Proxy.load_commands">load_commands</a></code></li>
+<li><code><a title="egse.proxy.Proxy.reconnect_cs" href="../proxy.html#egse.proxy.ControlServerConnectionInterface.reconnect_cs">reconnect_cs</a></code></li>
+<li><code><a title="egse.proxy.Proxy.reset_cs_connection" href="../proxy.html#egse.proxy.ControlServerConnectionInterface.reset_cs_connection">reset_cs_connection</a></code></li>
+<li><code><a title="egse.proxy.Proxy.send" href="../proxy.html#egse.proxy.BaseProxy.send">send</a></code></li>
+</ul>
+</li>
+<li><code><b><a title="egse.alert.AlertManagerInterface" href="#egse.alert.AlertManagerInterface">AlertManagerInterface</a></b></code>:
+<ul class="hlist">
+<li><code><a title="egse.alert.AlertManagerInterface.load_configuration" href="#egse.alert.AlertManagerInterface.load_configuration">load_configuration</a></code></li>
+<li><code><a title="egse.alert.AlertManagerInterface.start_alert" href="#egse.alert.AlertManagerInterface.start_alert">start_alert</a></code></li>
+<li><code><a title="egse.alert.AlertManagerInterface.start_cs_monitor" href="#egse.alert.AlertManagerInterface.start_cs_monitor">start_cs_monitor</a></code></li>
+<li><code><a title="egse.alert.AlertManagerInterface.status" href="#egse.alert.AlertManagerInterface.status">status</a></code></li>
+<li><code><a title="egse.alert.AlertManagerInterface.stop_alert" href="#egse.alert.AlertManagerInterface.stop_alert">stop_alert</a></code></li>
+<li><code><a title="egse.alert.AlertManagerInterface.stop_cs_monitor" href="#egse.alert.AlertManagerInterface.stop_cs_monitor">stop_cs_monitor</a></code></li>
+</ul>
+</li>
+</ul>
+</dd>
+<dt id="egse.alert.AlertNotificationWorker"><code class="flex name class">
+<span>class <span class="ident">AlertNotificationWorker</span></span>
+</code></dt>
+<dd>
+<div class="desc"><p>Worker for handling the pushing of notification</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class AlertNotificationWorker:
+    &#34;&#34;&#34;
+    Worker for handling the pushing of notification
+    &#34;&#34;&#34;
+    def __init__(self):
+        self.sender     = replace_environment_variable(CTRL_SETTINGS.EMAIL_SENDER)
+        self.recipients = replace_environment_variable(CTRL_SETTINGS.EMAIL_CS_RECIPIENTS)
+        
+        self._server    = replace_environment_variable(CTRL_SETTINGS.EMAIL_SERVER)
+        self._port      = 25
+        self._context   = ssl.create_default_context()
+        
+        self.gsm_module = BeagleboneProxy()
+        
+        self.alert_messages = []
+        self.cs_messages    = []
+        
+        self.thread = threading.Thread()
+
+    def notify(self):
+        &#39;&#39;&#39;
+        Threaded method that waits 30 seconds for new messages before pushing the notification 
+        &#39;&#39;&#39;
+        # Check if message buffer is empty
+        n = len(self.alert_messages) + len(self.cs_messages)
+        
+        if n != 0:
+            start_time = time.time()
+            
+            # Wait until no new messages are added to the buffer in the last 30 seconds
+            while time.time() - start_time &lt; 60:
+                n2 = len(self.alert_messages) + len(self.cs_messages)
+                
+                if n2 is not n:
+                    start_time = time.time()
+                    n = n2
+                time.sleep(1)
+            
+            self.send_mail()
+            self.send_sms()
+            
+            self.clear_notifications()
+
+    
+    def add_notification(self, nType, msg: str):
+        &#34;&#34;&#34;
+        Adds a message to the notification queue and start the threaded method, if it is not running
+        &#34;&#34;&#34;
+        
+        # Add notification to message buffer
+        if nType in [LIMIT, SETPOINT, RATEOFCHANGE, MASK]:
+            self.alert_messages.append(msg)
+        else:
+            self.cs_messages.append(msg)
+        # See if notification thread has already been started 
+        if not self.thread.is_alive():
+            self.thread.__init__(target=self.notify, daemon=True)
+            self.thread.start()
+        
+    def clear_notifications(self):
+        &#34;&#34;&#34;
+        Clears the notification queue&#39;s
+        &#34;&#34;&#34;
+        self.alert_messages = []
+        self.cs_messages    = []
+
+    def send_mail(self):
+        &#34;&#34;&#34;
+        &#34;&#34;&#34;
+        message = &#34;&#34;&#34;\
+Subject: Plato Common-EGSE Notification
+
+&#34;&#34;&#34;
+        # message = &#34;&#34;&#34;Subject: Plato Common-EGSE Notification&#34;&#34;&#34;
+        if len(self.alert_messages) &gt; 0:
+            message += &#39;&#39;.join(self.alert_messages)
+        
+        if len(self.cs_messages) &gt; 0:
+            message += &#39;&#39;.join(self.cs_messages)
+        
+        message += &#34;\n\nKind regards,\n&#34; \
+                &#34;Your friendly PLATO notification bot\n\n&#34; \
+                &#34;If I am not working as expected, please contact: s.n.gomashie@sron.nl&#34;
+        try:
+            with SMTP(self._server, self._port) as server:
+                server.sendmail(self.sender, self.recipients.split(&#39;,&#39;), message)
+        except Exception as ex:
+            logger.critical(f&#34;Notification worker could not send an email: {ex}&#34;)
+            
+        logger.debug(f&#34;Email send: {self.sender} {self.recipients}&#34;)
+
+    def send_sms(self):
+        self.gsm_module.set_alert(1)</code></pre>
+</details>
+<h3>Methods</h3>
+<dl>
+<dt id="egse.alert.AlertNotificationWorker.add_notification"><code class="name flex">
+<span>def <span class="ident">add_notification</span></span>(<span>self, nType, msg: str)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Adds a message to the notification queue and start the threaded method, if it is not running</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def add_notification(self, nType, msg: str):
+    &#34;&#34;&#34;
+    Adds a message to the notification queue and start the threaded method, if it is not running
+    &#34;&#34;&#34;
+    
+    # Add notification to message buffer
+    if nType in [LIMIT, SETPOINT, RATEOFCHANGE, MASK]:
+        self.alert_messages.append(msg)
+    else:
+        self.cs_messages.append(msg)
+    # See if notification thread has already been started 
+    if not self.thread.is_alive():
+        self.thread.__init__(target=self.notify, daemon=True)
+        self.thread.start()</code></pre>
+</details>
+</dd>
+<dt id="egse.alert.AlertNotificationWorker.clear_notifications"><code class="name flex">
+<span>def <span class="ident">clear_notifications</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Clears the notification queue's</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def clear_notifications(self):
+    &#34;&#34;&#34;
+    Clears the notification queue&#39;s
+    &#34;&#34;&#34;
+    self.alert_messages = []
+    self.cs_messages    = []</code></pre>
+</details>
+</dd>
+<dt id="egse.alert.AlertNotificationWorker.notify"><code class="name flex">
+<span>def <span class="ident">notify</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Threaded method that waits 30 seconds for new messages before pushing the notification</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def notify(self):
+    &#39;&#39;&#39;
+    Threaded method that waits 30 seconds for new messages before pushing the notification 
+    &#39;&#39;&#39;
+    # Check if message buffer is empty
+    n = len(self.alert_messages) + len(self.cs_messages)
+    
+    if n != 0:
+        start_time = time.time()
+        
+        # Wait until no new messages are added to the buffer in the last 30 seconds
+        while time.time() - start_time &lt; 60:
+            n2 = len(self.alert_messages) + len(self.cs_messages)
+            
+            if n2 is not n:
+                start_time = time.time()
+                n = n2
+            time.sleep(1)
+        
+        self.send_mail()
+        self.send_sms()
+        
+        self.clear_notifications()</code></pre>
+</details>
+</dd>
+<dt id="egse.alert.AlertNotificationWorker.send_mail"><code class="name flex">
+<span>def <span class="ident">send_mail</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">    def send_mail(self):
+        &#34;&#34;&#34;
+        &#34;&#34;&#34;
+        message = &#34;&#34;&#34;\
+Subject: Plato Common-EGSE Notification
+
+&#34;&#34;&#34;
+        # message = &#34;&#34;&#34;Subject: Plato Common-EGSE Notification&#34;&#34;&#34;
+        if len(self.alert_messages) &gt; 0:
+            message += &#39;&#39;.join(self.alert_messages)
+        
+        if len(self.cs_messages) &gt; 0:
+            message += &#39;&#39;.join(self.cs_messages)
+        
+        message += &#34;\n\nKind regards,\n&#34; \
+                &#34;Your friendly PLATO notification bot\n\n&#34; \
+                &#34;If I am not working as expected, please contact: s.n.gomashie@sron.nl&#34;
+        try:
+            with SMTP(self._server, self._port) as server:
+                server.sendmail(self.sender, self.recipients.split(&#39;,&#39;), message)
+        except Exception as ex:
+            logger.critical(f&#34;Notification worker could not send an email: {ex}&#34;)
+            
+        logger.debug(f&#34;Email send: {self.sender} {self.recipients}&#34;)</code></pre>
+</details>
+</dd>
+<dt id="egse.alert.AlertNotificationWorker.send_sms"><code class="name flex">
+<span>def <span class="ident">send_sms</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def send_sms(self):
+    self.gsm_module.set_alert(1)</code></pre>
+</details>
+</dd>
+</dl>
+</dd>
+<dt id="egse.alert.ControlServerWorker"><code class="flex name class">
+<span>class <span class="ident">ControlServerWorker</span></span>
+<span>(</span><span>notifyer)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Worker to monitor all running control servers</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class ControlServerWorker:
+    &#34;&#34;&#34; Worker to monitor all running control servers
+    &#34;&#34;&#34;
+    def __init__(self, notifyer):
+        self.pm_proxy = ProcessManagerProxy()
+        self.devices  = self.pm_proxy.get_devices()
+        self.notifyer = notifyer
+        self.thread   = threading.Thread() 
+        self.active   = False
+        self.monitors = {}
+        
+        for process_name, process_info in self.devices.items():
+            
+            if (&#39;alert&#39; in process_name.lower()) or (&#39;fdir&#39; in process_name.lower()) or (&#39;dpu&#39; in process_name.lower()):
+                continue
+            
+            self.monitors[process_name] = {&#39;name&#39; : process_name,
+                                           &#39;type&#39; : process_info[0],
+                                           &#39;type_as_type&#39; : find_class(process_info[0][7:]),
+                                           &#39;device_args&#39; : process_info[1],
+                                           &#39;socket&#39; : None,
+                                           &#39;timeout&#39; : 0.5,
+                                           &#39;connected&#39; : False,
+                                           &#39;address&#39; : None,
+                                           &#39;prev_status&#39; : False}
+        
+        self.fdir_codes = {}
+        
+        self.connect_to_sockets() 
+
+    
+    def load_fdir_codes(self, configuration):
+        if &#39;hardware&#39; in configuration:
+            self.fdir_codes =  configuration[&#39;hardware&#39;]
+        else:
+            self.fdir_codes = []
+    
+    def connect_to_sockets(self):
+        &#34;&#34;&#34; Connect to commanding/monitoring socket of control servers
+        &#34;&#34;&#34;
+        for monitor in self.monitors.values():
+            try:
+                module_name     = monitor[&#39;type&#39;][7:].rsplit(&#34;.&#34;, 1)[0]
+                module          = importlib.import_module(module_name)
+                
+                ctrl_settings   = module.CTRL_SETTINGS
+                transport       = ctrl_settings.PROTOCOL
+                hostname        = ctrl_settings.HOSTNAME
+                
+                if module_name == &#34;egse.aeu.aeu&#34; or &#34;egse.tempcontrol.agilent.agilent3497&#34; in module_name:
+                    name = monitor[&#39;name&#39;].split(&#34; &#34;)[1].upper()
+                    
+                    commanding_port = ctrl_settings[name][&#39;COMMANDING_PORT&#39;]
+                    monitoring_port = ctrl_settings[name][&#39;MONITORING_PORT&#39;]
+                else:
+                    commanding_port = ctrl_settings.COMMANDING_PORT
+                    monitoring_port = ctrl_settings.MONITORING_PORT
+                 
+                monitoring_address = connect_address(transport, hostname, monitoring_port)
+
+                monitor[&#39;socket&#39;] = zmq.Context().socket(zmq.SUB)
+                monitor[&#39;socket&#39;].connect(monitoring_address)
+                monitor[&#39;socket&#39;].setsockopt_string(zmq.SUBSCRIBE, &#34;&#34;)
+                
+                monitor[&#39;address&#39;] = connect_address(transport, hostname, commanding_port)
+                monitor[&#39;connected&#39;] = True                
+                
+            except AttributeError as attr_er:
+                logger.exception(attr_er)
+                monitor[&#39;connected&#39;] = False
+            
+            # break
+    
+    def get_device_status(self, monitor):  
+        &#34;&#34;&#34; Retreive the current status of a control server
+        &#34;&#34;&#34;
+        status    = 0
+
+        try:
+            with find_class(monitor[&#39;type&#39;])(*monitor[&#39;device_args&#39;]) as proxy:
+                if isinstance(proxy, DeviceInterface):
+                    try:
+                        if proxy.is_connected():
+                            # CS connected to controller
+                            status = 2
+                        else:
+                            # CS not connected to controller
+                            status = 1
+                    except AttributeError:                        
+                            status = 1
+                    
+                else:
+                    status      = 2
+                    
+        except ConnectionError:
+            pass
+        
+        return status
+                    
+    def start(self):
+        &#34;&#34;&#34; Start Control server monitor worker
+        &#34;&#34;&#34;
+        logger.info(&#34;Starting control server monitoring loop&#34;)
+        
+        if self.thread != None:
+            if self.thread.is_alive():
+                return
+        
+        self.thread = threading.Thread(target=self.run)
+        self.thread.start()
+        
+        
+    def stop(self):
+        &#34;&#34;&#34; Stop Control server monitor worker
+        &#34;&#34;&#34;
+        self.active = False
+        if self.thread != None:
+            if self.thread.is_alive():
+                self.thread.join()
+                return
+        logger.info(&#34;Control server monitor has been stopped&#34;)
+    
+    def run(self):
+        &#34;&#34;&#34; Control server monitoring loop
+        &#34;&#34;&#34;
+        self.active = True
+        
+        while self.active:
+            for monitor in self.monitors.values():
+                if monitor[&#39;connected&#39;]:
+                    status = 0
+                    try:
+                        socket_list, _, _ = zmq.select([monitor[&#39;socket&#39;]], [], [], timeout=monitor[&#39;timeout&#39;])
+                        
+                        if monitor[&#39;socket&#39;] in socket_list:
+                            pickle_string   = monitor[&#39;socket&#39;].recv()
+                            monitoring_info = pickle.loads(pickle_string)
+
+                            monitor[&#39;timeout&#39;] = monitoring_info[&#39;delay&#39;] / 1000 + 0.5 # [s]
+                            
+                            status = self.get_device_status(monitor)
+                                
+                    except zmq.ZMQError:
+                        pass    
+
+                    # Timeout occured
+                    else:
+                        if not is_control_server_active(endpoint=monitor[&#39;address&#39;], timeout=30):
+                            status = 0
+                        else:
+                            monitor[&#39;timeout&#39;] += 0.5
+                
+                    if monitor[&#39;prev_status&#39;] != status:
+                        
+                        if monitor[&#39;prev_status&#39;] &gt;= 1 and status == 0:
+                            
+                            msg = f&#34;-  {monitor[&#39;name&#39;]} Contol Server has gone offline.&#34;
+                            
+                            self.notifyer.add_notification(-1, msg)
+                            
+                            logger.warning(f&#34;{monitor[&#39;name&#39;]} has stopped. Signalling FDIR to attempt a restart&#34;)
+                            
+                            try:
+                                with FdirManagerProxy() as fdir:
+                                    fdir.signal_fdir(&#39;FDIR_CS_STOPPED&#39;, [monitor[&#39;name&#39;]])
+                            except Exception as ex:
+                                logger.critical(f&#34;Could not send FDIR signal: {ex}&#34;)
+                                
+                        elif monitor[&#39;prev_status&#39;] == 2 and status == 1:
+                            
+                            msg = f&#34;-  {monitor[&#39;name&#39;]} Control Server has lost connection to the device controller&#34;
+                            
+                            self.notifyer.add_notification(-1, msg)
+
+                            if self.fdir_codes != {}:
+                                if monitor[&#39;name&#39;] in self.fdir_codes:
+                                    fdir_code = self.fdir_codes[monitor[&#39;name&#39;]]
+                                    try:
+                                        with FdirManagerProxy() as fdir:
+                                            fdir.signal_fdir(f&#34;FDIR_{fdir_code[&#39;code&#39;]}_HW&#34;, [f&#34;{fdir_code[&#39;arg&#39;]}&#34;])
+                                    except Exception as ex:
+                                        logger.critical(f&#34;Could not send FDIR signal: {ex}&#34;)
+                            
+                            logger.warning(f&#34;{monitor[&#39;name&#39;]} has lost connection to the device. Signalling FDIR to recover&#34;)
+                            
+                        monitor[&#39;prev_status&#39;] = status
+                        
+                logger.debug(f&#34;{monitor[&#39;name&#39;]} Control Server status: {CS_STATUS[monitor[&#39;prev_status&#39;]]}&#34;)
+            time.sleep(60)</code></pre>
+</details>
+<h3>Methods</h3>
+<dl>
+<dt id="egse.alert.ControlServerWorker.connect_to_sockets"><code class="name flex">
+<span>def <span class="ident">connect_to_sockets</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Connect to commanding/monitoring socket of control servers</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def connect_to_sockets(self):
+    &#34;&#34;&#34; Connect to commanding/monitoring socket of control servers
+    &#34;&#34;&#34;
+    for monitor in self.monitors.values():
+        try:
+            module_name     = monitor[&#39;type&#39;][7:].rsplit(&#34;.&#34;, 1)[0]
+            module          = importlib.import_module(module_name)
+            
+            ctrl_settings   = module.CTRL_SETTINGS
+            transport       = ctrl_settings.PROTOCOL
+            hostname        = ctrl_settings.HOSTNAME
+            
+            if module_name == &#34;egse.aeu.aeu&#34; or &#34;egse.tempcontrol.agilent.agilent3497&#34; in module_name:
+                name = monitor[&#39;name&#39;].split(&#34; &#34;)[1].upper()
+                
+                commanding_port = ctrl_settings[name][&#39;COMMANDING_PORT&#39;]
+                monitoring_port = ctrl_settings[name][&#39;MONITORING_PORT&#39;]
+            else:
+                commanding_port = ctrl_settings.COMMANDING_PORT
+                monitoring_port = ctrl_settings.MONITORING_PORT
+             
+            monitoring_address = connect_address(transport, hostname, monitoring_port)
+
+            monitor[&#39;socket&#39;] = zmq.Context().socket(zmq.SUB)
+            monitor[&#39;socket&#39;].connect(monitoring_address)
+            monitor[&#39;socket&#39;].setsockopt_string(zmq.SUBSCRIBE, &#34;&#34;)
+            
+            monitor[&#39;address&#39;] = connect_address(transport, hostname, commanding_port)
+            monitor[&#39;connected&#39;] = True                
+            
+        except AttributeError as attr_er:
+            logger.exception(attr_er)
+            monitor[&#39;connected&#39;] = False
+        
+        # break</code></pre>
+</details>
+</dd>
+<dt id="egse.alert.ControlServerWorker.get_device_status"><code class="name flex">
+<span>def <span class="ident">get_device_status</span></span>(<span>self, monitor)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Retreive the current status of a control server</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_device_status(self, monitor):  
+    &#34;&#34;&#34; Retreive the current status of a control server
+    &#34;&#34;&#34;
+    status    = 0
+
+    try:
+        with find_class(monitor[&#39;type&#39;])(*monitor[&#39;device_args&#39;]) as proxy:
+            if isinstance(proxy, DeviceInterface):
+                try:
+                    if proxy.is_connected():
+                        # CS connected to controller
+                        status = 2
+                    else:
+                        # CS not connected to controller
+                        status = 1
+                except AttributeError:                        
+                        status = 1
+                
+            else:
+                status      = 2
+                
+    except ConnectionError:
+        pass
+    
+    return status</code></pre>
+</details>
+</dd>
+<dt id="egse.alert.ControlServerWorker.load_fdir_codes"><code class="name flex">
+<span>def <span class="ident">load_fdir_codes</span></span>(<span>self, configuration)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def load_fdir_codes(self, configuration):
+    if &#39;hardware&#39; in configuration:
+        self.fdir_codes =  configuration[&#39;hardware&#39;]
+    else:
+        self.fdir_codes = []</code></pre>
+</details>
+</dd>
+<dt id="egse.alert.ControlServerWorker.run"><code class="name flex">
+<span>def <span class="ident">run</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Control server monitoring loop</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def run(self):
+    &#34;&#34;&#34; Control server monitoring loop
+    &#34;&#34;&#34;
+    self.active = True
+    
+    while self.active:
+        for monitor in self.monitors.values():
+            if monitor[&#39;connected&#39;]:
+                status = 0
+                try:
+                    socket_list, _, _ = zmq.select([monitor[&#39;socket&#39;]], [], [], timeout=monitor[&#39;timeout&#39;])
+                    
+                    if monitor[&#39;socket&#39;] in socket_list:
+                        pickle_string   = monitor[&#39;socket&#39;].recv()
+                        monitoring_info = pickle.loads(pickle_string)
+
+                        monitor[&#39;timeout&#39;] = monitoring_info[&#39;delay&#39;] / 1000 + 0.5 # [s]
+                        
+                        status = self.get_device_status(monitor)
+                            
+                except zmq.ZMQError:
+                    pass    
+
+                # Timeout occured
+                else:
+                    if not is_control_server_active(endpoint=monitor[&#39;address&#39;], timeout=30):
+                        status = 0
+                    else:
+                        monitor[&#39;timeout&#39;] += 0.5
+            
+                if monitor[&#39;prev_status&#39;] != status:
+                    
+                    if monitor[&#39;prev_status&#39;] &gt;= 1 and status == 0:
+                        
+                        msg = f&#34;-  {monitor[&#39;name&#39;]} Contol Server has gone offline.&#34;
+                        
+                        self.notifyer.add_notification(-1, msg)
+                        
+                        logger.warning(f&#34;{monitor[&#39;name&#39;]} has stopped. Signalling FDIR to attempt a restart&#34;)
+                        
+                        try:
+                            with FdirManagerProxy() as fdir:
+                                fdir.signal_fdir(&#39;FDIR_CS_STOPPED&#39;, [monitor[&#39;name&#39;]])
+                        except Exception as ex:
+                            logger.critical(f&#34;Could not send FDIR signal: {ex}&#34;)
+                            
+                    elif monitor[&#39;prev_status&#39;] == 2 and status == 1:
+                        
+                        msg = f&#34;-  {monitor[&#39;name&#39;]} Control Server has lost connection to the device controller&#34;
+                        
+                        self.notifyer.add_notification(-1, msg)
+
+                        if self.fdir_codes != {}:
+                            if monitor[&#39;name&#39;] in self.fdir_codes:
+                                fdir_code = self.fdir_codes[monitor[&#39;name&#39;]]
+                                try:
+                                    with FdirManagerProxy() as fdir:
+                                        fdir.signal_fdir(f&#34;FDIR_{fdir_code[&#39;code&#39;]}_HW&#34;, [f&#34;{fdir_code[&#39;arg&#39;]}&#34;])
+                                except Exception as ex:
+                                    logger.critical(f&#34;Could not send FDIR signal: {ex}&#34;)
+                        
+                        logger.warning(f&#34;{monitor[&#39;name&#39;]} has lost connection to the device. Signalling FDIR to recover&#34;)
+                        
+                    monitor[&#39;prev_status&#39;] = status
+                    
+            logger.debug(f&#34;{monitor[&#39;name&#39;]} Control Server status: {CS_STATUS[monitor[&#39;prev_status&#39;]]}&#34;)
+        time.sleep(60)</code></pre>
+</details>
+</dd>
+<dt id="egse.alert.ControlServerWorker.start"><code class="name flex">
+<span>def <span class="ident">start</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Start Control server monitor worker</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def start(self):
+    &#34;&#34;&#34; Start Control server monitor worker
+    &#34;&#34;&#34;
+    logger.info(&#34;Starting control server monitoring loop&#34;)
+    
+    if self.thread != None:
+        if self.thread.is_alive():
+            return
+    
+    self.thread = threading.Thread(target=self.run)
+    self.thread.start()</code></pre>
+</details>
+</dd>
+<dt id="egse.alert.ControlServerWorker.stop"><code class="name flex">
+<span>def <span class="ident">stop</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Stop Control server monitor worker</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def stop(self):
+    &#34;&#34;&#34; Stop Control server monitor worker
+    &#34;&#34;&#34;
+    self.active = False
+    if self.thread != None:
+        if self.thread.is_alive():
+            self.thread.join()
+            return
+    logger.info(&#34;Control server monitor has been stopped&#34;)</code></pre>
+</details>
+</dd>
+</dl>
+</dd>
+</dl>
 </section>
 </article>
 <nav id="sidebar">
@@ -276,21 +3441,94 @@ def send_email(subject: str, message: str, recipients: str):
 </li>
 <li><h3><a href="#header-submodules">Sub-modules</a></h3>
 <ul>
-<li><code><a title="egse.alert.alert_manager" href="alert_manager.html">egse.alert.alert_manager</a></code></li>
-<li><code><a title="egse.alert.alert_manager_controller" href="alert_manager_controller.html">egse.alert.alert_manager_controller</a></code></li>
-<li><code><a title="egse.alert.alert_manager_cs" href="alert_manager_cs.html">egse.alert.alert_manager_cs</a></code></li>
-<li><code><a title="egse.alert.alert_manager_interface" href="alert_manager_interface.html">egse.alert.alert_manager_interface</a></code></li>
-<li><code><a title="egse.alert.alert_ui" href="alert_ui.html">egse.alert.alert_ui</a></code></li>
-<li><code><a title="egse.alert.alert_workers" href="alert_workers.html">egse.alert.alert_workers</a></code></li>
+<li><code><a title="egse.alert.alertman_cs" href="alertman_cs.html">egse.alert.alertman_cs</a></code></li>
+<li><code><a title="egse.alert.alertman_ui" href="alertman_ui.html">egse.alert.alertman_ui</a></code></li>
 <li><code><a title="egse.alert.gsm" href="gsm/index.html">egse.alert.gsm</a></code></li>
 </ul>
 </li>
 <li><h3><a href="#header-functions">Functions</a></h3>
 <ul class="">
-<li><code><a title="egse.alert.calculate_roc" href="#egse.alert.calculate_roc">calculate_roc</a></code></li>
-<li><code><a title="egse.alert.is_control_server_active_in_thread" href="#egse.alert.is_control_server_active_in_thread">is_control_server_active_in_thread</a></code></li>
-<li><code><a title="egse.alert.send_email" href="#egse.alert.send_email">send_email</a></code></li>
-<li><code><a title="egse.alert.send_sms" href="#egse.alert.send_sms">send_sms</a></code></li>
+<li><code><a title="egse.alert.load_alert_configuration" href="#egse.alert.load_alert_configuration">load_alert_configuration</a></code></li>
+<li><code><a title="egse.alert.main" href="#egse.alert.main">main</a></code></li>
+</ul>
+</li>
+<li><h3><a href="#header-classes">Classes</a></h3>
+<ul>
+<li>
+<h4><code><a title="egse.alert.Alert" href="#egse.alert.Alert">Alert</a></code></h4>
+<ul class="">
+<li><code><a title="egse.alert.Alert.clear_alert" href="#egse.alert.Alert.clear_alert">clear_alert</a></code></li>
+<li><code><a title="egse.alert.Alert.daily_cycle_check" href="#egse.alert.Alert.daily_cycle_check">daily_cycle_check</a></code></li>
+<li><code><a title="egse.alert.Alert.generate_alert_message" href="#egse.alert.Alert.generate_alert_message">generate_alert_message</a></code></li>
+<li><code><a title="egse.alert.Alert.get_housekeeping" href="#egse.alert.Alert.get_housekeeping">get_housekeeping</a></code></li>
+<li><code><a title="egse.alert.Alert.limit_check" href="#egse.alert.Alert.limit_check">limit_check</a></code></li>
+<li><code><a title="egse.alert.Alert.mask_check" href="#egse.alert.Alert.mask_check">mask_check</a></code></li>
+<li><code><a title="egse.alert.Alert.metric_is_available" href="#egse.alert.Alert.metric_is_available">metric_is_available</a></code></li>
+<li><code><a title="egse.alert.Alert.rate_of_change_check" href="#egse.alert.Alert.rate_of_change_check">rate_of_change_check</a></code></li>
+<li><code><a title="egse.alert.Alert.setpoint_check" href="#egse.alert.Alert.setpoint_check">setpoint_check</a></code></li>
+<li><code><a title="egse.alert.Alert.signal_fdir" href="#egse.alert.Alert.signal_fdir">signal_fdir</a></code></li>
+<li><code><a title="egse.alert.Alert.trigger_alert" href="#egse.alert.Alert.trigger_alert">trigger_alert</a></code></li>
+<li><code><a title="egse.alert.Alert.update" href="#egse.alert.Alert.update">update</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="egse.alert.AlertException" href="#egse.alert.AlertException">AlertException</a></code></h4>
+</li>
+<li>
+<h4><code><a title="egse.alert.AlertManagerCommand" href="#egse.alert.AlertManagerCommand">AlertManagerCommand</a></code></h4>
+</li>
+<li>
+<h4><code><a title="egse.alert.AlertManagerController" href="#egse.alert.AlertManagerController">AlertManagerController</a></code></h4>
+<ul class="">
+<li><code><a title="egse.alert.AlertManagerController.initialize_alerts" href="#egse.alert.AlertManagerController.initialize_alerts">initialize_alerts</a></code></li>
+<li><code><a title="egse.alert.AlertManagerController.run" href="#egse.alert.AlertManagerController.run">run</a></code></li>
+<li><code><a title="egse.alert.AlertManagerController.start_alert" href="#egse.alert.AlertManagerController.start_alert">start_alert</a></code></li>
+<li><code><a title="egse.alert.AlertManagerController.stop_alert" href="#egse.alert.AlertManagerController.stop_alert">stop_alert</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="egse.alert.AlertManagerInterface" href="#egse.alert.AlertManagerInterface">AlertManagerInterface</a></code></h4>
+<ul class="two-column">
+<li><code><a title="egse.alert.AlertManagerInterface.load_configuration" href="#egse.alert.AlertManagerInterface.load_configuration">load_configuration</a></code></li>
+<li><code><a title="egse.alert.AlertManagerInterface.start_alert" href="#egse.alert.AlertManagerInterface.start_alert">start_alert</a></code></li>
+<li><code><a title="egse.alert.AlertManagerInterface.start_cs_monitor" href="#egse.alert.AlertManagerInterface.start_cs_monitor">start_cs_monitor</a></code></li>
+<li><code><a title="egse.alert.AlertManagerInterface.status" href="#egse.alert.AlertManagerInterface.status">status</a></code></li>
+<li><code><a title="egse.alert.AlertManagerInterface.stop_alert" href="#egse.alert.AlertManagerInterface.stop_alert">stop_alert</a></code></li>
+<li><code><a title="egse.alert.AlertManagerInterface.stop_cs_monitor" href="#egse.alert.AlertManagerInterface.stop_cs_monitor">stop_cs_monitor</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="egse.alert.AlertManagerProtocol" href="#egse.alert.AlertManagerProtocol">AlertManagerProtocol</a></code></h4>
+<ul class="">
+<li><code><a title="egse.alert.AlertManagerProtocol.get_bind_address" href="#egse.alert.AlertManagerProtocol.get_bind_address">get_bind_address</a></code></li>
+<li><code><a title="egse.alert.AlertManagerProtocol.get_housekeeping" href="#egse.alert.AlertManagerProtocol.get_housekeeping">get_housekeeping</a></code></li>
+<li><code><a title="egse.alert.AlertManagerProtocol.get_status" href="#egse.alert.AlertManagerProtocol.get_status">get_status</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="egse.alert.AlertManagerProxy" href="#egse.alert.AlertManagerProxy">AlertManagerProxy</a></code></h4>
+</li>
+<li>
+<h4><code><a title="egse.alert.AlertNotificationWorker" href="#egse.alert.AlertNotificationWorker">AlertNotificationWorker</a></code></h4>
+<ul class="">
+<li><code><a title="egse.alert.AlertNotificationWorker.add_notification" href="#egse.alert.AlertNotificationWorker.add_notification">add_notification</a></code></li>
+<li><code><a title="egse.alert.AlertNotificationWorker.clear_notifications" href="#egse.alert.AlertNotificationWorker.clear_notifications">clear_notifications</a></code></li>
+<li><code><a title="egse.alert.AlertNotificationWorker.notify" href="#egse.alert.AlertNotificationWorker.notify">notify</a></code></li>
+<li><code><a title="egse.alert.AlertNotificationWorker.send_mail" href="#egse.alert.AlertNotificationWorker.send_mail">send_mail</a></code></li>
+<li><code><a title="egse.alert.AlertNotificationWorker.send_sms" href="#egse.alert.AlertNotificationWorker.send_sms">send_sms</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="egse.alert.ControlServerWorker" href="#egse.alert.ControlServerWorker">ControlServerWorker</a></code></h4>
+<ul class="two-column">
+<li><code><a title="egse.alert.ControlServerWorker.connect_to_sockets" href="#egse.alert.ControlServerWorker.connect_to_sockets">connect_to_sockets</a></code></li>
+<li><code><a title="egse.alert.ControlServerWorker.get_device_status" href="#egse.alert.ControlServerWorker.get_device_status">get_device_status</a></code></li>
+<li><code><a title="egse.alert.ControlServerWorker.load_fdir_codes" href="#egse.alert.ControlServerWorker.load_fdir_codes">load_fdir_codes</a></code></li>
+<li><code><a title="egse.alert.ControlServerWorker.run" href="#egse.alert.ControlServerWorker.run">run</a></code></li>
+<li><code><a title="egse.alert.ControlServerWorker.start" href="#egse.alert.ControlServerWorker.start">start</a></code></li>
+<li><code><a title="egse.alert.ControlServerWorker.stop" href="#egse.alert.ControlServerWorker.stop">stop</a></code></li>
+</ul>
+</li>
 </ul>
 </li>
 </ul>

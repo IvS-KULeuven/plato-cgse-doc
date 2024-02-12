@@ -39,16 +39,22 @@ from pandas.errors import ParserError
 
 from egse import h5
 from egse.config import find_file
-from egse.dpu.fitsgen import get_hdf5_filenames_for_obsid, get_od, create_fits_from_hdf5, add_synoptics
+from egse.dpu.fitsgen import add_synoptics
+from egse.dpu.fitsgen import create_fits_from_hdf5
+from egse.dpu.fitsgen import get_hdf5_filenames_for_obsid
+from egse.dpu.fitsgen import get_od
 from egse.fee.n_fee_hk import ORIGIN as N_FEE_ORIGIN
 from egse.fee.n_fee_hk import ORIGIN as ORIGIN_NFEE_HK
-from egse.fee.n_fee_hk import get_calibrated_supply_voltages, get_calibrated_temperatures
+from egse.fee.n_fee_hk import get_calibrated_supply_voltages
+from egse.fee.n_fee_hk import get_calibrated_temperatures
 from egse.fee.nfee import HousekeepingData
 from egse.fov import ORIGIN as FOV_ORIGIN
 from egse.hk import read_conversion_dict
-from egse.obsid import ObservationIdentifier, obsid_from_storage
+from egse.obsid import ObservationIdentifier
+from egse.obsid import obsid_from_storage
 from egse.settings import Settings
-from egse.setup import NavigableDict, Setup
+from egse.setup import NavigableDict
+from egse.setup import Setup
 from egse.spw import SpaceWirePacket
 from egse.storage import HDF5
 from egse.storage.persistence import CSV
@@ -113,8 +119,10 @@ def reprocess_od(od: str, site: str, setup: Setup, archive_dir: str, fixed_archi
 
     fee_calibration = setup.camera.fee.calibration
 
-    reprocess_daily_n_fee_hk(od, site, fee_calibration, archive_dir, reprocessed_archive_dir)       # N-FEE HK
-    reprocess_daily_synoptics(od, site, archive_dir, fixed_archive_dir, reprocessed_archive_dir)    # Synoptics
+    # Order is important here: Synoptics builds further on N-FEE HK
+    reprocess_daily_n_fee_hk(od, site, fee_calibration, archive_dir, reprocessed_archive_dir, setup)  # N-FEE HK
+    reprocess_daily_synoptics(od, site, archive_dir, fixed_archive_dir, reprocessed_archive_dir, setup)    # Synoptics
+    
 
 
 def reprocess_obsid(obsid: Union[str, int, ObservationIdentifier], site: str, setup: Setup, archive_dir: str,
@@ -138,14 +146,15 @@ def reprocess_obsid(obsid: Union[str, int, ObservationIdentifier], site: str, se
 
     fee_calibration = setup.camera.fee.calibration
 
-    reprocess_obs_n_fee_hk(obsid, fee_calibration, archive_dir, reprocessed_archive_dir)            # N-FEE HK
-    reprocess_obs_synoptics(obsid, site, archive_dir, fixed_archive_dir, reprocessed_archive_dir)   # Synoptics
+    # Order is important here: Synoptics builds further on N-FEE HK
+    reprocess_obs_n_fee_hk(obsid, fee_calibration, archive_dir, reprocessed_archive_dir, setup)  # N-FEE HK
+    reprocess_obs_synoptics(obsid, site, archive_dir, fixed_archive_dir, reprocessed_archive_dir, setup)   # Synoptics
 
     reprocess_ccd_data(obsid, archive_dir, reprocessed_archive_dir, setup)                          # FITS files
 
 
 def reprocess_daily_n_fee_hk(od: str, site: str, fee_calibration: NavigableDict, archive_dir: str,
-                             reprocessed_archive_dir: str):
+                             reprocessed_archive_dir: str, setup: Setup):
     &#34;&#34;&#34; Re-processing the N-FEE HK for the given OD.
 
     The procedure is as follows:
@@ -166,6 +175,7 @@ def reprocess_daily_n_fee_hk(od: str, site: str, fee_calibration: NavigableDict,
         - archive_dir: Folder (with sub-folders /daily and /obs) in which the HDF5 files are stored.
         - reprocessed_archive_dir: Folder (with sub-folders /daily and /obs) in which the re-processed N-FEE HK files
                                    will be stored.
+        - setup: Setup.
     &#34;&#34;&#34;
 
     archive_od_dir = f&#34;{archive_dir}/daily/{od}&#34;
@@ -184,11 +194,11 @@ def reprocess_daily_n_fee_hk(od: str, site: str, fee_calibration: NavigableDict,
 
     n_fee_hk_filename = f&#34;{reprocessed_archive_od_dir}/{od}_{site}_{N_FEE_ORIGIN}.{CSV.extension}&#34;
 
-    _reprocess_n_fee_hk(hdf5_filenames, n_fee_hk_filename, fee_calibration, reprocessed_archive_od_dir)
+    _reprocess_n_fee_hk(hdf5_filenames, n_fee_hk_filename, fee_calibration, setup)
 
 
 def reprocess_obs_n_fee_hk(obsid: Union[str, int, ObservationIdentifier], fee_calibration: NavigableDict,
-                           archive_dir: str, reprocessed_archive_dir: str):
+                           archive_dir: str, reprocessed_archive_dir: str, setup: Setup):
     &#34;&#34;&#34; Re-processing the synoptics for the given obsid.
 
     The procedure is as follows:
@@ -209,6 +219,7 @@ def reprocess_obs_n_fee_hk(obsid: Union[str, int, ObservationIdentifier], fee_ca
         - archive_dir: Folder (with sub-folders /daily and /obs) in which the HDF5 files are stored.
         - reprocessed_archive_dir: Folder (with sub-folders /daily and /obs) in which the re-processed N-FEE HK files
                                    will be stored.
+        - setup: Setup.
     &#34;&#34;&#34;
 
     obsid = obsid_from_storage(obsid, archive_dir)
@@ -235,10 +246,10 @@ def reprocess_obs_n_fee_hk(obsid: Union[str, int, ObservationIdentifier], fee_ca
     else:
         n_fee_hk_filename = f&#34;{reprocessed_archive_obsid_dir}/{n_fee_hk_filename.stem}.{CSV.extension}&#34;
 
-    _reprocess_n_fee_hk(hdf5_filenames, n_fee_hk_filename, fee_calibration, reprocessed_archive_obsid_dir)
+    _reprocess_n_fee_hk(hdf5_filenames, n_fee_hk_filename, fee_calibration, setup)
 
 
-def _reprocess_n_fee_hk(hdf5_filenames, n_fee_hk_filename: str, fee_calibration: NavigableDict):
+def _reprocess_n_fee_hk(hdf5_filenames, n_fee_hk_filename: str, fee_calibration: NavigableDict, setup: Setup):
     &#34;&#34;&#34; Re-processing the N-FEE HK.
 
     The procedure is as follows for the &#34;hk&#34; dataset in all groups of the given list of HDF5 files:
@@ -251,9 +262,10 @@ def _reprocess_n_fee_hk(hdf5_filenames, n_fee_hk_filename: str, fee_calibration:
         - hdf5_filenames: Filenames of the HDF5 files containing the raw N-FEE HK.
         - n_fee_hk_filename: Filename for the re-processed N-FEE HK file.
         - fee_calibration: Calibration data for the N-FEE HK.
+        - setup: Setup.
     &#34;&#34;&#34;
 
-    hk_names_mapping = read_conversion_dict(ORIGIN_NFEE_HK, use_site=False)
+    hk_names_mapping = read_conversion_dict(ORIGIN_NFEE_HK, use_site=False, setup=setup)
 
     supply_voltage_calibration = fee_calibration.supply_voltages
     temperature_calibration = fee_calibration.temperatures
@@ -295,7 +307,7 @@ def _reprocess_n_fee_hk(hdf5_filenames, n_fee_hk_filename: str, fee_calibration:
                             calibrated_supply_voltages = get_calibrated_supply_voltages(values,
                                                                                         supply_voltage_calibration)
                             values.update(calibrated_supply_voltages)
-                            calibrated_temperatures = get_calibrated_temperatures(values, temperature_calibration)
+                            calibrated_temperatures = get_calibrated_temperatures(values, temperature_calibration, setup)
                             values.update(calibrated_temperatures)
 
                             # Store the new N-FEE HK
@@ -306,7 +318,7 @@ def _reprocess_n_fee_hk(hdf5_filenames, n_fee_hk_filename: str, fee_calibration:
 
 
 def reprocess_daily_synoptics(od: str, site: str, archive_dir: str, fixed_archive_dir: str,
-                              reprocessed_archive_dir: str):
+                              reprocessed_archive_dir: str, setup: Setup):
     &#34;&#34;&#34; Re-processing the N-FEE HK for the given OD.
 
     The procedure is as follows:
@@ -322,6 +334,7 @@ def reprocess_daily_synoptics(od: str, site: str, archive_dir: str, fixed_archiv
         - fixed_archive_dir: Folder (with sub-folders /daily and /obs) in which the fixed HK files are stored.
         - reprocessed_archive_dir: Folder (with sub-folders /daily and /obs) in which the re-processed N-FEE HK files
                                    will be stored.
+        - setup: Setup.
     &#34;&#34;&#34;
 
     archive_day_dir = f&#34;{archive_dir}/daily/{od}&#34;
@@ -340,11 +353,11 @@ def reprocess_daily_synoptics(od: str, site: str, archive_dir: str, fixed_archiv
         return
 
     synoptics_filename = f&#34;{reprocessed_archive_day_dir}/{od}_{site}_{SYN_ORIGIN}.{CSV.extension}&#34;
-    _reprocess_synoptics(syn_input_filenames, synoptics_filename)
+    _reprocess_synoptics(syn_input_filenames, synoptics_filename, setup)
 
 
 def reprocess_obs_synoptics(obsid: Union[str, int, ObservationIdentifier], site: str, archive_dir: str,
-                            fixed_archive_dir: str, reprocessed_archive_dir: str):
+                            fixed_archive_dir: str, reprocessed_archive_dir: str, setup: Setup):
     &#34;&#34;&#34; Re-processing the N-FEE HK for the given obsid.
 
     The procedure is as follows:
@@ -360,6 +373,7 @@ def reprocess_obs_synoptics(obsid: Union[str, int, ObservationIdentifier], site:
         - fixed_archive_dir: Folder (with sub-folders /daily and /obs) in which the fixed HK files are stored.
         - reprocessed_archive_dir: Folder (with sub-folders /daily and /obs) in which the re-processed synoptics files
                                    will be stored.
+        - setup: Setup.
         &#34;&#34;&#34;
 
     obsid = obsid_from_storage(obsid, archive_dir)
@@ -391,10 +405,10 @@ def reprocess_obs_synoptics(obsid: Union[str, int, ObservationIdentifier], site:
     else:
         synoptics_filename = f&#34;{reprocessed_archive_obs_dir}/{synoptics_filename.stem}.{CSV.extension}&#34;
 
-    _reprocess_synoptics(syn_input_filenames, synoptics_filename)
+    _reprocess_synoptics(syn_input_filenames, synoptics_filename, setup)
 
 
-def _reprocess_synoptics(syn_input_filenames, synoptics_filename: str):
+def _reprocess_synoptics(syn_input_filenames, synoptics_filename: str, setup: Setup):
     &#34;&#34;&#34; Re-processing the synoptics.
 
     The procedure is as follows:
@@ -406,9 +420,10 @@ def _reprocess_synoptics(syn_input_filenames, synoptics_filename: str):
     Args:
         - syn_input_filenames: Filenames of the HK files contributing to the synoptics.
         - synoptics_filename: Filename for the re-processed synoptics file.
+        - setup: Setup.
     &#34;&#34;&#34;
 
-    syn_names, original_name_egse, original_name_th = read_syn_info()
+    syn_names, original_name_egse, original_name_th = read_syn_info(setup)
 
     # Concatenate the content of all contributing HK files
 
@@ -700,7 +715,10 @@ def reprocess_ccd_data(obsid: str, archive_dir: str, reprocessed_archive_dir: st
 
     hdf5_filenames = get_hdf5_filenames_for_obsid(obsid, data_dir=archive_dir)
     create_fits_from_hdf5(hdf5_filenames, location=reprocessed_archive_dir, setup=setup)
-    add_synoptics(obsid, data_dir=reprocessed_archive_dir)</code></pre>
+
+    fee_side = setup.camera.fee.ccd_sides.enum
+
+    add_synoptics(obsid, data_dir=reprocessed_archive_dir, fee_side=fee_side)</code></pre>
 </details>
 </section>
 <section>
@@ -1051,11 +1069,14 @@ stored.</li>
 
     hdf5_filenames = get_hdf5_filenames_for_obsid(obsid, data_dir=archive_dir)
     create_fits_from_hdf5(hdf5_filenames, location=reprocessed_archive_dir, setup=setup)
-    add_synoptics(obsid, data_dir=reprocessed_archive_dir)</code></pre>
+
+    fee_side = setup.camera.fee.ccd_sides.enum
+
+    add_synoptics(obsid, data_dir=reprocessed_archive_dir, fee_side=fee_side)</code></pre>
 </details>
 </dd>
 <dt id="egse.reprocess.reprocess_daily_n_fee_hk"><code class="name flex">
-<span>def <span class="ident">reprocess_daily_n_fee_hk</span></span>(<span>od: str, site: str, fee_calibration: egse.setup.NavigableDict, archive_dir: str, reprocessed_archive_dir: str)</span>
+<span>def <span class="ident">reprocess_daily_n_fee_hk</span></span>(<span>od: str, site: str, fee_calibration: egse.setup.NavigableDict, archive_dir: str, reprocessed_archive_dir: str, setup: <a title="egse.setup.Setup" href="setup.html#egse.setup.Setup">Setup</a>)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Re-processing the N-FEE HK for the given OD.</p>
@@ -1080,13 +1101,14 @@ file.</p>
 <li>archive_dir: Folder (with sub-folders /daily and /obs) in which the HDF5 files are stored.</li>
 <li>reprocessed_archive_dir: Folder (with sub-folders /daily and /obs) in which the re-processed N-FEE HK files
 will be stored.</li>
+<li>setup: Setup.</li>
 </ul></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def reprocess_daily_n_fee_hk(od: str, site: str, fee_calibration: NavigableDict, archive_dir: str,
-                             reprocessed_archive_dir: str):
+                             reprocessed_archive_dir: str, setup: Setup):
     &#34;&#34;&#34; Re-processing the N-FEE HK for the given OD.
 
     The procedure is as follows:
@@ -1107,6 +1129,7 @@ will be stored.</li>
         - archive_dir: Folder (with sub-folders /daily and /obs) in which the HDF5 files are stored.
         - reprocessed_archive_dir: Folder (with sub-folders /daily and /obs) in which the re-processed N-FEE HK files
                                    will be stored.
+        - setup: Setup.
     &#34;&#34;&#34;
 
     archive_od_dir = f&#34;{archive_dir}/daily/{od}&#34;
@@ -1125,11 +1148,11 @@ will be stored.</li>
 
     n_fee_hk_filename = f&#34;{reprocessed_archive_od_dir}/{od}_{site}_{N_FEE_ORIGIN}.{CSV.extension}&#34;
 
-    _reprocess_n_fee_hk(hdf5_filenames, n_fee_hk_filename, fee_calibration, reprocessed_archive_od_dir)</code></pre>
+    _reprocess_n_fee_hk(hdf5_filenames, n_fee_hk_filename, fee_calibration, setup)</code></pre>
 </details>
 </dd>
 <dt id="egse.reprocess.reprocess_daily_synoptics"><code class="name flex">
-<span>def <span class="ident">reprocess_daily_synoptics</span></span>(<span>od: str, site: str, archive_dir: str, fixed_archive_dir: str, reprocessed_archive_dir: str)</span>
+<span>def <span class="ident">reprocess_daily_synoptics</span></span>(<span>od: str, site: str, archive_dir: str, fixed_archive_dir: str, reprocessed_archive_dir: str, setup: <a title="egse.setup.Setup" href="setup.html#egse.setup.Setup">Setup</a>)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Re-processing the N-FEE HK for the given OD.</p>
@@ -1146,13 +1169,14 @@ will be stored.</li>
 <li>fixed_archive_dir: Folder (with sub-folders /daily and /obs) in which the fixed HK files are stored.</li>
 <li>reprocessed_archive_dir: Folder (with sub-folders /daily and /obs) in which the re-processed N-FEE HK files
 will be stored.</li>
+<li>setup: Setup.</li>
 </ul></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def reprocess_daily_synoptics(od: str, site: str, archive_dir: str, fixed_archive_dir: str,
-                              reprocessed_archive_dir: str):
+                              reprocessed_archive_dir: str, setup: Setup):
     &#34;&#34;&#34; Re-processing the N-FEE HK for the given OD.
 
     The procedure is as follows:
@@ -1168,6 +1192,7 @@ will be stored.</li>
         - fixed_archive_dir: Folder (with sub-folders /daily and /obs) in which the fixed HK files are stored.
         - reprocessed_archive_dir: Folder (with sub-folders /daily and /obs) in which the re-processed N-FEE HK files
                                    will be stored.
+        - setup: Setup.
     &#34;&#34;&#34;
 
     archive_day_dir = f&#34;{archive_dir}/daily/{od}&#34;
@@ -1186,11 +1211,11 @@ will be stored.</li>
         return
 
     synoptics_filename = f&#34;{reprocessed_archive_day_dir}/{od}_{site}_{SYN_ORIGIN}.{CSV.extension}&#34;
-    _reprocess_synoptics(syn_input_filenames, synoptics_filename)</code></pre>
+    _reprocess_synoptics(syn_input_filenames, synoptics_filename, setup)</code></pre>
 </details>
 </dd>
 <dt id="egse.reprocess.reprocess_obs_n_fee_hk"><code class="name flex">
-<span>def <span class="ident">reprocess_obs_n_fee_hk</span></span>(<span>obsid: Union[<a title="egse.obsid.ObservationIdentifier" href="obsid.html#egse.obsid.ObservationIdentifier">ObservationIdentifier</a>, str, int], fee_calibration: egse.setup.NavigableDict, archive_dir: str, reprocessed_archive_dir: str)</span>
+<span>def <span class="ident">reprocess_obs_n_fee_hk</span></span>(<span>obsid: Union[<a title="egse.obsid.ObservationIdentifier" href="obsid.html#egse.obsid.ObservationIdentifier">ObservationIdentifier</a>, str, int], fee_calibration: egse.setup.NavigableDict, archive_dir: str, reprocessed_archive_dir: str, setup: <a title="egse.setup.Setup" href="setup.html#egse.setup.Setup">Setup</a>)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Re-processing the synoptics for the given obsid.</p>
@@ -1215,13 +1240,14 @@ file.</p>
 <li>archive_dir: Folder (with sub-folders /daily and /obs) in which the HDF5 files are stored.</li>
 <li>reprocessed_archive_dir: Folder (with sub-folders /daily and /obs) in which the re-processed N-FEE HK files
 will be stored.</li>
+<li>setup: Setup.</li>
 </ul></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def reprocess_obs_n_fee_hk(obsid: Union[str, int, ObservationIdentifier], fee_calibration: NavigableDict,
-                           archive_dir: str, reprocessed_archive_dir: str):
+                           archive_dir: str, reprocessed_archive_dir: str, setup: Setup):
     &#34;&#34;&#34; Re-processing the synoptics for the given obsid.
 
     The procedure is as follows:
@@ -1242,6 +1268,7 @@ will be stored.</li>
         - archive_dir: Folder (with sub-folders /daily and /obs) in which the HDF5 files are stored.
         - reprocessed_archive_dir: Folder (with sub-folders /daily and /obs) in which the re-processed N-FEE HK files
                                    will be stored.
+        - setup: Setup.
     &#34;&#34;&#34;
 
     obsid = obsid_from_storage(obsid, archive_dir)
@@ -1268,11 +1295,11 @@ will be stored.</li>
     else:
         n_fee_hk_filename = f&#34;{reprocessed_archive_obsid_dir}/{n_fee_hk_filename.stem}.{CSV.extension}&#34;
 
-    _reprocess_n_fee_hk(hdf5_filenames, n_fee_hk_filename, fee_calibration, reprocessed_archive_obsid_dir)</code></pre>
+    _reprocess_n_fee_hk(hdf5_filenames, n_fee_hk_filename, fee_calibration, setup)</code></pre>
 </details>
 </dd>
 <dt id="egse.reprocess.reprocess_obs_synoptics"><code class="name flex">
-<span>def <span class="ident">reprocess_obs_synoptics</span></span>(<span>obsid: Union[<a title="egse.obsid.ObservationIdentifier" href="obsid.html#egse.obsid.ObservationIdentifier">ObservationIdentifier</a>, str, int], site: str, archive_dir: str, fixed_archive_dir: str, reprocessed_archive_dir: str)</span>
+<span>def <span class="ident">reprocess_obs_synoptics</span></span>(<span>obsid: Union[<a title="egse.obsid.ObservationIdentifier" href="obsid.html#egse.obsid.ObservationIdentifier">ObservationIdentifier</a>, str, int], site: str, archive_dir: str, fixed_archive_dir: str, reprocessed_archive_dir: str, setup: <a title="egse.setup.Setup" href="setup.html#egse.setup.Setup">Setup</a>)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Re-processing the N-FEE HK for the given obsid.</p>
@@ -1289,13 +1316,14 @@ will be stored.</li>
 <li>fixed_archive_dir: Folder (with sub-folders /daily and /obs) in which the fixed HK files are stored.</li>
 <li>reprocessed_archive_dir: Folder (with sub-folders /daily and /obs) in which the re-processed synoptics files
 will be stored.</li>
+<li>setup: Setup.</li>
 </ul></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def reprocess_obs_synoptics(obsid: Union[str, int, ObservationIdentifier], site: str, archive_dir: str,
-                            fixed_archive_dir: str, reprocessed_archive_dir: str):
+                            fixed_archive_dir: str, reprocessed_archive_dir: str, setup: Setup):
     &#34;&#34;&#34; Re-processing the N-FEE HK for the given obsid.
 
     The procedure is as follows:
@@ -1311,6 +1339,7 @@ will be stored.</li>
         - fixed_archive_dir: Folder (with sub-folders /daily and /obs) in which the fixed HK files are stored.
         - reprocessed_archive_dir: Folder (with sub-folders /daily and /obs) in which the re-processed synoptics files
                                    will be stored.
+        - setup: Setup.
         &#34;&#34;&#34;
 
     obsid = obsid_from_storage(obsid, archive_dir)
@@ -1342,7 +1371,7 @@ will be stored.</li>
     else:
         synoptics_filename = f&#34;{reprocessed_archive_obs_dir}/{synoptics_filename.stem}.{CSV.extension}&#34;
 
-    _reprocess_synoptics(syn_input_filenames, synoptics_filename)</code></pre>
+    _reprocess_synoptics(syn_input_filenames, synoptics_filename, setup)</code></pre>
 </details>
 </dd>
 <dt id="egse.reprocess.reprocess_obsid"><code class="name flex">
@@ -1389,8 +1418,9 @@ will be stored.</li>
 
     fee_calibration = setup.camera.fee.calibration
 
-    reprocess_obs_n_fee_hk(obsid, fee_calibration, archive_dir, reprocessed_archive_dir)            # N-FEE HK
-    reprocess_obs_synoptics(obsid, site, archive_dir, fixed_archive_dir, reprocessed_archive_dir)   # Synoptics
+    # Order is important here: Synoptics builds further on N-FEE HK
+    reprocess_obs_n_fee_hk(obsid, fee_calibration, archive_dir, reprocessed_archive_dir, setup)  # N-FEE HK
+    reprocess_obs_synoptics(obsid, site, archive_dir, fixed_archive_dir, reprocessed_archive_dir, setup)   # Synoptics
 
     reprocess_ccd_data(obsid, archive_dir, reprocessed_archive_dir, setup)                          # FITS files</code></pre>
 </details>
@@ -1437,8 +1467,9 @@ will be stored.</li>
 
     fee_calibration = setup.camera.fee.calibration
 
-    reprocess_daily_n_fee_hk(od, site, fee_calibration, archive_dir, reprocessed_archive_dir)       # N-FEE HK
-    reprocess_daily_synoptics(od, site, archive_dir, fixed_archive_dir, reprocessed_archive_dir)    # Synoptics</code></pre>
+    # Order is important here: Synoptics builds further on N-FEE HK
+    reprocess_daily_n_fee_hk(od, site, fee_calibration, archive_dir, reprocessed_archive_dir, setup)  # N-FEE HK
+    reprocess_daily_synoptics(od, site, archive_dir, fixed_archive_dir, reprocessed_archive_dir, setup)    # Synoptics</code></pre>
 </details>
 </dd>
 <dt id="egse.reprocess.sron_get_syn_input_origins"><code class="name flex">

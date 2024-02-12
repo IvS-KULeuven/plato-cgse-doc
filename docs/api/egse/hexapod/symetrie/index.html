@@ -99,18 +99,22 @@ def get_hexapod_controller_pars(setup: &#39;Setup&#39; = None) -&gt; (str, int, 
 
     Note the returned values are for the device hardware controller, not the control server.
 
-    If no setup argument is provided, the Setup will be loaded from the GlobalState.
+    If no setup argument is provided, the Setup will be loaded from the Configuration Manager.
     &#34;&#34;&#34;
 
-    from egse.state import GlobalState
-    from egse.setup import SetupError
+    from egse.setup import SetupError, load_setup
 
-    setup = setup or GlobalState.setup
+    setup = setup or load_setup()
 
     try:
-        hexapod_id = setup.gse.hexapod.device_args.device_id
+        try:
+            hexapod_id = setup.gse.hexapod.device_args.device_id
+            hexapod_name: str = setup.gse.hexapod.device_args.device_name
+        except AttributeError:
+            # Handle older Setups where no device_args existed for the PUNA hexapod
+            hexapod_id = setup.gse.hexapod.ID
+            hexapod_name: str = setup.gse.hexapod.device_name
         hexapod_id = f&#34;H_{hexapod_id}&#34;
-        hexapod_name: str = setup.gse.hexapod.device_args.device_name
         hostname: str = PUNA_SETTINGS[hexapod_id][&#34;HOSTNAME&#34;]
         port: int = int(PUNA_SETTINGS[hexapod_id][&#34;PORT&#34;])
         controller_type: str = PUNA_SETTINGS[hexapod_id][&#34;TYPE&#34;]
@@ -266,7 +270,7 @@ Symétrie.</p></div>
 <div class="desc"><p>Returns the hostname (str), port number (int), hexapod id (str), hexapod name (str),
 and type (str) for the hexapod controller as defined in the Setup and Settings.</p>
 <p>Note the returned values are for the device hardware controller, not the control server.</p>
-<p>If no setup argument is provided, the Setup will be loaded from the GlobalState.</p></div>
+<p>If no setup argument is provided, the Setup will be loaded from the Configuration Manager.</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
@@ -278,18 +282,22 @@ and type (str) for the hexapod controller as defined in the Setup and Settings.<
 
     Note the returned values are for the device hardware controller, not the control server.
 
-    If no setup argument is provided, the Setup will be loaded from the GlobalState.
+    If no setup argument is provided, the Setup will be loaded from the Configuration Manager.
     &#34;&#34;&#34;
 
-    from egse.state import GlobalState
-    from egse.setup import SetupError
+    from egse.setup import SetupError, load_setup
 
-    setup = setup or GlobalState.setup
+    setup = setup or load_setup()
 
     try:
-        hexapod_id = setup.gse.hexapod.device_args.device_id
+        try:
+            hexapod_id = setup.gse.hexapod.device_args.device_id
+            hexapod_name: str = setup.gse.hexapod.device_args.device_name
+        except AttributeError:
+            # Handle older Setups where no device_args existed for the PUNA hexapod
+            hexapod_id = setup.gse.hexapod.ID
+            hexapod_name: str = setup.gse.hexapod.device_name
         hexapod_id = f&#34;H_{hexapod_id}&#34;
-        hexapod_name: str = setup.gse.hexapod.device_args.device_name
         hostname: str = PUNA_SETTINGS[hexapod_id][&#34;HOSTNAME&#34;]
         port: int = int(PUNA_SETTINGS[hexapod_id][&#34;PORT&#34;])
         controller_type: str = PUNA_SETTINGS[hexapod_id][&#34;TYPE&#34;]

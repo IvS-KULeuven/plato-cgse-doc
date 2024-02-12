@@ -34,7 +34,7 @@ from egse.hk import read_conversion_dict
 from egse.metrics import define_metrics
 from egse.protocol import CommandProtocol
 from egse.settings import Settings
-from egse.state import GlobalState
+from egse.setup import load_setup
 from egse.synoptics import SynopticsManagerProxy
 from egse.system import format_datetime
 from egse.tempcontrol.keithley.daq6510 import DAQ6510Controller
@@ -67,12 +67,13 @@ class DAQ6510Protocol(CommandProtocol):
         self.load_commands(COMMAND_SETTINGS.Commands, DAQ6510Command, DAQ6510Interface)
         self.build_device_method_lookup_table(self.daq)
 
-        self.channels = GlobalState.setup.gse.DAQ6510.channels
+        setup = load_setup()
+        self.channels = setup.gse.DAQ6510.channels
 
-        self.hk_conversion_table = read_conversion_dict(self.control_server.get_storage_mnemonic())
+        self.hk_conversion_table = read_conversion_dict(self.control_server.get_storage_mnemonic(), setup=setup)
 
         self.synoptics = SynopticsManagerProxy()
-        self.metrics = define_metrics(&#34;DAS-DAQ6510&#34;)
+        self.metrics = define_metrics(origin=&#34;DAS-DAQ6510&#34;, use_site=True, setup=setup)
 
     def get_bind_address(self):
         return bind_address(
@@ -151,12 +152,13 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
         self.load_commands(COMMAND_SETTINGS.Commands, DAQ6510Command, DAQ6510Interface)
         self.build_device_method_lookup_table(self.daq)
 
-        self.channels = GlobalState.setup.gse.DAQ6510.channels
+        setup = load_setup()
+        self.channels = setup.gse.DAQ6510.channels
 
-        self.hk_conversion_table = read_conversion_dict(self.control_server.get_storage_mnemonic())
+        self.hk_conversion_table = read_conversion_dict(self.control_server.get_storage_mnemonic(), setup=setup)
 
         self.synoptics = SynopticsManagerProxy()
-        self.metrics = define_metrics(&#34;DAS-DAQ6510&#34;)
+        self.metrics = define_metrics(origin=&#34;DAS-DAQ6510&#34;, use_site=True, setup=setup)
 
     def get_bind_address(self):
         return bind_address(

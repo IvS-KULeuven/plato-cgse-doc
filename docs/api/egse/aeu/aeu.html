@@ -51,7 +51,7 @@ from egse.mixin import dynamic_command
 from egse.proxy import Proxy
 from egse.resource import get_resource
 from egse.settings import Settings
-from egse.state import GlobalState
+from egse.setup import Setup
 from egse.system import find_class, SignalCatcher
 from egse.zmq_ser import connect_address
 
@@ -842,7 +842,8 @@ class ArbDataFile(str, Enum):
     N_CCD_READ_43_75 = &#34;ccdRead43_75.arb&#34;,    # CCD readout for N-CAM (image cycle time: 43.75s)
     N_CCD_READ_50 = &#34;ccdRead50.arb&#34;,          # CCD readout for N-CAM (image cycle time: 50s)
 
-    F_CCD_READ = &#34;FccdRead.arb&#34;,  # CCD readout for F-CAM (fixed image cycle time)
+    F_CCD_READ = &#34;FccdRead.arb&#34;,                        # CCD readout for F-CAM (fixed image cycle time)
+    F_CCD_READ_MIN_POINTS = &#34;FccdRead_min_points.arb&#34;   # Taken from PTO-EST-SC-TN-1563 (v1.0)
 
     # Files modified by KUL to configure Clk_ccdread with short pulses of 150ms
 
@@ -860,7 +861,8 @@ class ArbDataFile(str, Enum):
     SVM_SYNC_CCD_READ_43_75 = &#34;HeaterSync_ccdRead43_75.arb&#34;,     # SVM/TCS sync signal (image cycle time: 43.75s)
     SVM_SYNC_CCD_READ_50 = &#34;HeaterSync_ccdRead50.arb&#34;            # SVM/TCS sync signal (image cycle time: 50s)
 
-    SVM_SYNC_F_CAM = &#34;HeaterSync_FccdRead.arb&#34;              # SVM/TCS sync signal (fixed image cycle time)
+    SVM_SYNC_F_CAM = &#34;HeaterSync_FccdRead.arb&#34;                   # SVM/TCS sync signal (fixed image cycle time)
+    SVM_SYNC_F_CAM_MIN_POINTS = &#34;Heater_FccdRead_min_points.arb&#34; # Taken from PTO-EST-SC-TN-1563 (v1.0)
 
 
 class ArbData:
@@ -5233,8 +5235,11 @@ class AWGSimulator(AWGInterface):
         return True
 
 
-def get_n_cam_cycle_time():
+def get_n_cam_cycle_time(setup: Setup):
     &#34;&#34;&#34; Return the N-CAM cycle time.
+
+    Args:
+        - setup: Setup.
 
     Returns: N-CAM cycle time [s].
     &#34;&#34;&#34;
@@ -5243,20 +5248,20 @@ def get_n_cam_cycle_time():
 
         identifier = awg2.get_arb1_def()[0][-1]
 
-        awg2_cal = GlobalState.setup.gse.aeu.awg2.calibration
+        awg2_cal = setup.gse.aeu.awg2.calibration
         sync_data_string = awg2_cal.n_cam_sync_data[identifier]
 
         return float(SyncData(sync_data_string).image_cycle_time)
 
 
-def get_f_cam_cycle_time():
+def get_f_cam_cycle_time(setup: Setup):
     &#34;&#34;&#34; Return the F-CAM cycle time.
 
     Returns: F-CAM cycle time [s].
     &#34;&#34;&#34;
 
-    awg2_cal = GlobalState.setup.gse.aeu.awg2.calibration
-    sync_data_string = awg2_cal.n_cam_sync_data[&#34;F&#34;]
+    awg2_cal = setup.gse.aeu.awg2.calibration
+    sync_data_string = awg2_cal.f_cam_sync_data[&#34;F&#34;]
 
     return float(SyncData(sync_data_string).image_cycle_time)</code></pre>
 </details>
@@ -5434,7 +5439,7 @@ Returns: Quality of the given current w.r.t. the given protection.</li>
 </details>
 </dd>
 <dt id="egse.aeu.aeu.get_f_cam_cycle_time"><code class="name flex">
-<span>def <span class="ident">get_f_cam_cycle_time</span></span>(<span>)</span>
+<span>def <span class="ident">get_f_cam_cycle_time</span></span>(<span>setup: <a title="egse.setup.Setup" href="../setup.html#egse.setup.Setup">Setup</a>)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Return the F-CAM cycle time.</p>
@@ -5443,30 +5448,37 @@ Returns: Quality of the given current w.r.t. the given protection.</li>
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def get_f_cam_cycle_time():
+<pre><code class="python">def get_f_cam_cycle_time(setup: Setup):
     &#34;&#34;&#34; Return the F-CAM cycle time.
 
     Returns: F-CAM cycle time [s].
     &#34;&#34;&#34;
 
-    awg2_cal = GlobalState.setup.gse.aeu.awg2.calibration
-    sync_data_string = awg2_cal.n_cam_sync_data[&#34;F&#34;]
+    awg2_cal = setup.gse.aeu.awg2.calibration
+    sync_data_string = awg2_cal.f_cam_sync_data[&#34;F&#34;]
 
     return float(SyncData(sync_data_string).image_cycle_time)</code></pre>
 </details>
 </dd>
 <dt id="egse.aeu.aeu.get_n_cam_cycle_time"><code class="name flex">
-<span>def <span class="ident">get_n_cam_cycle_time</span></span>(<span>)</span>
+<span>def <span class="ident">get_n_cam_cycle_time</span></span>(<span>setup: <a title="egse.setup.Setup" href="../setup.html#egse.setup.Setup">Setup</a>)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Return the N-CAM cycle time.</p>
-<p>Returns: N-CAM cycle time [s].</p></div>
+<h2 id="args">Args</h2>
+<ul>
+<li>setup: Setup.
+Returns: N-CAM cycle time [s].</li>
+</ul></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def get_n_cam_cycle_time():
+<pre><code class="python">def get_n_cam_cycle_time(setup: Setup):
     &#34;&#34;&#34; Return the N-CAM cycle time.
+
+    Args:
+        - setup: Setup.
 
     Returns: N-CAM cycle time [s].
     &#34;&#34;&#34;
@@ -5475,7 +5487,7 @@ Returns: Quality of the given current w.r.t. the given protection.</li>
 
         identifier = awg2.get_arb1_def()[0][-1]
 
-        awg2_cal = GlobalState.setup.gse.aeu.awg2.calibration
+        awg2_cal = setup.gse.aeu.awg2.calibration
         sync_data_string = awg2_cal.n_cam_sync_data[identifier]
 
         return float(SyncData(sync_data_string).image_cycle_time)</code></pre>
@@ -10211,7 +10223,8 @@ def string(self):
     N_CCD_READ_43_75 = &#34;ccdRead43_75.arb&#34;,    # CCD readout for N-CAM (image cycle time: 43.75s)
     N_CCD_READ_50 = &#34;ccdRead50.arb&#34;,          # CCD readout for N-CAM (image cycle time: 50s)
 
-    F_CCD_READ = &#34;FccdRead.arb&#34;,  # CCD readout for F-CAM (fixed image cycle time)
+    F_CCD_READ = &#34;FccdRead.arb&#34;,                        # CCD readout for F-CAM (fixed image cycle time)
+    F_CCD_READ_MIN_POINTS = &#34;FccdRead_min_points.arb&#34;   # Taken from PTO-EST-SC-TN-1563 (v1.0)
 
     # Files modified by KUL to configure Clk_ccdread with short pulses of 150ms
 
@@ -10229,7 +10242,8 @@ def string(self):
     SVM_SYNC_CCD_READ_43_75 = &#34;HeaterSync_ccdRead43_75.arb&#34;,     # SVM/TCS sync signal (image cycle time: 43.75s)
     SVM_SYNC_CCD_READ_50 = &#34;HeaterSync_ccdRead50.arb&#34;            # SVM/TCS sync signal (image cycle time: 50s)
 
-    SVM_SYNC_F_CAM = &#34;HeaterSync_FccdRead.arb&#34;              # SVM/TCS sync signal (fixed image cycle time)</code></pre>
+    SVM_SYNC_F_CAM = &#34;HeaterSync_FccdRead.arb&#34;                   # SVM/TCS sync signal (fixed image cycle time)
+    SVM_SYNC_F_CAM_MIN_POINTS = &#34;Heater_FccdRead_min_points.arb&#34; # Taken from PTO-EST-SC-TN-1563 (v1.0)</code></pre>
 </details>
 <h3>Ancestors</h3>
 <ul class="hlist">
@@ -10239,6 +10253,10 @@ def string(self):
 <h3>Class variables</h3>
 <dl>
 <dt id="egse.aeu.aeu.ArbDataFile.F_CCD_READ"><code class="name">var <span class="ident">F_CCD_READ</span></code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="egse.aeu.aeu.ArbDataFile.F_CCD_READ_MIN_POINTS"><code class="name">var <span class="ident">F_CCD_READ_MIN_POINTS</span></code></dt>
 <dd>
 <div class="desc"></div>
 </dd>
@@ -10303,6 +10321,10 @@ def string(self):
 <div class="desc"></div>
 </dd>
 <dt id="egse.aeu.aeu.ArbDataFile.SVM_SYNC_F_CAM"><code class="name">var <span class="ident">SVM_SYNC_F_CAM</span></code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="egse.aeu.aeu.ArbDataFile.SVM_SYNC_F_CAM_MIN_POINTS"><code class="name">var <span class="ident">SVM_SYNC_F_CAM_MIN_POINTS</span></code></dt>
 <dd>
 <div class="desc"></div>
 </dd>
@@ -17408,6 +17430,7 @@ def test(self) -&gt; int:
 <h4><code><a title="egse.aeu.aeu.ArbDataFile" href="#egse.aeu.aeu.ArbDataFile">ArbDataFile</a></code></h4>
 <ul class="">
 <li><code><a title="egse.aeu.aeu.ArbDataFile.F_CCD_READ" href="#egse.aeu.aeu.ArbDataFile.F_CCD_READ">F_CCD_READ</a></code></li>
+<li><code><a title="egse.aeu.aeu.ArbDataFile.F_CCD_READ_MIN_POINTS" href="#egse.aeu.aeu.ArbDataFile.F_CCD_READ_MIN_POINTS">F_CCD_READ_MIN_POINTS</a></code></li>
 <li><code><a title="egse.aeu.aeu.ArbDataFile.N_CCD_READ_25" href="#egse.aeu.aeu.ArbDataFile.N_CCD_READ_25">N_CCD_READ_25</a></code></li>
 <li><code><a title="egse.aeu.aeu.ArbDataFile.N_CCD_READ_25_150MS" href="#egse.aeu.aeu.ArbDataFile.N_CCD_READ_25_150MS">N_CCD_READ_25_150MS</a></code></li>
 <li><code><a title="egse.aeu.aeu.ArbDataFile.N_CCD_READ_31_25" href="#egse.aeu.aeu.ArbDataFile.N_CCD_READ_31_25">N_CCD_READ_31_25</a></code></li>
@@ -17424,6 +17447,7 @@ def test(self) -&gt; int:
 <li><code><a title="egse.aeu.aeu.ArbDataFile.SVM_SYNC_CCD_READ_43_75" href="#egse.aeu.aeu.ArbDataFile.SVM_SYNC_CCD_READ_43_75">SVM_SYNC_CCD_READ_43_75</a></code></li>
 <li><code><a title="egse.aeu.aeu.ArbDataFile.SVM_SYNC_CCD_READ_50" href="#egse.aeu.aeu.ArbDataFile.SVM_SYNC_CCD_READ_50">SVM_SYNC_CCD_READ_50</a></code></li>
 <li><code><a title="egse.aeu.aeu.ArbDataFile.SVM_SYNC_F_CAM" href="#egse.aeu.aeu.ArbDataFile.SVM_SYNC_F_CAM">SVM_SYNC_F_CAM</a></code></li>
+<li><code><a title="egse.aeu.aeu.ArbDataFile.SVM_SYNC_F_CAM_MIN_POINTS" href="#egse.aeu.aeu.ArbDataFile.SVM_SYNC_F_CAM_MIN_POINTS">SVM_SYNC_F_CAM_MIN_POINTS</a></code></li>
 </ul>
 </li>
 <li>

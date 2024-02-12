@@ -224,8 +224,10 @@ class ValveControl(QGroupBox):
 
         self.ventClose = QPushButton(&#34;Close&#34;)
         self.ventClose.setObjectName(&#34;MV002-close&#34;)
+        self.ventClose.setEnabled(False)
         self.ventOpen  = QPushButton(&#34;Open&#34;)
         self.ventOpen.setObjectName(&#34;MV002-open&#34;)
+        self.ventOpen.setEnabled(False)
         self.gateClose = QPushButton(&#34;Close&#34;)
         self.gateClose.setObjectName(&#34;MV001-close&#34;)
         self.gateOpen    = QPushButton(&#34;Open&#34;)
@@ -378,9 +380,9 @@ class ValveUIView(QMainWindow, Observable):
         elif sender.text() == &#39;Unlock&#39;:
             msg = QMessageBox()
             msg.setIcon(QMessageBox.Warning)
-            msg.setWindowTitle(&#34;Vent GUI lock&#34;)
-            msg.setText(&#34;You are about to unlock the vent controller GUI&#34;)
-            msg.setInformativeText(&#34;Are you sure that you want to unlock the vent controller GUI?&#34;)
+            msg.setWindowTitle(&#34;Valve GUI lock&#34;)
+            msg.setText(&#34;You are about to unlock the valve controller GUI&#34;)
+            msg.setInformativeText(&#34;Are you sure that you want to unlock the valve controller GUI?&#34;)
             msg.setStandardButtons(QMessageBox.Ok | QMessageBox.Abort)
             
             retval = msg.exec_()
@@ -395,7 +397,6 @@ class ValveUIView(QMainWindow, Observable):
     def on_open_click(self):
         sender = self.sender()
         code = sender.objectName().split(&#39;-&#39;)[0]
-        # print(sender.objectName())
         if code == &#39;MV002&#39;:
             msg = QMessageBox()
             msg.setIcon(QMessageBox.Warning)
@@ -421,6 +422,8 @@ class ValveUIView(QMainWindow, Observable):
         monitoring_info.pop(&#39;GSRON_VALVE_INTERLOCK_DOOR&#39;)
         if self.guiEnabled:
             for key, value in monitoring_info.items():
+                if &#39;MV002&#39; in key:
+                    continue
                 code  = key.split(&#34;_&#34;)[-1]
                 if self.remote[code]:
                     for child in self.findChildren(QPushButton):
@@ -462,6 +465,8 @@ class ValveUIView(QMainWindow, Observable):
     def on_remote_status_change(self, monitoring_info):
         if self.guiEnabled:
             for key, value in monitoring_info.items():
+                if &#39;MV002&#39; in key:
+                    continue
                 code  = key.split(&#34;_&#34;)[-1]
                 if self.remote[code] != value:
                     if value:
@@ -741,8 +746,8 @@ if __name__ == &#34;__main__&#34;:
 <span>class <span class="ident">ValveControl</span></span>
 </code></dt>
 <dd>
-<div class="desc"><p>QGroupBox(parent: QWidget = None)
-QGroupBox(str, parent: QWidget = None)</p></div>
+<div class="desc"><p>QGroupBox(parent: typing.Optional[QWidget] = None)
+QGroupBox(title: str, parent: typing.Optional[QWidget] = None)</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
@@ -836,8 +841,10 @@ QGroupBox(str, parent: QWidget = None)</p></div>
 
         self.ventClose = QPushButton(&#34;Close&#34;)
         self.ventClose.setObjectName(&#34;MV002-close&#34;)
+        self.ventClose.setEnabled(False)
         self.ventOpen  = QPushButton(&#34;Open&#34;)
         self.ventOpen.setObjectName(&#34;MV002-open&#34;)
+        self.ventOpen.setEnabled(False)
         self.gateClose = QPushButton(&#34;Close&#34;)
         self.gateClose.setObjectName(&#34;MV001-close&#34;)
         self.gateOpen    = QPushButton(&#34;Open&#34;)
@@ -930,7 +937,7 @@ QGroupBox(str, parent: QWidget = None)</p></div>
 <span>class <span class="ident">ValveMonitoringWorker</span></span>
 </code></dt>
 <dd>
-<div class="desc"><p>QObject(parent: QObject = None)</p></div>
+<div class="desc"><p>QObject(parent: typing.Optional[QObject] = None)</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
@@ -1498,7 +1505,7 @@ inheritance.</p></div>
 <span>class <span class="ident">ValveUIView</span></span>
 </code></dt>
 <dd>
-<div class="desc"><p>QMainWindow(parent: QWidget = None, flags: Union[Qt.WindowFlags, Qt.WindowType] = Qt.WindowFlags())</p></div>
+<div class="desc"><p>QMainWindow(parent: typing.Optional[QWidget] = None, flags: Union[Qt.WindowFlags, Qt.WindowType] = Qt.WindowFlags())</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
@@ -1577,9 +1584,9 @@ inheritance.</p></div>
         elif sender.text() == &#39;Unlock&#39;:
             msg = QMessageBox()
             msg.setIcon(QMessageBox.Warning)
-            msg.setWindowTitle(&#34;Vent GUI lock&#34;)
-            msg.setText(&#34;You are about to unlock the vent controller GUI&#34;)
-            msg.setInformativeText(&#34;Are you sure that you want to unlock the vent controller GUI?&#34;)
+            msg.setWindowTitle(&#34;Valve GUI lock&#34;)
+            msg.setText(&#34;You are about to unlock the valve controller GUI&#34;)
+            msg.setInformativeText(&#34;Are you sure that you want to unlock the valve controller GUI?&#34;)
             msg.setStandardButtons(QMessageBox.Ok | QMessageBox.Abort)
             
             retval = msg.exec_()
@@ -1594,7 +1601,6 @@ inheritance.</p></div>
     def on_open_click(self):
         sender = self.sender()
         code = sender.objectName().split(&#39;-&#39;)[0]
-        # print(sender.objectName())
         if code == &#39;MV002&#39;:
             msg = QMessageBox()
             msg.setIcon(QMessageBox.Warning)
@@ -1620,6 +1626,8 @@ inheritance.</p></div>
         monitoring_info.pop(&#39;GSRON_VALVE_INTERLOCK_DOOR&#39;)
         if self.guiEnabled:
             for key, value in monitoring_info.items():
+                if &#39;MV002&#39; in key:
+                    continue
                 code  = key.split(&#34;_&#34;)[-1]
                 if self.remote[code]:
                     for child in self.findChildren(QPushButton):
@@ -1661,6 +1669,8 @@ inheritance.</p></div>
     def on_remote_status_change(self, monitoring_info):
         if self.guiEnabled:
             for key, value in monitoring_info.items():
+                if &#39;MV002&#39; in key:
+                    continue
                 code  = key.split(&#34;_&#34;)[-1]
                 if self.remote[code] != value:
                     if value:
@@ -1707,7 +1717,7 @@ inheritance.</p></div>
 <span>def <span class="ident">closeEvent</span></span>(<span>self, close_event: PyQt5.QtGui.QCloseEvent) ‑> None</span>
 </code></dt>
 <dd>
-<div class="desc"><p>closeEvent(self, QCloseEvent)</p></div>
+<div class="desc"><p>closeEvent(self, a0: typing.Optional[QCloseEvent])</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
@@ -1766,6 +1776,8 @@ inheritance.</p></div>
     monitoring_info.pop(&#39;GSRON_VALVE_INTERLOCK_DOOR&#39;)
     if self.guiEnabled:
         for key, value in monitoring_info.items():
+            if &#39;MV002&#39; in key:
+                continue
             code  = key.split(&#34;_&#34;)[-1]
             if self.remote[code]:
                 for child in self.findChildren(QPushButton):
@@ -1824,9 +1836,9 @@ inheritance.</p></div>
     elif sender.text() == &#39;Unlock&#39;:
         msg = QMessageBox()
         msg.setIcon(QMessageBox.Warning)
-        msg.setWindowTitle(&#34;Vent GUI lock&#34;)
-        msg.setText(&#34;You are about to unlock the vent controller GUI&#34;)
-        msg.setInformativeText(&#34;Are you sure that you want to unlock the vent controller GUI?&#34;)
+        msg.setWindowTitle(&#34;Valve GUI lock&#34;)
+        msg.setText(&#34;You are about to unlock the valve controller GUI&#34;)
+        msg.setInformativeText(&#34;Are you sure that you want to unlock the valve controller GUI?&#34;)
         msg.setStandardButtons(QMessageBox.Ok | QMessageBox.Abort)
         
         retval = msg.exec_()
@@ -1849,7 +1861,6 @@ inheritance.</p></div>
 <pre><code class="python">def on_open_click(self):
     sender = self.sender()
     code = sender.objectName().split(&#39;-&#39;)[0]
-    # print(sender.objectName())
     if code == &#39;MV002&#39;:
         msg = QMessageBox()
         msg.setIcon(QMessageBox.Warning)
@@ -1879,6 +1890,8 @@ inheritance.</p></div>
 <pre><code class="python">def on_remote_status_change(self, monitoring_info):
     if self.guiEnabled:
         for key, value in monitoring_info.items():
+            if &#39;MV002&#39; in key:
+                continue
             code  = key.split(&#34;_&#34;)[-1]
             if self.remote[code] != value:
                 if value:

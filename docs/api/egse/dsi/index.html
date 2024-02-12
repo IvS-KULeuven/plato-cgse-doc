@@ -19,9 +19,47 @@
 <main>
 <article id="content">
 <header>
-<h1 class="title">Namespace <code>egse.dsi</code></h1>
+<h1 class="title">Module <code>egse.dsi</code></h1>
 </header>
 <section id="section-intro">
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python"># The purpose of this code is to lazy load the ESL shared library and the functions loaded from that library.
+# The reason for doing this is (1) remove unnecessary imports when not needed by the app, and (2) allow code
+# to run on a different platform that cannot load the shared library, but still needs some functionality from
+# the `egse.dsi` module.
+
+import logging
+
+__all__ = [
+    &#34;_libesl&#34;,
+]
+
+import importlib
+
+_LOGGER = logging.getLogger(__name__)
+_LAZY_LOADING_CACHE: dict = {}
+
+
+def __getattr__(name):
+
+    try:
+        return _LAZY_LOADING_CACHE[name]
+    except KeyError:
+        pass
+
+    if name not in __all__:
+        raise AttributeError(f&#34;module {__name__!r} has no attribute {name!r}&#34;)
+
+    module = importlib.import_module(&#34;.&#34; + name, __name__)
+
+    _LOGGER.info(f&#34;Module {module.__name__} imported.&#34;)
+    _LAZY_LOADING_CACHE[name] = module
+
+    return module</code></pre>
+</details>
 </section>
 <section>
 <h2 class="section-title" id="header-submodules">Sub-modules</h2>
@@ -38,7 +76,7 @@ the C library <code>EtherSpaceLink.c</code> …</p></div>
 </dd>
 <dt><code class="name"><a title="egse.dsi.rmap" href="rmap.html">egse.dsi.rmap</a></code></dt>
 <dd>
-<div class="desc"><p>This module provides Python wrapper functions to (most of) the library functions from the C library ESL-RMAP.c …</p></div>
+<div class="desc"><p>This module provides a Python interface to RMAP command packets.</p></div>
 </dd>
 <dt><code class="name"><a title="egse.dsi.rmapci" href="rmapci.html">egse.dsi.rmapci</a></code></dt>
 <dd>

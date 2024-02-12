@@ -151,6 +151,7 @@ class OGSEState:
         self.ldls_laser = OnOff.OFF
         self.att_level = 0.0
         self.att_level_index = 0  # [0:46]
+        self.att_is_moving = False
         self.psu = OnOff.OFF
         self.operate = OnOff.OFF
         self.interlock = OnOff.ON  # OPEN by default
@@ -158,6 +159,7 @@ class OGSEState:
 
 ogse_state = OGSEState()
 error_msg = &#34;&#34;
+fw_moving_until = time.time()
 
 
 def get_pm_status():
@@ -222,7 +224,7 @@ def get_att_level():
 
     att_index = levels.index(value)
 
-    return f&#34;att-level:      {ogse_state.att_level:.1E} #{att_index}&#34;
+    return f&#34;att-level: {&#39;*&#39; if is_fw_moving() else &#39;&#39;}     {ogse_state.att_level:.1E} #{att_index}&#34;
 
 
 def att_level_up():
@@ -255,6 +257,7 @@ def set_att_level_index(index: int):
     &#34;&#34;&#34;
 
     global error_msg
+    global fw_moving_until
 
     index = int(index)
 
@@ -268,11 +271,12 @@ def set_att_level_index(index: int):
 
         error_msg = &#34;ERROR: usage: attenuator level #index  -- index goes from 0 to 46&#34;
 
-    time.sleep(random.random() * 3 + 6)  # wait between 6.0 and 9.0 seconds
+    fw_moving_until = time.time() + random.random() * 3 + 6  # wait between 6.0 and 9.0 seconds
 
 
 def set_att_level_position(pos1, pos2):
     global error_msg
+    global fw_moving_until
 
     wheel1, wheel2 = int(pos1), int(pos2)
     if (not 0 &lt; wheel1 &lt;= 8) and (not 0 &lt; wheel2 &lt;= 8):
@@ -285,12 +289,13 @@ def set_att_level_position(pos1, pos2):
     ogse_state.att_level_index = get_attenuation_index(att_level)
     LOGGER.debug(f&#34;att level {wheel1} {wheel2} -&gt; {ogse_state.att_level_index} -&gt; {att_level}&#34;)
 
-    time.sleep(random.random() * 3 + 6)  # wait between 6.0 and 9.0 seconds
+    fw_moving_until = time.time() + random.random() * 3 + 6  # wait between 6.0 and 9.0 seconds
 
 
 def set_att_level_factor(level):
 
     global error_msg
+    global fw_moving_until
 
     level = float(level)
 
@@ -301,7 +306,7 @@ def set_att_level_factor(level):
     ogse_state.att_level = att_level = level
     LOGGER.debug(f&#34;att level {level} -&gt; {att_level}&#34;)
 
-    time.sleep(random.random() * 3 + 6)  # wait between 6.0 and 9.0 seconds
+    fw_moving_until = time.time() + random.random() * 3 + 6  # wait between 6.0 and 9.0 seconds
 
 
 def pm_get_power_and_temperature():
@@ -309,12 +314,16 @@ def pm_get_power_and_temperature():
 
 
 def get_lamp_fault():
+    # use signal USR1 instead
     [error] = random.choices([&#34;ERROR&#34;, &#34;NO-ERROR&#34;], weights=[1, 5])
+    error = &#34;NO-ERROR&#34;
     return f&#34;lamp-fault: {error}&#34;
 
 
 def get_controller_fault():
+    # use signal USR2 instead
     [error] = random.choices([&#34;ERROR&#34;, &#34;NO-ERROR&#34;], weights=[1, 5])
+    error = &#34;NO-ERROR&#34;
     return f&#34;controller-fault: {error}&#34;
 
 
@@ -332,11 +341,13 @@ def get_status():
         f&#39;lamp: {ogse_state.ldls_lamp.name}, &#39;
         f&#39;interlock: {ogse_state.interlock.name}, &#39;
         f&#39;psu: {ogse_state.psu.name}, &#39;
-        f&#39;att: {ogse_state.att_level} #{ogse_state.att_level_index}, &#39;
+        f&#39;att: {&#34;* &#34; if is_fw_moving() else &#34;&#34;}{ogse_state.att_level} #{ogse_state.att_level_index}, &#39;
         f&#39;power-ch1: +3.185751e-11 W, power-ch2: +2.092843e-07 W, &#39;
         f&#39;temp-ch1: +22.2 \xc2\xbaC, temp-ch2: +22.4 \xc2\xbaC\n&#39;
     )
 
+def is_fw_moving():
+    return time.time() &lt; fw_moving_until
 
 def nothing():
     return None
@@ -532,7 +543,7 @@ if __name__ == &#34;__main__&#34;:
 
     att_index = levels.index(value)
 
-    return f&#34;att-level:      {ogse_state.att_level:.1E} #{att_index}&#34;</code></pre>
+    return f&#34;att-level: {&#39;*&#39; if is_fw_moving() else &#39;&#39;}     {ogse_state.att_level:.1E} #{att_index}&#34;</code></pre>
 </details>
 </dd>
 <dt id="egse.collimator.fcul.ogse_sim.get_att_status"><code class="name flex">
@@ -558,7 +569,9 @@ if __name__ == &#34;__main__&#34;:
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def get_controller_fault():
+    # use signal USR2 instead
     [error] = random.choices([&#34;ERROR&#34;, &#34;NO-ERROR&#34;], weights=[1, 5])
+    error = &#34;NO-ERROR&#34;
     return f&#34;controller-fault: {error}&#34;</code></pre>
 </details>
 </dd>
@@ -598,7 +611,9 @@ if __name__ == &#34;__main__&#34;:
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def get_lamp_fault():
+    # use signal USR1 instead
     [error] = random.choices([&#34;ERROR&#34;, &#34;NO-ERROR&#34;], weights=[1, 5])
+    error = &#34;NO-ERROR&#34;
     return f&#34;lamp-fault: {error}&#34;</code></pre>
 </details>
 </dd>
@@ -682,10 +697,23 @@ if __name__ == &#34;__main__&#34;:
         f&#39;lamp: {ogse_state.ldls_lamp.name}, &#39;
         f&#39;interlock: {ogse_state.interlock.name}, &#39;
         f&#39;psu: {ogse_state.psu.name}, &#39;
-        f&#39;att: {ogse_state.att_level} #{ogse_state.att_level_index}, &#39;
+        f&#39;att: {&#34;* &#34; if is_fw_moving() else &#34;&#34;}{ogse_state.att_level} #{ogse_state.att_level_index}, &#39;
         f&#39;power-ch1: +3.185751e-11 W, power-ch2: +2.092843e-07 W, &#39;
         f&#39;temp-ch1: +22.2 \xc2\xbaC, temp-ch2: +22.4 \xc2\xbaC\n&#39;
     )</code></pre>
+</details>
+</dd>
+<dt id="egse.collimator.fcul.ogse_sim.is_fw_moving"><code class="name flex">
+<span>def <span class="ident">is_fw_moving</span></span>(<span>)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def is_fw_moving():
+    return time.time() &lt; fw_moving_until</code></pre>
 </details>
 </dd>
 <dt id="egse.collimator.fcul.ogse_sim.ldls_operate_off"><code class="name flex">
@@ -863,6 +891,7 @@ if __name__ == &#34;__main__&#34;:
 <pre><code class="python">def set_att_level_factor(level):
 
     global error_msg
+    global fw_moving_until
 
     level = float(level)
 
@@ -873,7 +902,7 @@ if __name__ == &#34;__main__&#34;:
     ogse_state.att_level = att_level = level
     LOGGER.debug(f&#34;att level {level} -&gt; {att_level}&#34;)
 
-    time.sleep(random.random() * 3 + 6)  # wait between 6.0 and 9.0 seconds</code></pre>
+    fw_moving_until = time.time() + random.random() * 3 + 6  # wait between 6.0 and 9.0 seconds</code></pre>
 </details>
 </dd>
 <dt id="egse.collimator.fcul.ogse_sim.set_att_level_index"><code class="name flex">
@@ -894,6 +923,7 @@ if __name__ == &#34;__main__&#34;:
     &#34;&#34;&#34;
 
     global error_msg
+    global fw_moving_until
 
     index = int(index)
 
@@ -907,7 +937,7 @@ if __name__ == &#34;__main__&#34;:
 
         error_msg = &#34;ERROR: usage: attenuator level #index  -- index goes from 0 to 46&#34;
 
-    time.sleep(random.random() * 3 + 6)  # wait between 6.0 and 9.0 seconds</code></pre>
+    fw_moving_until = time.time() + random.random() * 3 + 6  # wait between 6.0 and 9.0 seconds</code></pre>
 </details>
 </dd>
 <dt id="egse.collimator.fcul.ogse_sim.set_att_level_position"><code class="name flex">
@@ -921,6 +951,7 @@ if __name__ == &#34;__main__&#34;:
 </summary>
 <pre><code class="python">def set_att_level_position(pos1, pos2):
     global error_msg
+    global fw_moving_until
 
     wheel1, wheel2 = int(pos1), int(pos2)
     if (not 0 &lt; wheel1 &lt;= 8) and (not 0 &lt; wheel2 &lt;= 8):
@@ -933,7 +964,7 @@ if __name__ == &#34;__main__&#34;:
     ogse_state.att_level_index = get_attenuation_index(att_level)
     LOGGER.debug(f&#34;att level {wheel1} {wheel2} -&gt; {ogse_state.att_level_index} -&gt; {att_level}&#34;)
 
-    time.sleep(random.random() * 3 + 6)  # wait between 6.0 and 9.0 seconds</code></pre>
+    fw_moving_until = time.time() + random.random() * 3 + 6  # wait between 6.0 and 9.0 seconds</code></pre>
 </details>
 </dd>
 <dt id="egse.collimator.fcul.ogse_sim.toggle_interlock"><code class="name flex">
@@ -988,6 +1019,7 @@ if __name__ == &#34;__main__&#34;:
         self.ldls_laser = OnOff.OFF
         self.att_level = 0.0
         self.att_level_index = 0  # [0:46]
+        self.att_is_moving = False
         self.psu = OnOff.OFF
         self.operate = OnOff.OFF
         self.interlock = OnOff.ON  # OPEN by default</code></pre>
@@ -1055,6 +1087,7 @@ if __name__ == &#34;__main__&#34;:
 <li><code><a title="egse.collimator.fcul.ogse_sim.get_power" href="#egse.collimator.fcul.ogse_sim.get_power">get_power</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse_sim.get_psu" href="#egse.collimator.fcul.ogse_sim.get_psu">get_psu</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse_sim.get_status" href="#egse.collimator.fcul.ogse_sim.get_status">get_status</a></code></li>
+<li><code><a title="egse.collimator.fcul.ogse_sim.is_fw_moving" href="#egse.collimator.fcul.ogse_sim.is_fw_moving">is_fw_moving</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse_sim.ldls_operate_off" href="#egse.collimator.fcul.ogse_sim.ldls_operate_off">ldls_operate_off</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse_sim.ldls_operate_on" href="#egse.collimator.fcul.ogse_sim.ldls_operate_on">ldls_operate_on</a></code></li>
 <li><code><a title="egse.collimator.fcul.ogse_sim.ldls_power_off" href="#egse.collimator.fcul.ogse_sim.ldls_power_off">ldls_power_off</a></code></li>

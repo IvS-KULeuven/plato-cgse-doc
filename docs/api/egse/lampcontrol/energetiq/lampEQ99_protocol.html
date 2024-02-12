@@ -33,6 +33,7 @@ from egse.settings import Settings
 
 from egse.lampcontrol.energetiq.lampEQ99 import LampEQ99Controller, LampEQ99Interface, LampEQ99Simulator
 from egse.lampcontrol.energetiq.lampEQ99_devif import LampEQ99Command
+from egse.setup import load_setup
 from egse.synoptics import SynopticsManagerProxy
 from egse.system import format_datetime
 from egse.zmq_ser import bind_address
@@ -45,6 +46,7 @@ class LampEQ99Protocol(CommandProtocol):
     def __init__(self, control_server: ControlServer):
         super().__init__()
         self.control_server = control_server
+        setup = load_setup()
 
         if Settings.simulation_mode():
             self.lamp = LampEQ99Simulator()
@@ -55,7 +57,7 @@ class LampEQ99Protocol(CommandProtocol):
 
         self.build_device_method_lookup_table(self.lamp)
 
-        self.metrics = define_metrics(&#34;EQ99&#34;)
+        self.metrics = define_metrics(&#34;EQ99&#34;, use_site=False, setup=setup)
         self.synoptics = SynopticsManagerProxy()
 
     def get_bind_address(self):
@@ -127,6 +129,7 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
     def __init__(self, control_server: ControlServer):
         super().__init__()
         self.control_server = control_server
+        setup = load_setup()
 
         if Settings.simulation_mode():
             self.lamp = LampEQ99Simulator()
@@ -137,7 +140,7 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
 
         self.build_device_method_lookup_table(self.lamp)
 
-        self.metrics = define_metrics(&#34;EQ99&#34;)
+        self.metrics = define_metrics(&#34;EQ99&#34;, use_site=False, setup=setup)
         self.synoptics = SynopticsManagerProxy()
 
     def get_bind_address(self):

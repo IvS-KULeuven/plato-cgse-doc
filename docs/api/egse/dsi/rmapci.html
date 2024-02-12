@@ -31,21 +31,23 @@
 # This file implements functions to easily create the packets send over the RMAP protocol
 # for the DPU-FEE interface.
 #
-# Please check the document PLATO-DLR-PL-IC-0002 v1.0 [25/09/2018] for reference. 
-# The RMAP Verified Write Request Packet STructure is defined on page 26 with req. FEE-DPU-IF-582.
+# Please check the document PLATO-DLR-PL-IC-0002 v1.0 [25/09/2018] for reference.
+# The RMAP Verified Write Request Packet Structure is defined on page 26 with req. FEE-DPU-IF-582.
 
-import egse.dsi.rmap
+from egse.dsi.rmap import ESL_RMAP
+from egse.dsi.constants import RMAP_PROTOCOL_ID
+from egse.rmap import rmap_crc_check
 
 
 # FIXME: We could just use the rmap_write(..) command for this, but that currently doesn&#39;t have verify before write etc.
 # It more looks like the RMAP interface to the device can also (better) be implemented in Python.
 
-def write_critical_configuration_data(rmap_link, buf, tid, addr, data):
-    buf[0]  = egse.dsi.rmap.rmap_get_target_logical_address(rmap_link)
-    buf[1]  = egse.dsi.constants.RMAP_PROTOCOL_ID
+def write_critical_configuration_data(rmap_link: ESL_RMAP, buf, tid, addr, data):
+    buf[0]  = rmap_link.target_logical_address
+    buf[1]  = RMAP_PROTOCOL_ID
     buf[2]  = 0x7C                    # Instruction: RMAP Request, write, incrementing address, verify before write, and send reply, reply addr length=0
     buf[3]  = 0xD1                    # Key:
-    buf[4]  = egse.dsi.rmap.rmap_get_initiator_logical_address(rmap_link)
+    buf[4]  = rmap_link.initiator_logical_address
     buf[5]  = (tid &gt;&gt; 8) &amp; 0xFF       # MSB of the Transition ID
     buf[6]  = (tid) &amp; 0xFF            # LSB of the Transition ID
     buf[7]  = (addr &gt;&gt; 32) &amp; 0xFF     # Extended address
@@ -56,12 +58,12 @@ def write_critical_configuration_data(rmap_link, buf, tid, addr, data):
     buf[12] = 0x00                    # data length (MSB)
     buf[13] = 0x00                    # data length, fixed to 4 bytes for critical configuration parameters
     buf[14] = 0x04                    # data length (LSB)
-    buf[15] = egse.dsi.rmap.rmap_crc_check(buf, 0, 15)
+    buf[15] = rmap_crc_check(buf, 0, 15)
     buf[16] = (data &gt;&gt; 24) &amp; 0xFF     # data (MSB)
     buf[17] = (data &gt;&gt; 16) &amp; 0xFF     # data
     buf[18] = (data &gt;&gt;  8) &amp; 0xFF     # data
     buf[19] = (data      ) &amp; 0xFF     # data (LSB)
-    buf[20] = egse.dsi.rmap.rmap_crc_check(buf, 16, 4)
+    buf[20] = rmap_crc_check(buf, 16, 4)
     return buf</code></pre>
 </details>
 </section>
@@ -73,7 +75,7 @@ def write_critical_configuration_data(rmap_link, buf, tid, addr, data):
 <h2 class="section-title" id="header-functions">Functions</h2>
 <dl>
 <dt id="egse.dsi.rmapci.write_critical_configuration_data"><code class="name flex">
-<span>def <span class="ident">write_critical_configuration_data</span></span>(<span>rmap_link, buf, tid, addr, data)</span>
+<span>def <span class="ident">write_critical_configuration_data</span></span>(<span>rmap_link: <a title="egse.dsi.rmap.ESL_RMAP" href="rmap.html#egse.dsi.rmap.ESL_RMAP">ESL_RMAP</a>, buf, tid, addr, data)</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -81,12 +83,12 @@ def write_critical_configuration_data(rmap_link, buf, tid, addr, data):
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def write_critical_configuration_data(rmap_link, buf, tid, addr, data):
-    buf[0]  = egse.dsi.rmap.rmap_get_target_logical_address(rmap_link)
-    buf[1]  = egse.dsi.constants.RMAP_PROTOCOL_ID
+<pre><code class="python">def write_critical_configuration_data(rmap_link: ESL_RMAP, buf, tid, addr, data):
+    buf[0]  = rmap_link.target_logical_address
+    buf[1]  = RMAP_PROTOCOL_ID
     buf[2]  = 0x7C                    # Instruction: RMAP Request, write, incrementing address, verify before write, and send reply, reply addr length=0
     buf[3]  = 0xD1                    # Key:
-    buf[4]  = egse.dsi.rmap.rmap_get_initiator_logical_address(rmap_link)
+    buf[4]  = rmap_link.initiator_logical_address
     buf[5]  = (tid &gt;&gt; 8) &amp; 0xFF       # MSB of the Transition ID
     buf[6]  = (tid) &amp; 0xFF            # LSB of the Transition ID
     buf[7]  = (addr &gt;&gt; 32) &amp; 0xFF     # Extended address
@@ -97,12 +99,12 @@ def write_critical_configuration_data(rmap_link, buf, tid, addr, data):
     buf[12] = 0x00                    # data length (MSB)
     buf[13] = 0x00                    # data length, fixed to 4 bytes for critical configuration parameters
     buf[14] = 0x04                    # data length (LSB)
-    buf[15] = egse.dsi.rmap.rmap_crc_check(buf, 0, 15)
+    buf[15] = rmap_crc_check(buf, 0, 15)
     buf[16] = (data &gt;&gt; 24) &amp; 0xFF     # data (MSB)
     buf[17] = (data &gt;&gt; 16) &amp; 0xFF     # data
     buf[18] = (data &gt;&gt;  8) &amp; 0xFF     # data
     buf[19] = (data      ) &amp; 0xFF     # data (LSB)
-    buf[20] = egse.dsi.rmap.rmap_crc_check(buf, 16, 4)
+    buf[20] = rmap_crc_check(buf, 16, 4)
     return buf</code></pre>
 </details>
 </dd>

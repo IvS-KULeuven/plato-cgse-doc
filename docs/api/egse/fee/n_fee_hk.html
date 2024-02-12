@@ -59,8 +59,7 @@ from egse.hk import convert_hk_names
 from egse.hk import read_conversion_dict
 from egse.metrics import define_metrics
 from egse.settings import Settings
-from egse.setup import NavigableDict, SetupError
-from egse.state import GlobalState
+from egse.setup import NavigableDict, SetupError, load_setup, Setup
 from egse.storage import StorageProxy
 from egse.storage import register_to_storage_manager
 from egse.storage import unregister_from_storage_manager
@@ -81,6 +80,8 @@ ORIGIN = &#34;N-FEE-HK&#34;
 TIMEOUT = 1  # timeout for polling the data distribution from the DPU CS
 
 HK_TIMESTAMP_NAME = &#34;timestamp&#34;
+
+KNOWN_KEYS_NOT_IN_METRICS = [&#39;timestamp&#39;, &#39;timecode_ts&#39;]
 
 class GeneratorSignals(QObject):
     finished = pyqtSignal()
@@ -197,6 +198,9 @@ class DataCollector:
     def __getitem__(self, item):
         return self._data[item]
 
+    def __contains__(self, item):
+        return item in self._data
+
     def get(self, item):
         try:
             return self._data[item]
@@ -207,7 +211,7 @@ class DataCollector:
         return self._keys
 
     def values(self):
-        return [self._data[name] for name in self._keys]
+        return self._data.values()
 
     def update(self, data: dict):
         if x := set(data) - set(self._data):
@@ -219,6 +223,9 @@ class DataCollector:
     def clear(self):
         self._data = {k: None for k in self._keys}
 
+    def as_dict(self):
+        return self._data
+
 
 class MainWindow(QMainWindow):
 
@@ -227,8 +234,8 @@ class MainWindow(QMainWindow):
 
         self.hk_generator = HousekeepingGenerator()
 
-        column_names = self.hk_generator.current_data.keys()
-        register_to_storage_manager(ORIGIN, CSV, prep=dict(mode=&#39;a&#39;, column_names=column_names))
+        column_names = self.hk_generator.hk_names_mapping.values()
+        register_to_storage_manager(ORIGIN, CSV, prep=dict(mode=&#39;a&#39;, column_names=list(column_names)))
 
         self.hk_generator.signals.finished.connect(self.close)
         self.hk_generator.run()
@@ -253,6 +260,7 @@ class HousekeepingGenerator:
     def __init__(self):
 
         self.signals = GeneratorSignals()
+        self.setup = load_setup()
 
         # Convert with info from HK info table
         # Append the new names
@@ -264,19 +272,21 @@ class HousekeepingGenerator:
         # names to the correct device names as defined in the CGSE. The keys in the mapping are
         # the original device name, the values are the CGSE corrected names
 
-        self.hk_names_mapping = read_conversion_dict(ORIGIN, use_site=False)
-        hk_header = self.hk_names_mapping.values()
+        self.hk_names_mapping = read_conversion_dict(ORIGIN, use_site=False, setup=self.setup)
+
+        # Add the timestamp and timecode_ts to the names mapping
+        self.hk_names_mapping.update({&#39;timestamp&#39;: &#39;timestamp&#39;, &#39;timecode_ts&#39;: &#39;timecode_ts&#39;})
+
+        hk_header = self.hk_names_mapping.keys()
 
         # Read from the setup: sensor calibration data (as a NavigableDict)
 
-        self.supply_voltage_calibration = GlobalState.setup.camera.fee.calibration.supply_voltages
-        self.temperature_calibration = GlobalState.setup.camera.fee.calibration.temperatures
+        self.supply_voltage_calibration = self.setup.camera.fee.calibration.supply_voltages
+        self.temperature_calibration = self.setup.camera.fee.calibration.temperatures
 
-        self.current_data = DataCollector(
-            [HK_TIMESTAMP_NAME, *hk_header]
-        )
+        self.current_data = DataCollector([HK_TIMESTAMP_NAME, *hk_header])
 
-        self.hk_metrics = define_metrics(ORIGIN, dashboard=&#39;*&#39;)
+        self.hk_metrics = define_metrics(ORIGIN, dashboard=&#39;*&#39;, setup=self.setup)
 
     def run(self):
         self.start_pulling_data()
@@ -292,39 +302,49 @@ class HousekeepingGenerator:
 
     def update_metrics(self):
 
-        for metric_name in self.hk_names_mapping.values():
-            # LOGGER.info(f&#34;{metric_name=}&#34;)
-            value = self.current_data.get(metric_name)
-            if value is not None:
-                self.hk_metrics[metric_name].set(value)
-            else:
-                self.hk_metrics[metric_name].set(float(&#39;nan&#39;))
-                LOGGER.log(logging.DEBUG, f&#34;No current data available for {metric_name}.&#34;)
+        for orig_name, metric_name in self.hk_names_mapping.items():
+            # LOGGER.info(f&#34;{orig_name=}, {metric_name=}&#34;)
+            try:
+                value = self.current_data.get(orig_name)
+                if value is not None:
+                    self.hk_metrics[metric_name].set(value)
+                else:
+                    self.hk_metrics[metric_name].set(float(&#39;nan&#39;))
+                    # LOGGER.debug(f&#34;No current data available for {metric_name}.&#34;)
+            except KeyError as exc:
+                if metric_name not in KNOWN_KEYS_NOT_IN_METRICS:
+                    LOGGER.warning(f&#34;Unknown metric name: {orig_name=}, {metric_name=}&#34;)
 
     def send_hk_data_to_storage(self):
 
-        if not any(self.current_data.values()):
+        # All saved data needs at least a timestamp
+
+        if &#39;timestamp&#39; not in self.current_data or self.current_data[&#39;timestamp&#39;] is None:
             return
 
         # Translate the HK names (i.e. start using the correct prefix)
         # and append them to the rest of the HK
 
-        self.current_data = convert_hk_names(dict(zip(self.current_data.keys(), self.current_data.values())),
-                                             self.hk_names_mapping)
+        # CHANGED: Remember self.hk_names_mapping shall contain both timestamp and timecode_ts.
+        #          Be careful here, because the convert_hk_names() returns a new dict while the
+        #          self.current_data is a DataCollector. So, don&#39;t catch the returned dict in the
+        #          self.current_data.
+        current_data = convert_hk_names(self.current_data.as_dict(), self.hk_names_mapping)
+
         # Calibration (supply voltages + temperatures)
 
-        calibrated_supply_voltages = get_calibrated_supply_voltages(self.current_data,
-                                                                    self.supply_voltage_calibration)
-        self.current_data.update(calibrated_supply_voltages)
-        calibrated_temperatures = get_calibrated_temperatures(self.current_data, self.temperature_calibration)
-        self.current_data.update(calibrated_temperatures)
+        calibrated_supply_voltages = get_calibrated_supply_voltages(current_data, self.supply_voltage_calibration)
+        current_data.update(calibrated_supply_voltages)
+
+        calibrated_temperatures = get_calibrated_temperatures(current_data, self.temperature_calibration, self.setup)
+        current_data.update(calibrated_temperatures)
 
         with StorageProxy() as storage:
 
             rc = storage.save(
                 {
                     &#34;origin&#34;: ORIGIN,
-                    &#34;data&#34;: self.current_data
+                    &#34;data&#34;: current_data
                 }
             )
         if rc and not rc.successful:
@@ -335,7 +355,7 @@ class HousekeepingGenerator:
 
         if len(calibrated_temperatures) &gt; 0:
 
-            calibrated_temperatures[&#34;timestamp&#34;] = self.current_data[HK_TIMESTAMP_NAME]
+            calibrated_temperatures[&#34;timestamp&#34;] = current_data[HK_TIMESTAMP_NAME]
 
             with SynopticsManagerProxy() as synoptics:
                 synoptics.store_common_synoptics(calibrated_temperatures)
@@ -343,28 +363,38 @@ class HousekeepingGenerator:
     def worker_output(self, sync_id, data):
 
         if sync_id == MessageIdentifier.SYNC_TIMECODE:
-            self.send_hk_data_to_storage()
-            self.update_metrics()
             self.current_data.clear()
+
             timecode, timestamp = data
-            LOGGER.info(f&#34;Timecode: {timecode}&#34;)
+            LOGGER.debug(f&#34;Timecode: {timestamp=}, {timecode=}&#34;)
 
             self.current_data.update({&#34;timecode&#34;: timecode, &#34;timecode_ts&#34;: timestamp})
 
         if sync_id == MessageIdentifier.SYNC_HK_PACKET:
             hk_packet, timestamp = data
-            LOGGER.info(f&#34;HK Packet: {hk_packet.type=!s}&#34;)
-
-            self.current_data.update({HK_TIMESTAMP_NAME: timestamp})
+            LOGGER.debug(f&#34;HK Packet: {timestamp=}, {hk_packet.type=!s}&#34;)
 
             hk_data = HousekeepingData(hk_packet.data)
+            self._store_hk_data(hk_data, timestamp)
 
-            for par_name in hk_data:
-                self.current_data.update({par_name: hk_data[par_name]})
+        if sync_id == MessageIdentifier.SYNC_HK_DATA:
+            hk_data, timestamp = data
+            LOGGER.debug(f&#34;HK Data: {timestamp=}&#34;)
+
+            self._store_hk_data(hk_data, timestamp)
 
         if sync_id == MessageIdentifier.NUM_CYCLES:
-            LOGGER.info(f&#34;num_cycles: {max(0, data)}&#34;)
+            LOGGER.debug(f&#34;num_cycles: {max(0, data)}&#34;)
             self.current_data.update({&#39;num_cycles&#39;: max(0, data)})
+
+    def _store_hk_data(self, hk_data: HousekeepingData, timestamp: str):
+        self.current_data.update({HK_TIMESTAMP_NAME: timestamp})
+
+        for par_name in hk_data:
+            self.current_data.update({par_name: hk_data[par_name]})
+
+        self.send_hk_data_to_storage()
+        self.update_metrics()
 
     def worker_complete(self):
         LOGGER.info(&#34;THREAD COMPLETE!&#34;)
@@ -372,8 +402,8 @@ class HousekeepingGenerator:
         self.data_puller = None
         self.signals.finished.emit()
 
-    def worker_error(self, t):
-        LOGGER.warning(&#34;ERROR: %s&#34; % t)
+    def worker_error(self, msg):
+        LOGGER.warning(f&#34;ERROR: {msg}&#34;)
 
 
 def get_calibrated_supply_voltages(counts, supply_voltage_calibration):
@@ -395,7 +425,7 @@ def get_calibrated_supply_voltages(counts, supply_voltage_calibration):
 
     for cal_name in supply_voltage_calibration:
 
-        raw_name = cal_name + &#34;_RAW&#34;
+        raw_name = f&#34;{cal_name}_RAW&#34;
         cal = supply_voltage_calibration[cal_name]
 
         if counts[raw_name] is not None:
@@ -407,7 +437,7 @@ def get_calibrated_supply_voltages(counts, supply_voltage_calibration):
     return supply_voltages
 
 
-def get_calibrated_temperatures(counts, sensor_calibration):
+def get_calibrated_temperatures(counts, sensor_calibration, setup):
     &#34;&#34;&#34; Calibrate the N-FEE temperatures.
 
     The calibrated temperatures come from:
@@ -422,6 +452,7 @@ def get_calibrated_temperatures(counts, sensor_calibration):
     Args:
         - counts: Uncalibrated, raw data for all HK.
         - sensor_calibration: N-FEE temperature calibration as read from the YAML file that was specified in the setup
+        - setup: Setup
 
     Returns: Dictionary with calibrated temperatures [°C].
     &#34;&#34;&#34;
@@ -429,18 +460,19 @@ def get_calibrated_temperatures(counts, sensor_calibration):
     temperatures = {}
 
     for sensor_type in sensor_calibration:
-        temperatures.update(get_calibrated_temperatures_for_type(counts, sensor_calibration, sensor_type))
+        temperatures.update(get_calibrated_temperatures_for_type(counts, sensor_calibration, sensor_type, setup))
 
     return temperatures
 
 
-def get_calibrated_temperatures_for_type(counts, sensor_calibration, sensor_type) -&gt; dict:
+def get_calibrated_temperatures_for_type(counts, sensor_calibration, sensor_type, setup) -&gt; dict:
     &#34;&#34;&#34; Calibrate the N-FEE temperatures for the given sensor type.
 
     Args:
         - counts: Uncalibrated, raw data [ADU]
         - sensor_calibration: Calibration information for the given sensor type
         - sensor_calibration: N-FEE sensor calibration as read from the YAML file that was specified in the setup
+        - setup: Setup
 
     Returns: Dictionary with calibrated temperatures [°C] for the given sensor type.
     &#34;&#34;&#34;
@@ -451,31 +483,37 @@ def get_calibrated_temperatures_for_type(counts, sensor_calibration, sensor_type
 
     for cal_name in cal.sensor_names:
 
-        raw_name = cal_name + &#34;_RAW&#34;
+        if cal_name.endswith(&#34;_AMB&#34;):
+            raw_name = f&#34;{cal_name[:-4]}_RAW&#34;
+        else:
+            raw_name = f&#34;{cal_name}_RAW&#34;
 
         if counts[raw_name] is not None:
 
             sensor_info = cal[cal_name] if cal_name in cal else cal
 
             try:
-                temperature = counts_to_temperature(cal_name, counts[raw_name], sensor_info)
+                temperature = counts_to_temperature(cal_name, counts[raw_name], sensor_info, setup)
 
             except AttributeError as exc:
-                raise SetupError(&#34;Not all TOU TRP PT1000 calibration information is available in the setup under &#34;
-                                 &#34;setup.camera.fee.calibration.&#34;, {exc})
+                raise SetupError(
+                    &#34;Not all TOU TRP PT1000 calibration information is available in the setup under &#34;
+                    &#34;setup.camera.fee.calibration.&#34;
+                ) from exc
 
             temperatures[cal_name] = temperature
 
     return temperatures
 
 
-def counts_to_temperature(sensor_name: str, counts: float, sensor_info: NavigableDict):
+def counts_to_temperature(sensor_name: str, counts: float, sensor_info: NavigableDict, setup):
     &#34;&#34;&#34; Convert the given counts for the given sensor to temperature.
 
     Args:
         - sensor_name: Sensor name
         - counts: Uncalibrated, raw data [ADU]
         - sensor_info: Calibration information for the given sensor (type)
+        - setup: Setup
 
     Returns: Calibrated temperature [°C] for the given sensor
     &#34;&#34;&#34;
@@ -487,9 +525,8 @@ def counts_to_temperature(sensor_name: str, counts: float, sensor_info: Navigabl
 
     # Conversion: counts -&gt; resistance -&gt; temperature
 
-    else:
-        resistance = counts_to_resistance(sensor_name, counts, sensor_info)
-        return resistance_to_temperature(sensor_name, resistance, sensor_info)
+    resistance = counts_to_resistance(sensor_name, counts, sensor_info)
+    return resistance_to_temperature(sensor_name, resistance, sensor_info, setup)
 
 
 def counts_to_resistance(sensor_name: str, counts: float, sensor_info: NavigableDict):
@@ -524,13 +561,14 @@ def counts_to_resistance(sensor_name: str, counts: float, sensor_info: Navigable
     raise SetupError(f&#34;Setup does not contain info for conversion from counts to resistance for {sensor_name}&#34;)
 
 
-def resistance_to_temperature(sensor_name: str, resistance: float, sensor_info: NavigableDict):
+def resistance_to_temperature(sensor_name: str, resistance: float, sensor_info: NavigableDict, setup):
     &#34;&#34;&#34; Convert the given resistance for the given sensor to counts.
 
     Args:
         - sensor_name: Sensor name
         - resistance: Resistance [Ohm]
         - sensor_info: Calibration information for the given sensor (type)
+        - setup: Setup
 
     Returns: Temperature [°C] for the given sensor.
     &#34;&#34;&#34;
@@ -548,6 +586,9 @@ def resistance_to_temperature(sensor_name: str, resistance: float, sensor_info: 
 
     method: str = resistance_to_temperature_info.method
 
+    if &#34;divide_resistance_by&#34; in resistance_to_temperature_info:
+        resistance /= resistance_to_temperature_info.divide_resistance_by
+
     # Polynomial
 
     if method == &#34;polynomial&#34;:
@@ -562,15 +603,13 @@ def resistance_to_temperature(sensor_name: str, resistance: float, sensor_info: 
         if &#34;resistance_to_temperature_coefficients&#34; in resistance_to_temperature_info:
             return np.polyval(resistance_to_temperature_info.resistance_to_temperature_coefficients, resistance)
 
-    # Callendar - van Dusen equation
-
-    if method == &#34;callendar_van_dusen&#34;:
-        standard = resistance_to_temperature_info.standard
-        ref_resistance = resistance_to_temperature_info.ref_resistance
-        return callendar_van_dusen(resistance, ref_resistance, standard)
-
-    else:
+    if method != &#34;callendar_van_dusen&#34;:
         raise SetupError(f&#34;Setup does not contain info for conversion from resistance to temperature for {sensor_name}&#34;)
+
+    standard = resistance_to_temperature_info.standard
+    ref_resistance = resistance_to_temperature_info.ref_resistance
+
+    return callendar_van_dusen(resistance, ref_resistance, standard, setup)
 
 
 def solve_temperature(temperature_to_resistance_coefficients, resistance):
@@ -592,19 +631,21 @@ def solve_temperature(temperature_to_resistance_coefficients, resistance):
             return temperature.real
 
 
-def callendar_van_dusen(resistance, ref_resistance, standard):
+def callendar_van_dusen(resistance, ref_resistance, standard, setup):
     &#34;&#34;&#34; Solve the Callendar - van Dusen equation for temperature.
 
     Args:
         - resistance: Resistance [Ohm] for which to calculate the temperature
         - ref_resistance: Resistance [Ohm] for a temperature of 0°C
+        - standard: Sensor standard
+        - setup: Setup.
 
     Return: Temperature [°C] corresponding to the given resistance.
     &#34;&#34;&#34;
 
     # Resistances higher than the reference resistance correspond to
 
-    coefficients = GlobalState.setup.sensor_calibration.callendar_van_dusen[standard]
+    coefficients = setup.sensor_calibration.callendar_van_dusen[standard]
 
     # Positive temperatures
 
@@ -667,7 +708,7 @@ def start(gui):
 
     def sigint_handler(*args):
         &#34;&#34;&#34;Handler for the SIGINT signal.&#34;&#34;&#34;
-        LOGGER.info(f&#39;Handling signal SIGINT...&#39;)
+        LOGGER.info(&#39;Handling signal SIGINT...&#39;)
         if QApplication.platformName() == &#34;offscreen&#34;:
             window.close()
             QApplication.quit()
@@ -763,33 +804,37 @@ if __name__ == &#39;__main__&#39;:
 <h2 class="section-title" id="header-functions">Functions</h2>
 <dl>
 <dt id="egse.fee.n_fee_hk.callendar_van_dusen"><code class="name flex">
-<span>def <span class="ident">callendar_van_dusen</span></span>(<span>resistance, ref_resistance, standard)</span>
+<span>def <span class="ident">callendar_van_dusen</span></span>(<span>resistance, ref_resistance, standard, setup)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Solve the Callendar - van Dusen equation for temperature.</p>
 <h2 id="args">Args</h2>
 <ul>
 <li>resistance: Resistance [Ohm] for which to calculate the temperature</li>
-<li>ref_resistance: Resistance [Ohm] for a temperature of 0°C
+<li>ref_resistance: Resistance [Ohm] for a temperature of 0°C</li>
+<li>standard: Sensor standard</li>
+<li>setup: Setup.
 Return: Temperature [°C] corresponding to the given resistance.</li>
 </ul></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def callendar_van_dusen(resistance, ref_resistance, standard):
+<pre><code class="python">def callendar_van_dusen(resistance, ref_resistance, standard, setup):
     &#34;&#34;&#34; Solve the Callendar - van Dusen equation for temperature.
 
     Args:
         - resistance: Resistance [Ohm] for which to calculate the temperature
         - ref_resistance: Resistance [Ohm] for a temperature of 0°C
+        - standard: Sensor standard
+        - setup: Setup.
 
     Return: Temperature [°C] corresponding to the given resistance.
     &#34;&#34;&#34;
 
     # Resistances higher than the reference resistance correspond to
 
-    coefficients = GlobalState.setup.sensor_calibration.callendar_van_dusen[standard]
+    coefficients = setup.sensor_calibration.callendar_van_dusen[standard]
 
     # Positive temperatures
 
@@ -858,7 +903,7 @@ Returns: Resistance [Ohm] for the given sensor.</li>
 </details>
 </dd>
 <dt id="egse.fee.n_fee_hk.counts_to_temperature"><code class="name flex">
-<span>def <span class="ident">counts_to_temperature</span></span>(<span>sensor_name: str, counts: float, sensor_info: egse.setup.NavigableDict)</span>
+<span>def <span class="ident">counts_to_temperature</span></span>(<span>sensor_name: str, counts: float, sensor_info: egse.setup.NavigableDict, setup)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Convert the given counts for the given sensor to temperature.</p>
@@ -866,20 +911,22 @@ Returns: Resistance [Ohm] for the given sensor.</li>
 <ul>
 <li>sensor_name: Sensor name</li>
 <li>counts: Uncalibrated, raw data [ADU]</li>
-<li>sensor_info: Calibration information for the given sensor (type)
+<li>sensor_info: Calibration information for the given sensor (type)</li>
+<li>setup: Setup
 Returns: Calibrated temperature [°C] for the given sensor</li>
 </ul></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def counts_to_temperature(sensor_name: str, counts: float, sensor_info: NavigableDict):
+<pre><code class="python">def counts_to_temperature(sensor_name: str, counts: float, sensor_info: NavigableDict, setup):
     &#34;&#34;&#34; Convert the given counts for the given sensor to temperature.
 
     Args:
         - sensor_name: Sensor name
         - counts: Uncalibrated, raw data [ADU]
         - sensor_info: Calibration information for the given sensor (type)
+        - setup: Setup
 
     Returns: Calibrated temperature [°C] for the given sensor
     &#34;&#34;&#34;
@@ -891,9 +938,8 @@ Returns: Calibrated temperature [°C] for the given sensor</li>
 
     # Conversion: counts -&gt; resistance -&gt; temperature
 
-    else:
-        resistance = counts_to_resistance(sensor_name, counts, sensor_info)
-        return resistance_to_temperature(sensor_name, resistance, sensor_info)</code></pre>
+    resistance = counts_to_resistance(sensor_name, counts, sensor_info)
+    return resistance_to_temperature(sensor_name, resistance, sensor_info, setup)</code></pre>
 </details>
 </dd>
 <dt id="egse.fee.n_fee_hk.get_calibrated_supply_voltages"><code class="name flex">
@@ -933,7 +979,7 @@ Returns: Dictionary with calibrated supply voltages [V].</li>
 
     for cal_name in supply_voltage_calibration:
 
-        raw_name = cal_name + &#34;_RAW&#34;
+        raw_name = f&#34;{cal_name}_RAW&#34;
         cal = supply_voltage_calibration[cal_name]
 
         if counts[raw_name] is not None:
@@ -946,7 +992,7 @@ Returns: Dictionary with calibrated supply voltages [V].</li>
 </details>
 </dd>
 <dt id="egse.fee.n_fee_hk.get_calibrated_temperatures"><code class="name flex">
-<span>def <span class="ident">get_calibrated_temperatures</span></span>(<span>counts, sensor_calibration)</span>
+<span>def <span class="ident">get_calibrated_temperatures</span></span>(<span>counts, sensor_calibration, setup)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Calibrate the N-FEE temperatures.</p>
@@ -960,14 +1006,15 @@ Returns: Dictionary with calibrated supply voltages [V].</li>
 <h2 id="args">Args</h2>
 <ul>
 <li>counts: Uncalibrated, raw data for all HK.</li>
-<li>sensor_calibration: N-FEE temperature calibration as read from the YAML file that was specified in the setup
+<li>sensor_calibration: N-FEE temperature calibration as read from the YAML file that was specified in the setup</li>
+<li>setup: Setup
 Returns: Dictionary with calibrated temperatures [°C].</li>
 </ul></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def get_calibrated_temperatures(counts, sensor_calibration):
+<pre><code class="python">def get_calibrated_temperatures(counts, sensor_calibration, setup):
     &#34;&#34;&#34; Calibrate the N-FEE temperatures.
 
     The calibrated temperatures come from:
@@ -982,6 +1029,7 @@ Returns: Dictionary with calibrated temperatures [°C].</li>
     Args:
         - counts: Uncalibrated, raw data for all HK.
         - sensor_calibration: N-FEE temperature calibration as read from the YAML file that was specified in the setup
+        - setup: Setup
 
     Returns: Dictionary with calibrated temperatures [°C].
     &#34;&#34;&#34;
@@ -989,13 +1037,13 @@ Returns: Dictionary with calibrated temperatures [°C].</li>
     temperatures = {}
 
     for sensor_type in sensor_calibration:
-        temperatures.update(get_calibrated_temperatures_for_type(counts, sensor_calibration, sensor_type))
+        temperatures.update(get_calibrated_temperatures_for_type(counts, sensor_calibration, sensor_type, setup))
 
     return temperatures</code></pre>
 </details>
 </dd>
 <dt id="egse.fee.n_fee_hk.get_calibrated_temperatures_for_type"><code class="name flex">
-<span>def <span class="ident">get_calibrated_temperatures_for_type</span></span>(<span>counts, sensor_calibration, sensor_type) ‑> dict</span>
+<span>def <span class="ident">get_calibrated_temperatures_for_type</span></span>(<span>counts, sensor_calibration, sensor_type, setup) ‑> dict</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Calibrate the N-FEE temperatures for the given sensor type.</p>
@@ -1003,20 +1051,22 @@ Returns: Dictionary with calibrated temperatures [°C].</li>
 <ul>
 <li>counts: Uncalibrated, raw data [ADU]</li>
 <li>sensor_calibration: Calibration information for the given sensor type</li>
-<li>sensor_calibration: N-FEE sensor calibration as read from the YAML file that was specified in the setup
+<li>sensor_calibration: N-FEE sensor calibration as read from the YAML file that was specified in the setup</li>
+<li>setup: Setup
 Returns: Dictionary with calibrated temperatures [°C] for the given sensor type.</li>
 </ul></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def get_calibrated_temperatures_for_type(counts, sensor_calibration, sensor_type) -&gt; dict:
+<pre><code class="python">def get_calibrated_temperatures_for_type(counts, sensor_calibration, sensor_type, setup) -&gt; dict:
     &#34;&#34;&#34; Calibrate the N-FEE temperatures for the given sensor type.
 
     Args:
         - counts: Uncalibrated, raw data [ADU]
         - sensor_calibration: Calibration information for the given sensor type
         - sensor_calibration: N-FEE sensor calibration as read from the YAML file that was specified in the setup
+        - setup: Setup
 
     Returns: Dictionary with calibrated temperatures [°C] for the given sensor type.
     &#34;&#34;&#34;
@@ -1027,18 +1077,23 @@ Returns: Dictionary with calibrated temperatures [°C] for the given sensor type
 
     for cal_name in cal.sensor_names:
 
-        raw_name = cal_name + &#34;_RAW&#34;
+        if cal_name.endswith(&#34;_AMB&#34;):
+            raw_name = f&#34;{cal_name[:-4]}_RAW&#34;
+        else:
+            raw_name = f&#34;{cal_name}_RAW&#34;
 
         if counts[raw_name] is not None:
 
             sensor_info = cal[cal_name] if cal_name in cal else cal
 
             try:
-                temperature = counts_to_temperature(cal_name, counts[raw_name], sensor_info)
+                temperature = counts_to_temperature(cal_name, counts[raw_name], sensor_info, setup)
 
             except AttributeError as exc:
-                raise SetupError(&#34;Not all TOU TRP PT1000 calibration information is available in the setup under &#34;
-                                 &#34;setup.camera.fee.calibration.&#34;, {exc})
+                raise SetupError(
+                    &#34;Not all TOU TRP PT1000 calibration information is available in the setup under &#34;
+                    &#34;setup.camera.fee.calibration.&#34;
+                ) from exc
 
             temperatures[cal_name] = temperature
 
@@ -1046,7 +1101,7 @@ Returns: Dictionary with calibrated temperatures [°C] for the given sensor type
 </details>
 </dd>
 <dt id="egse.fee.n_fee_hk.resistance_to_temperature"><code class="name flex">
-<span>def <span class="ident">resistance_to_temperature</span></span>(<span>sensor_name: str, resistance: float, sensor_info: egse.setup.NavigableDict)</span>
+<span>def <span class="ident">resistance_to_temperature</span></span>(<span>sensor_name: str, resistance: float, sensor_info: egse.setup.NavigableDict, setup)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Convert the given resistance for the given sensor to counts.</p>
@@ -1054,20 +1109,22 @@ Returns: Dictionary with calibrated temperatures [°C] for the given sensor type
 <ul>
 <li>sensor_name: Sensor name</li>
 <li>resistance: Resistance [Ohm]</li>
-<li>sensor_info: Calibration information for the given sensor (type)
+<li>sensor_info: Calibration information for the given sensor (type)</li>
+<li>setup: Setup
 Returns: Temperature [°C] for the given sensor.</li>
 </ul></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def resistance_to_temperature(sensor_name: str, resistance: float, sensor_info: NavigableDict):
+<pre><code class="python">def resistance_to_temperature(sensor_name: str, resistance: float, sensor_info: NavigableDict, setup):
     &#34;&#34;&#34; Convert the given resistance for the given sensor to counts.
 
     Args:
         - sensor_name: Sensor name
         - resistance: Resistance [Ohm]
         - sensor_info: Calibration information for the given sensor (type)
+        - setup: Setup
 
     Returns: Temperature [°C] for the given sensor.
     &#34;&#34;&#34;
@@ -1085,6 +1142,9 @@ Returns: Temperature [°C] for the given sensor.</li>
 
     method: str = resistance_to_temperature_info.method
 
+    if &#34;divide_resistance_by&#34; in resistance_to_temperature_info:
+        resistance /= resistance_to_temperature_info.divide_resistance_by
+
     # Polynomial
 
     if method == &#34;polynomial&#34;:
@@ -1099,15 +1159,13 @@ Returns: Temperature [°C] for the given sensor.</li>
         if &#34;resistance_to_temperature_coefficients&#34; in resistance_to_temperature_info:
             return np.polyval(resistance_to_temperature_info.resistance_to_temperature_coefficients, resistance)
 
-    # Callendar - van Dusen equation
+    if method != &#34;callendar_van_dusen&#34;:
+        raise SetupError(f&#34;Setup does not contain info for conversion from resistance to temperature for {sensor_name}&#34;)
 
-    if method == &#34;callendar_van_dusen&#34;:
-        standard = resistance_to_temperature_info.standard
-        ref_resistance = resistance_to_temperature_info.ref_resistance
-        return callendar_van_dusen(resistance, ref_resistance, standard)
+    standard = resistance_to_temperature_info.standard
+    ref_resistance = resistance_to_temperature_info.ref_resistance
 
-    else:
-        raise SetupError(f&#34;Setup does not contain info for conversion from resistance to temperature for {sensor_name}&#34;)</code></pre>
+    return callendar_van_dusen(resistance, ref_resistance, standard, setup)</code></pre>
 </details>
 </dd>
 <dt id="egse.fee.n_fee_hk.send_request"><code class="name flex">
@@ -1200,6 +1258,9 @@ polynomial(temperature) = resistance
     def __getitem__(self, item):
         return self._data[item]
 
+    def __contains__(self, item):
+        return item in self._data
+
     def get(self, item):
         try:
             return self._data[item]
@@ -1210,7 +1271,7 @@ polynomial(temperature) = resistance
         return self._keys
 
     def values(self):
-        return [self._data[name] for name in self._keys]
+        return self._data.values()
 
     def update(self, data: dict):
         if x := set(data) - set(self._data):
@@ -1220,10 +1281,26 @@ polynomial(temperature) = resistance
         self._data.update(data)
 
     def clear(self):
-        self._data = {k: None for k in self._keys}</code></pre>
+        self._data = {k: None for k in self._keys}
+
+    def as_dict(self):
+        return self._data</code></pre>
 </details>
 <h3>Methods</h3>
 <dl>
+<dt id="egse.fee.n_fee_hk.DataCollector.as_dict"><code class="name flex">
+<span>def <span class="ident">as_dict</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def as_dict(self):
+    return self._data</code></pre>
+</details>
+</dd>
 <dt id="egse.fee.n_fee_hk.DataCollector.clear"><code class="name flex">
 <span>def <span class="ident">clear</span></span>(<span>self)</span>
 </code></dt>
@@ -1293,7 +1370,7 @@ polynomial(temperature) = resistance
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def values(self):
-    return [self._data[name] for name in self._keys]</code></pre>
+    return self._data.values()</code></pre>
 </details>
 </dd>
 </dl>
@@ -1304,7 +1381,7 @@ polynomial(temperature) = resistance
 </code></dt>
 <dd>
 <div class="desc"><p>QRunnable()
-QRunnable(QRunnable)</p></div>
+QRunnable(a0: QRunnable)</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
@@ -1482,7 +1559,7 @@ def run(self):
 <span>(</span><span>*args, **kwargs)</span>
 </code></dt>
 <dd>
-<div class="desc"><p>QObject(parent: QObject = None)</p></div>
+<div class="desc"><p>QObject(parent: typing.Optional[QObject] = None)</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
@@ -1520,6 +1597,7 @@ def run(self):
     def __init__(self):
 
         self.signals = GeneratorSignals()
+        self.setup = load_setup()
 
         # Convert with info from HK info table
         # Append the new names
@@ -1531,19 +1609,21 @@ def run(self):
         # names to the correct device names as defined in the CGSE. The keys in the mapping are
         # the original device name, the values are the CGSE corrected names
 
-        self.hk_names_mapping = read_conversion_dict(ORIGIN, use_site=False)
-        hk_header = self.hk_names_mapping.values()
+        self.hk_names_mapping = read_conversion_dict(ORIGIN, use_site=False, setup=self.setup)
+
+        # Add the timestamp and timecode_ts to the names mapping
+        self.hk_names_mapping.update({&#39;timestamp&#39;: &#39;timestamp&#39;, &#39;timecode_ts&#39;: &#39;timecode_ts&#39;})
+
+        hk_header = self.hk_names_mapping.keys()
 
         # Read from the setup: sensor calibration data (as a NavigableDict)
 
-        self.supply_voltage_calibration = GlobalState.setup.camera.fee.calibration.supply_voltages
-        self.temperature_calibration = GlobalState.setup.camera.fee.calibration.temperatures
+        self.supply_voltage_calibration = self.setup.camera.fee.calibration.supply_voltages
+        self.temperature_calibration = self.setup.camera.fee.calibration.temperatures
 
-        self.current_data = DataCollector(
-            [HK_TIMESTAMP_NAME, *hk_header]
-        )
+        self.current_data = DataCollector([HK_TIMESTAMP_NAME, *hk_header])
 
-        self.hk_metrics = define_metrics(ORIGIN, dashboard=&#39;*&#39;)
+        self.hk_metrics = define_metrics(ORIGIN, dashboard=&#39;*&#39;, setup=self.setup)
 
     def run(self):
         self.start_pulling_data()
@@ -1559,39 +1639,49 @@ def run(self):
 
     def update_metrics(self):
 
-        for metric_name in self.hk_names_mapping.values():
-            # LOGGER.info(f&#34;{metric_name=}&#34;)
-            value = self.current_data.get(metric_name)
-            if value is not None:
-                self.hk_metrics[metric_name].set(value)
-            else:
-                self.hk_metrics[metric_name].set(float(&#39;nan&#39;))
-                LOGGER.log(logging.DEBUG, f&#34;No current data available for {metric_name}.&#34;)
+        for orig_name, metric_name in self.hk_names_mapping.items():
+            # LOGGER.info(f&#34;{orig_name=}, {metric_name=}&#34;)
+            try:
+                value = self.current_data.get(orig_name)
+                if value is not None:
+                    self.hk_metrics[metric_name].set(value)
+                else:
+                    self.hk_metrics[metric_name].set(float(&#39;nan&#39;))
+                    # LOGGER.debug(f&#34;No current data available for {metric_name}.&#34;)
+            except KeyError as exc:
+                if metric_name not in KNOWN_KEYS_NOT_IN_METRICS:
+                    LOGGER.warning(f&#34;Unknown metric name: {orig_name=}, {metric_name=}&#34;)
 
     def send_hk_data_to_storage(self):
 
-        if not any(self.current_data.values()):
+        # All saved data needs at least a timestamp
+
+        if &#39;timestamp&#39; not in self.current_data or self.current_data[&#39;timestamp&#39;] is None:
             return
 
         # Translate the HK names (i.e. start using the correct prefix)
         # and append them to the rest of the HK
 
-        self.current_data = convert_hk_names(dict(zip(self.current_data.keys(), self.current_data.values())),
-                                             self.hk_names_mapping)
+        # CHANGED: Remember self.hk_names_mapping shall contain both timestamp and timecode_ts.
+        #          Be careful here, because the convert_hk_names() returns a new dict while the
+        #          self.current_data is a DataCollector. So, don&#39;t catch the returned dict in the
+        #          self.current_data.
+        current_data = convert_hk_names(self.current_data.as_dict(), self.hk_names_mapping)
+
         # Calibration (supply voltages + temperatures)
 
-        calibrated_supply_voltages = get_calibrated_supply_voltages(self.current_data,
-                                                                    self.supply_voltage_calibration)
-        self.current_data.update(calibrated_supply_voltages)
-        calibrated_temperatures = get_calibrated_temperatures(self.current_data, self.temperature_calibration)
-        self.current_data.update(calibrated_temperatures)
+        calibrated_supply_voltages = get_calibrated_supply_voltages(current_data, self.supply_voltage_calibration)
+        current_data.update(calibrated_supply_voltages)
+
+        calibrated_temperatures = get_calibrated_temperatures(current_data, self.temperature_calibration, self.setup)
+        current_data.update(calibrated_temperatures)
 
         with StorageProxy() as storage:
 
             rc = storage.save(
                 {
                     &#34;origin&#34;: ORIGIN,
-                    &#34;data&#34;: self.current_data
+                    &#34;data&#34;: current_data
                 }
             )
         if rc and not rc.successful:
@@ -1602,7 +1692,7 @@ def run(self):
 
         if len(calibrated_temperatures) &gt; 0:
 
-            calibrated_temperatures[&#34;timestamp&#34;] = self.current_data[HK_TIMESTAMP_NAME]
+            calibrated_temperatures[&#34;timestamp&#34;] = current_data[HK_TIMESTAMP_NAME]
 
             with SynopticsManagerProxy() as synoptics:
                 synoptics.store_common_synoptics(calibrated_temperatures)
@@ -1610,28 +1700,38 @@ def run(self):
     def worker_output(self, sync_id, data):
 
         if sync_id == MessageIdentifier.SYNC_TIMECODE:
-            self.send_hk_data_to_storage()
-            self.update_metrics()
             self.current_data.clear()
+
             timecode, timestamp = data
-            LOGGER.info(f&#34;Timecode: {timecode}&#34;)
+            LOGGER.debug(f&#34;Timecode: {timestamp=}, {timecode=}&#34;)
 
             self.current_data.update({&#34;timecode&#34;: timecode, &#34;timecode_ts&#34;: timestamp})
 
         if sync_id == MessageIdentifier.SYNC_HK_PACKET:
             hk_packet, timestamp = data
-            LOGGER.info(f&#34;HK Packet: {hk_packet.type=!s}&#34;)
-
-            self.current_data.update({HK_TIMESTAMP_NAME: timestamp})
+            LOGGER.debug(f&#34;HK Packet: {timestamp=}, {hk_packet.type=!s}&#34;)
 
             hk_data = HousekeepingData(hk_packet.data)
+            self._store_hk_data(hk_data, timestamp)
 
-            for par_name in hk_data:
-                self.current_data.update({par_name: hk_data[par_name]})
+        if sync_id == MessageIdentifier.SYNC_HK_DATA:
+            hk_data, timestamp = data
+            LOGGER.debug(f&#34;HK Data: {timestamp=}&#34;)
+
+            self._store_hk_data(hk_data, timestamp)
 
         if sync_id == MessageIdentifier.NUM_CYCLES:
-            LOGGER.info(f&#34;num_cycles: {max(0, data)}&#34;)
+            LOGGER.debug(f&#34;num_cycles: {max(0, data)}&#34;)
             self.current_data.update({&#39;num_cycles&#39;: max(0, data)})
+
+    def _store_hk_data(self, hk_data: HousekeepingData, timestamp: str):
+        self.current_data.update({HK_TIMESTAMP_NAME: timestamp})
+
+        for par_name in hk_data:
+            self.current_data.update({par_name: hk_data[par_name]})
+
+        self.send_hk_data_to_storage()
+        self.update_metrics()
 
     def worker_complete(self):
         LOGGER.info(&#34;THREAD COMPLETE!&#34;)
@@ -1639,8 +1739,8 @@ def run(self):
         self.data_puller = None
         self.signals.finished.emit()
 
-    def worker_error(self, t):
-        LOGGER.warning(&#34;ERROR: %s&#34; % t)</code></pre>
+    def worker_error(self, msg):
+        LOGGER.warning(f&#34;ERROR: {msg}&#34;)</code></pre>
 </details>
 <h3>Methods</h3>
 <dl>
@@ -1668,28 +1768,34 @@ def run(self):
 </summary>
 <pre><code class="python">def send_hk_data_to_storage(self):
 
-    if not any(self.current_data.values()):
+    # All saved data needs at least a timestamp
+
+    if &#39;timestamp&#39; not in self.current_data or self.current_data[&#39;timestamp&#39;] is None:
         return
 
     # Translate the HK names (i.e. start using the correct prefix)
     # and append them to the rest of the HK
 
-    self.current_data = convert_hk_names(dict(zip(self.current_data.keys(), self.current_data.values())),
-                                         self.hk_names_mapping)
+    # CHANGED: Remember self.hk_names_mapping shall contain both timestamp and timecode_ts.
+    #          Be careful here, because the convert_hk_names() returns a new dict while the
+    #          self.current_data is a DataCollector. So, don&#39;t catch the returned dict in the
+    #          self.current_data.
+    current_data = convert_hk_names(self.current_data.as_dict(), self.hk_names_mapping)
+
     # Calibration (supply voltages + temperatures)
 
-    calibrated_supply_voltages = get_calibrated_supply_voltages(self.current_data,
-                                                                self.supply_voltage_calibration)
-    self.current_data.update(calibrated_supply_voltages)
-    calibrated_temperatures = get_calibrated_temperatures(self.current_data, self.temperature_calibration)
-    self.current_data.update(calibrated_temperatures)
+    calibrated_supply_voltages = get_calibrated_supply_voltages(current_data, self.supply_voltage_calibration)
+    current_data.update(calibrated_supply_voltages)
+
+    calibrated_temperatures = get_calibrated_temperatures(current_data, self.temperature_calibration, self.setup)
+    current_data.update(calibrated_temperatures)
 
     with StorageProxy() as storage:
 
         rc = storage.save(
             {
                 &#34;origin&#34;: ORIGIN,
-                &#34;data&#34;: self.current_data
+                &#34;data&#34;: current_data
             }
         )
     if rc and not rc.successful:
@@ -1700,7 +1806,7 @@ def run(self):
 
     if len(calibrated_temperatures) &gt; 0:
 
-        calibrated_temperatures[&#34;timestamp&#34;] = self.current_data[HK_TIMESTAMP_NAME]
+        calibrated_temperatures[&#34;timestamp&#34;] = current_data[HK_TIMESTAMP_NAME]
 
         with SynopticsManagerProxy() as synoptics:
             synoptics.store_common_synoptics(calibrated_temperatures)</code></pre>
@@ -1736,14 +1842,18 @@ def run(self):
 </summary>
 <pre><code class="python">def update_metrics(self):
 
-    for metric_name in self.hk_names_mapping.values():
-        # LOGGER.info(f&#34;{metric_name=}&#34;)
-        value = self.current_data.get(metric_name)
-        if value is not None:
-            self.hk_metrics[metric_name].set(value)
-        else:
-            self.hk_metrics[metric_name].set(float(&#39;nan&#39;))
-            LOGGER.log(logging.DEBUG, f&#34;No current data available for {metric_name}.&#34;)</code></pre>
+    for orig_name, metric_name in self.hk_names_mapping.items():
+        # LOGGER.info(f&#34;{orig_name=}, {metric_name=}&#34;)
+        try:
+            value = self.current_data.get(orig_name)
+            if value is not None:
+                self.hk_metrics[metric_name].set(value)
+            else:
+                self.hk_metrics[metric_name].set(float(&#39;nan&#39;))
+                # LOGGER.debug(f&#34;No current data available for {metric_name}.&#34;)
+        except KeyError as exc:
+            if metric_name not in KNOWN_KEYS_NOT_IN_METRICS:
+                LOGGER.warning(f&#34;Unknown metric name: {orig_name=}, {metric_name=}&#34;)</code></pre>
 </details>
 </dd>
 <dt id="egse.fee.n_fee_hk.HousekeepingGenerator.worker_complete"><code class="name flex">
@@ -1763,7 +1873,7 @@ def run(self):
 </details>
 </dd>
 <dt id="egse.fee.n_fee_hk.HousekeepingGenerator.worker_error"><code class="name flex">
-<span>def <span class="ident">worker_error</span></span>(<span>self, t)</span>
+<span>def <span class="ident">worker_error</span></span>(<span>self, msg)</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -1771,8 +1881,8 @@ def run(self):
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def worker_error(self, t):
-    LOGGER.warning(&#34;ERROR: %s&#34; % t)</code></pre>
+<pre><code class="python">def worker_error(self, msg):
+    LOGGER.warning(f&#34;ERROR: {msg}&#34;)</code></pre>
 </details>
 </dd>
 <dt id="egse.fee.n_fee_hk.HousekeepingGenerator.worker_output"><code class="name flex">
@@ -1787,27 +1897,28 @@ def run(self):
 <pre><code class="python">def worker_output(self, sync_id, data):
 
     if sync_id == MessageIdentifier.SYNC_TIMECODE:
-        self.send_hk_data_to_storage()
-        self.update_metrics()
         self.current_data.clear()
+
         timecode, timestamp = data
-        LOGGER.info(f&#34;Timecode: {timecode}&#34;)
+        LOGGER.debug(f&#34;Timecode: {timestamp=}, {timecode=}&#34;)
 
         self.current_data.update({&#34;timecode&#34;: timecode, &#34;timecode_ts&#34;: timestamp})
 
     if sync_id == MessageIdentifier.SYNC_HK_PACKET:
         hk_packet, timestamp = data
-        LOGGER.info(f&#34;HK Packet: {hk_packet.type=!s}&#34;)
-
-        self.current_data.update({HK_TIMESTAMP_NAME: timestamp})
+        LOGGER.debug(f&#34;HK Packet: {timestamp=}, {hk_packet.type=!s}&#34;)
 
         hk_data = HousekeepingData(hk_packet.data)
+        self._store_hk_data(hk_data, timestamp)
 
-        for par_name in hk_data:
-            self.current_data.update({par_name: hk_data[par_name]})
+    if sync_id == MessageIdentifier.SYNC_HK_DATA:
+        hk_data, timestamp = data
+        LOGGER.debug(f&#34;HK Data: {timestamp=}&#34;)
+
+        self._store_hk_data(hk_data, timestamp)
 
     if sync_id == MessageIdentifier.NUM_CYCLES:
-        LOGGER.info(f&#34;num_cycles: {max(0, data)}&#34;)
+        LOGGER.debug(f&#34;num_cycles: {max(0, data)}&#34;)
         self.current_data.update({&#39;num_cycles&#39;: max(0, data)})</code></pre>
 </details>
 </dd>
@@ -1817,7 +1928,7 @@ def run(self):
 <span>class <span class="ident">MainWindow</span></span>
 </code></dt>
 <dd>
-<div class="desc"><p>QMainWindow(parent: QWidget = None, flags: Union[Qt.WindowFlags, Qt.WindowType] = Qt.WindowFlags())</p></div>
+<div class="desc"><p>QMainWindow(parent: typing.Optional[QWidget] = None, flags: Union[Qt.WindowFlags, Qt.WindowType] = Qt.WindowFlags())</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
@@ -1829,8 +1940,8 @@ def run(self):
 
         self.hk_generator = HousekeepingGenerator()
 
-        column_names = self.hk_generator.current_data.keys()
-        register_to_storage_manager(ORIGIN, CSV, prep=dict(mode=&#39;a&#39;, column_names=column_names))
+        column_names = self.hk_generator.hk_names_mapping.values()
+        register_to_storage_manager(ORIGIN, CSV, prep=dict(mode=&#39;a&#39;, column_names=list(column_names)))
 
         self.hk_generator.signals.finished.connect(self.close)
         self.hk_generator.run()
@@ -1864,7 +1975,7 @@ def run(self):
 <span>def <span class="ident">closeEvent</span></span>(<span>self, event: PyQt5.QtGui.QCloseEvent) ‑> None</span>
 </code></dt>
 <dd>
-<div class="desc"><p>closeEvent(self, QCloseEvent)</p></div>
+<div class="desc"><p>closeEvent(self, a0: typing.Optional[QCloseEvent])</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
@@ -1981,7 +2092,8 @@ No data</p>
 <ul>
 <li>
 <h4><code><a title="egse.fee.n_fee_hk.DataCollector" href="#egse.fee.n_fee_hk.DataCollector">DataCollector</a></code></h4>
-<ul class="">
+<ul class="two-column">
+<li><code><a title="egse.fee.n_fee_hk.DataCollector.as_dict" href="#egse.fee.n_fee_hk.DataCollector.as_dict">as_dict</a></code></li>
 <li><code><a title="egse.fee.n_fee_hk.DataCollector.clear" href="#egse.fee.n_fee_hk.DataCollector.clear">clear</a></code></li>
 <li><code><a title="egse.fee.n_fee_hk.DataCollector.get" href="#egse.fee.n_fee_hk.DataCollector.get">get</a></code></li>
 <li><code><a title="egse.fee.n_fee_hk.DataCollector.keys" href="#egse.fee.n_fee_hk.DataCollector.keys">keys</a></code></li>

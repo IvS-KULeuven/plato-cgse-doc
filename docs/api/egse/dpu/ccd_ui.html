@@ -51,20 +51,21 @@ from numpy import unravel_index
 from egse.gui.buttons import ToolTouchButton
 from egse.resource import get_resource
 from egse.spw import DataPacket
-from egse.state import GlobalState
 
 LOGGER = logging.getLogger(__name__)
 
 
 class ImageCreator1:
 
-    def __init__(self, nr_lines: int, nr_columns: int):
+    # The original design where the image is build up by concatenating rows as they come in through data packets
+
+    def __init__(self, nr_lines: int, nr_columns: int, n_fee_side):
         self.nr_lines = nr_lines
         self.nr_columns = nr_columns
         self.image_E = np.empty((0,), dtype=np.uint16)
         self.image_F = np.empty((0,), dtype=np.uint16)
 
-        self.n_fee_side = GlobalState.setup.camera.fee.ccd_sides.enum
+        self.n_fee_side = n_fee_side
 
     def add_data(self, data_packet: DataPacket):
         if data_packet.type.ccd_side == self.n_fee_side.E_SIDE:
@@ -80,15 +81,17 @@ class ImageCreator1:
 
 
 class ImageCreator:
-    def __init__(self, nr_lines: int, nr_columns: int):
+
+    # This version allocates a partial CCD image and fills the data when it comes in through data packets
+
+    def __init__(self, nr_lines: int, nr_columns: int, n_fee_side):
         self.nr_lines = nr_lines
         self.nr_columns = nr_columns
         self.index_E = self.index_F = 0
         self.image_E = np.empty((nr_lines * nr_columns,), dtype=np.uint16)
         self.image_F = np.empty((nr_lines * nr_columns,), dtype=np.uint16)
 
-        self.n_fee_side = GlobalState.setup.camera.fee.ccd_sides.enum
-
+        self.n_fee_side = n_fee_side
 
     def add_data(self, data_packet: DataPacket):
         data = data_packet.data_as_ndarray
@@ -108,13 +111,16 @@ class ImageCreator:
 
 
 class ImageCreatorFullSize:
+
+    # This version creates the full CCD images and fills the data when it comes in through data packets
+
     MAX_NR_LINES = 4540
     MAX_NR_COLUMNS = 2295
 
-    def __init__(self, v_start: int, v_end: int, h_end: int):
+    def __init__(self, v_start: int, v_end: int, h_end: int, n_fee_side):
         # LOGGER.debug(f&#34;{v_start=}, {v_end=}, {h_end=}, {id(self)=}&#34;)
 
-        self.n_fee_side = GlobalState.setup.camera.fee.ccd_sides.enum
+        self.n_fee_side = n_fee_side
 
         self.nr_lines = v_end - v_start + 1
         self.nr_columns = h_end + 1
@@ -245,7 +251,7 @@ class OffsetAxis(pg.AxisItem):
 class NFEECCDWidget(QWidget):
     sig_maximize = pyqtSignal(int)
 
-    def __init__(self, ccd_number: Optional[int], maximize: bool = True, *args, **kwargs):
+    def __init__(self, ccd_number: Optional[int], n_fee_side, maximize: bool = True, *args, **kwargs):
         &#34;&#34;&#34;
 
         Args:
@@ -256,7 +262,7 @@ class NFEECCDWidget(QWidget):
         &#34;&#34;&#34;
         super().__init__(*args, **kwargs)
 
-        self.n_fee_side = GlobalState.setup.camera.fee.ccd_sides.enum
+        self.n_fee_side = n_fee_side
 
         self._ccd_number = ccd_number  # CGSE CCD number [1-4]
         self.ccd_label = QLabel(f&#34;CCD #{self._ccd_number}&#34;)
@@ -382,15 +388,17 @@ class NFEECCDWidget(QWidget):
 
 
 class NFEE4CCDWidget(QWidget):
-    def __init__(self):
+    def __init__(self, n_fee_side):
         super().__init__()
+
+        self.n_fee_side = n_fee_side
 
         # CCD numbering here is CGSE CCD number [1-4]
 
-        self.ccd_1 = NFEECCDWidget(1, parent=self)
-        self.ccd_2 = NFEECCDWidget(2, parent=self)
-        self.ccd_3 = NFEECCDWidget(3, parent=self)
-        self.ccd_4 = NFEECCDWidget(4, parent=self)
+        self.ccd_1 = NFEECCDWidget(1, n_fee_side=self.n_fee_side, parent=self)
+        self.ccd_2 = NFEECCDWidget(2, n_fee_side=self.n_fee_side, parent=self)
+        self.ccd_3 = NFEECCDWidget(3, n_fee_side=self.n_fee_side, parent=self)
+        self.ccd_4 = NFEECCDWidget(4, n_fee_side=self.n_fee_side, parent=self)
 
         self.ccd_1.sig_maximize.connect(self.maximize_view)
         self.ccd_2.sig_maximize.connect(self.maximize_view)
@@ -398,8 +406,6 @@ class NFEE4CCDWidget(QWidget):
         self.ccd_4.sig_maximize.connect(self.maximize_view)
 
         self.ccds = [self.ccd_1, self.ccd_2, self.ccd_3, self.ccd_4]
-
-        self.n_fee_side = GlobalState.setup.camera.fee.ccd_sides.enum
 
         grid_layout = QGridLayout()
 
@@ -438,7 +444,7 @@ class NFEE4CCDWidget(QWidget):
         Args:
             ccd_number: CGSE CCD number [1-4]
         &#34;&#34;&#34;
-        widget = NFEECCDWidget(ccd_number, maximize=False)
+        widget = NFEECCDWidget(ccd_number, n_fee_side=self.n_fee_side, maximize=False)
         layout = QHBoxLayout()
         layout.addWidget(widget)
 
@@ -583,37 +589,34 @@ seek at 20fps when held.</li>
 for each frame, then playback is in realtime.</li>
 </ul>
 <p>By default, this class creates an :class:<code>ImageItem &lt;pyqtgraph.ImageItem&gt;</code> to display image data
-and a :class:<code>ViewBox &lt;pyqtgraph.ViewBox&gt;</code> to contain the ImageItem. </p>
-<p>============= =========================================================
-<strong>Arguments</strong>
-parent
-(QWidget) Specifies the parent widget to which
-this ImageView will belong. If None, then the ImageView
-is created with no parent.
-name
-(str) The name used to register both the internal ViewBox
-and the PlotItem used to display ROI data. See the <em>name</em>
-argument to :func:<code>ViewBox.__init__()
-&lt;pyqtgraph.ViewBox.__init__&gt;</code>.
-view
-(ViewBox or PlotItem) If specified, this will be used
-as the display area that contains the displayed image.
-Any :class:<code>ViewBox &lt;pyqtgraph.ViewBox&gt;</code>,
-:class:<code>PlotItem &lt;pyqtgraph.PlotItem&gt;</code>, or other
-compatible object is acceptable.
-imageItem
-(ImageItem) If specified, this object will be used to
-display the image. Must be an instance of ImageItem
-or other compatible object.
-levelMode
-See the <em>levelMode</em> argument to
-:func:<code>HistogramLUTItem.__init__()
-&lt;pyqtgraph.HistogramLUTItem.__init__&gt;</code>
-============= =========================================================</p>
-<p>Note: to display axis ticks inside the ImageView, instantiate it
-with a PlotItem instance as its view::</p>
-<pre><code>pg.ImageView(view=pg.PlotItem())
-</code></pre></div>
+and a :class:<code>ViewBox &lt;pyqtgraph.ViewBox&gt;</code> to contain the ImageItem.</p>
+<h2 id="parameters">Parameters</h2>
+<dl>
+<dt><strong><code>parent</code></strong> :&ensp;<code>QWidget</code></dt>
+<dd>Specifies the parent widget to which this ImageView will belong. If None, then the ImageView is created with
+no parent.</dd>
+<dt><strong><code>name</code></strong> :&ensp;<code>str</code></dt>
+<dd>The name used to register both the internal ViewBox and the PlotItem used to display ROI data. See the
+<em>name</em> argument to :func:<code>ViewBox.__init__() &lt;pyqtgraph.ViewBox.__init__&gt;</code>.</dd>
+<dt><strong><code>view</code></strong> :&ensp;<code>ViewBox</code> or <code>PlotItem</code></dt>
+<dd>If specified, this will be used as the display area that contains the displayed image. Any
+:class:<code>ViewBox &lt;pyqtgraph.ViewBox&gt;</code>, :class:<code>PlotItem &lt;pyqtgraph.PlotItem&gt;</code>, or other compatible object is
+acceptable. Note: to display axis ticks inside the ImageView, instantiate it with a PlotItem instance as its
+view::<pre><code>pg.ImageView(view=pg.PlotItem())
+</code></pre>
+</dd>
+<dt><strong><code>imageItem</code></strong> :&ensp;<code>ImageItem</code></dt>
+<dd>If specified, this object will be used to display the image. Must be an instance of ImageItem or other
+compatible object.</dd>
+<dt><strong><code>levelMode</code></strong> :&ensp;<code>str</code></dt>
+<dd>See the <em>levelMode</em> argument to :func:<code>HistogramLUTItem.__init__() &lt;pyqtgraph.HistogramLUTItem.__init__&gt;</code></dd>
+<dt><strong><code>discreteTimeLine</code></strong> :&ensp;<code>bool</code></dt>
+<dd>Whether to snap to xvals / frame numbers when interacting with the timeline position.</dd>
+<dt><strong><code>roi</code></strong> :&ensp;<code>ROI</code></dt>
+<dd>If specified, this object is used as ROI for the plot feature. Must be an instance of ROI.</dd>
+<dt><strong><code>normRoi</code></strong> :&ensp;<code>ROI</code></dt>
+<dd>If specified, this object is used as ROI for the normalization feature. Must be an instance of ROI.</dd>
+</dl></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
@@ -695,7 +698,7 @@ with a PlotItem instance as its view::</p>
 <span>(</span><span>*args, axisItems=None, **kwargs)</span>
 </code></dt>
 <dd>
-<div class="desc"><p>QWidget(parent: QWidget = None, flags: Union[Qt.WindowFlags, Qt.WindowType] = Qt.WindowFlags())</p></div>
+<div class="desc"><p>QWidget(parent: typing.Optional[QWidget] = None, flags: Union[Qt.WindowFlags, Qt.WindowType] = Qt.WindowFlags())</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
@@ -848,7 +851,7 @@ with a PlotItem instance as its view::</p>
 </dd>
 <dt id="egse.dpu.ccd_ui.ImageCreator"><code class="flex name class">
 <span>class <span class="ident">ImageCreator</span></span>
-<span>(</span><span>nr_lines: int, nr_columns: int)</span>
+<span>(</span><span>nr_lines: int, nr_columns: int, n_fee_side)</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -857,15 +860,17 @@ with a PlotItem instance as its view::</p>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">class ImageCreator:
-    def __init__(self, nr_lines: int, nr_columns: int):
+
+    # This version allocates a partial CCD image and fills the data when it comes in through data packets
+
+    def __init__(self, nr_lines: int, nr_columns: int, n_fee_side):
         self.nr_lines = nr_lines
         self.nr_columns = nr_columns
         self.index_E = self.index_F = 0
         self.image_E = np.empty((nr_lines * nr_columns,), dtype=np.uint16)
         self.image_F = np.empty((nr_lines * nr_columns,), dtype=np.uint16)
 
-        self.n_fee_side = GlobalState.setup.camera.fee.ccd_sides.enum
-
+        self.n_fee_side = n_fee_side
 
     def add_data(self, data_packet: DataPacket):
         data = data_packet.data_as_ndarray
@@ -925,7 +930,7 @@ with a PlotItem instance as its view::</p>
 </dd>
 <dt id="egse.dpu.ccd_ui.ImageCreator1"><code class="flex name class">
 <span>class <span class="ident">ImageCreator1</span></span>
-<span>(</span><span>nr_lines: int, nr_columns: int)</span>
+<span>(</span><span>nr_lines: int, nr_columns: int, n_fee_side)</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -935,13 +940,15 @@ with a PlotItem instance as its view::</p>
 </summary>
 <pre><code class="python">class ImageCreator1:
 
-    def __init__(self, nr_lines: int, nr_columns: int):
+    # The original design where the image is build up by concatenating rows as they come in through data packets
+
+    def __init__(self, nr_lines: int, nr_columns: int, n_fee_side):
         self.nr_lines = nr_lines
         self.nr_columns = nr_columns
         self.image_E = np.empty((0,), dtype=np.uint16)
         self.image_F = np.empty((0,), dtype=np.uint16)
 
-        self.n_fee_side = GlobalState.setup.camera.fee.ccd_sides.enum
+        self.n_fee_side = n_fee_side
 
     def add_data(self, data_packet: DataPacket):
         if data_packet.type.ccd_side == self.n_fee_side.E_SIDE:
@@ -993,7 +1000,7 @@ with a PlotItem instance as its view::</p>
 </dd>
 <dt id="egse.dpu.ccd_ui.ImageCreatorFullSize"><code class="flex name class">
 <span>class <span class="ident">ImageCreatorFullSize</span></span>
-<span>(</span><span>v_start: int, v_end: int, h_end: int)</span>
+<span>(</span><span>v_start: int, v_end: int, h_end: int, n_fee_side)</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -1002,13 +1009,16 @@ with a PlotItem instance as its view::</p>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">class ImageCreatorFullSize:
+
+    # This version creates the full CCD images and fills the data when it comes in through data packets
+
     MAX_NR_LINES = 4540
     MAX_NR_COLUMNS = 2295
 
-    def __init__(self, v_start: int, v_end: int, h_end: int):
+    def __init__(self, v_start: int, v_end: int, h_end: int, n_fee_side):
         # LOGGER.debug(f&#34;{v_start=}, {v_end=}, {h_end=}, {id(self)=}&#34;)
 
-        self.n_fee_side = GlobalState.setup.camera.fee.ccd_sides.enum
+        self.n_fee_side = n_fee_side
 
         self.nr_lines = v_end - v_start + 1
         self.nr_columns = h_end + 1
@@ -1087,23 +1097,26 @@ with a PlotItem instance as its view::</p>
 </dd>
 <dt id="egse.dpu.ccd_ui.NFEE4CCDWidget"><code class="flex name class">
 <span>class <span class="ident">NFEE4CCDWidget</span></span>
+<span>(</span><span>n_fee_side)</span>
 </code></dt>
 <dd>
-<div class="desc"><p>QWidget(parent: QWidget = None, flags: Union[Qt.WindowFlags, Qt.WindowType] = Qt.WindowFlags())</p></div>
+<div class="desc"><p>QWidget(parent: typing.Optional[QWidget] = None, flags: Union[Qt.WindowFlags, Qt.WindowType] = Qt.WindowFlags())</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">class NFEE4CCDWidget(QWidget):
-    def __init__(self):
+    def __init__(self, n_fee_side):
         super().__init__()
+
+        self.n_fee_side = n_fee_side
 
         # CCD numbering here is CGSE CCD number [1-4]
 
-        self.ccd_1 = NFEECCDWidget(1, parent=self)
-        self.ccd_2 = NFEECCDWidget(2, parent=self)
-        self.ccd_3 = NFEECCDWidget(3, parent=self)
-        self.ccd_4 = NFEECCDWidget(4, parent=self)
+        self.ccd_1 = NFEECCDWidget(1, n_fee_side=self.n_fee_side, parent=self)
+        self.ccd_2 = NFEECCDWidget(2, n_fee_side=self.n_fee_side, parent=self)
+        self.ccd_3 = NFEECCDWidget(3, n_fee_side=self.n_fee_side, parent=self)
+        self.ccd_4 = NFEECCDWidget(4, n_fee_side=self.n_fee_side, parent=self)
 
         self.ccd_1.sig_maximize.connect(self.maximize_view)
         self.ccd_2.sig_maximize.connect(self.maximize_view)
@@ -1111,8 +1124,6 @@ with a PlotItem instance as its view::</p>
         self.ccd_4.sig_maximize.connect(self.maximize_view)
 
         self.ccds = [self.ccd_1, self.ccd_2, self.ccd_3, self.ccd_4]
-
-        self.n_fee_side = GlobalState.setup.camera.fee.ccd_sides.enum
 
         grid_layout = QGridLayout()
 
@@ -1151,7 +1162,7 @@ with a PlotItem instance as its view::</p>
         Args:
             ccd_number: CGSE CCD number [1-4]
         &#34;&#34;&#34;
-        widget = NFEECCDWidget(ccd_number, maximize=False)
+        widget = NFEECCDWidget(ccd_number, n_fee_side=self.n_fee_side, maximize=False)
         layout = QHBoxLayout()
         layout.addWidget(widget)
 
@@ -1258,7 +1269,7 @@ with a PlotItem instance as its view::</p>
     Args:
         ccd_number: CGSE CCD number [1-4]
     &#34;&#34;&#34;
-    widget = NFEECCDWidget(ccd_number, maximize=False)
+    widget = NFEECCDWidget(ccd_number, n_fee_side=self.n_fee_side, maximize=False)
     layout = QHBoxLayout()
     layout.addWidget(widget)
 
@@ -1328,10 +1339,10 @@ with a PlotItem instance as its view::</p>
 </dd>
 <dt id="egse.dpu.ccd_ui.NFEECCDWidget"><code class="flex name class">
 <span>class <span class="ident">NFEECCDWidget</span></span>
-<span>(</span><span>ccd_number: Optional[int], maximize: bool = True, *args, **kwargs)</span>
+<span>(</span><span>ccd_number: Optional[int], n_fee_side, maximize: bool = True, *args, **kwargs)</span>
 </code></dt>
 <dd>
-<div class="desc"><p>QWidget(parent: QWidget = None, flags: Union[Qt.WindowFlags, Qt.WindowType] = Qt.WindowFlags())</p>
+<div class="desc"><p>QWidget(parent: typing.Optional[QWidget] = None, flags: Union[Qt.WindowFlags, Qt.WindowType] = Qt.WindowFlags())</p>
 <h2 id="args">Args</h2>
 <dl>
 <dt><strong><code>ccd_number</code></strong></dt>
@@ -1348,7 +1359,7 @@ with a PlotItem instance as its view::</p>
 <pre><code class="python">class NFEECCDWidget(QWidget):
     sig_maximize = pyqtSignal(int)
 
-    def __init__(self, ccd_number: Optional[int], maximize: bool = True, *args, **kwargs):
+    def __init__(self, ccd_number: Optional[int], n_fee_side, maximize: bool = True, *args, **kwargs):
         &#34;&#34;&#34;
 
         Args:
@@ -1359,7 +1370,7 @@ with a PlotItem instance as its view::</p>
         &#34;&#34;&#34;
         super().__init__(*args, **kwargs)
 
-        self.n_fee_side = GlobalState.setup.camera.fee.ccd_sides.enum
+        self.n_fee_side = n_fee_side
 
         self._ccd_number = ccd_number  # CGSE CCD number [1-4]
         self.ccd_label = QLabel(f&#34;CCD #{self._ccd_number}&#34;)
@@ -1613,7 +1624,7 @@ def ccd_number(self):
 <span>(</span><span>data)</span>
 </code></dt>
 <dd>
-<div class="desc"><p>QAbstractTableModel(parent: QObject = None)</p></div>
+<div class="desc"><p>QAbstractTableModel(parent: typing.Optional[QObject] = None)</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
@@ -1683,7 +1694,7 @@ def ccd_number(self):
 <span>def <span class="ident">data</span></span>(<span>self, index, role)</span>
 </code></dt>
 <dd>
-<div class="desc"><p>data(self, QModelIndex, role: int = Qt.ItemDataRole.DisplayRole) -&gt; Any</p></div>
+<div class="desc"><p>data(self, index: QModelIndex, role: int = Qt.ItemDataRole.DisplayRole) -&gt; Any</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
@@ -1742,7 +1753,7 @@ def ccd_number(self):
 <span>class <span class="ident">NFEEStateWidget</span></span>
 </code></dt>
 <dd>
-<div class="desc"><p>QWidget(parent: QWidget = None, flags: Union[Qt.WindowFlags, Qt.WindowType] = Qt.WindowFlags())</p></div>
+<div class="desc"><p>QWidget(parent: typing.Optional[QWidget] = None, flags: Union[Qt.WindowFlags, Qt.WindowType] = Qt.WindowFlags())</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
@@ -1798,9 +1809,11 @@ to be linked to the visible range of a ViewBox.
 showValues
 (bool) Whether to display values adjacent to ticks
 pen
-(QPen) Pen used when drawing ticks.
+(QPen) Pen used when drawing axis and (by default) ticks
 textPen
 (QPen) Pen used when drawing tick labels.
+tickPen
+(QPen) Pen used when drawing ticks.
 text
 The text (excluding units) to display on the label for this
 axis.

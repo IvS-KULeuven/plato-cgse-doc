@@ -45,6 +45,7 @@ from types import MethodType
 
 import zmq
 
+from egse.control import Failure
 from egse.decorators import dynamic_interface
 from egse.mixin import DynamicClientCommandMixin
 from egse.system import AttributeDict
@@ -142,7 +143,7 @@ class BaseProxy(ControlServerConnectionInterface):
 
     def __enter__(self):
         if not self.ping():
-            raise ConnectionError(&#34;Proxy is not connected when entering the context.&#34;)
+            raise ConnectionError(f&#34;Proxy is not connected to endpoint ({self._endpoint}) when entering the context.&#34;)
 
         return self
 
@@ -442,7 +443,8 @@ class Proxy(BaseProxy, ControlServerConnectionInterface):
 
                 if retries_left == 0:
                     self._logger.critical(f&#34;Control Server seems to be off-line, abandoning ({data})&#34;)
-                    return None
+                    from egse.control import Failure
+                    return Failure(f&#34;Control Server seems to be off-line, abandoning ({data})&#34;)
                 retries_left -= 1
 
                 self._logger.log(logging.CRITICAL, f&#34;Reconnecting {self.__class__.__name__}, {retries_left=}&#34;)
@@ -454,7 +456,10 @@ class Proxy(BaseProxy, ControlServerConnectionInterface):
                 self._socket.send(pickle_string)
 
     def _request_commands(self):
-        self._commands = self.send(&#34;send_commands&#34;)
+        response = self.send(&#34;send_commands&#34;)
+        if isinstance(response, Failure):
+            raise response
+        self._commands = response
 
     def _add_commands(self):
         for key in self._commands:
@@ -496,11 +501,15 @@ class Proxy(BaseProxy, ControlServerConnectionInterface):
         behavior of the Proxy command will not be what is expected.
         &#34;&#34;&#34;
         # bind the client_call method from each Command to this Proxy object
-        # TODO(rik): what will happen when the _request_commands() fails?
         if self.is_cs_connected():
-            self._request_commands()
-            self._add_commands()
-            return True
+            try:
+                self._request_commands()
+            except Failure as exc:
+                self._logger.warning(f&#34;Failed to request commands for {self.__class__.__name__}: {exc}&#34;)
+                return False
+            else:
+                self._add_commands()
+                return True
         else:
             self._logger.warning(f&#34;{self.__class__.__name__} is not connected, try to reconnect.&#34;)
             return False
@@ -621,7 +630,7 @@ control server.</p></div>
 
     def __enter__(self):
         if not self.ping():
-            raise ConnectionError(&#34;Proxy is not connected when entering the context.&#34;)
+            raise ConnectionError(f&#34;Proxy is not connected to endpoint ({self._endpoint}) when entering the context.&#34;)
 
         return self
 
@@ -1406,7 +1415,8 @@ can fix the problem with the control server and call <code>connect_cs()</code>, 
 
                 if retries_left == 0:
                     self._logger.critical(f&#34;Control Server seems to be off-line, abandoning ({data})&#34;)
-                    return None
+                    from egse.control import Failure
+                    return Failure(f&#34;Control Server seems to be off-line, abandoning ({data})&#34;)
                 retries_left -= 1
 
                 self._logger.log(logging.CRITICAL, f&#34;Reconnecting {self.__class__.__name__}, {retries_left=}&#34;)
@@ -1418,7 +1428,10 @@ can fix the problem with the control server and call <code>connect_cs()</code>, 
                 self._socket.send(pickle_string)
 
     def _request_commands(self):
-        self._commands = self.send(&#34;send_commands&#34;)
+        response = self.send(&#34;send_commands&#34;)
+        if isinstance(response, Failure):
+            raise response
+        self._commands = response
 
     def _add_commands(self):
         for key in self._commands:
@@ -1460,11 +1473,15 @@ can fix the problem with the control server and call <code>connect_cs()</code>, 
         behavior of the Proxy command will not be what is expected.
         &#34;&#34;&#34;
         # bind the client_call method from each Command to this Proxy object
-        # TODO(rik): what will happen when the _request_commands() fails?
         if self.is_cs_connected():
-            self._request_commands()
-            self._add_commands()
-            return True
+            try:
+                self._request_commands()
+            except Failure as exc:
+                self._logger.warning(f&#34;Failed to request commands for {self.__class__.__name__}: {exc}&#34;)
+                return False
+            else:
+                self._add_commands()
+                return True
         else:
             self._logger.warning(f&#34;{self.__class__.__name__} is not connected, try to reconnect.&#34;)
             return False
@@ -1528,7 +1545,7 @@ can fix the problem with the control server and call <code>connect_cs()</code>, 
 <li><a title="egse.aeu.aeu.AWGProxy" href="aeu/aeu.html#egse.aeu.aeu.AWGProxy">AWGProxy</a></li>
 <li><a title="egse.aeu.aeu.CRIOProxy" href="aeu/aeu.html#egse.aeu.aeu.CRIOProxy">CRIOProxy</a></li>
 <li><a title="egse.aeu.aeu.PSUProxy" href="aeu/aeu.html#egse.aeu.aeu.PSUProxy">PSUProxy</a></li>
-<li><a title="egse.alert.alert_manager.AlertManagerProxy" href="alert/alert_manager.html#egse.alert.alert_manager.AlertManagerProxy">AlertManagerProxy</a></li>
+<li><a title="egse.alert.AlertManagerProxy" href="alert/index.html#egse.alert.AlertManagerProxy">AlertManagerProxy</a></li>
 <li><a title="egse.alert.gsm.beaglebone.BeagleboneProxy" href="alert/gsm/beaglebone.html#egse.alert.gsm.beaglebone.BeagleboneProxy">BeagleboneProxy</a></li>
 <li><a title="egse.confman.ConfigurationManagerProxy" href="confman/index.html#egse.confman.ConfigurationManagerProxy">ConfigurationManagerProxy</a></li>
 <li><a title="egse.dpu.DPUProxy" href="dpu/index.html#egse.dpu.DPUProxy">DPUProxy</a></li>
@@ -1542,6 +1559,7 @@ can fix the problem with the control server and call <code>connect_cs()</code>, 
 <li><a title="egse.hexapod.symetrie.zonda.ZondaProxy" href="hexapod/symetrie/zonda.html#egse.hexapod.symetrie.zonda.ZondaProxy">ZondaProxy</a></li>
 <li><a title="egse.lampcontrol.beaglebone.beaglebone.BeagleboneProxy" href="lampcontrol/beaglebone/beaglebone.html#egse.lampcontrol.beaglebone.beaglebone.BeagleboneProxy">BeagleboneProxy</a></li>
 <li><a title="egse.lampcontrol.energetiq.lampEQ99.LampEQ99Proxy" href="lampcontrol/energetiq/lampEQ99.html#egse.lampcontrol.energetiq.lampEQ99.LampEQ99Proxy">LampEQ99Proxy</a></li>
+<li><a title="egse.ni.alarms.cdaq9375.cdaq9375Proxy" href="ni/alarms/cdaq9375.html#egse.ni.alarms.cdaq9375.cdaq9375Proxy">cdaq9375Proxy</a></li>
 <li><a title="egse.powermeter.ni.cdaq9184.cdaq9184Proxy" href="powermeter/ni/cdaq9184.html#egse.powermeter.ni.cdaq9184.cdaq9184Proxy">cdaq9184Proxy</a></li>
 <li><a title="egse.powermeter.thorlabs.pm100a.ThorlabsPM100Proxy" href="powermeter/thorlabs/pm100a.html#egse.powermeter.thorlabs.pm100a.ThorlabsPM100Proxy">ThorlabsPM100Proxy</a></li>
 <li><a title="egse.procman.ProcessManagerProxy" href="procman/index.html#egse.procman.ProcessManagerProxy">ProcessManagerProxy</a></li>
@@ -1554,16 +1572,15 @@ can fix the problem with the control server and call <code>connect_cs()</code>, 
 <li><a title="egse.synoptics.SynopticsManagerProxy" href="synoptics/index.html#egse.synoptics.SynopticsManagerProxy">SynopticsManagerProxy</a></li>
 <li><a title="egse.tempcontrol.agilent.agilent34970.Agilent34970Proxy" href="tempcontrol/agilent/agilent34970.html#egse.tempcontrol.agilent.agilent34970.Agilent34970Proxy">Agilent34970Proxy</a></li>
 <li><a title="egse.tempcontrol.agilent.agilent34972.Agilent34972Proxy" href="tempcontrol/agilent/agilent34972.html#egse.tempcontrol.agilent.agilent34972.Agilent34972Proxy">Agilent34972Proxy</a></li>
-<li><a title="egse.tempcontrol.beaglebone.beaglebone.BeagleboneProxy" href="tempcontrol/beaglebone/beaglebone.html#egse.tempcontrol.beaglebone.beaglebone.BeagleboneProxy">BeagleboneProxy</a></li>
+<li><a title="egse.tempcontrol.digalox.digalox.DigaloxProxy" href="tempcontrol/digalox/digalox.html#egse.tempcontrol.digalox.digalox.DigaloxProxy">DigaloxProxy</a></li>
 <li><a title="egse.tempcontrol.keithley.daq6510.DAQ6510Proxy" href="tempcontrol/keithley/daq6510.html#egse.tempcontrol.keithley.daq6510.DAQ6510Proxy">DAQ6510Proxy</a></li>
-<li><a title="egse.tempcontrol.lakeshore.lsci336.LakeShore336Proxy" href="tempcontrol/lakeshore/lsci336.html#egse.tempcontrol.lakeshore.lsci336.LakeShore336Proxy">LakeShore336Proxy</a></li>
-<li><a title="egse.tempcontrol.spid.spid.PidProxy" href="tempcontrol/spid/spid.html#egse.tempcontrol.spid.spid.PidProxy">PidProxy</a></li>
+<li><a title="egse.tempcontrol.lakeshore.lsci.LakeShoreProxy" href="tempcontrol/lakeshore/lsci.html#egse.tempcontrol.lakeshore.lsci.LakeShoreProxy">LakeShoreProxy</a></li>
 <li><a title="egse.tempcontrol.srs.ptc10.ptc10Proxy" href="tempcontrol/srs/ptc10.html#egse.tempcontrol.srs.ptc10.ptc10Proxy">ptc10Proxy</a></li>
 <li><a title="egse.ups.apc.apc.APCProxy" href="ups/apc/apc.html#egse.ups.apc.apc.APCProxy">APCProxy</a></li>
 <li><a title="egse.vacuum.beaglebone.beaglebone.BeagleboneProxy" href="vacuum/beaglebone/beaglebone.html#egse.vacuum.beaglebone.beaglebone.BeagleboneProxy">BeagleboneProxy</a></li>
 <li><a title="egse.vacuum.instrutech.igm402.Igm402Proxy" href="vacuum/instrutech/igm402.html#egse.vacuum.instrutech.igm402.Igm402Proxy">Igm402Proxy</a></li>
 <li><a title="egse.vacuum.keller.leo3.Leo3Proxy" href="vacuum/keller/leo3.html#egse.vacuum.keller.leo3.Leo3Proxy">Leo3Proxy</a></li>
-<li><a title="egse.vacuum.mks.vacscan.VacscanProxy" href="vacuum/mks/vacscan.html#egse.vacuum.mks.vacscan.VacscanProxy">VacscanProxy</a></li>
+<li><a title="egse.vacuum.mks.evision.EvisionProxy" href="vacuum/mks/evision.html#egse.vacuum.mks.evision.EvisionProxy">EvisionProxy</a></li>
 <li><a title="egse.vacuum.pfeiffer.acp40.Acp40Proxy" href="vacuum/pfeiffer/acp40.html#egse.vacuum.pfeiffer.acp40.Acp40Proxy">Acp40Proxy</a></li>
 <li><a title="egse.vacuum.pfeiffer.tc400.Tc400Proxy" href="vacuum/pfeiffer/tc400.html#egse.vacuum.pfeiffer.tc400.Tc400Proxy">Tc400Proxy</a></li>
 <li><a title="egse.vacuum.pfeiffer.tpg261.Tpg261Proxy" href="vacuum/pfeiffer/tpg261.html#egse.vacuum.pfeiffer.tpg261.Tpg261Proxy">Tpg261Proxy</a></li>
@@ -1657,11 +1674,15 @@ behavior of the Proxy command will not be what is expected.</p></div>
     behavior of the Proxy command will not be what is expected.
     &#34;&#34;&#34;
     # bind the client_call method from each Command to this Proxy object
-    # TODO(rik): what will happen when the _request_commands() fails?
     if self.is_cs_connected():
-        self._request_commands()
-        self._add_commands()
-        return True
+        try:
+            self._request_commands()
+        except Failure as exc:
+            self._logger.warning(f&#34;Failed to request commands for {self.__class__.__name__}: {exc}&#34;)
+            return False
+        else:
+            self._add_commands()
+            return True
     else:
         self._logger.warning(f&#34;{self.__class__.__name__} is not connected, try to reconnect.&#34;)
         return False</code></pre>

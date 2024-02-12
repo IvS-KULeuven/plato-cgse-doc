@@ -30,6 +30,7 @@
 from egse.metrics import define_metrics
 from egse.protocol import CommandProtocol
 from egse.settings import Settings
+from egse.setup import load_setup
 
 from egse.shutter.thorlabs.ksc101 import ShutterKSC101Controller
 from egse.shutter.thorlabs.ksc101 import ShutterKSC101Interface
@@ -46,6 +47,7 @@ class ShutterKSC101Protocol(CommandProtocol):
     def __init__(self, control_server: ControlServer):
         super().__init__()
         self.control_server = control_server
+        setup = load_setup()
 
         if Settings.simulation_mode():
             self.shutter = ShutterKSC101Simulator()
@@ -57,7 +59,7 @@ class ShutterKSC101Protocol(CommandProtocol):
         self.build_device_method_lookup_table(self.shutter)
 
         self.synoptics = SynopticsManagerProxy()
-        self.metrics = define_metrics(&#34;KSC101&#34;)
+        self.metrics = define_metrics(&#34;KSC101&#34;, setup=setup)
 
     def get_bind_address(self):
         return bind_address(
@@ -126,6 +128,7 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
     def __init__(self, control_server: ControlServer):
         super().__init__()
         self.control_server = control_server
+        setup = load_setup()
 
         if Settings.simulation_mode():
             self.shutter = ShutterKSC101Simulator()
@@ -137,7 +140,7 @@ interface of the Proxy subclass (by the <code>_add_commands()</code> method).</p
         self.build_device_method_lookup_table(self.shutter)
 
         self.synoptics = SynopticsManagerProxy()
-        self.metrics = define_metrics(&#34;KSC101&#34;)
+        self.metrics = define_metrics(&#34;KSC101&#34;, setup=setup)
 
     def get_bind_address(self):
         return bind_address(

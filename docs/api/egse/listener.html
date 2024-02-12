@@ -1,0 +1,734 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1" />
+<meta name="generator" content="pdoc 0.10.0" />
+<title>egse.listener API documentation</title>
+<meta name="description" content="This module defines Listeners between control servers and is part of a notification system where changes in
+one control-server are notified to all …" />
+<link rel="preload stylesheet" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/11.0.1/sanitize.min.css" integrity="sha256-PK9q560IAAa6WVRRh76LtCaI8pjTJ2z11v0miyNNjrs=" crossorigin>
+<link rel="preload stylesheet" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/11.0.1/typography.min.css" integrity="sha256-7l/o7C8jubJiy74VsKTidCy1yBkRtiUGbVkYBylBqUg=" crossorigin>
+<link rel="stylesheet preload" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/10.1.1/styles/github.min.css" crossorigin>
+<style>:root{--highlight-color:#fe9}.flex{display:flex !important}body{line-height:1.5em}#content{padding:20px}#sidebar{padding:30px;overflow:hidden}#sidebar > *:last-child{margin-bottom:2cm}.http-server-breadcrumbs{font-size:130%;margin:0 0 15px 0}#footer{font-size:.75em;padding:5px 30px;border-top:1px solid #ddd;text-align:right}#footer p{margin:0 0 0 1em;display:inline-block}#footer p:last-child{margin-right:30px}h1,h2,h3,h4,h5{font-weight:300}h1{font-size:2.5em;line-height:1.1em}h2{font-size:1.75em;margin:1em 0 .50em 0}h3{font-size:1.4em;margin:25px 0 10px 0}h4{margin:0;font-size:105%}h1:target,h2:target,h3:target,h4:target,h5:target,h6:target{background:var(--highlight-color);padding:.2em 0}a{color:#058;text-decoration:none;transition:color .3s ease-in-out}a:hover{color:#e82}.title code{font-weight:bold}h2[id^="header-"]{margin-top:2em}.ident{color:#900}pre code{background:#f8f8f8;font-size:.8em;line-height:1.4em}code{background:#f2f2f1;padding:1px 4px;overflow-wrap:break-word}h1 code{background:transparent}pre{background:#f8f8f8;border:0;border-top:1px solid #ccc;border-bottom:1px solid #ccc;margin:1em 0;padding:1ex}#http-server-module-list{display:flex;flex-flow:column}#http-server-module-list div{display:flex}#http-server-module-list dt{min-width:10%}#http-server-module-list p{margin-top:0}.toc ul,#index{list-style-type:none;margin:0;padding:0}#index code{background:transparent}#index h3{border-bottom:1px solid #ddd}#index ul{padding:0}#index h4{margin-top:.6em;font-weight:bold}@media (min-width:200ex){#index .two-column{column-count:2}}@media (min-width:300ex){#index .two-column{column-count:3}}dl{margin-bottom:2em}dl dl:last-child{margin-bottom:4em}dd{margin:0 0 1em 3em}#header-classes + dl > dd{margin-bottom:3em}dd dd{margin-left:2em}dd p{margin:10px 0}.name{background:#eee;font-weight:bold;font-size:.85em;padding:5px 10px;display:inline-block;min-width:40%}.name:hover{background:#e0e0e0}dt:target .name{background:var(--highlight-color)}.name > span:first-child{white-space:nowrap}.name.class > span:nth-child(2){margin-left:.4em}.inherited{color:#999;border-left:5px solid #eee;padding-left:1em}.inheritance em{font-style:normal;font-weight:bold}.desc h2{font-weight:400;font-size:1.25em}.desc h3{font-size:1em}.desc dt code{background:inherit}.source summary,.git-link-div{color:#666;text-align:right;font-weight:400;font-size:.8em;text-transform:uppercase}.source summary > *{white-space:nowrap;cursor:pointer}.git-link{color:inherit;margin-left:1em}.source pre{max-height:500px;overflow:auto;margin:0}.source pre code{font-size:12px;overflow:visible}.hlist{list-style:none}.hlist li{display:inline}.hlist li:after{content:',\2002'}.hlist li:last-child:after{content:none}.hlist .hlist{display:inline;padding-left:1em}img{max-width:100%}td{padding:0 .5em}.admonition{padding:.1em .5em;margin-bottom:1em}.admonition-title{font-weight:bold}.admonition.note,.admonition.info,.admonition.important{background:#aef}.admonition.todo,.admonition.versionadded,.admonition.tip,.admonition.hint{background:#dfd}.admonition.warning,.admonition.versionchanged,.admonition.deprecated{background:#fd4}.admonition.error,.admonition.danger,.admonition.caution{background:lightpink}</style>
+<style media="screen and (min-width: 700px)">@media screen and (min-width:700px){#sidebar{width:30%;height:100vh;overflow:auto;position:sticky;top:0}#content{width:70%;max-width:100ch;padding:3em 4em;border-left:1px solid #ddd}pre code{font-size:1em}.item .name{font-size:1em}main{display:flex;flex-direction:row-reverse;justify-content:flex-end}.toc ul ul,#index ul{padding-left:1.5em}.toc > ul > li{margin-top:.5em}}</style>
+<style media="print">@media print{#sidebar h1{page-break-before:always}.source{display:none}}@media print{*{background:transparent !important;color:#000 !important;box-shadow:none !important;text-shadow:none !important}a[href]:after{content:" (" attr(href) ")";font-size:90%}a[href][title]:after{content:none}abbr[title]:after{content:" (" attr(title) ")"}.ir a:after,a[href^="javascript:"]:after,a[href^="#"]:after{content:""}pre,blockquote{border:1px solid #999;page-break-inside:avoid}thead{display:table-header-group}tr,img{page-break-inside:avoid}img{max-width:100% !important}@page{margin:0.5cm}p,h2,h3{orphans:3;widows:3}h1,h2,h3,h4,h5,h6{page-break-after:avoid}}</style>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/10.1.1/highlight.min.js" integrity="sha256-Uv3H6lx7dJmRfRvH8TH6kJD1TSK1aFcwgx+mdg3epi8=" crossorigin></script>
+<script>window.addEventListener('DOMContentLoaded', () => hljs.initHighlighting())</script>
+</head>
+<body>
+<main>
+<article id="content">
+<header>
+<h1 class="title">Module <code>egse.listener</code></h1>
+</header>
+<section id="section-intro">
+<p>This module defines Listeners between control servers and is part of a notification system where changes in
+one control-server are notified to all listeners of that control-server.</p>
+<p>Since we have communication between control servers, a listener registers to a control server with its name/id
+and a Proxy class that will be used to send the notification. A listener can also contain an <code>event_id</code> to restrict
+events to handle. (Shall events be filtered on the server (only notify events that match the <code>event_id</code> or shall they
+be filtered on the client (only handle those events that match the <code>event_id</code> ?)</p>
+<p>Any control server will support notification and listeners are added through the service proxy of the control server.</p>
+<p>A control server that wants to be notified by an event needs to implement the EventInterface in the Proxy and in the
+Controller.</p>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">&#34;&#34;&#34;
+This module defines Listeners between control servers and is part of a notification system where changes in
+one control-server are notified to all listeners of that control-server.
+
+Since we have communication between control servers, a listener registers to a control server with its name/id
+and a Proxy class that will be used to send the notification. A listener can also contain an `event_id` to restrict
+events to handle. (Shall events be filtered on the server (only notify events that match the `event_id` or shall they
+be filtered on the client (only handle those events that match the `event_id` ?)
+
+Any control server will support notification and listeners are added through the service proxy of the control server.
+
+A control server that wants to be notified by an event needs to implement the EventInterface in the Proxy and in the
+Controller.
+
+&#34;&#34;&#34;
+import logging
+from enum import IntEnum
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Type
+
+from egse.decorators import dynamic_interface
+from egse.system import Timer
+
+LOGGER = logging.getLogger(__name__)
+
+
+class EVENT_ID(IntEnum):
+    ALL = 0
+    SETUP = 1
+
+
+class Event:
+    def __init__(self, event_id: int, context: Any):
+        self.id = event_id
+        self.context = context
+
+    def __repr__(self):
+        return f&#34;Event({EVENT_ID(self.id).name}, {self.context})&#34;
+
+    @property
+    def type(self) -&gt; str:
+        try:
+            return self.context[&#39;event_type&#39;]
+        except KeyError:
+            return &#34;unknown: event_type not provided&#34;
+
+
+class EventInterface:
+    &#34;&#34;&#34;
+    A dynamic interface for handling events.
+
+    This interface defines a single method, &#39;handle_event&#39;, which is intended
+    to be implemented by classes that want to handle specific types of events.
+
+    Use this interface as a mixin for classes (Proxy/Controller) that implement this `handle_event` method.
+
+    &#34;&#34;&#34;
+    @dynamic_interface
+    def handle_event(self, event: Event):
+        &#34;&#34;&#34;Handles the specified event.
+
+        Args:
+            event (Event): An instance of the Event class representing the event to be handled.
+        &#34;&#34;&#34;
+        ...
+
+
+class Listeners:
+    &#34;&#34;&#34;
+    A class for managing and notifying registered listeners.
+
+    This class provides methods to add, remove, and notify listeners of events.
+    &#34;&#34;&#34;
+
+    def __init__(self):
+        &#34;&#34;&#34;Initializes an instance of the Listeners class.&#34;&#34;&#34;
+        self._listeners: Dict[str, dict] = {}
+
+    def __len__(self):
+        &#34;&#34;&#34;Returns the number of registered listeners.&#34;&#34;&#34;
+        return len(self._listeners)
+
+    def add_listener(self, listener: dict):
+        &#34;&#34;&#34;
+        Adds a new listener to the registered listeners.
+
+        The listener argument dictionary is expected to have at least the following key:values pairs:
+
+        * &#39;name&#39;: the name or identifier of the listener
+        * &#39;proxy&#39;: a Proxy object that will be used for notifying the service
+
+        Args:
+            listener (dict): A dictionary with properties of the listener,
+                including &#39;name&#39; and &#39;proxy&#39;.
+
+        Raises:
+            ValueError: If the listener already exists.
+        &#34;&#34;&#34;
+        try:
+            listener_name = listener[&#34;name&#34;]
+        except KeyError as exc:
+            raise ValueError(f&#34;Expected &#39;name&#39; key in listener argument {listener}.&#34;) from exc
+
+        if listener_name in self._listeners:
+            raise ValueError(f&#34;Process {listener_name} is already registered as a listener.&#34;)
+
+        # For now we make these listeners have a Proxy class that will be used for notification. Later on
+        # we might have other mechanisms for notification.
+
+        from egse.proxy import Proxy
+
+        proxy = listener.get(&#39;proxy&#39;)
+        if proxy is not None:
+            if not isinstance(proxy, type) or not issubclass(proxy, Proxy):
+                raise ValueError(f&#34;Expected &#39;proxy&#39; in listener argument {proxy=} to be a Proxy sub-class.&#34;)
+
+        self._listeners[listener_name] = listener
+
+    def remove_listener(self, listener: dict):
+        &#34;&#34;&#34;
+        Removes a listener from the registered listeners.
+
+        Args:
+           listener (dict): A dictionary representing the listener to be
+               removed. It should contain a &#39;name&#39; key.
+
+        Raises:
+           ValueError: If the &#39;name&#39; key is not present in the listener
+               argument or if the specified listener is not registered.
+        &#34;&#34;&#34;
+
+        try:
+            listener_name = listener[&#34;name&#34;]
+        except KeyError as exc:
+            raise ValueError(f&#34;Expected &#39;name&#39; key in listener argument {listener}.&#34;) from exc
+
+        try:
+            del self._listeners[listener_name]
+        except KeyError as exc:
+            raise ValueError(f&#34;Process {listener_name} cannot be removed, not registered.&#34;) from exc
+
+    def notify_listeners(self, event: Event):
+        &#34;&#34;&#34;
+        Notifies all registered listeners of a specific event.
+
+        Args:
+            event (Event): An instance of the Event class representing the
+                event to be broadcasted.
+
+        Note:
+            The &#39;handle_event&#39; method is called on each listener&#39;s proxy
+            object to process the event.
+        &#34;&#34;&#34;
+
+        LOGGER.debug(f&#34;Notifying listeners {self.get_listener_names()}&#34;)
+
+        for name, listener in self._listeners.items():
+            self.notify_listener(name, listener, event)
+
+    def notify_listener(self, name: str, listener: dict, event: Event):
+        &#34;&#34;&#34;
+        Notifies a registered listener fro the given event.
+        &#34;&#34;&#34;
+        proxy: Type[EventInterface] = listener[&#39;proxy&#39;]
+
+        # The Proxy uses a REQ-REP protocol and waits for an answer. That&#39;s why we have a Timer
+        # in the context so we are able to monitor how long it takes to notify a listener.
+        # The Timer can be removed when we are confident all `handle_event` functions are properly
+        # implemented.
+        with Timer(f&#34;Notify listener {name}&#34;, log_level=logging.DEBUG), proxy() as pobj:
+            rc = pobj.handle_event(event)
+
+        LOGGER.debug(f&#34;Listener {name} returned {rc=}&#34;)
+
+    def get_listener_names(self) -&gt; List[str]:
+        &#34;&#34;&#34;Returns a list with the names of the registered listeners.&#34;&#34;&#34;
+        return list(self._listeners.keys())</code></pre>
+</details>
+</section>
+<section>
+</section>
+<section>
+</section>
+<section>
+</section>
+<section>
+<h2 class="section-title" id="header-classes">Classes</h2>
+<dl>
+<dt id="egse.listener.EVENT_ID"><code class="flex name class">
+<span>class <span class="ident">EVENT_ID</span></span>
+<span>(</span><span>value, names=None, *, module=None, qualname=None, type=None, start=1)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>An enumeration.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class EVENT_ID(IntEnum):
+    ALL = 0
+    SETUP = 1</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>enum.IntEnum</li>
+<li>builtins.int</li>
+<li>enum.Enum</li>
+</ul>
+<h3>Class variables</h3>
+<dl>
+<dt id="egse.listener.EVENT_ID.ALL"><code class="name">var <span class="ident">ALL</span></code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="egse.listener.EVENT_ID.SETUP"><code class="name">var <span class="ident">SETUP</span></code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+</dl>
+</dd>
+<dt id="egse.listener.Event"><code class="flex name class">
+<span>class <span class="ident">Event</span></span>
+<span>(</span><span>event_id: int, context: Any)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Event:
+    def __init__(self, event_id: int, context: Any):
+        self.id = event_id
+        self.context = context
+
+    def __repr__(self):
+        return f&#34;Event({EVENT_ID(self.id).name}, {self.context})&#34;
+
+    @property
+    def type(self) -&gt; str:
+        try:
+            return self.context[&#39;event_type&#39;]
+        except KeyError:
+            return &#34;unknown: event_type not provided&#34;</code></pre>
+</details>
+<h3>Instance variables</h3>
+<dl>
+<dt id="egse.listener.Event.type"><code class="name">var <span class="ident">type</span> : str</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@property
+def type(self) -&gt; str:
+    try:
+        return self.context[&#39;event_type&#39;]
+    except KeyError:
+        return &#34;unknown: event_type not provided&#34;</code></pre>
+</details>
+</dd>
+</dl>
+</dd>
+<dt id="egse.listener.EventInterface"><code class="flex name class">
+<span>class <span class="ident">EventInterface</span></span>
+</code></dt>
+<dd>
+<div class="desc"><p>A dynamic interface for handling events.</p>
+<p>This interface defines a single method, 'handle_event', which is intended
+to be implemented by classes that want to handle specific types of events.</p>
+<p>Use this interface as a mixin for classes (Proxy/Controller) that implement this <code>handle_event</code> method.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class EventInterface:
+    &#34;&#34;&#34;
+    A dynamic interface for handling events.
+
+    This interface defines a single method, &#39;handle_event&#39;, which is intended
+    to be implemented by classes that want to handle specific types of events.
+
+    Use this interface as a mixin for classes (Proxy/Controller) that implement this `handle_event` method.
+
+    &#34;&#34;&#34;
+    @dynamic_interface
+    def handle_event(self, event: Event):
+        &#34;&#34;&#34;Handles the specified event.
+
+        Args:
+            event (Event): An instance of the Event class representing the event to be handled.
+        &#34;&#34;&#34;
+        ...</code></pre>
+</details>
+<h3>Subclasses</h3>
+<ul class="hlist">
+<li><a title="egse.dummy.DummyController" href="dummy.html#egse.dummy.DummyController">DummyController</a></li>
+<li><a title="egse.dummy.DummyProxy" href="dummy.html#egse.dummy.DummyProxy">DummyProxy</a></li>
+<li><a title="egse.storage.StorageController" href="storage/index.html#egse.storage.StorageController">StorageController</a></li>
+<li><a title="egse.storage.StorageProxy" href="storage/index.html#egse.storage.StorageProxy">StorageProxy</a></li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="egse.listener.EventInterface.handle_event"><code class="name flex">
+<span>def <span class="ident">handle_event</span></span>(<span>self, event: <a title="egse.listener.Event" href="#egse.listener.Event">Event</a>)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Handles the specified event.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>event</code></strong> :&ensp;<code><a title="egse.listener.Event" href="#egse.listener.Event">Event</a></code></dt>
+<dd>An instance of the Event class representing the event to be handled.</dd>
+</dl></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@dynamic_interface
+def handle_event(self, event: Event):
+    &#34;&#34;&#34;Handles the specified event.
+
+    Args:
+        event (Event): An instance of the Event class representing the event to be handled.
+    &#34;&#34;&#34;
+    ...</code></pre>
+</details>
+</dd>
+</dl>
+</dd>
+<dt id="egse.listener.Listeners"><code class="flex name class">
+<span>class <span class="ident">Listeners</span></span>
+</code></dt>
+<dd>
+<div class="desc"><p>A class for managing and notifying registered listeners.</p>
+<p>This class provides methods to add, remove, and notify listeners of events.</p>
+<p>Initializes an instance of the Listeners class.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class Listeners:
+    &#34;&#34;&#34;
+    A class for managing and notifying registered listeners.
+
+    This class provides methods to add, remove, and notify listeners of events.
+    &#34;&#34;&#34;
+
+    def __init__(self):
+        &#34;&#34;&#34;Initializes an instance of the Listeners class.&#34;&#34;&#34;
+        self._listeners: Dict[str, dict] = {}
+
+    def __len__(self):
+        &#34;&#34;&#34;Returns the number of registered listeners.&#34;&#34;&#34;
+        return len(self._listeners)
+
+    def add_listener(self, listener: dict):
+        &#34;&#34;&#34;
+        Adds a new listener to the registered listeners.
+
+        The listener argument dictionary is expected to have at least the following key:values pairs:
+
+        * &#39;name&#39;: the name or identifier of the listener
+        * &#39;proxy&#39;: a Proxy object that will be used for notifying the service
+
+        Args:
+            listener (dict): A dictionary with properties of the listener,
+                including &#39;name&#39; and &#39;proxy&#39;.
+
+        Raises:
+            ValueError: If the listener already exists.
+        &#34;&#34;&#34;
+        try:
+            listener_name = listener[&#34;name&#34;]
+        except KeyError as exc:
+            raise ValueError(f&#34;Expected &#39;name&#39; key in listener argument {listener}.&#34;) from exc
+
+        if listener_name in self._listeners:
+            raise ValueError(f&#34;Process {listener_name} is already registered as a listener.&#34;)
+
+        # For now we make these listeners have a Proxy class that will be used for notification. Later on
+        # we might have other mechanisms for notification.
+
+        from egse.proxy import Proxy
+
+        proxy = listener.get(&#39;proxy&#39;)
+        if proxy is not None:
+            if not isinstance(proxy, type) or not issubclass(proxy, Proxy):
+                raise ValueError(f&#34;Expected &#39;proxy&#39; in listener argument {proxy=} to be a Proxy sub-class.&#34;)
+
+        self._listeners[listener_name] = listener
+
+    def remove_listener(self, listener: dict):
+        &#34;&#34;&#34;
+        Removes a listener from the registered listeners.
+
+        Args:
+           listener (dict): A dictionary representing the listener to be
+               removed. It should contain a &#39;name&#39; key.
+
+        Raises:
+           ValueError: If the &#39;name&#39; key is not present in the listener
+               argument or if the specified listener is not registered.
+        &#34;&#34;&#34;
+
+        try:
+            listener_name = listener[&#34;name&#34;]
+        except KeyError as exc:
+            raise ValueError(f&#34;Expected &#39;name&#39; key in listener argument {listener}.&#34;) from exc
+
+        try:
+            del self._listeners[listener_name]
+        except KeyError as exc:
+            raise ValueError(f&#34;Process {listener_name} cannot be removed, not registered.&#34;) from exc
+
+    def notify_listeners(self, event: Event):
+        &#34;&#34;&#34;
+        Notifies all registered listeners of a specific event.
+
+        Args:
+            event (Event): An instance of the Event class representing the
+                event to be broadcasted.
+
+        Note:
+            The &#39;handle_event&#39; method is called on each listener&#39;s proxy
+            object to process the event.
+        &#34;&#34;&#34;
+
+        LOGGER.debug(f&#34;Notifying listeners {self.get_listener_names()}&#34;)
+
+        for name, listener in self._listeners.items():
+            self.notify_listener(name, listener, event)
+
+    def notify_listener(self, name: str, listener: dict, event: Event):
+        &#34;&#34;&#34;
+        Notifies a registered listener fro the given event.
+        &#34;&#34;&#34;
+        proxy: Type[EventInterface] = listener[&#39;proxy&#39;]
+
+        # The Proxy uses a REQ-REP protocol and waits for an answer. That&#39;s why we have a Timer
+        # in the context so we are able to monitor how long it takes to notify a listener.
+        # The Timer can be removed when we are confident all `handle_event` functions are properly
+        # implemented.
+        with Timer(f&#34;Notify listener {name}&#34;, log_level=logging.DEBUG), proxy() as pobj:
+            rc = pobj.handle_event(event)
+
+        LOGGER.debug(f&#34;Listener {name} returned {rc=}&#34;)
+
+    def get_listener_names(self) -&gt; List[str]:
+        &#34;&#34;&#34;Returns a list with the names of the registered listeners.&#34;&#34;&#34;
+        return list(self._listeners.keys())</code></pre>
+</details>
+<h3>Methods</h3>
+<dl>
+<dt id="egse.listener.Listeners.add_listener"><code class="name flex">
+<span>def <span class="ident">add_listener</span></span>(<span>self, listener: dict)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Adds a new listener to the registered listeners.</p>
+<p>The listener argument dictionary is expected to have at least the following key:values pairs:</p>
+<ul>
+<li>'name': the name or identifier of the listener</li>
+<li>'proxy': a Proxy object that will be used for notifying the service</li>
+</ul>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>listener</code></strong> :&ensp;<code>dict</code></dt>
+<dd>A dictionary with properties of the listener,
+including 'name' and 'proxy'.</dd>
+</dl>
+<h2 id="raises">Raises</h2>
+<dl>
+<dt><code>ValueError</code></dt>
+<dd>If the listener already exists.</dd>
+</dl></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def add_listener(self, listener: dict):
+    &#34;&#34;&#34;
+    Adds a new listener to the registered listeners.
+
+    The listener argument dictionary is expected to have at least the following key:values pairs:
+
+    * &#39;name&#39;: the name or identifier of the listener
+    * &#39;proxy&#39;: a Proxy object that will be used for notifying the service
+
+    Args:
+        listener (dict): A dictionary with properties of the listener,
+            including &#39;name&#39; and &#39;proxy&#39;.
+
+    Raises:
+        ValueError: If the listener already exists.
+    &#34;&#34;&#34;
+    try:
+        listener_name = listener[&#34;name&#34;]
+    except KeyError as exc:
+        raise ValueError(f&#34;Expected &#39;name&#39; key in listener argument {listener}.&#34;) from exc
+
+    if listener_name in self._listeners:
+        raise ValueError(f&#34;Process {listener_name} is already registered as a listener.&#34;)
+
+    # For now we make these listeners have a Proxy class that will be used for notification. Later on
+    # we might have other mechanisms for notification.
+
+    from egse.proxy import Proxy
+
+    proxy = listener.get(&#39;proxy&#39;)
+    if proxy is not None:
+        if not isinstance(proxy, type) or not issubclass(proxy, Proxy):
+            raise ValueError(f&#34;Expected &#39;proxy&#39; in listener argument {proxy=} to be a Proxy sub-class.&#34;)
+
+    self._listeners[listener_name] = listener</code></pre>
+</details>
+</dd>
+<dt id="egse.listener.Listeners.get_listener_names"><code class="name flex">
+<span>def <span class="ident">get_listener_names</span></span>(<span>self) ‑> List[str]</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Returns a list with the names of the registered listeners.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_listener_names(self) -&gt; List[str]:
+    &#34;&#34;&#34;Returns a list with the names of the registered listeners.&#34;&#34;&#34;
+    return list(self._listeners.keys())</code></pre>
+</details>
+</dd>
+<dt id="egse.listener.Listeners.notify_listener"><code class="name flex">
+<span>def <span class="ident">notify_listener</span></span>(<span>self, name: str, listener: dict, event: <a title="egse.listener.Event" href="#egse.listener.Event">Event</a>)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Notifies a registered listener fro the given event.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def notify_listener(self, name: str, listener: dict, event: Event):
+    &#34;&#34;&#34;
+    Notifies a registered listener fro the given event.
+    &#34;&#34;&#34;
+    proxy: Type[EventInterface] = listener[&#39;proxy&#39;]
+
+    # The Proxy uses a REQ-REP protocol and waits for an answer. That&#39;s why we have a Timer
+    # in the context so we are able to monitor how long it takes to notify a listener.
+    # The Timer can be removed when we are confident all `handle_event` functions are properly
+    # implemented.
+    with Timer(f&#34;Notify listener {name}&#34;, log_level=logging.DEBUG), proxy() as pobj:
+        rc = pobj.handle_event(event)
+
+    LOGGER.debug(f&#34;Listener {name} returned {rc=}&#34;)</code></pre>
+</details>
+</dd>
+<dt id="egse.listener.Listeners.notify_listeners"><code class="name flex">
+<span>def <span class="ident">notify_listeners</span></span>(<span>self, event: <a title="egse.listener.Event" href="#egse.listener.Event">Event</a>)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Notifies all registered listeners of a specific event.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>event</code></strong> :&ensp;<code><a title="egse.listener.Event" href="#egse.listener.Event">Event</a></code></dt>
+<dd>An instance of the Event class representing the
+event to be broadcasted.</dd>
+</dl>
+<h2 id="note">Note</h2>
+<p>The 'handle_event' method is called on each listener's proxy
+object to process the event.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def notify_listeners(self, event: Event):
+    &#34;&#34;&#34;
+    Notifies all registered listeners of a specific event.
+
+    Args:
+        event (Event): An instance of the Event class representing the
+            event to be broadcasted.
+
+    Note:
+        The &#39;handle_event&#39; method is called on each listener&#39;s proxy
+        object to process the event.
+    &#34;&#34;&#34;
+
+    LOGGER.debug(f&#34;Notifying listeners {self.get_listener_names()}&#34;)
+
+    for name, listener in self._listeners.items():
+        self.notify_listener(name, listener, event)</code></pre>
+</details>
+</dd>
+<dt id="egse.listener.Listeners.remove_listener"><code class="name flex">
+<span>def <span class="ident">remove_listener</span></span>(<span>self, listener: dict)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Removes a listener from the registered listeners.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>listener</code></strong> :&ensp;<code>dict</code></dt>
+<dd>A dictionary representing the listener to be
+removed. It should contain a 'name' key.</dd>
+</dl>
+<h2 id="raises">Raises</h2>
+<dl>
+<dt><code>ValueError</code></dt>
+<dd>If the 'name' key is not present in the listener
+argument or if the specified listener is not registered.</dd>
+</dl></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def remove_listener(self, listener: dict):
+    &#34;&#34;&#34;
+    Removes a listener from the registered listeners.
+
+    Args:
+       listener (dict): A dictionary representing the listener to be
+           removed. It should contain a &#39;name&#39; key.
+
+    Raises:
+       ValueError: If the &#39;name&#39; key is not present in the listener
+           argument or if the specified listener is not registered.
+    &#34;&#34;&#34;
+
+    try:
+        listener_name = listener[&#34;name&#34;]
+    except KeyError as exc:
+        raise ValueError(f&#34;Expected &#39;name&#39; key in listener argument {listener}.&#34;) from exc
+
+    try:
+        del self._listeners[listener_name]
+    except KeyError as exc:
+        raise ValueError(f&#34;Process {listener_name} cannot be removed, not registered.&#34;) from exc</code></pre>
+</details>
+</dd>
+</dl>
+</dd>
+</dl>
+</section>
+</article>
+<nav id="sidebar">
+<h1>Index</h1>
+<div class="toc">
+<ul></ul>
+</div>
+<ul id="index">
+<li><h3>Super-module</h3>
+<ul>
+<li><code><a title="egse" href="index.html">egse</a></code></li>
+</ul>
+</li>
+<li><h3><a href="#header-classes">Classes</a></h3>
+<ul>
+<li>
+<h4><code><a title="egse.listener.EVENT_ID" href="#egse.listener.EVENT_ID">EVENT_ID</a></code></h4>
+<ul class="">
+<li><code><a title="egse.listener.EVENT_ID.ALL" href="#egse.listener.EVENT_ID.ALL">ALL</a></code></li>
+<li><code><a title="egse.listener.EVENT_ID.SETUP" href="#egse.listener.EVENT_ID.SETUP">SETUP</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="egse.listener.Event" href="#egse.listener.Event">Event</a></code></h4>
+<ul class="">
+<li><code><a title="egse.listener.Event.type" href="#egse.listener.Event.type">type</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="egse.listener.EventInterface" href="#egse.listener.EventInterface">EventInterface</a></code></h4>
+<ul class="">
+<li><code><a title="egse.listener.EventInterface.handle_event" href="#egse.listener.EventInterface.handle_event">handle_event</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="egse.listener.Listeners" href="#egse.listener.Listeners">Listeners</a></code></h4>
+<ul class="">
+<li><code><a title="egse.listener.Listeners.add_listener" href="#egse.listener.Listeners.add_listener">add_listener</a></code></li>
+<li><code><a title="egse.listener.Listeners.get_listener_names" href="#egse.listener.Listeners.get_listener_names">get_listener_names</a></code></li>
+<li><code><a title="egse.listener.Listeners.notify_listener" href="#egse.listener.Listeners.notify_listener">notify_listener</a></code></li>
+<li><code><a title="egse.listener.Listeners.notify_listeners" href="#egse.listener.Listeners.notify_listeners">notify_listeners</a></code></li>
+<li><code><a title="egse.listener.Listeners.remove_listener" href="#egse.listener.Listeners.remove_listener">remove_listener</a></code></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</nav>
+</main>
+<footer id="footer">
+<p>Generated by <a href="https://pdoc3.github.io/pdoc" title="pdoc: Python API documentation generator"><cite>pdoc</cite> 0.10.0</a>.</p>
+</footer>
+</body>
+</html>

@@ -57,22 +57,20 @@ import logging
 from collections import namedtuple
 from typing import Optional
 
-import numpy as np
-
 from egse.fee import n_fee_mode
 from egse.reg import Register
 from egse.reg import RegisterMap
 from egse.spw import SpaceWireInterface
-from egse.state import GlobalState
 from egse.system import Timer
 
 MODULE_LOGGER = logging.getLogger(__name__)
 
 DEFAULT_CCD_READOUT_ORDER = 0b11100100
-SENSOR_SEL_BOTH_SIDES = 3
 &#34;&#34;&#34;The default for pFM -&gt; CCD 1, 2, 3, 4 (reading from the right).
 We use this default value only for going to DUMP mode because there the ccd_readout_order parameter
 is not passed. For all other command functions, the ccd_readout_order is explicitly passed.&#34;&#34;&#34;
+
+SENSOR_SEL_BOTH_SIDES = 3
 
 
 class NFEEState:
@@ -299,7 +297,7 @@ def command_sync_register_map(transport: SpaceWireInterface, register_map: Regis
         register_map (RegisterMap): the N-FEE register map
     &#34;&#34;&#34;
 
-    # In principle we should request each register separately, but the N-FEE allows even in
+    # In principle, we should request each register separately, but the N-FEE allows even in
     # critical memory to read the full register at once. I leave the original code here should
     # the behaviour of the N-FEE become more restrictive again.
     #
@@ -313,17 +311,35 @@ def command_sync_register_map(transport: SpaceWireInterface, register_map: Regis
     return register_map
 
 
-def command_set_nfee_fpga_defaults(transport: SpaceWireInterface, register_map: RegisterMap):
-    &#34;&#34;&#34; Set the default FPGA parameters for the N-FEE.
+def command_get_hk_information(transport: SpaceWireInterface, register_map: RegisterMap, address: int, data_length: int) -&gt; bytes:
+    &#34;&#34;&#34;
+    Reads the memory area of the N-FEE where the housekeeping information is saved. This area is located between
+    0x0700 – 0x07FC (inclusive) [see PLATO-DLR-PL-ICD-010].
 
     Args:
+        transport (SpaceWireInterface): interface to use for SpaceWire communication
+        register_map (RegisterMap): the N-FEE register map -&gt; not used in this function
+        address (int): start address
+        data_length (int): number of bytes
+
+    Returns:
+        A bytes object containing the housekeeping information.
+    &#34;&#34;&#34;
+
+    return transport.read_memory_map(address, data_length)
+
+
+def command_set_nfee_fpga_defaults(transport: SpaceWireInterface, register_map: RegisterMap, default_values: dict):
+    &#34;&#34;&#34;
+    Set the camera specific default FPGA parameters for the N-FEE.
+
+    Args:
+        default_values (dict): FPGA defaults
         transport (SpaceWireInterface): interface to use for SpaceWire communication
         register_map (RegisterMap): the N-FEE register map
     &#34;&#34;&#34;
 
     MODULE_LOGGER.info(&#34;Set default values for the FPGA&#34;)
-
-    default_values = GlobalState.setup.camera.fee.fpga_defaults
 
     for reg_name in default_values:
         hex_string = str(default_values[reg_name])
@@ -474,9 +490,9 @@ def command_set_standby_mode(transport: SpaceWireInterface, register_map: Regist
 def command_set_dump_mode(
         transport: SpaceWireInterface,
         register_map: RegisterMap,
-        v_start: int = 0, v_end: int = 4509, sensor_sel_=SENSOR_SEL_BOTH_SIDES,
+        v_start: int = 0, v_end: int = 0, sensor_sel_=SENSOR_SEL_BOTH_SIDES,
         ccd_readout_order: int = DEFAULT_CCD_READOUT_ORDER,
-        n_final_dump: int = 0, sync_sel: int = 0
+        n_final_dump: int = 4510, sync_sel: int = 0
 ):
     MODULE_LOGGER.info(&#34;Commanding N-FEE into dump mode.&#34;)
 
@@ -503,9 +519,9 @@ def command_set_dump_mode(
 def command_set_dump_mode_int_sync(
         transport: SpaceWireInterface,
         register_map: RegisterMap,
-        v_start: int = 0, v_end: int = 10, sensor_sel_=SENSOR_SEL_BOTH_SIDES,
+        v_start: int = 0, v_end: int = 0, sensor_sel_=SENSOR_SEL_BOTH_SIDES,
         ccd_readout_order: int = DEFAULT_CCD_READOUT_ORDER,
-        n_final_dump: int = 4509, int_sync_period: int = 2500, sync_sel: int = 1
+        n_final_dump: int = 4510, int_sync_period: int = 600, sync_sel: int = 1
 ):
     MODULE_LOGGER.info(&#34;Commanding N-FEE into internal sync dump mode.&#34;)
 
@@ -527,7 +543,7 @@ def command_set_dump_mode_int_sync(
 
 def _set_register(transport: SpaceWireInterface, register_map: RegisterMap, reg_name: str, **kwarg: int):
     &#34;&#34;&#34;
-    Set a register from it&#39;s individual parameters and sends the register to the N-FEE. This
+    Set a register from its individual parameters and sends the register to the N-FEE. This
     function first reads the register from the N-FEE and updates the local register if there is a
     mismatch.
 
@@ -634,7 +650,7 @@ def command_external_clock(
         transport: SpaceWireInterface,
         register_map: RegisterMap,
 ):
-    MODULE_LOGGER.debug(&#34;Commanding N-FEE to use the external clock.&#34;)
+    MODULE_LOGGER.info(&#34;Commanding N-FEE to use the external clock.&#34;)
 
     _set_register(transport, register_map, &#34;reg_5_config&#34;, sync_sel=0)
 
@@ -687,11 +703,21 @@ def command_set_clear_error_flags(transport: SpaceWireInterface, register_map: R
     the error conditions persist and no corrective measures are taken, then  error flags would be
     set again.
     &#34;&#34;&#34;
+    # keep debug level because this command is sent on each readout
     MODULE_LOGGER.debug(&#34;Commanding N-FEE to clear error flag.&#34;)
 
     _set_register(transport, register_map, &#34;reg_21_config&#34;, clear_error_flag=1)
 
     return register_map[&#34;clear_error_flag&#34;]
+
+
+def command_set_readout_order(transport: SpaceWireInterface, register_map: RegisterMap, ccd_readout_order: int):
+    &#34;&#34;&#34;
+    Sets the given ccd_readout_order in the register map, then sends this change to the N-FEE.
+    &#34;&#34;&#34;
+    MODULE_LOGGER.info(f&#34;Commanding N-FEE – set readout order to 0x{ccd_readout_order:02x}.&#34;)
+
+    _set_register(transport, register_map, &#34;reg_2_config&#34;, ccd_readout_order=ccd_readout_order)
 
 
 def command_set_reverse_clocking(
@@ -801,7 +827,7 @@ def command_set_vgd(
 <section>
 <h2 class="section-title" id="header-variables">Global variables</h2>
 <dl>
-<dt id="egse.dpu.dpu.SENSOR_SEL_BOTH_SIDES"><code class="name">var <span class="ident">SENSOR_SEL_BOTH_SIDES</span></code></dt>
+<dt id="egse.dpu.dpu.DEFAULT_CCD_READOUT_ORDER"><code class="name">var <span class="ident">DEFAULT_CCD_READOUT_ORDER</span></code></dt>
 <dd>
 <div class="desc"><p>The default for pFM -&gt; CCD 1, 2, 3, 4 (reading from the right).
 We use this default value only for going to DUMP mode because there the ccd_readout_order parameter
@@ -825,9 +851,50 @@ is not passed. For all other command functions, the ccd_readout_order is explici
         transport: SpaceWireInterface,
         register_map: RegisterMap,
 ):
-    MODULE_LOGGER.debug(&#34;Commanding N-FEE to use the external clock.&#34;)
+    MODULE_LOGGER.info(&#34;Commanding N-FEE to use the external clock.&#34;)
 
     _set_register(transport, register_map, &#34;reg_5_config&#34;, sync_sel=0)</code></pre>
+</details>
+</dd>
+<dt id="egse.dpu.dpu.command_get_hk_information"><code class="name flex">
+<span>def <span class="ident">command_get_hk_information</span></span>(<span>transport: <a title="egse.spw.SpaceWireInterface" href="../spw.html#egse.spw.SpaceWireInterface">SpaceWireInterface</a>, register_map: <a title="egse.reg.RegisterMap" href="../reg.html#egse.reg.RegisterMap">RegisterMap</a>, address: int, data_length: int) ‑> bytes</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Reads the memory area of the N-FEE where the housekeeping information is saved. This area is located between
+0x0700 – 0x07FC (inclusive) [see PLATO-DLR-PL-ICD-010].</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>transport</code></strong> :&ensp;<code>SpaceWireInterface</code></dt>
+<dd>interface to use for SpaceWire communication</dd>
+<dt><strong><code>register_map</code></strong> :&ensp;<code>RegisterMap</code></dt>
+<dd>the N-FEE register map -&gt; not used in this function</dd>
+<dt><strong><code>address</code></strong> :&ensp;<code>int</code></dt>
+<dd>start address</dd>
+<dt><strong><code>data_length</code></strong> :&ensp;<code>int</code></dt>
+<dd>number of bytes</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<p>A bytes object containing the housekeeping information.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def command_get_hk_information(transport: SpaceWireInterface, register_map: RegisterMap, address: int, data_length: int) -&gt; bytes:
+    &#34;&#34;&#34;
+    Reads the memory area of the N-FEE where the housekeeping information is saved. This area is located between
+    0x0700 – 0x07FC (inclusive) [see PLATO-DLR-PL-ICD-010].
+
+    Args:
+        transport (SpaceWireInterface): interface to use for SpaceWire communication
+        register_map (RegisterMap): the N-FEE register map -&gt; not used in this function
+        address (int): start address
+        data_length (int): number of bytes
+
+    Returns:
+        A bytes object containing the housekeeping information.
+    &#34;&#34;&#34;
+
+    return transport.read_memory_map(address, data_length)</code></pre>
 </details>
 </dd>
 <dt id="egse.dpu.dpu.command_get_mode"><code class="name flex">
@@ -974,6 +1041,7 @@ set again.</p></div>
     the error conditions persist and no corrective measures are taken, then  error flags would be
     set again.
     &#34;&#34;&#34;
+    # keep debug level because this command is sent on each readout
     MODULE_LOGGER.debug(&#34;Commanding N-FEE to clear error flag.&#34;)
 
     _set_register(transport, register_map, &#34;reg_21_config&#34;, clear_error_flag=1)
@@ -982,7 +1050,7 @@ set again.</p></div>
 </details>
 </dd>
 <dt id="egse.dpu.dpu.command_set_dump_mode"><code class="name flex">
-<span>def <span class="ident">command_set_dump_mode</span></span>(<span>transport: <a title="egse.spw.SpaceWireInterface" href="../spw.html#egse.spw.SpaceWireInterface">SpaceWireInterface</a>, register_map: <a title="egse.reg.RegisterMap" href="../reg.html#egse.reg.RegisterMap">RegisterMap</a>, v_start: int = 0, v_end: int = 4509, sensor_sel_=3, ccd_readout_order: int = 228, n_final_dump: int = 0, sync_sel: int = 0)</span>
+<span>def <span class="ident">command_set_dump_mode</span></span>(<span>transport: <a title="egse.spw.SpaceWireInterface" href="../spw.html#egse.spw.SpaceWireInterface">SpaceWireInterface</a>, register_map: <a title="egse.reg.RegisterMap" href="../reg.html#egse.reg.RegisterMap">RegisterMap</a>, v_start: int = 0, v_end: int = 0, sensor_sel_=3, ccd_readout_order: int = 228, n_final_dump: int = 4510, sync_sel: int = 0)</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -993,9 +1061,9 @@ set again.</p></div>
 <pre><code class="python">def command_set_dump_mode(
         transport: SpaceWireInterface,
         register_map: RegisterMap,
-        v_start: int = 0, v_end: int = 4509, sensor_sel_=SENSOR_SEL_BOTH_SIDES,
+        v_start: int = 0, v_end: int = 0, sensor_sel_=SENSOR_SEL_BOTH_SIDES,
         ccd_readout_order: int = DEFAULT_CCD_READOUT_ORDER,
-        n_final_dump: int = 0, sync_sel: int = 0
+        n_final_dump: int = 4510, sync_sel: int = 0
 ):
     MODULE_LOGGER.info(&#34;Commanding N-FEE into dump mode.&#34;)
 
@@ -1020,7 +1088,7 @@ set again.</p></div>
 </details>
 </dd>
 <dt id="egse.dpu.dpu.command_set_dump_mode_int_sync"><code class="name flex">
-<span>def <span class="ident">command_set_dump_mode_int_sync</span></span>(<span>transport: <a title="egse.spw.SpaceWireInterface" href="../spw.html#egse.spw.SpaceWireInterface">SpaceWireInterface</a>, register_map: <a title="egse.reg.RegisterMap" href="../reg.html#egse.reg.RegisterMap">RegisterMap</a>, v_start: int = 0, v_end: int = 10, sensor_sel_=3, ccd_readout_order: int = 228, n_final_dump: int = 4509, int_sync_period: int = 2500, sync_sel: int = 1)</span>
+<span>def <span class="ident">command_set_dump_mode_int_sync</span></span>(<span>transport: <a title="egse.spw.SpaceWireInterface" href="../spw.html#egse.spw.SpaceWireInterface">SpaceWireInterface</a>, register_map: <a title="egse.reg.RegisterMap" href="../reg.html#egse.reg.RegisterMap">RegisterMap</a>, v_start: int = 0, v_end: int = 0, sensor_sel_=3, ccd_readout_order: int = 228, n_final_dump: int = 4510, int_sync_period: int = 600, sync_sel: int = 1)</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -1031,9 +1099,9 @@ set again.</p></div>
 <pre><code class="python">def command_set_dump_mode_int_sync(
         transport: SpaceWireInterface,
         register_map: RegisterMap,
-        v_start: int = 0, v_end: int = 10, sensor_sel_=SENSOR_SEL_BOTH_SIDES,
+        v_start: int = 0, v_end: int = 0, sensor_sel_=SENSOR_SEL_BOTH_SIDES,
         ccd_readout_order: int = DEFAULT_CCD_READOUT_ORDER,
-        n_final_dump: int = 4509, int_sync_period: int = 2500, sync_sel: int = 1
+        n_final_dump: int = 4510, int_sync_period: int = 600, sync_sel: int = 1
 ):
     MODULE_LOGGER.info(&#34;Commanding N-FEE into internal sync dump mode.&#34;)
 
@@ -1238,12 +1306,14 @@ but this is not checked by this function (it is an assumption that the caller ha
 </details>
 </dd>
 <dt id="egse.dpu.dpu.command_set_nfee_fpga_defaults"><code class="name flex">
-<span>def <span class="ident">command_set_nfee_fpga_defaults</span></span>(<span>transport: <a title="egse.spw.SpaceWireInterface" href="../spw.html#egse.spw.SpaceWireInterface">SpaceWireInterface</a>, register_map: <a title="egse.reg.RegisterMap" href="../reg.html#egse.reg.RegisterMap">RegisterMap</a>)</span>
+<span>def <span class="ident">command_set_nfee_fpga_defaults</span></span>(<span>transport: <a title="egse.spw.SpaceWireInterface" href="../spw.html#egse.spw.SpaceWireInterface">SpaceWireInterface</a>, register_map: <a title="egse.reg.RegisterMap" href="../reg.html#egse.reg.RegisterMap">RegisterMap</a>, default_values: dict)</span>
 </code></dt>
 <dd>
-<div class="desc"><p>Set the default FPGA parameters for the N-FEE.</p>
+<div class="desc"><p>Set the camera specific default FPGA parameters for the N-FEE.</p>
 <h2 id="args">Args</h2>
 <dl>
+<dt><strong><code>default_values</code></strong> :&ensp;<code>dict</code></dt>
+<dd>FPGA defaults</dd>
 <dt><strong><code>transport</code></strong> :&ensp;<code>SpaceWireInterface</code></dt>
 <dd>interface to use for SpaceWire communication</dd>
 <dt><strong><code>register_map</code></strong> :&ensp;<code>RegisterMap</code></dt>
@@ -1253,17 +1323,17 @@ but this is not checked by this function (it is an assumption that the caller ha
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">def command_set_nfee_fpga_defaults(transport: SpaceWireInterface, register_map: RegisterMap):
-    &#34;&#34;&#34; Set the default FPGA parameters for the N-FEE.
+<pre><code class="python">def command_set_nfee_fpga_defaults(transport: SpaceWireInterface, register_map: RegisterMap, default_values: dict):
+    &#34;&#34;&#34;
+    Set the camera specific default FPGA parameters for the N-FEE.
 
     Args:
+        default_values (dict): FPGA defaults
         transport (SpaceWireInterface): interface to use for SpaceWire communication
         register_map (RegisterMap): the N-FEE register map
     &#34;&#34;&#34;
 
     MODULE_LOGGER.info(&#34;Set default values for the FPGA&#34;)
-
-    default_values = GlobalState.setup.camera.fee.fpga_defaults
 
     for reg_name in default_values:
         hex_string = str(default_values[reg_name])
@@ -1292,6 +1362,24 @@ but this is not checked by this function (it is an assumption that the caller ha
     _set_register(transport, register_map, &#34;reg_21_config&#34;, ccd_mode_config=n_fee_mode.ON_MODE)
 
     return register_map[&#34;ccd_mode_config&#34;]</code></pre>
+</details>
+</dd>
+<dt id="egse.dpu.dpu.command_set_readout_order"><code class="name flex">
+<span>def <span class="ident">command_set_readout_order</span></span>(<span>transport: <a title="egse.spw.SpaceWireInterface" href="../spw.html#egse.spw.SpaceWireInterface">SpaceWireInterface</a>, register_map: <a title="egse.reg.RegisterMap" href="../reg.html#egse.reg.RegisterMap">RegisterMap</a>, ccd_readout_order: int)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Sets the given ccd_readout_order in the register map, then sends this change to the N-FEE.</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def command_set_readout_order(transport: SpaceWireInterface, register_map: RegisterMap, ccd_readout_order: int):
+    &#34;&#34;&#34;
+    Sets the given ccd_readout_order in the register map, then sends this change to the N-FEE.
+    &#34;&#34;&#34;
+    MODULE_LOGGER.info(f&#34;Commanding N-FEE – set readout order to 0x{ccd_readout_order:02x}.&#34;)
+
+    _set_register(transport, register_map, &#34;reg_2_config&#34;, ccd_readout_order=ccd_readout_order)</code></pre>
 </details>
 </dd>
 <dt id="egse.dpu.dpu.command_set_register_value"><code class="name flex">
@@ -1441,7 +1529,7 @@ the returned data.</p>
         register_map (RegisterMap): the N-FEE register map
     &#34;&#34;&#34;
 
-    # In principle we should request each register separately, but the N-FEE allows even in
+    # In principle, we should request each register separately, but the N-FEE allows even in
     # critical memory to read the full register at once. I leave the original code here should
     # the behaviour of the N-FEE become more restrictive again.
     #
@@ -1496,7 +1584,7 @@ the returned data.</p>
 </details>
 </dd>
 <dt id="egse.dpu.dpu.prio_command_get_slicing"><code class="name flex">
-<span>def <span class="ident">prio_command_get_slicing</span></span>(<span>n_fee_state: <function namedtuple at 0x7fd50001ef70>, dpu_internals: DPUInternals, register_map: <a title="egse.reg.RegisterMap" href="../reg.html#egse.reg.RegisterMap">RegisterMap</a>) ‑> int</span>
+<span>def <span class="ident">prio_command_get_slicing</span></span>(<span>n_fee_state: <function namedtuple at 0x100db40d0>, dpu_internals: DPUInternals, register_map: <a title="egse.reg.RegisterMap" href="../reg.html#egse.reg.RegisterMap">RegisterMap</a>) ‑> int</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -1559,7 +1647,7 @@ the returned data.</p>
 </details>
 </dd>
 <dt id="egse.dpu.dpu.prio_command_set_slicing"><code class="name flex">
-<span>def <span class="ident">prio_command_set_slicing</span></span>(<span>n_fee_state: <function namedtuple at 0x7fd50001ef70>, dpu_internals: DPUInternals, register_map: <a title="egse.reg.RegisterMap" href="../reg.html#egse.reg.RegisterMap">RegisterMap</a>, num_cycles: int)</span>
+<span>def <span class="ident">prio_command_set_slicing</span></span>(<span>n_fee_state: <function namedtuple at 0x100db40d0>, dpu_internals: DPUInternals, register_map: <a title="egse.reg.RegisterMap" href="../reg.html#egse.reg.RegisterMap">RegisterMap</a>, num_cycles: int)</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -2169,12 +2257,13 @@ frame number is the housekeeping packet is zero, frame_number==0.</p>
 </li>
 <li><h3><a href="#header-variables">Global variables</a></h3>
 <ul class="">
-<li><code><a title="egse.dpu.dpu.SENSOR_SEL_BOTH_SIDES" href="#egse.dpu.dpu.SENSOR_SEL_BOTH_SIDES">SENSOR_SEL_BOTH_SIDES</a></code></li>
+<li><code><a title="egse.dpu.dpu.DEFAULT_CCD_READOUT_ORDER" href="#egse.dpu.dpu.DEFAULT_CCD_READOUT_ORDER">DEFAULT_CCD_READOUT_ORDER</a></code></li>
 </ul>
 </li>
 <li><h3><a href="#header-functions">Functions</a></h3>
 <ul class="">
 <li><code><a title="egse.dpu.dpu.command_external_clock" href="#egse.dpu.dpu.command_external_clock">command_external_clock</a></code></li>
+<li><code><a title="egse.dpu.dpu.command_get_hk_information" href="#egse.dpu.dpu.command_get_hk_information">command_get_hk_information</a></code></li>
 <li><code><a title="egse.dpu.dpu.command_get_mode" href="#egse.dpu.dpu.command_get_mode">command_get_mode</a></code></li>
 <li><code><a title="egse.dpu.dpu.command_internal_clock" href="#egse.dpu.dpu.command_internal_clock">command_internal_clock</a></code></li>
 <li><code><a title="egse.dpu.dpu.command_noop" href="#egse.dpu.dpu.command_noop">command_noop</a></code></li>
@@ -2190,6 +2279,7 @@ frame number is the housekeeping packet is zero, frame_number==0.</p>
 <li><code><a title="egse.dpu.dpu.command_set_immediate_on_mode" href="#egse.dpu.dpu.command_set_immediate_on_mode">command_set_immediate_on_mode</a></code></li>
 <li><code><a title="egse.dpu.dpu.command_set_nfee_fpga_defaults" href="#egse.dpu.dpu.command_set_nfee_fpga_defaults">command_set_nfee_fpga_defaults</a></code></li>
 <li><code><a title="egse.dpu.dpu.command_set_on_mode" href="#egse.dpu.dpu.command_set_on_mode">command_set_on_mode</a></code></li>
+<li><code><a title="egse.dpu.dpu.command_set_readout_order" href="#egse.dpu.dpu.command_set_readout_order">command_set_readout_order</a></code></li>
 <li><code><a title="egse.dpu.dpu.command_set_register_value" href="#egse.dpu.dpu.command_set_register_value">command_set_register_value</a></code></li>
 <li><code><a title="egse.dpu.dpu.command_set_reverse_clocking" href="#egse.dpu.dpu.command_set_reverse_clocking">command_set_reverse_clocking</a></code></li>
 <li><code><a title="egse.dpu.dpu.command_set_standby_mode" href="#egse.dpu.dpu.command_set_standby_mode">command_set_standby_mode</a></code></li>

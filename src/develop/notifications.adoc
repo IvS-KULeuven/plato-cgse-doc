@@ -1,0 +1,222 @@
+[#notification-for-cs]
+== Notifications for Control Servers
+
+This section explains how notifications for control servers are designed and implemented with an Event Listeners pattern. We will talk about events between two processes, two control servers. One control server will send out notifications for an event and is therefore called the _notifying_ control server or the _Producer_, the other control server is listening for events and is therefore called the _listening_ control server, or the _Consumer_.
+
+The basic requirements we have for the event notification are:
+
+* Any control server shall be able to accept a registration for a notification of an event.
+* It shall be possible to unregister from receiving events.
+* The event generator (producer) shall not wait for a reply from the listener.
+* The Listener shall handle events as soon as possible.
+
+The following terms will be used throughout this chapter. In order to try to avoid confusion, we will briefly explain those in the context of the CGSE.
+
+[horizontal]
+Event::
+The event is the object that carries the information about a change that needs to be reported to the listeners.
+
+Listener::
+The process that registers to a control server for an event notification is called a _listener_ or _consumer_, i.e. it listens for one or more specific events that are sent out by another control server process.
+
+Event Generator::
+The control server process that sends out notifications to its listeners. Sometimes its called a _producer_. This control server holds registrations for all listeners that need to be notified of an event.
+
+In the case of the CGSE, a control server can act both as the event generator and the listener. Not that the control server will send events to itself, but it will send events to other control servers. Therefore, the implementation will include both sides of the event listener pattern, i.e. producer and consumer. The pattern will be implemented with ZeroMQ messaging. This is different from the usual implementation of this pattern where a producer object calls a method on a consumer object. In our case, the event generator process, will send a ZeroMQ message, containing the event object, to the listener process.
+
+=== The Event
+
+An Event is an object that contains all information needed by the listeners in order to process the event notification.
+
+An Event is defined by an event identifier and an event type. Currently, the only event identified is the New Setup event notification with event_id: EVENT_ID.SETUP and event_type: "new_setup". An Event also needs a context which contains information that is needed by the listener in order to handle the event. The context contains event specific information, e.g. in the case of a new Setup, the context also contains the setup identifier (`setup_id`).
+
+The control server that wants to be notified of an event needs to implement the EventInterface in the Proxy and in the Controller. This interface currently contains only one method, ie. `handle_event(event)` which takes the event object as its only argument.
+
+=== The Listener
+
+Listeners are registered and unregistered through the services interface of the control server. That means the developer of a control server that needs to listen to events doesn't need to implement the registration functions, only the handling of the events must be implemented.
+
+When a listener is registered, a name and a proxy shall be provided. The name is used as an identifier for the listener, the proxy is the Proxy class for the _listening_ process. The proxy will be used by the producer to notify the listener/consumer.
+
+When registering, another proxy shall be provided, which is the producers proxy, i.e. the proxy  for the control server to which the listener wants to register. So, for example, if the storage manager wants to listen to events on new Setups from the configuration manager, that proxy shall be a ConfigurationManagerProxy. The following code snippet should make this clear:
+
+[source,python]
+----
+self.register_as_listener(
+    proxy=ConfigurationManagerProxy,
+    listener={'name': 'Storage CS', 'proxy': StorageProxy, 'event_id': EVENT_ID.SETUP}
+)
+----
+
+Registrations are issued from the ControlServer and handled by the ServiceProtocol. The registration is executed in a separate thread and retried 5 times with a 10s wait time in between.
+
+Event notifications are handled by executing the `handle_event()` method on the consumer Proxy. The `handle_event` command is defined by the `EventInterface` which is a base class for the Controller and the Proxy. Both the Controller class and the Proxy class need to inherit from the `EventInterface`.
+
+[source,python]
+----
+class EventInterface:
+
+    @dynamic_interface
+    def handle_event(self, event: Event):
+        ...
+----
+
+In this case, we will also need to provide an entry in the command YAML file:
+
+----
+handle_event:
+    description:   Notification of an event
+    cmd:           '{event}'
+----
+
+=== The Event Generator
+
+The control server that generates the events keeps a list of registered consumers/listeners. The registration of these listeners is handled by the service protocol. Event notifications are sent out from the ControlServer class, but they usually occur in the Controller class. The Controller therefore shall keep a reference to its control server. When the event is detected, the Controller will use the `notify_listeners()` method of the ControlServer. This latter method expects an event identifier and the event context. The example code snippet below sends out a _new setup loaded_ notification to all registered listeners.
+
+[source,python]
+----
+self._control_server.notify_listeners(
+    EVENT_ID.SETUP,
+    {'event_type': 'new_setup', 'setup_id': setup_id}
+)
+----
+
+The `notify_listeners()` method will execute the actual notification in a separate thread in order not to block the commanding event loop.
+
+=== The Service Protocol
+
+The registration, management, and notification of listeners in a control server is handled by the service protocol. That means all control servers automatically have this functionality available. There is only one method that needs to be implemented in the listening control server and that is the handling of the event. That is defined in the `EventInterface` which the Proxy and the Controller of the listening control server shall inherit and implement.
+
+New commands in Service:
+
+* `add_listener()` – add a listener to the registration
+* `remove_listener()` – remove a listener from the registration
+* `get_listener_names()` – returns the names of the control servers that are registered as listener
+
+New commands in ControlServer:
+
+* `register_as_listener()` — register this control server to a producer
+* `unregister_as_listener()` — unregisters this control server
+* `notify_listeners()` — send an event notification to all registered listeners
+* `get_listener_names()` — return a list of names of registered listeners
+
+
+=== Scheduled Tasks
+
+The scheduled tasks are functions known in the control server sub-class which will be executed outside the context of commanding and monitoring. The reason we need these scheduled tasks is to handle actions that either take too long during the execution of a command, or when a command request is sent back to the same control server that the original command came from, e.g. request the current Setup. In that latter case we will get a deadlock because both control servers will be waiting for each others reply.
+
+Scheduled tasks are executed from the ControlServers event loop (`serve()`) after the current command has been finished and the status and housekeeping has been published. Keep in mind that –at this point– the tasks should not take too much time or shall either run in a thread or run asynchronously.
+
+Tasks can also be scheduled after a certain time, e.g. after 10s (approximately), or can be scheduled when a certain condition is true, e.g., when a service comes on-line. The _after_ and _when_ can be combined.
+
+
+=== The Notification Process
+
+This section explains what the natural flow is for notifications, starting at an event happening in a control server up to processing the event in the registered listener processes.
+
+As an example we will use the event that a new Setup will be loaded in the configuration manager. This can happen when the configuration manager is requested to load a new Setup (`load_setup()`) or when a client submits a new Setup to the configuration manager (`submit_setup()`). The configuration manager will then send a notification of this event to its registered listeners. The listeners shall implement a command to accept such an event notification. By convention, this command is `handle_event(event)` (defined in the `EventInterface`). So, if you need to be notified about a new Setup, your control server needs to implement the `handle_event` command in its commanding interface. See further XXXXX
+
+
+A control server that wants to listen to events needs to register first. This shall be done during startup, usually in the `\\__init__()` method of the _listening_ control server. Registration requires a proxy for the _notifying_ control server that will accept the registration, and a listener object (a dictionary) with information about the listener process.
+[source,python]
+----
+self.register_as_listener(
+    proxy=ConfigurationManagerProxy,
+    listener={'name': 'Storage CS', 'proxy': StorageProxy, 'event_id': EVENT_ID.SETUP}
+)
+----
+
+The _notifying_ control server will accept the registration and add the listener to its list of registrations.
+
+When an event occurs at the _notifying_ control server, an event notification will be sent out to all the registered listeners. This is done by the `notify_listeners()` method of the ControlServer.
+
+The _listening_ control server will receive the notification, execute or schedule a task to act on the event, and acknowledge the proper reception of the notification. This is done in the `handle_event()` method that needs to be implemented by the _listening_ control server in its Controller class. The handling of the event shall be as fast as possible because the _notifying_ control server will be waiting for an acknowledgment. Therefore, there are currently two options:
+     1. the task is executed in a thread,
+     2. the task is scheduled and will be executed from the event loop in the control server (`serve()`).
+
+
+=== The Configuration Manager
+
+NOTE::
+This section should describe how notification is implemented in the configuration control server as a producer.
+
+The controller now keeps track of the Setup that is currently active. This value changes when a different Setup is loaded (with `load_setup()`) or when a new Setup is submitted (with `submit_setup()`) to the configuration manager.
+
+If you want to know which processes have registered to the configuration manager, the status info has been updated for this. The last line now shows the registered listeners:
+
+----
+$ cm_cs status
+Configuration manager:
+  Status: active
+  Site ID: CSL2
+  No observation running
+  Setup loaded: 00053
+  Hostname: 192.168.68.76
+  Monitoring port: 6001
+  Commanding port: 6000
+  Service port: 6002
+  Listeners: Storage CS, Dummy CS
+----
+
+=== The Storage Manager
+
+NOTE::
+This section should describe how notification is implemented in the storage manager control server as a consumer.
+
+The Storage Manager can now handle events about a new Setup loaded in the configurations manager and will register to the configuration manager during startup. The Storage Controller now keeps a record of the currently loaded Setup in its Controller.
+
+Since a Setup can only be changed outside the context of an observation, the implementation is not too complicated. The controller has a new method `load_setup(id)` which is executed as a scheduled task after a notification is received. That task will fetch the Setup from the configuration manager (the reason why we needed scheduled tasks to avoid a deadlock at this point).
+
+The status information from the Storage manager now also includes the ID of the loaded Setup. See second last line in the example output below.
+
+----
+Storage Manager:
+  Status: active
+  Hostname: 172.20.10.3
+  Monitoring port: 6101
+  Commanding port: 6100
+  Service port: 6102
+  Storage location: /Users/rik/data/CSL2
+  Loaded Setup: 00053
+  Registrations: ['obsid', 'CM', 'PM', 'SYN-HK', 'SYN', 'DUMMY-HK']
+----
+
+=== The Dummy Control Server
+
+As an example... XXXXX
+
+The Dummy module is updated to implement event notification and listener registration. The Dummy control server will register to the configuration manager at start up and will handle any event it receives by logging the event reception and execution. In the shutdown phase `after_serve()` the Dummy control server unregisters from the configuration control manager.
+
+
+=== Adding event handling to a control server
+
+This section will guide you through the process of implementing event handling into a control server. As an example we will update the Synoptic Manager CS to register to the configuration manager for new Setup events and handle those events in a scheduled task.
+
+So, the summary of changes that we are going to implement is:
+
+1. Add registration and de-registration to the Synoptic Manager CS
+      - add registration to `\\__init__()` method
+      - add de-registration to the `after_server()` method
+2. Implement the `EventInterface` by means of the `handle_event()` method
+      - implement a load_setup function for the controller class
+      - schedule the task to load the Setup
+
+The Synoptic Manager is started only after the configuration manager has started up and will therefore be initialised with the proper Setup. No need to add a one-time scheduled task for loading the Setup at startup.
+
+==== Add registration and de-registration
+
+Files:
+
+* `egse.synoptics.syn_cs.py`
+
+
+
+==== Implement the event handling
+
+Files:
+
+* `egse.synoptics.\\__init__.py`
+
+
+
+XXXXX: shall we also add an example of an event handling task that takes too long to process and can therefore not be a scheduled task unless it is running in a thread?

@@ -43,16 +43,24 @@ import logging
 import multiprocessing
 import os
 import pickle
+import sys
 import threading
+from functools import partial
 from pathlib import Path
 
-import sys
-from PyQt5.QtCore import QLockFile, QModelIndex
-from PyQt5.QtWidgets import QMessageBox, QTableView
+from PyQt5.QtCore import QLockFile
+from PyQt5.QtCore import QModelIndex
+from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QFont
+from PyQt5.QtWidgets import QMessageBox
+from PyQt5.QtWidgets import QTableView
 
+from egse.bits import bit_set
 from egse.dpu.hdf5_model import RegisterTableModel
+from egse.gui.led import Indic
+from egse.gui.led import LED
 from egse.setup import SetupError
-from egse.state import GlobalState
+from egse.setup import load_setup
 
 multiprocessing.current_process().name = &#34;dpu_ui&#34;
 
@@ -86,7 +94,7 @@ from egse.settings import Settings
 from egse.system import do_every
 from egse.zmq import MessageIdentifier
 
-LOGGER = logging.getLogger(__name__)
+LOGGER = logging.getLogger(&#34;egse.dpu.dpu_ui&#34;)
 
 DPU_SETTINGS = Settings.load(&#34;DPU Processor&#34;)
 GUI_SETTINGS = Settings.load(&#34;DPU GUI&#34;)
@@ -112,9 +120,10 @@ class WorkerSignals(QObject):
     finished = pyqtSignal()
     error = pyqtSignal(str)
     data = pyqtSignal(int, object)
+    stalled = pyqtSignal(bool)
 
 
-class DataPuller(QRunnable):
+class DataMonitor(QRunnable):
     def __init__(self, hostname: str, port: int):
         super().__init__()
         self.signals = WorkerSignals()
@@ -128,14 +137,9 @@ class DataPuller(QRunnable):
 
         context = zmq.Context.instance()
         self.receiver = context.socket(zmq.SUB)
-        self.receiver.setsockopt_string(zmq.SUBSCRIBE, &#34;&#34;)
+        self.receiver.subscribe(&#34;&#34;)
 
-        # It&#39;s not really clear if the &#39;client&#39; needs to connect to the port or
-        # needs to bind to the port. What I see currently is that when the server (DPU Processor)
-        # binds, then that process hangs. So, for the moment the DPU Processor connects to the
-        # socket but PUSH the data. The result is that only one other process can bind!
-        # Needs further investigation.... perhaps we should go back to PUB–SUB...
-        # We went back to PUB-SUB...
+        LOGGER.debug(f&#34;Data Monitor connecting to {self.hostname}:{self.port}&#34;)
 
         self.receiver.connect(f&#34;tcp://{self.hostname}:{self.port}&#34;)
 
@@ -163,6 +167,66 @@ class DataPuller(QRunnable):
         self.quit_request = True
 
 
+class DataPuller(QRunnable):
+    def __init__(self, hostname: str, port: int):
+        super().__init__()
+        self.signals = WorkerSignals()
+        self.hostname = hostname
+        self.port = port
+        self.quit_request = False
+        self.receiver = None
+
+    @pyqtSlot()
+    def run(self):
+
+        n_timeouts = 0
+        &#34;&#34;&#34;The timeout is 1s, we count the number of timeouts to detect if the DPU or N-FEE might be dead or stalled.&#34;&#34;&#34;
+
+        context = zmq.Context.instance()
+        self.receiver = context.socket(zmq.SUB)
+        self.receiver.setsockopt_string(zmq.SUBSCRIBE, &#34;&#34;)
+
+        # It&#39;s not really clear if the &#39;client&#39; needs to connect to the port or
+        # needs to bind to the port. What I see currently is that when the server (DPU Processor)
+        # binds, then that process hangs. So, for the moment the DPU Processor connects to the
+        # socket but PUSH the data. The result is that only one other process can bind!
+        # Needs further investigation.... perhaps we should go back to PUB–SUB...
+        # We went back to PUB-SUB...
+
+        LOGGER.debug(f&#34;Data Puller connecting to {self.hostname}:{self.port}&#34;)
+
+        self.receiver.connect(f&#34;tcp://{self.hostname}:{self.port}&#34;)
+
+        while True:
+            if self.quit_request:
+                break
+
+            socket_list, _, _ = zmq.select([self.receiver], [], [], timeout=1.0)
+
+            if self.receiver in socket_list:
+                n_timeouts = 0
+                try:
+                    sync_id, pickle_string = self.receiver.recv_multipart()
+                    sync_id = int.from_bytes(sync_id, byteorder=&#39;big&#39;)
+                    data = pickle.loads(pickle_string)
+                    self.signals.data.emit(sync_id, data)
+                except Exception as exc:
+                    LOGGER.error(&#34;Exception caught!&#34;, exc_info=True)
+                    self.signals.error.emit(str(exc))
+
+            if len(socket_list) == 0:
+                n_timeouts += 1
+                if n_timeouts &gt; 7:  # at least a timecode should arrive every 6.25s
+                    self.signals.stalled.emit(True)
+
+        self.receiver.disconnect(f&#34;tcp://{self.hostname}:{self.port}&#34;)
+        self.receiver.close()
+        self.signals.finished.emit()
+
+    def quit(self):
+        self.quit_request = True
+
+
 class ModeParameterWidget(QWidget):
     def __init__(self, params: dict):
         super().__init__()
@@ -176,7 +240,7 @@ class ModeParameterWidget(QWidget):
         vbox.setSpacing(4)
         vbox.setContentsMargins(10, 0, 10, 0)
 
-        vbox.addWidget(QLabel(&#34;Mode Parameters&#34;))
+        vbox.addWidget(QLabel(&#34;&lt;b&gt;Mode Parameters&lt;/b&gt;&#34;))
 
         for name, widget in self.params.items():
             hbox = QHBoxLayout()
@@ -207,7 +271,7 @@ class ReadoutParameterWidget(QWidget):
         vbox.setSpacing(4)
         vbox.setContentsMargins(10, 0, 10, 0)
 
-        vbox.addWidget(QLabel(&#34;Readout Parameters&#34;))
+        vbox.addWidget(QLabel(&#34;&lt;b&gt;Readout Parameters&lt;/b&gt;&#34;))
 
         for name, widget in self.params.items():
             hbox = QHBoxLayout()
@@ -228,6 +292,109 @@ class ReadoutParameterWidget(QWidget):
             self.params[name].setText(f&#34;{value}&#34;)
 
 
+class StatusParameterWidget(QWidget):
+    def __init__(self, params: dict):
+        super().__init__()
+
+        self.params = params
+        self.error_flag_names = [
+            &#34;Wrong X-Coordinate&#34;, &#34;Wrong Y-Coordinate&#34;, &#34;E SRAM Full&#34;, &#34;F SRAM Full&#34;, &#34;AWLA Error&#34;,
+            &#34;SRAM EDAC Correct&#34;, &#34;SRAM EDAC Uncorrect&#34;, &#34;Block R EDAC&#34;,
+            &#34;Disconnect Error&#34;, &#34;Escape Error&#34;, &#34;Credit Error&#34;, &#34;Parity Error&#34;, &#34;Lock Error&#34;,
+        ]
+
+        # Use the following line to put a small border around all the parameters
+        # self.setStyleSheet(&#39;border: 1px solid red;&#39;)
+
+        vbox = QVBoxLayout()
+        vbox.setSpacing(4)
+        vbox.setContentsMargins(10, 0, 10, 0)
+
+        hbox = QHBoxLayout()
+        hbox.setAlignment(Qt.AlignLeft)
+        hbox.addWidget(QLabel(&#34;&lt;b&gt;Status Parameters&lt;/b&gt; (&#34;))
+        clear_error_flags = QLabel(&#34;Clear&#34;)
+        clear_error_flags.setStyleSheet(&#34;color: blue; text-decoration: underline&#34;)
+        clear_error_flags.mousePressEvent = self.clear_error_flags
+        hbox.addWidget(clear_error_flags)
+        hbox.addWidget(QLabel(&#34;)&#34;))
+        vbox.addLayout(hbox)
+
+        for name, item in self.params.items():
+            self.set_format(name, 0)
+            self.update_param(name, 0)
+            hbox = QHBoxLayout()
+            hbox.addWidget(QLabel(name))
+            hbox.addWidget(item[&#39;led&#39;])
+            label: QLabel = item[&#39;label&#39;]
+            font = label.font()
+            font.setStyleHint(QFont.TypeWriter)
+            label.setFont(font)
+            label.mousePressEvent = partial(self.toggle_format, name)
+            hbox.addWidget(label)
+            vbox.addLayout(hbox)
+
+        vbox.addStretch()
+        self.setLayout(vbox)
+
+    def toggle_format(self, name, event):
+        LOGGER.info(f&#34;{name = }, {event = }&#34;)
+        format_type = self.params[name][&#39;format_type&#39;] + 1
+        format_type = self.params[name][&#39;format_type&#39;] = format_type if 0 &lt;= format_type &lt; 3 else 0
+        self.set_format(name, format_type)
+        self.refresh_param(name)
+
+    def set_format(self, name, format_type):
+        LOGGER.info(f&#34;{name = }, {format_type = }&#34;)
+        formats = [&#34;0x{0:04X}&#34;, &#34;0b{0:012b}&#34;, &#34;  {0:d}&#34;]
+        self.params[name][&#39;format_type&#39;] = format_type
+        self.params[name][&#39;format&#39;] = formats[format_type]
+
+    def set_value(self, name, value):
+        self.params[name][&#39;value&#39;] = value
+
+    def get_value(self, name):
+        return self.params[name][&#39;value&#39;]
+
+    def refresh_param(self, name):
+        self.update_param(name, self.params[name][&#39;value&#39;])
+
+    def clear_error_flags(self, *args):
+        self.update_param(&#34;Error Flags&#34;, 0, &#34;no errors detected&#34;)
+
+    def update_param(self, name, value, tooltip=None):
+        format = self.params[name][&#39;format&#39;]
+        self.params[name][&#39;value&#39;] = value
+        self.params[name][&#39;label&#39;].setText(format.format(value))
+        if tooltip:
+            self.params[name][&#39;label&#39;].setToolTip(tooltip)
+        self.params[name][&#39;led&#39;].set_color(Indic.BLACK if value == 0 else self.params[name][&#39;color&#39;])
+
+    def update_params(self, params: dict):
+        LOGGER.info(f&#34;{params = }&#34;)
+        for name, data in params.items():
+            if name == &#34;Error Flags&#34;:
+                error_flags, frame_counter, timestamp = data
+                if self.params[name][&#39;value&#39;] == 0 and error_flags != 0:
+                    self.update_param(name, error_flags, self._decode_error_flags(error_flags, frame_counter, timestamp))
+                # self.refresh_param(name)
+
+    def _decode_error_flags(self, error_flags, frame_counter, timestamp) -&gt; str:
+
+        if error_flags == 0:
+            return &#34;no errors detected&#34;
+
+        msg = f&#34;&lt;b&gt;Error on {frame_counter=} &lt;/b&gt;&lt;br&gt;&lt;br&gt;&#34;
+
+        flags = &#34;&#34;.join([
+            f&#34;– {name}&lt;br&gt;&#34;
+            for idx, name in enumerate(self.error_flag_names)
+            if bit_set(error_flags, idx)
+        ])
+
+        return msg + flags
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -240,7 +407,9 @@ class MainWindow(QMainWindow):
         self.image = None
         self.register_map = None
         self.data_puller = None
-        self.setup = GlobalState.setup
+        self.data_monitor = None
+        self.setup = load_setup()
+        self.n_fee_side = self.setup.camera.fee.ccd_sides.enum
 
         try:
             self.ccd_bin_to_id = self.setup.camera.fee.ccd_numbering.CCD_BIN_TO_ID
@@ -257,7 +426,7 @@ class MainWindow(QMainWindow):
         except AttributeError:
             raise SetupError(&#34;No entry in the setup for camera.fee.sensor_sel&#34;)
 
-        self.threadpool = QThreadPool()
+        self.threadpool = QThreadPool.globalInstance()
 
         self.counter = 0
 
@@ -267,7 +436,7 @@ class MainWindow(QMainWindow):
         # self.tabs.setStyleSheet(&#39;border: 1px solid green;&#39;)
 
         self.hk_box = NFEEHousekeepingWidget()
-        self.ccd_box = NFEE4CCDWidget()
+        self.ccd_box = NFEE4CCDWidget(self.n_fee_side)
         self.register_box = RegisterWidget()
 
         mode_params = {
@@ -291,6 +460,17 @@ class MainWindow(QMainWindow):
 
         self.readout_params = ReadoutParameterWidget(readout_params)
 
+        status_params = {
+            &#39;Error Flags&#39;: {
+                &#39;led&#39;: LED(),
+                &#39;color&#39;: Indic.RED,
+                &#39;label&#39;: QLabel(&#39;0b000000000000&#39;),
+                &#39;retain&#39;: True,
+            },
+        }
+
+        self.status_params = StatusParameterWidget(status_params)
+
         self.tabs.addTab(self.ccd_box, &#34;CCD Display&#34;)
         self.tabs.addTab(self.hk_box, &#34;HK Packet&#34;)
         self.tabs.addTab(self.register_box, &#34;Register Map&#34;)
@@ -299,6 +479,7 @@ class MainWindow(QMainWindow):
 
         params_box.addWidget(self.mode_params)
         params_box.addWidget(self.readout_params)
+        params_box.addWidget(self.status_params)
 
         vbox = QVBoxLayout()
         vbox.setSpacing(0)  # limit the space between the views and the parameters
@@ -312,10 +493,12 @@ class MainWindow(QMainWindow):
         self.show()
 
         self.start_pulling_data()
+        self.start_monitoring()
 
     def closeEvent(self, event):
         LOGGER.info(&#34;Window closed, quiting....&#34;)
         self.data_puller.quit()
+        self.data_monitor.quit()
         event.accept()
 
         all_threads_finished = self.threadpool.waitForDone(msecs=2000)
@@ -325,12 +508,39 @@ class MainWindow(QMainWindow):
     def start_pulling_data(self):
         self.data_puller = worker = DataPuller(DPU_SETTINGS.HOSTNAME, DPU_SETTINGS.DATA_DISTRIBUTION_PORT)
         self.threadpool.start(worker)
-        worker.signals.data.connect(self.worker_output)
-        worker.signals.finished.connect(self.worker_complete)
-        worker.signals.error.connect(self.worker_error)
+        worker.signals.data.connect(self.puller_output)
+        worker.signals.finished.connect(self.puller_complete)
+        worker.signals.error.connect(self.puller_error)
+        worker.signals.stalled.connect(self.puller_stalled)
+
+    def start_monitoring(self):
+        self.data_monitor = worker = DataMonitor(DPU_SETTINGS.HOSTNAME, DPU_SETTINGS.MONITORING_PORT)
+        self.threadpool.start(worker)
+        worker.signals.data.connect(self.monitor_output)
+        worker.signals.finished.connect(self.monitor_complete)
+        worker.signals.error.connect(self.monitor_error)
 
     @pyqtSlot(int, bytes)
-    def worker_output(self, sync_id, data):
+    def monitor_output(self, sync_id, data):
+        LOGGER.info(f&#34;Data Monitor: sync_id = {MessageIdentifier(sync_id).name}, {data = }&#34;)
+        if sync_id == MessageIdentifier.SYNC_ERROR_FLAGS:
+            params = {
+                &#39;Error Flags&#39;: data
+            }
+            self.status_params.update_params(params)
+
+    @pyqtSlot()
+    def monitor_complete(self):
+        LOGGER.info(&#34;Data Monitor thread complete!&#34;)
+        # zmq.Context().destroy(linger=0)
+
+    @pyqtSlot(str)
+    def monitor_error(self, t):
+        LOGGER.warning(f&#34;Data Monitor ERROR: {t}&#34;)
+
+    @pyqtSlot(int, bytes)
+    def puller_output(self, sync_id, data):
+        # LOGGER.info(f&#34;Data Puller: sync_id = {MessageIdentifier(sync_id).name}&#34;)  # Generates a lot of output!
         if sync_id == MessageIdentifier.SYNC_TIMECODE:
             timecode, timestamp = data
             # LOGGER.info(f&#34;TIMECODE: {timecode=}, {timestamp=}&#34;)
@@ -351,6 +561,7 @@ class MainWindow(QMainWindow):
                     v_start=self.register_map[&#34;v_start&#34;],
                     v_end=self.register_map[&#34;v_end&#34;],
                     h_end=self.register_map[&#34;h_end&#34;],
+                    n_fee_side=self.n_fee_side,
                 )
                 self.register_box.update(self.register_map)
         if sync_id == MessageIdentifier.SYNC_DATA_PACKET:
@@ -396,13 +607,24 @@ class MainWindow(QMainWindow):
             self.readout_params.update_par(&#39;Number of Cycles&#39;, max(0, data))
 
     @pyqtSlot()
-    def worker_complete(self):
-        LOGGER.warning(&#34;THREAD COMPLETE!&#34;)
-        zmq.Context().destroy(linger=0)
+    def puller_complete(self):
+        LOGGER.info(&#34;Data Puller thread complete!&#34;)
+        # zmq.Context().destroy(linger=0)
 
     @pyqtSlot(str)
-    def worker_error(self, t):
-        LOGGER.warning(&#34;ERROR: %s&#34; % t)
+    def puller_error(self, t):
+        LOGGER.warning(f&#34;Data Puller ERROR: {t}&#34;)
+
+    @pyqtSlot(bool)
+    def puller_stalled(self, flag: bool):
+        params = {
+            &#39;N-FEE Mode&#39;: &#39;CONNECTION LOST&#39;,
+            &#39;N-FEE Cycle Time&#39;: &#34;&#34;,
+            &#39;DUMP Mode&#39;: &#34;&#34;,
+            &#39;Internal Sync&#39;: &#34;&#34;,
+            &#39;External Sync&#39;: &#34;&#34;,
+        }
+        self.mode_params.update_params(params)
 
     def mark_ccd_widget(self, ccd_number: int):
         self.ccd_box.mark(self.ccd_bin_to_idx[ccd_number])
@@ -540,18 +762,18 @@ if __name__ == &#39;__main__&#39;:
 <section>
 <h2 class="section-title" id="header-classes">Classes</h2>
 <dl>
-<dt id="egse.dpu.dpu_ui.DataPuller"><code class="flex name class">
-<span>class <span class="ident">DataPuller</span></span>
+<dt id="egse.dpu.dpu_ui.DataMonitor"><code class="flex name class">
+<span>class <span class="ident">DataMonitor</span></span>
 <span>(</span><span>hostname: str, port: int)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>QRunnable()
-QRunnable(QRunnable)</p></div>
+QRunnable(a0: QRunnable)</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
-<pre><code class="python">class DataPuller(QRunnable):
+<pre><code class="python">class DataMonitor(QRunnable):
     def __init__(self, hostname: str, port: int):
         super().__init__()
         self.signals = WorkerSignals()
@@ -565,14 +787,9 @@ QRunnable(QRunnable)</p></div>
 
         context = zmq.Context.instance()
         self.receiver = context.socket(zmq.SUB)
-        self.receiver.setsockopt_string(zmq.SUBSCRIBE, &#34;&#34;)
+        self.receiver.subscribe(&#34;&#34;)
 
-        # It&#39;s not really clear if the &#39;client&#39; needs to connect to the port or
-        # needs to bind to the port. What I see currently is that when the server (DPU Processor)
-        # binds, then that process hangs. So, for the moment the DPU Processor connects to the
-        # socket but PUSH the data. The result is that only one other process can bind!
-        # Needs further investigation.... perhaps we should go back to PUB–SUB...
-        # We went back to PUB-SUB...
+        LOGGER.debug(f&#34;Data Monitor connecting to {self.hostname}:{self.port}&#34;)
 
         self.receiver.connect(f&#34;tcp://{self.hostname}:{self.port}&#34;)
 
@@ -591,6 +808,140 @@ QRunnable(QRunnable)</p></div>
                 except Exception as exc:
                     LOGGER.error(&#34;Exception caught!&#34;, exc_info=True)
                     self.signals.error.emit(str(exc))
+
+        self.receiver.disconnect(f&#34;tcp://{self.hostname}:{self.port}&#34;)
+        self.receiver.close()
+        self.signals.finished.emit()
+
+    def quit(self):
+        self.quit_request = True</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>PyQt5.QtCore.QRunnable</li>
+<li>sip.wrapper</li>
+<li>sip.simplewrapper</li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="egse.dpu.dpu_ui.DataMonitor.quit"><code class="name flex">
+<span>def <span class="ident">quit</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def quit(self):
+    self.quit_request = True</code></pre>
+</details>
+</dd>
+<dt id="egse.dpu.dpu_ui.DataMonitor.run"><code class="name flex">
+<span>def <span class="ident">run</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>run(self)</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@pyqtSlot()
+def run(self):
+
+    context = zmq.Context.instance()
+    self.receiver = context.socket(zmq.SUB)
+    self.receiver.subscribe(&#34;&#34;)
+
+    LOGGER.debug(f&#34;Data Monitor connecting to {self.hostname}:{self.port}&#34;)
+
+    self.receiver.connect(f&#34;tcp://{self.hostname}:{self.port}&#34;)
+
+    while True:
+        if self.quit_request:
+            break
+
+        socket_list, _, _ = zmq.select([self.receiver], [], [], timeout=1.0)
+
+        if self.receiver in socket_list:
+            try:
+                sync_id, pickle_string = self.receiver.recv_multipart()
+                sync_id = int.from_bytes(sync_id, byteorder=&#39;big&#39;)
+                data = pickle.loads(pickle_string)
+                self.signals.data.emit(sync_id, data)
+            except Exception as exc:
+                LOGGER.error(&#34;Exception caught!&#34;, exc_info=True)
+                self.signals.error.emit(str(exc))
+
+    self.receiver.disconnect(f&#34;tcp://{self.hostname}:{self.port}&#34;)
+    self.receiver.close()
+    self.signals.finished.emit()</code></pre>
+</details>
+</dd>
+</dl>
+</dd>
+<dt id="egse.dpu.dpu_ui.DataPuller"><code class="flex name class">
+<span>class <span class="ident">DataPuller</span></span>
+<span>(</span><span>hostname: str, port: int)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>QRunnable()
+QRunnable(a0: QRunnable)</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class DataPuller(QRunnable):
+    def __init__(self, hostname: str, port: int):
+        super().__init__()
+        self.signals = WorkerSignals()
+        self.hostname = hostname
+        self.port = port
+        self.quit_request = False
+        self.receiver = None
+
+    @pyqtSlot()
+    def run(self):
+
+        n_timeouts = 0
+        &#34;&#34;&#34;The timeout is 1s, we count the number of timeouts to detect if the DPU or N-FEE might be dead or stalled.&#34;&#34;&#34;
+
+        context = zmq.Context.instance()
+        self.receiver = context.socket(zmq.SUB)
+        self.receiver.setsockopt_string(zmq.SUBSCRIBE, &#34;&#34;)
+
+        # It&#39;s not really clear if the &#39;client&#39; needs to connect to the port or
+        # needs to bind to the port. What I see currently is that when the server (DPU Processor)
+        # binds, then that process hangs. So, for the moment the DPU Processor connects to the
+        # socket but PUSH the data. The result is that only one other process can bind!
+        # Needs further investigation.... perhaps we should go back to PUB–SUB...
+        # We went back to PUB-SUB...
+
+        LOGGER.debug(f&#34;Data Puller connecting to {self.hostname}:{self.port}&#34;)
+
+        self.receiver.connect(f&#34;tcp://{self.hostname}:{self.port}&#34;)
+
+        while True:
+            if self.quit_request:
+                break
+
+            socket_list, _, _ = zmq.select([self.receiver], [], [], timeout=1.0)
+
+            if self.receiver in socket_list:
+                n_timeouts = 0
+                try:
+                    sync_id, pickle_string = self.receiver.recv_multipart()
+                    sync_id = int.from_bytes(sync_id, byteorder=&#39;big&#39;)
+                    data = pickle.loads(pickle_string)
+                    self.signals.data.emit(sync_id, data)
+                except Exception as exc:
+                    LOGGER.error(&#34;Exception caught!&#34;, exc_info=True)
+                    self.signals.error.emit(str(exc))
+
+            if len(socket_list) == 0:
+                n_timeouts += 1
+                if n_timeouts &gt; 7:  # at least a timecode should arrive every 6.25s
+                    self.signals.stalled.emit(True)
 
         self.receiver.disconnect(f&#34;tcp://{self.hostname}:{self.port}&#34;)
         self.receiver.close()
@@ -632,6 +983,9 @@ QRunnable(QRunnable)</p></div>
 <pre><code class="python">@pyqtSlot()
 def run(self):
 
+    n_timeouts = 0
+    &#34;&#34;&#34;The timeout is 1s, we count the number of timeouts to detect if the DPU or N-FEE might be dead or stalled.&#34;&#34;&#34;
+
     context = zmq.Context.instance()
     self.receiver = context.socket(zmq.SUB)
     self.receiver.setsockopt_string(zmq.SUBSCRIBE, &#34;&#34;)
@@ -643,6 +997,8 @@ def run(self):
     # Needs further investigation.... perhaps we should go back to PUB–SUB...
     # We went back to PUB-SUB...
 
+    LOGGER.debug(f&#34;Data Puller connecting to {self.hostname}:{self.port}&#34;)
+
     self.receiver.connect(f&#34;tcp://{self.hostname}:{self.port}&#34;)
 
     while True:
@@ -652,6 +1008,7 @@ def run(self):
         socket_list, _, _ = zmq.select([self.receiver], [], [], timeout=1.0)
 
         if self.receiver in socket_list:
+            n_timeouts = 0
             try:
                 sync_id, pickle_string = self.receiver.recv_multipart()
                 sync_id = int.from_bytes(sync_id, byteorder=&#39;big&#39;)
@@ -660,6 +1017,11 @@ def run(self):
             except Exception as exc:
                 LOGGER.error(&#34;Exception caught!&#34;, exc_info=True)
                 self.signals.error.emit(str(exc))
+
+        if len(socket_list) == 0:
+            n_timeouts += 1
+            if n_timeouts &gt; 7:  # at least a timecode should arrive every 6.25s
+                self.signals.stalled.emit(True)
 
     self.receiver.disconnect(f&#34;tcp://{self.hostname}:{self.port}&#34;)
     self.receiver.close()
@@ -672,7 +1034,7 @@ def run(self):
 <span>class <span class="ident">MainWindow</span></span>
 </code></dt>
 <dd>
-<div class="desc"><p>QMainWindow(parent: QWidget = None, flags: Union[Qt.WindowFlags, Qt.WindowType] = Qt.WindowFlags())</p></div>
+<div class="desc"><p>QMainWindow(parent: typing.Optional[QWidget] = None, flags: Union[Qt.WindowFlags, Qt.WindowType] = Qt.WindowFlags())</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
@@ -689,7 +1051,9 @@ def run(self):
         self.image = None
         self.register_map = None
         self.data_puller = None
-        self.setup = GlobalState.setup
+        self.data_monitor = None
+        self.setup = load_setup()
+        self.n_fee_side = self.setup.camera.fee.ccd_sides.enum
 
         try:
             self.ccd_bin_to_id = self.setup.camera.fee.ccd_numbering.CCD_BIN_TO_ID
@@ -706,7 +1070,7 @@ def run(self):
         except AttributeError:
             raise SetupError(&#34;No entry in the setup for camera.fee.sensor_sel&#34;)
 
-        self.threadpool = QThreadPool()
+        self.threadpool = QThreadPool.globalInstance()
 
         self.counter = 0
 
@@ -716,7 +1080,7 @@ def run(self):
         # self.tabs.setStyleSheet(&#39;border: 1px solid green;&#39;)
 
         self.hk_box = NFEEHousekeepingWidget()
-        self.ccd_box = NFEE4CCDWidget()
+        self.ccd_box = NFEE4CCDWidget(self.n_fee_side)
         self.register_box = RegisterWidget()
 
         mode_params = {
@@ -740,6 +1104,17 @@ def run(self):
 
         self.readout_params = ReadoutParameterWidget(readout_params)
 
+        status_params = {
+            &#39;Error Flags&#39;: {
+                &#39;led&#39;: LED(),
+                &#39;color&#39;: Indic.RED,
+                &#39;label&#39;: QLabel(&#39;0b000000000000&#39;),
+                &#39;retain&#39;: True,
+            },
+        }
+
+        self.status_params = StatusParameterWidget(status_params)
+
         self.tabs.addTab(self.ccd_box, &#34;CCD Display&#34;)
         self.tabs.addTab(self.hk_box, &#34;HK Packet&#34;)
         self.tabs.addTab(self.register_box, &#34;Register Map&#34;)
@@ -748,6 +1123,7 @@ def run(self):
 
         params_box.addWidget(self.mode_params)
         params_box.addWidget(self.readout_params)
+        params_box.addWidget(self.status_params)
 
         vbox = QVBoxLayout()
         vbox.setSpacing(0)  # limit the space between the views and the parameters
@@ -761,10 +1137,12 @@ def run(self):
         self.show()
 
         self.start_pulling_data()
+        self.start_monitoring()
 
     def closeEvent(self, event):
         LOGGER.info(&#34;Window closed, quiting....&#34;)
         self.data_puller.quit()
+        self.data_monitor.quit()
         event.accept()
 
         all_threads_finished = self.threadpool.waitForDone(msecs=2000)
@@ -774,12 +1152,39 @@ def run(self):
     def start_pulling_data(self):
         self.data_puller = worker = DataPuller(DPU_SETTINGS.HOSTNAME, DPU_SETTINGS.DATA_DISTRIBUTION_PORT)
         self.threadpool.start(worker)
-        worker.signals.data.connect(self.worker_output)
-        worker.signals.finished.connect(self.worker_complete)
-        worker.signals.error.connect(self.worker_error)
+        worker.signals.data.connect(self.puller_output)
+        worker.signals.finished.connect(self.puller_complete)
+        worker.signals.error.connect(self.puller_error)
+        worker.signals.stalled.connect(self.puller_stalled)
+
+    def start_monitoring(self):
+        self.data_monitor = worker = DataMonitor(DPU_SETTINGS.HOSTNAME, DPU_SETTINGS.MONITORING_PORT)
+        self.threadpool.start(worker)
+        worker.signals.data.connect(self.monitor_output)
+        worker.signals.finished.connect(self.monitor_complete)
+        worker.signals.error.connect(self.monitor_error)
 
     @pyqtSlot(int, bytes)
-    def worker_output(self, sync_id, data):
+    def monitor_output(self, sync_id, data):
+        LOGGER.info(f&#34;Data Monitor: sync_id = {MessageIdentifier(sync_id).name}, {data = }&#34;)
+        if sync_id == MessageIdentifier.SYNC_ERROR_FLAGS:
+            params = {
+                &#39;Error Flags&#39;: data
+            }
+            self.status_params.update_params(params)
+
+    @pyqtSlot()
+    def monitor_complete(self):
+        LOGGER.info(&#34;Data Monitor thread complete!&#34;)
+        # zmq.Context().destroy(linger=0)
+
+    @pyqtSlot(str)
+    def monitor_error(self, t):
+        LOGGER.warning(f&#34;Data Monitor ERROR: {t}&#34;)
+
+    @pyqtSlot(int, bytes)
+    def puller_output(self, sync_id, data):
+        # LOGGER.info(f&#34;Data Puller: sync_id = {MessageIdentifier(sync_id).name}&#34;)  # Generates a lot of output!
         if sync_id == MessageIdentifier.SYNC_TIMECODE:
             timecode, timestamp = data
             # LOGGER.info(f&#34;TIMECODE: {timecode=}, {timestamp=}&#34;)
@@ -800,6 +1205,7 @@ def run(self):
                     v_start=self.register_map[&#34;v_start&#34;],
                     v_end=self.register_map[&#34;v_end&#34;],
                     h_end=self.register_map[&#34;h_end&#34;],
+                    n_fee_side=self.n_fee_side,
                 )
                 self.register_box.update(self.register_map)
         if sync_id == MessageIdentifier.SYNC_DATA_PACKET:
@@ -845,13 +1251,24 @@ def run(self):
             self.readout_params.update_par(&#39;Number of Cycles&#39;, max(0, data))
 
     @pyqtSlot()
-    def worker_complete(self):
-        LOGGER.warning(&#34;THREAD COMPLETE!&#34;)
-        zmq.Context().destroy(linger=0)
+    def puller_complete(self):
+        LOGGER.info(&#34;Data Puller thread complete!&#34;)
+        # zmq.Context().destroy(linger=0)
 
     @pyqtSlot(str)
-    def worker_error(self, t):
-        LOGGER.warning(&#34;ERROR: %s&#34; % t)
+    def puller_error(self, t):
+        LOGGER.warning(f&#34;Data Puller ERROR: {t}&#34;)
+
+    @pyqtSlot(bool)
+    def puller_stalled(self, flag: bool):
+        params = {
+            &#39;N-FEE Mode&#39;: &#39;CONNECTION LOST&#39;,
+            &#39;N-FEE Cycle Time&#39;: &#34;&#34;,
+            &#39;DUMP Mode&#39;: &#34;&#34;,
+            &#39;Internal Sync&#39;: &#34;&#34;,
+            &#39;External Sync&#39;: &#34;&#34;,
+        }
+        self.mode_params.update_params(params)
 
     def mark_ccd_widget(self, ccd_number: int):
         self.ccd_box.mark(self.ccd_bin_to_idx[ccd_number])</code></pre>
@@ -871,7 +1288,7 @@ def run(self):
 <span>def <span class="ident">closeEvent</span></span>(<span>self, event)</span>
 </code></dt>
 <dd>
-<div class="desc"><p>closeEvent(self, QCloseEvent)</p></div>
+<div class="desc"><p>closeEvent(self, a0: typing.Optional[QCloseEvent])</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
@@ -879,6 +1296,7 @@ def run(self):
 <pre><code class="python">def closeEvent(self, event):
     LOGGER.info(&#34;Window closed, quiting....&#34;)
     self.data_puller.quit()
+    self.data_monitor.quit()
     event.accept()
 
     all_threads_finished = self.threadpool.waitForDone(msecs=2000)
@@ -899,25 +1317,8 @@ def run(self):
     self.ccd_box.mark(self.ccd_bin_to_idx[ccd_number])</code></pre>
 </details>
 </dd>
-<dt id="egse.dpu.dpu_ui.MainWindow.start_pulling_data"><code class="name flex">
-<span>def <span class="ident">start_pulling_data</span></span>(<span>self)</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def start_pulling_data(self):
-    self.data_puller = worker = DataPuller(DPU_SETTINGS.HOSTNAME, DPU_SETTINGS.DATA_DISTRIBUTION_PORT)
-    self.threadpool.start(worker)
-    worker.signals.data.connect(self.worker_output)
-    worker.signals.finished.connect(self.worker_complete)
-    worker.signals.error.connect(self.worker_error)</code></pre>
-</details>
-</dd>
-<dt id="egse.dpu.dpu_ui.MainWindow.worker_complete"><code class="name flex">
-<span>def <span class="ident">worker_complete</span></span>(<span>self)</span>
+<dt id="egse.dpu.dpu_ui.MainWindow.monitor_complete"><code class="name flex">
+<span>def <span class="ident">monitor_complete</span></span>(<span>self)</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -926,13 +1327,13 @@ def run(self):
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">@pyqtSlot()
-def worker_complete(self):
-    LOGGER.warning(&#34;THREAD COMPLETE!&#34;)
-    zmq.Context().destroy(linger=0)</code></pre>
+def monitor_complete(self):
+    LOGGER.info(&#34;Data Monitor thread complete!&#34;)
+    # zmq.Context().destroy(linger=0)</code></pre>
 </details>
 </dd>
-<dt id="egse.dpu.dpu_ui.MainWindow.worker_error"><code class="name flex">
-<span>def <span class="ident">worker_error</span></span>(<span>self, t)</span>
+<dt id="egse.dpu.dpu_ui.MainWindow.monitor_error"><code class="name flex">
+<span>def <span class="ident">monitor_error</span></span>(<span>self, t)</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -941,12 +1342,12 @@ def worker_complete(self):
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">@pyqtSlot(str)
-def worker_error(self, t):
-    LOGGER.warning(&#34;ERROR: %s&#34; % t)</code></pre>
+def monitor_error(self, t):
+    LOGGER.warning(f&#34;Data Monitor ERROR: {t}&#34;)</code></pre>
 </details>
 </dd>
-<dt id="egse.dpu.dpu_ui.MainWindow.worker_output"><code class="name flex">
-<span>def <span class="ident">worker_output</span></span>(<span>self, sync_id, data)</span>
+<dt id="egse.dpu.dpu_ui.MainWindow.monitor_output"><code class="name flex">
+<span>def <span class="ident">monitor_output</span></span>(<span>self, sync_id, data)</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -955,7 +1356,56 @@ def worker_error(self, t):
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">@pyqtSlot(int, bytes)
-def worker_output(self, sync_id, data):
+def monitor_output(self, sync_id, data):
+    LOGGER.info(f&#34;Data Monitor: sync_id = {MessageIdentifier(sync_id).name}, {data = }&#34;)
+    if sync_id == MessageIdentifier.SYNC_ERROR_FLAGS:
+        params = {
+            &#39;Error Flags&#39;: data
+        }
+        self.status_params.update_params(params)</code></pre>
+</details>
+</dd>
+<dt id="egse.dpu.dpu_ui.MainWindow.puller_complete"><code class="name flex">
+<span>def <span class="ident">puller_complete</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@pyqtSlot()
+def puller_complete(self):
+    LOGGER.info(&#34;Data Puller thread complete!&#34;)
+    # zmq.Context().destroy(linger=0)</code></pre>
+</details>
+</dd>
+<dt id="egse.dpu.dpu_ui.MainWindow.puller_error"><code class="name flex">
+<span>def <span class="ident">puller_error</span></span>(<span>self, t)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@pyqtSlot(str)
+def puller_error(self, t):
+    LOGGER.warning(f&#34;Data Puller ERROR: {t}&#34;)</code></pre>
+</details>
+</dd>
+<dt id="egse.dpu.dpu_ui.MainWindow.puller_output"><code class="name flex">
+<span>def <span class="ident">puller_output</span></span>(<span>self, sync_id, data)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@pyqtSlot(int, bytes)
+def puller_output(self, sync_id, data):
+    # LOGGER.info(f&#34;Data Puller: sync_id = {MessageIdentifier(sync_id).name}&#34;)  # Generates a lot of output!
     if sync_id == MessageIdentifier.SYNC_TIMECODE:
         timecode, timestamp = data
         # LOGGER.info(f&#34;TIMECODE: {timecode=}, {timestamp=}&#34;)
@@ -976,6 +1426,7 @@ def worker_output(self, sync_id, data):
                 v_start=self.register_map[&#34;v_start&#34;],
                 v_end=self.register_map[&#34;v_end&#34;],
                 h_end=self.register_map[&#34;h_end&#34;],
+                n_fee_side=self.n_fee_side,
             )
             self.register_box.update(self.register_map)
     if sync_id == MessageIdentifier.SYNC_DATA_PACKET:
@@ -1021,6 +1472,62 @@ def worker_output(self, sync_id, data):
         self.readout_params.update_par(&#39;Number of Cycles&#39;, max(0, data))</code></pre>
 </details>
 </dd>
+<dt id="egse.dpu.dpu_ui.MainWindow.puller_stalled"><code class="name flex">
+<span>def <span class="ident">puller_stalled</span></span>(<span>self, flag: bool)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">@pyqtSlot(bool)
+def puller_stalled(self, flag: bool):
+    params = {
+        &#39;N-FEE Mode&#39;: &#39;CONNECTION LOST&#39;,
+        &#39;N-FEE Cycle Time&#39;: &#34;&#34;,
+        &#39;DUMP Mode&#39;: &#34;&#34;,
+        &#39;Internal Sync&#39;: &#34;&#34;,
+        &#39;External Sync&#39;: &#34;&#34;,
+    }
+    self.mode_params.update_params(params)</code></pre>
+</details>
+</dd>
+<dt id="egse.dpu.dpu_ui.MainWindow.start_monitoring"><code class="name flex">
+<span>def <span class="ident">start_monitoring</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def start_monitoring(self):
+    self.data_monitor = worker = DataMonitor(DPU_SETTINGS.HOSTNAME, DPU_SETTINGS.MONITORING_PORT)
+    self.threadpool.start(worker)
+    worker.signals.data.connect(self.monitor_output)
+    worker.signals.finished.connect(self.monitor_complete)
+    worker.signals.error.connect(self.monitor_error)</code></pre>
+</details>
+</dd>
+<dt id="egse.dpu.dpu_ui.MainWindow.start_pulling_data"><code class="name flex">
+<span>def <span class="ident">start_pulling_data</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def start_pulling_data(self):
+    self.data_puller = worker = DataPuller(DPU_SETTINGS.HOSTNAME, DPU_SETTINGS.DATA_DISTRIBUTION_PORT)
+    self.threadpool.start(worker)
+    worker.signals.data.connect(self.puller_output)
+    worker.signals.finished.connect(self.puller_complete)
+    worker.signals.error.connect(self.puller_error)
+    worker.signals.stalled.connect(self.puller_stalled)</code></pre>
+</details>
+</dd>
 </dl>
 </dd>
 <dt id="egse.dpu.dpu_ui.ModeParameterWidget"><code class="flex name class">
@@ -1028,7 +1535,7 @@ def worker_output(self, sync_id, data):
 <span>(</span><span>params: dict)</span>
 </code></dt>
 <dd>
-<div class="desc"><p>QWidget(parent: QWidget = None, flags: Union[Qt.WindowFlags, Qt.WindowType] = Qt.WindowFlags())</p></div>
+<div class="desc"><p>QWidget(parent: typing.Optional[QWidget] = None, flags: Union[Qt.WindowFlags, Qt.WindowType] = Qt.WindowFlags())</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
@@ -1046,7 +1553,7 @@ def worker_output(self, sync_id, data):
         vbox.setSpacing(4)
         vbox.setContentsMargins(10, 0, 10, 0)
 
-        vbox.addWidget(QLabel(&#34;Mode Parameters&#34;))
+        vbox.addWidget(QLabel(&#34;&lt;b&gt;Mode Parameters&lt;/b&gt;&#34;))
 
         for name, widget in self.params.items():
             hbox = QHBoxLayout()
@@ -1107,7 +1614,7 @@ def worker_output(self, sync_id, data):
 <span>(</span><span>params: dict)</span>
 </code></dt>
 <dd>
-<div class="desc"><p>QWidget(parent: QWidget = None, flags: Union[Qt.WindowFlags, Qt.WindowType] = Qt.WindowFlags())</p></div>
+<div class="desc"><p>QWidget(parent: typing.Optional[QWidget] = None, flags: Union[Qt.WindowFlags, Qt.WindowType] = Qt.WindowFlags())</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
@@ -1125,7 +1632,7 @@ def worker_output(self, sync_id, data):
         vbox.setSpacing(4)
         vbox.setContentsMargins(10, 0, 10, 0)
 
-        vbox.addWidget(QLabel(&#34;Readout Parameters&#34;))
+        vbox.addWidget(QLabel(&#34;&lt;b&gt;Readout Parameters&lt;/b&gt;&#34;))
 
         for name, widget in self.params.items():
             hbox = QHBoxLayout()
@@ -1289,6 +1796,252 @@ def worker_output(self, sync_id, data):
 </dd>
 </dl>
 </dd>
+<dt id="egse.dpu.dpu_ui.StatusParameterWidget"><code class="flex name class">
+<span>class <span class="ident">StatusParameterWidget</span></span>
+<span>(</span><span>params: dict)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>QWidget(parent: typing.Optional[QWidget] = None, flags: Union[Qt.WindowFlags, Qt.WindowType] = Qt.WindowFlags())</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class StatusParameterWidget(QWidget):
+    def __init__(self, params: dict):
+        super().__init__()
+
+        self.params = params
+        self.error_flag_names = [
+            &#34;Wrong X-Coordinate&#34;, &#34;Wrong Y-Coordinate&#34;, &#34;E SRAM Full&#34;, &#34;F SRAM Full&#34;, &#34;AWLA Error&#34;,
+            &#34;SRAM EDAC Correct&#34;, &#34;SRAM EDAC Uncorrect&#34;, &#34;Block R EDAC&#34;,
+            &#34;Disconnect Error&#34;, &#34;Escape Error&#34;, &#34;Credit Error&#34;, &#34;Parity Error&#34;, &#34;Lock Error&#34;,
+        ]
+
+        # Use the following line to put a small border around all the parameters
+        # self.setStyleSheet(&#39;border: 1px solid red;&#39;)
+
+        vbox = QVBoxLayout()
+        vbox.setSpacing(4)
+        vbox.setContentsMargins(10, 0, 10, 0)
+
+        hbox = QHBoxLayout()
+        hbox.setAlignment(Qt.AlignLeft)
+        hbox.addWidget(QLabel(&#34;&lt;b&gt;Status Parameters&lt;/b&gt; (&#34;))
+        clear_error_flags = QLabel(&#34;Clear&#34;)
+        clear_error_flags.setStyleSheet(&#34;color: blue; text-decoration: underline&#34;)
+        clear_error_flags.mousePressEvent = self.clear_error_flags
+        hbox.addWidget(clear_error_flags)
+        hbox.addWidget(QLabel(&#34;)&#34;))
+        vbox.addLayout(hbox)
+
+        for name, item in self.params.items():
+            self.set_format(name, 0)
+            self.update_param(name, 0)
+            hbox = QHBoxLayout()
+            hbox.addWidget(QLabel(name))
+            hbox.addWidget(item[&#39;led&#39;])
+            label: QLabel = item[&#39;label&#39;]
+            font = label.font()
+            font.setStyleHint(QFont.TypeWriter)
+            label.setFont(font)
+            label.mousePressEvent = partial(self.toggle_format, name)
+            hbox.addWidget(label)
+            vbox.addLayout(hbox)
+
+        vbox.addStretch()
+        self.setLayout(vbox)
+
+    def toggle_format(self, name, event):
+        LOGGER.info(f&#34;{name = }, {event = }&#34;)
+        format_type = self.params[name][&#39;format_type&#39;] + 1
+        format_type = self.params[name][&#39;format_type&#39;] = format_type if 0 &lt;= format_type &lt; 3 else 0
+        self.set_format(name, format_type)
+        self.refresh_param(name)
+
+    def set_format(self, name, format_type):
+        LOGGER.info(f&#34;{name = }, {format_type = }&#34;)
+        formats = [&#34;0x{0:04X}&#34;, &#34;0b{0:012b}&#34;, &#34;  {0:d}&#34;]
+        self.params[name][&#39;format_type&#39;] = format_type
+        self.params[name][&#39;format&#39;] = formats[format_type]
+
+    def set_value(self, name, value):
+        self.params[name][&#39;value&#39;] = value
+
+    def get_value(self, name):
+        return self.params[name][&#39;value&#39;]
+
+    def refresh_param(self, name):
+        self.update_param(name, self.params[name][&#39;value&#39;])
+
+    def clear_error_flags(self, *args):
+        self.update_param(&#34;Error Flags&#34;, 0, &#34;no errors detected&#34;)
+
+    def update_param(self, name, value, tooltip=None):
+        format = self.params[name][&#39;format&#39;]
+        self.params[name][&#39;value&#39;] = value
+        self.params[name][&#39;label&#39;].setText(format.format(value))
+        if tooltip:
+            self.params[name][&#39;label&#39;].setToolTip(tooltip)
+        self.params[name][&#39;led&#39;].set_color(Indic.BLACK if value == 0 else self.params[name][&#39;color&#39;])
+
+    def update_params(self, params: dict):
+        LOGGER.info(f&#34;{params = }&#34;)
+        for name, data in params.items():
+            if name == &#34;Error Flags&#34;:
+                error_flags, frame_counter, timestamp = data
+                if self.params[name][&#39;value&#39;] == 0 and error_flags != 0:
+                    self.update_param(name, error_flags, self._decode_error_flags(error_flags, frame_counter, timestamp))
+                # self.refresh_param(name)
+
+    def _decode_error_flags(self, error_flags, frame_counter, timestamp) -&gt; str:
+
+        if error_flags == 0:
+            return &#34;no errors detected&#34;
+
+        msg = f&#34;&lt;b&gt;Error on {frame_counter=} &lt;/b&gt;&lt;br&gt;&lt;br&gt;&#34;
+
+        flags = &#34;&#34;.join([
+            f&#34;– {name}&lt;br&gt;&#34;
+            for idx, name in enumerate(self.error_flag_names)
+            if bit_set(error_flags, idx)
+        ])
+
+        return msg + flags</code></pre>
+</details>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>PyQt5.QtWidgets.QWidget</li>
+<li>PyQt5.QtCore.QObject</li>
+<li>sip.wrapper</li>
+<li>PyQt5.QtGui.QPaintDevice</li>
+<li>sip.simplewrapper</li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="egse.dpu.dpu_ui.StatusParameterWidget.clear_error_flags"><code class="name flex">
+<span>def <span class="ident">clear_error_flags</span></span>(<span>self, *args)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def clear_error_flags(self, *args):
+    self.update_param(&#34;Error Flags&#34;, 0, &#34;no errors detected&#34;)</code></pre>
+</details>
+</dd>
+<dt id="egse.dpu.dpu_ui.StatusParameterWidget.get_value"><code class="name flex">
+<span>def <span class="ident">get_value</span></span>(<span>self, name)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_value(self, name):
+    return self.params[name][&#39;value&#39;]</code></pre>
+</details>
+</dd>
+<dt id="egse.dpu.dpu_ui.StatusParameterWidget.refresh_param"><code class="name flex">
+<span>def <span class="ident">refresh_param</span></span>(<span>self, name)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def refresh_param(self, name):
+    self.update_param(name, self.params[name][&#39;value&#39;])</code></pre>
+</details>
+</dd>
+<dt id="egse.dpu.dpu_ui.StatusParameterWidget.set_format"><code class="name flex">
+<span>def <span class="ident">set_format</span></span>(<span>self, name, format_type)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def set_format(self, name, format_type):
+    LOGGER.info(f&#34;{name = }, {format_type = }&#34;)
+    formats = [&#34;0x{0:04X}&#34;, &#34;0b{0:012b}&#34;, &#34;  {0:d}&#34;]
+    self.params[name][&#39;format_type&#39;] = format_type
+    self.params[name][&#39;format&#39;] = formats[format_type]</code></pre>
+</details>
+</dd>
+<dt id="egse.dpu.dpu_ui.StatusParameterWidget.set_value"><code class="name flex">
+<span>def <span class="ident">set_value</span></span>(<span>self, name, value)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def set_value(self, name, value):
+    self.params[name][&#39;value&#39;] = value</code></pre>
+</details>
+</dd>
+<dt id="egse.dpu.dpu_ui.StatusParameterWidget.toggle_format"><code class="name flex">
+<span>def <span class="ident">toggle_format</span></span>(<span>self, name, event)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def toggle_format(self, name, event):
+    LOGGER.info(f&#34;{name = }, {event = }&#34;)
+    format_type = self.params[name][&#39;format_type&#39;] + 1
+    format_type = self.params[name][&#39;format_type&#39;] = format_type if 0 &lt;= format_type &lt; 3 else 0
+    self.set_format(name, format_type)
+    self.refresh_param(name)</code></pre>
+</details>
+</dd>
+<dt id="egse.dpu.dpu_ui.StatusParameterWidget.update_param"><code class="name flex">
+<span>def <span class="ident">update_param</span></span>(<span>self, name, value, tooltip=None)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def update_param(self, name, value, tooltip=None):
+    format = self.params[name][&#39;format&#39;]
+    self.params[name][&#39;value&#39;] = value
+    self.params[name][&#39;label&#39;].setText(format.format(value))
+    if tooltip:
+        self.params[name][&#39;label&#39;].setToolTip(tooltip)
+    self.params[name][&#39;led&#39;].set_color(Indic.BLACK if value == 0 else self.params[name][&#39;color&#39;])</code></pre>
+</details>
+</dd>
+<dt id="egse.dpu.dpu_ui.StatusParameterWidget.update_params"><code class="name flex">
+<span>def <span class="ident">update_params</span></span>(<span>self, params: dict)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def update_params(self, params: dict):
+    LOGGER.info(f&#34;{params = }&#34;)
+    for name, data in params.items():
+        if name == &#34;Error Flags&#34;:
+            error_flags, frame_counter, timestamp = data
+            if self.params[name][&#39;value&#39;] == 0 and error_flags != 0:
+                self.update_param(name, error_flags, self._decode_error_flags(error_flags, frame_counter, timestamp))
+            # self.refresh_param(name)</code></pre>
+</details>
+</dd>
+</dl>
+</dd>
 <dt id="egse.dpu.dpu_ui.WorkerSignals"><code class="flex name class">
 <span>class <span class="ident">WorkerSignals</span></span>
 <span>(</span><span>*args, **kwargs)</span>
@@ -1325,7 +2078,8 @@ No data</p>
 
     finished = pyqtSignal()
     error = pyqtSignal(str)
-    data = pyqtSignal(int, object)</code></pre>
+    data = pyqtSignal(int, object)
+    stalled = pyqtSignal(bool)</code></pre>
 </details>
 <h3>Ancestors</h3>
 <ul class="hlist">
@@ -1349,6 +2103,12 @@ No data</p>
 </dd>
 <dt id="egse.dpu.dpu_ui.WorkerSignals.finished"><code class="name flex">
 <span>def <span class="ident">finished</span></span>(<span>...)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="egse.dpu.dpu_ui.WorkerSignals.stalled"><code class="name flex">
+<span>def <span class="ident">stalled</span></span>(<span>...)</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -1377,6 +2137,13 @@ No data</p>
 <li><h3><a href="#header-classes">Classes</a></h3>
 <ul>
 <li>
+<h4><code><a title="egse.dpu.dpu_ui.DataMonitor" href="#egse.dpu.dpu_ui.DataMonitor">DataMonitor</a></code></h4>
+<ul class="">
+<li><code><a title="egse.dpu.dpu_ui.DataMonitor.quit" href="#egse.dpu.dpu_ui.DataMonitor.quit">quit</a></code></li>
+<li><code><a title="egse.dpu.dpu_ui.DataMonitor.run" href="#egse.dpu.dpu_ui.DataMonitor.run">run</a></code></li>
+</ul>
+</li>
+<li>
 <h4><code><a title="egse.dpu.dpu_ui.DataPuller" href="#egse.dpu.dpu_ui.DataPuller">DataPuller</a></code></h4>
 <ul class="">
 <li><code><a title="egse.dpu.dpu_ui.DataPuller.quit" href="#egse.dpu.dpu_ui.DataPuller.quit">quit</a></code></li>
@@ -1388,10 +2155,15 @@ No data</p>
 <ul class="two-column">
 <li><code><a title="egse.dpu.dpu_ui.MainWindow.closeEvent" href="#egse.dpu.dpu_ui.MainWindow.closeEvent">closeEvent</a></code></li>
 <li><code><a title="egse.dpu.dpu_ui.MainWindow.mark_ccd_widget" href="#egse.dpu.dpu_ui.MainWindow.mark_ccd_widget">mark_ccd_widget</a></code></li>
+<li><code><a title="egse.dpu.dpu_ui.MainWindow.monitor_complete" href="#egse.dpu.dpu_ui.MainWindow.monitor_complete">monitor_complete</a></code></li>
+<li><code><a title="egse.dpu.dpu_ui.MainWindow.monitor_error" href="#egse.dpu.dpu_ui.MainWindow.monitor_error">monitor_error</a></code></li>
+<li><code><a title="egse.dpu.dpu_ui.MainWindow.monitor_output" href="#egse.dpu.dpu_ui.MainWindow.monitor_output">monitor_output</a></code></li>
+<li><code><a title="egse.dpu.dpu_ui.MainWindow.puller_complete" href="#egse.dpu.dpu_ui.MainWindow.puller_complete">puller_complete</a></code></li>
+<li><code><a title="egse.dpu.dpu_ui.MainWindow.puller_error" href="#egse.dpu.dpu_ui.MainWindow.puller_error">puller_error</a></code></li>
+<li><code><a title="egse.dpu.dpu_ui.MainWindow.puller_output" href="#egse.dpu.dpu_ui.MainWindow.puller_output">puller_output</a></code></li>
+<li><code><a title="egse.dpu.dpu_ui.MainWindow.puller_stalled" href="#egse.dpu.dpu_ui.MainWindow.puller_stalled">puller_stalled</a></code></li>
+<li><code><a title="egse.dpu.dpu_ui.MainWindow.start_monitoring" href="#egse.dpu.dpu_ui.MainWindow.start_monitoring">start_monitoring</a></code></li>
 <li><code><a title="egse.dpu.dpu_ui.MainWindow.start_pulling_data" href="#egse.dpu.dpu_ui.MainWindow.start_pulling_data">start_pulling_data</a></code></li>
-<li><code><a title="egse.dpu.dpu_ui.MainWindow.worker_complete" href="#egse.dpu.dpu_ui.MainWindow.worker_complete">worker_complete</a></code></li>
-<li><code><a title="egse.dpu.dpu_ui.MainWindow.worker_error" href="#egse.dpu.dpu_ui.MainWindow.worker_error">worker_error</a></code></li>
-<li><code><a title="egse.dpu.dpu_ui.MainWindow.worker_output" href="#egse.dpu.dpu_ui.MainWindow.worker_output">worker_output</a></code></li>
 </ul>
 </li>
 <li>
@@ -1417,11 +2189,25 @@ No data</p>
 </ul>
 </li>
 <li>
+<h4><code><a title="egse.dpu.dpu_ui.StatusParameterWidget" href="#egse.dpu.dpu_ui.StatusParameterWidget">StatusParameterWidget</a></code></h4>
+<ul class="two-column">
+<li><code><a title="egse.dpu.dpu_ui.StatusParameterWidget.clear_error_flags" href="#egse.dpu.dpu_ui.StatusParameterWidget.clear_error_flags">clear_error_flags</a></code></li>
+<li><code><a title="egse.dpu.dpu_ui.StatusParameterWidget.get_value" href="#egse.dpu.dpu_ui.StatusParameterWidget.get_value">get_value</a></code></li>
+<li><code><a title="egse.dpu.dpu_ui.StatusParameterWidget.refresh_param" href="#egse.dpu.dpu_ui.StatusParameterWidget.refresh_param">refresh_param</a></code></li>
+<li><code><a title="egse.dpu.dpu_ui.StatusParameterWidget.set_format" href="#egse.dpu.dpu_ui.StatusParameterWidget.set_format">set_format</a></code></li>
+<li><code><a title="egse.dpu.dpu_ui.StatusParameterWidget.set_value" href="#egse.dpu.dpu_ui.StatusParameterWidget.set_value">set_value</a></code></li>
+<li><code><a title="egse.dpu.dpu_ui.StatusParameterWidget.toggle_format" href="#egse.dpu.dpu_ui.StatusParameterWidget.toggle_format">toggle_format</a></code></li>
+<li><code><a title="egse.dpu.dpu_ui.StatusParameterWidget.update_param" href="#egse.dpu.dpu_ui.StatusParameterWidget.update_param">update_param</a></code></li>
+<li><code><a title="egse.dpu.dpu_ui.StatusParameterWidget.update_params" href="#egse.dpu.dpu_ui.StatusParameterWidget.update_params">update_params</a></code></li>
+</ul>
+</li>
+<li>
 <h4><code><a title="egse.dpu.dpu_ui.WorkerSignals" href="#egse.dpu.dpu_ui.WorkerSignals">WorkerSignals</a></code></h4>
 <ul class="">
 <li><code><a title="egse.dpu.dpu_ui.WorkerSignals.data" href="#egse.dpu.dpu_ui.WorkerSignals.data">data</a></code></li>
 <li><code><a title="egse.dpu.dpu_ui.WorkerSignals.error" href="#egse.dpu.dpu_ui.WorkerSignals.error">error</a></code></li>
 <li><code><a title="egse.dpu.dpu_ui.WorkerSignals.finished" href="#egse.dpu.dpu_ui.WorkerSignals.finished">finished</a></code></li>
+<li><code><a title="egse.dpu.dpu_ui.WorkerSignals.stalled" href="#egse.dpu.dpu_ui.WorkerSignals.stalled">stalled</a></code></li>
 </ul>
 </li>
 </ul>
