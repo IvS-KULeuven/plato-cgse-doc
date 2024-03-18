@@ -1,0 +1,89 @@
+[#essential-toolkit]
+== Essential Toolkit
+
+This chapter describes the tools necessary for the software's operation, even if they're not the main features of the system.
+
+=== The NavigableDict class
+
+This class serves as a representation of a nested Python dictionary, enabling navigation through its contents using dot notation, offering an alternative to traditional keyword-based access.
+
+Let's create a nested dictionary with some configuration information:
+
+----
+config = {
+    "server": {
+        "host": "localhost",
+        "port": 8080,
+        "secure": True,
+    },
+    "logging": {
+        "level": "info",
+        "destinations": ["console", "file"],
+        "file": {
+            "path": "/var/log/app.log",
+            "max_size": "10MB",
+            "backup_count": 5
+        }
+    },
+}
+----
+
+Both examples below are equivalent:
+
+[%nowrap]
+----
+>>> print(config)
+{
+    'server': {'host': 'localhost', 'port': 8080, 'secure': True},
+    'logging': {'level': 'info', 'destinations': ['console', 'file'], 'file': {'path': '/var/log/app.log', 'max_size': '10MB', 'backup_count': 5}}
+}
+>>> log_file = config["logging"]["file"]["path"]
+>>> print(log_file)
+/var/log/app.log
+----
+
+and
+
+[%nowrap]
+----
+>>> from egse.setup import NavigableDict
+>>> config = NavigableDict(config)
+>>> print(config)
+NavigableDict
+├── server
+│   ├── host: localhost
+│   ├── port: 8080
+│   └── secure: True
+└── logging
+    ├── level: info
+    ├── destinations: ['console', 'file']
+    └── file
+        ├── path: /var/log/app.log
+        ├── max_size: 10MB
+        └── backup_count: 5
+>>> log_file = config.logging.file.path
+>>> print(log_file)
+/var/log/app.log
+----
+
+TBW::
+
+* Special entries: class//, factory//, int_enum//, csv//, pandas//, yaml//
+* memoized keys
+* private attributes
+* raw values
+* ALL keys shall be of type 'str'
+
+=== The SubProcess class
+
+TBW
+
+=== The ProcessStatus class
+
+TBW
+
+=== The RegisterMap
+
+TBW
+
+===

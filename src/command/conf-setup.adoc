@@ -1,18 +1,19 @@
 [#conf-setup]
 == Configuration and Setups
 :image-dir: ../images
+:icons: font
 
 The complete documentation on the EGSE configuration and on the concept of Setup can be found in the https://ivs-kuleuven.github.io/plato-cgse-doc/asciidocs/developer-manual.html#_the_setup[developer manual.]
 
 Setup is the concept we attach to the entity encapsulating the entire set of
 
-* Identifiers and configuration items
-* Calibration values and calibration files
+* identifiers and configuration items,
+* calibration values and calibration files,
 
-Necessary to
+necessary to
 
-* Describe the test-environment and the item under test
-* operate the test
+* describe the test-environment and the item under test, and to
+* operate the test.
 
 === Example Setup file
 
@@ -177,7 +178,7 @@ image::../images/setup-ui.png[width=80%,align=center]
 
 After inspection of the available setups, a specific setup can be loaded, based on the identifier.
 
-IMPORTANT: _loading_ a Setup means to load it in the system such that it then becomes the reference for the system configuration. This means *it impacts the GlobalState and the ConfigurationManager*! It is different from getting a copy of a Setup as a variable in a python script (see below).
+IMPORTANT: _Loading_ a Setup means to load it in the system such that it then becomes the reference for the system configuration. This means *it impacts the GlobalState and the ConfigurationManager*! It is different from getting a copy of a Setup as a variable in a python script (see below).
 
 Ideally, the Setup will be loaded *one single time* at the start of a test phase, with a setup reflecting the HW present in the test environment. *The preferred way to do so is via the setup GUI*. That can be launched via
 ----
@@ -191,9 +192,9 @@ In python:
 
 The above command will load the Setup in the configuration manager and also in the Python console you used to execute the `load_setup()` command.
 
-WARNING: Loading or submitting a Setup will have an effect on the configuration manager. The Setup is however NOT automatically propagated to other components in the system like the device drivers or the synoptics manager. Therefore, always check if you have the right Setup available, especially in the QtConsole.
+WARNING: Loading or submitting a Setup will have an effect on the configuration manager. The Setup is however NOT automatically propagated to all components in the system like e.g the device drivers. Therefore, always check if you have the right Setup available, especially in the QtConsole. The Setup is however propagated to all the core services, sm_cs, pm_cs (TODO), syn_cs.
 
-You can check which Setup is loaded in the configuration manager with
+You can check which Setup is loaded in the core services using the `status` parameter:
 ----
 $ cm_cs status
 Configuration manager:
@@ -295,3 +296,5 @@ The new setup receives a unique setup_id, and a new entry is created in the list
 NOTE: Do not directly catch the returned Setup in the `setup` variable, because you will lose your modified Setup in case of an error.
 
 NOTE: the description is mandatory. Setups keep track of their history, so we strongly encourage to provide concise but accurate descriptions each time this command is used.
+
+WARNING: You should not submit nor load a new Setup within the context of an observation/test. Using `submit_setup(...)` or `load_setup(setup_id)` when an observation is running will result in an error.
