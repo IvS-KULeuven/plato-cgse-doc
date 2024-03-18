@@ -1,18 +1,21 @@
+[#the-setup]
 == The Setup
 :icons: font
 
-TODO:
 
-*	What is the difference between a Setup and the Settings?
-**	Settings are for constants, IP addresses, system definitions, ...
-**	Setup contains configuration items, conversion coefficients and tables, identification of devices, everything that defines the configuration of the system and that can change from test to test and has influence on the data, HK, ...
-
-
-NOTE: The content of this section needs to be split between the developer manual and the user manual. Usage shall go into the User Manual, the Developer Manual shall explain how the Setup is coded and how it is used in code. What about the `GlobalState.setup`?
+TIP: The content of this section could be split between the developer manual and the user manual. Usage can go into the User Manual, the Developer Manual will explain how the Setup is coded and how it is used in code.
 
 The __Setup__ is the name we give to the set of configuration items that make up your test environment. A configuration item is e.g. a device like a temperature controller, a mechanism like a Hexapod, a camera (which is the SUT: System Under Test). The __Setup__ groups all these items in one __configuration__.footnote:[Both __Setup__ and __configuration__ are overloaded words, if not clear from the context, I'll try to explain them when used.]
 
-This section will explain what the Setup contains, when and where it is used, how the different Setups are managed and how you can create a new Setup.
+In section <<settings>> we explain what goes into _Settings_, how to use them and where these Settings are defined. This section, however, explains what a _Setup_ is, when and where it is used, how the different Setups are managed and how you can create a new Setup.
+
+The difference between the _Settings_ and a _Setup_ might be confusing. Remember that Settings are static, while the Setup is dynamic:
+
+* *Settings* are for constants, IP addresses, port numbers, system definitions, equipment settings ... Settings are more static and do not change often unless your system or network is reconfigured. Settings are also distributed with the software with the possibility to overwrite for local specific settings.
+
+* *Setup* contains configuration items, conversion coefficients and tables, identification and configuration of devices, everything that defines the configuration of the system, that can change from test to test and has influence on the data, HK, ... A Setup changes frequently during the test campaign while e.g. calibration is improved. Setups are kept under configuration control in GitHub.
+
+Part of the information in this section can overlap with the section on _Configuration and Setups_ in the Commanding Manual, see <<Reference Documents, RD-04>>.
 
 ===  What is the Setup?
 
@@ -33,7 +36,7 @@ Setup:
             time_request_granularity: 0.1
 ----
 
-The __Setup__ is implemented as YAML configuration file and loaded into a special Python dictionary. The dictionary is special because it allows you to navigate with a 'dot' notation in addition to keys. The following two lines are equivalent (assuming the Setup is loaded in the variable `setup`):
+The __Setup__ is implemented as a YAML configuration file and loaded into a special Python dictionary. The dictionary is special because it allows you to navigate with a 'dot' notation in addition to keys. The following two lines are equivalent (assuming the Setup is loaded in the variable `setup`):
 
 [source]
 ----
@@ -66,12 +69,12 @@ When you want a full printout of the `setup.gse`, use the `print` function. This
 
 === What goes into the Setup?
 
-The __Setup__ will contain configuration information of your test equipment. This includes calibration and conversion information, identification, alignment information, etc. All items that can change from one setup to the next should be fully described in the __Setup__.
+The __Setup__ will contain configuration information of your test equipment. This includes calibration and conversion information, identification, alignment information, etc. All items that can change from one environment to the next, or from one test to the next, should be fully described in the __Setup__.
 
 The following list gives an idea of what is contained and managed by a Setup. This list is not comprehensive.
 
 * site: identification of the Site, e.g. CSL, IAS, INTA, SRON.
-* position: if you have different test setups, each of them should be identifiable, e.g. at CSL there are four positions with different setups.
+* position: if you have different test setups, each of them should be identifiable, e.g. at CSL there are two positions with different setups.
 * gse: the ground support equipment like mechanisms, temperature controllers and sensors/heaters, optical equipment, shutter, hexapod, power meters, SpaceWire interface, TEB, etc.
 * camera: this is the System Under Test (SUT) and it has different sub-items like FEE, TOU, DPU software, model and type, all with their specific characteristics.
 
@@ -139,5 +142,7 @@ If you want to save your Setup temporarily on your local system, use the `to_yam
 ----
 >>> setup.to_yaml_file(filename="SETUP-42-FIXED.yaml")
 ----
+
+WARNING: The Setup is also available from the `GlobalState`, however, use this with care and only when there is no other means to get hold of the current Setup. The preferred way to make the current Setup available in a function is to pass a `setup` argument.
 
 WARNING: Explain here how the user should submit a Setup from the client machine. That will send the Setup to the configuration manager and automatically push the new Setup to the GitHub repository provided the proper permissions are in place, i.e. a deploy key with write access. Where shall this be described?

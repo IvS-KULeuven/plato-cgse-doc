@@ -1,3 +1,4 @@
+[#stories]
 == Stories
 :imagesdir: ../images
 
@@ -5,7 +6,7 @@ This section contains short stories of debugging sessions and working with the s
 
 === Seemingly unrelated Process Manager Crash
 
-Related to issue: xxxx
+Related to issue: no issue
 
 The filter wheel control server (`fw8smc4_cs`) didn't start when using the process manager GUI (`pm_ui`). When the button was clicked nothing happened, but we got some error messages in the logger:
 
@@ -85,3 +86,67 @@ WantedBy=multi-user.target
 ----
 
 After this fix, the `fw8smc4_cs` could be started from the process manager GUI.
+
+=== A non-closed socket is deeply buried in the code
+
+So, I let myself work on a side track today and yesterday. I was doing some monitoring tests with the dummy control server and noticed that the Dummy CS would not properly terminate. It was hanging and it was not clear why.
+
+I went through the whole chain of calls to `close()` functions on all sockets to find out if there was one still missing and if maybe I should use the `linger=0` option etc. I placed log messages before and after all these actions, used different methods to stop and start sub processes, ... It took me way too long to find out...
+
+When I put logging statements around the `term()` call for the ZeroMQ context of the control server, I noticed these message never appeared. Thinking therefore the problem I was trying to solve would appear before these statements was again wrong. The reason they did not appear was that I close down all ZeroMQ logging handlers before I terminate the context, the logging level for the standard logger was set to INFO instead of DEBUG.
+[source,python]
+----
+close_all_zmq_handlers()
+
+logging.debug("Terminating the ZeroMQ Context.")
+self.zcontext.term()
+logging.debug("-bye-")
+----
+So, I will have to use `logging.info` there instead.
+
+Since the control server was hanging when terminating the ZeroMQ context,  checking if some port number was still open sounded like a good idea. I found that a connection to the configuration manager commanding port (6000) was still open for the `dummy_cs` process (PID 36619 at that time):
+----
+$  lsof -i -P -n |grep 36619
+python3.8 36619  rik   27u     IPv4 0x283fbd58b2f1ab9d        0t0                 TCP 127.0.0.1:58869->127.0.0.1:6000 (ESTABLISHED)
+----
+So, somewhere there must be a connection to the configuration control server that was not closed properly. I started searching the code and finally came to this piece of art (🙄) in the `control.py` module.
+[source,python]
+----
+endpoint = proxy().get_endpoint()
+if not is_control_server_active(endpoint, timeout=0.5):
+    MODULE_LOGGER.warning(f"The {endpoint} endpoint is not responding, {listener['name']} not un-registered.")
+    return
+----
+This is in the `unregister_as_listener()` method of the `ControlServer` class and the idea behind this code was to quickly check if the CM CS was active before sending a command to it that takes more time (because we use 5 retries). Turns out to be a bad idea for several reasons.
+
+1. We want to use the `is_control_server_active()` function, but this needs the `endpoint` for the CS to contact,
+2. we don't have the endpoint, but we can fetch it from the CS using the Proxy (!), so we used the Proxy to get the `endpoint`,
+3. then we check if the CS is active, basically opening another Proxy and doing a `ping()`, when its not active, we return otherwise we proceed.
+4. In both cases we forget to close/disconnect the Proxy (!)
+
+NOTE: When possible, you should always use the Proxy as a context manager, the socket will then automatically be closed when leaving the context!
+
+So, why not directly using the Proxy with a short timeout. The Proxy does a `ping()` when entering the context. So, I came up with this snippet for now:
+[source,python]
+----
+try:
+    with proxy(timeout=100) as x:
+        pass
+except ConnectionError as exc:
+    MODULE_LOGGER.warning(
+        f"The {proxy.__class__.__name__} endpoint is not responding, {listener['name']} not un-registered."    )
+    return
+----
+Now, the next question is if we do need this at all. In the `register_as_listener()` method, we don't first check if the control server is active, so why did I think it is necessary here? There are some comments in the code that try to clarify this, but I will spill the beans, the `unregister...` method is usually called when shutting down the services and it might be that the configuration manager is already shut down at the time we want to unregister.
+
+[NOTE]
+====
+This solution has a drawback. Not all subclasses of Proxy allow to pass the timeout during construction, so when the `proxy` variable
+contains a sub-class that doesn't have a timeout argument, as `NameError` will be raised.
+
+----
+NameError: name 'timeout' is not defined
+----
+
+Actually, most of the Proxy subclasses do not have the timeout parameter, so we will leave that out.
+====
