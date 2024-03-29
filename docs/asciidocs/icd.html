@@ -552,8 +552,8 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <h1>Common-EGSE : Interface Control Document</h1>
 <div class="details">
 <span id="author" class="author">Rik Huygen</span><br>
-<span id="revnumber">version 0.3,</span>
-<span id="revdate">19/06/2023</span>
+<span id="revnumber">version 0.4,</span>
+<span id="revdate">29/03/2024</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -597,6 +597,16 @@ Backlink &#8594; <a href="https://ivs-kuleuven.github.io/plato-cgse-doc/">CGSE D
 <div class="sectionbody">
 <div class="dlist">
 <dl>
+<dt class="hdlist1">29/03/2024 — v0.4</dt>
+<dd>
+<div class="ulist">
+<ul>
+<li>
+<p>Updated the section on HDF5 files for format version 2.6, see <a href="#hdf5-format">Section 4.2</a>.</p>
+</li>
+</ul>
+</div>
+</dd>
 <dt class="hdlist1">18/06/2023 — v0.3</dt>
 <dd>
 <div class="ulist">
@@ -1107,17 +1117,18 @@ The following extensions can be included in the FITS files:</p>
 <div id="_tabs_3_egse_h5--panel" class="tabpanel" aria-labelledby="_tabs_3_egse_h5">
 <div class="listingblock">
 <div class="content">
-<pre>&gt;&gt;&gt; h5_fd = h5.get_file("20230207_IAS_N-FEE_SPW_06174.hdf5")
+<pre>&gt;&gt;&gt; h5_fd = h5.get_file("20240329_CSL2_N-FEE_SPW_00017.hdf5")
 &gt;&gt;&gt; h5.show_file(h5_fd)
 [G] 0
 [G] 1
 [G] 2
 [G] 3
 [D] dpu (104 bytes)
+[D] fee (104 bytes)
 [D] obsid (104 bytes)
 [D] register (2.109 KB)
 [G] versions
-Total size of Group = 159.597 MB
+Total size of Group = 159.598 MB
 Total size of attributes: 0 bytes</pre>
 </div>
 </div>
@@ -1127,14 +1138,14 @@ Total size of attributes: 0 bytes</pre>
 <div class="content">
 <pre>&gt;&gt;&gt; h5_fd = h5py.File("20230207_IAS_N-FEE_SPW_06174.hdf5")
 &gt;&gt;&gt; [x for x in h5_fd]
-['0', '1', '2', '3', 'dpu', 'obsid', 'register', 'versions']</pre>
+['0', '1', '2', '3', 'dpu', 'fee', 'obsid', 'register', 'versions']</pre>
 </div>
 </div>
 </div>
 </div>
 </div>
 <div class="paragraph">
-<p>We can see that there are five top-level groups and three datasets. This is data taken in external sync mode, so we have four readouts per cycle. The data from each readout is in the groups 0, 1, 2, and 3. These numbers correspond to the frame number. Each of these groups has the following structure:</p>
+<p>We can see that there are five top-level groups and four datasets. This is data taken in external sync mode, so we have four readouts per cycle. The data from each readout is in the groups 0, 1, 2, and 3. These numbers correspond to the frame number. Each of these groups has the following structure:</p>
 </div>
 <div id="_tabs_4" class="openblock tabs is-loading">
 <div class="content">
@@ -1154,6 +1165,7 @@ Total size of attributes: 0 bytes</pre>
 <pre>&gt;&gt;&gt; h5.show_groups(h5_fd["/0"], max_level=1)
 [G] data
 [D] hk (266 bytes)
+[D] hk_data (256 bytes)
 [D] timecode (104 bytes)
 Total size of Group = 39.899 MB</pre>
 </div>
@@ -1163,7 +1175,7 @@ Total size of Group = 39.899 MB</pre>
 <div class="listingblock">
 <div class="content">
 <pre>&gt;&gt;&gt; [x for x in h5_fd["/0"]]
-['data', 'hk', 'timecode']</pre>
+['data', 'hk', 'hk_data', 'timecode']</pre>
 </div>
 </div>
 </div>
@@ -1320,6 +1332,21 @@ array([ 80, 240,   0, 144,   5, 130,  24,  29,   0,   0, 128,   0, 128,
 </div>
 </div>
 <div class="paragraph">
+<p>There is also a <code>hk_data</code> dataset which contains the housekeeping data that was requested from the FEE after all image data has been transmitted. The difference between the <code>hk</code> and the <code>hk_data</code> is that the former is a <code>HousekeepingPacket</code> object, while the latter is a <code>HousekeepingData</code> object. The reason for this difference is that the <code>hk</code> is a SpW packet that is always sent by the FEE after the timecode, the <code>hk_data</code> is the memory requested that contains the housekeeping information, no SpW packet was every constructed for it (as it was sent in an RMAP read request reply).</p>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+So, why do need this additional <code>hk_data</code>? This was a request by ESA, the housekeeping after all data is sent contains valuable information about the FEE during the transmission of the data, e.g. the error flags reflect possible errors that occurred during the transmission.
+</td>
+</tr>
+</table>
+</div>
+<div class="paragraph">
 <p>The CGSE provides a module to inspect and work with PLATO SpaceWire packets. The above housekeeping packet can be inspected using the <code>HousekeepingPacket</code> class from the <code>egse.spw</code> package:</p>
 </div>
 <div id="_tabs_8" class="openblock tabs is-loading">
@@ -1337,20 +1364,21 @@ array([ 80, 240,   0, 144,   5, 130,  24,  29,   0,   0, 128,   0, 128,
 <div id="_tabs_8_egse_h5--panel" class="tabpanel" aria-labelledby="_tabs_8_egse_h5">
 <div class="listingblock">
 <div class="content">
-<pre>&gt;&gt;&gt; from egse.spw import HousekeepingPacket
+<pre class="nowrap">&gt;&gt;&gt; from egse.spw import HousekeepingPacket
 &gt;&gt;&gt; hk_data = h5.get_data(h5_fd["/0/hk"])
 &gt;&gt;&gt; hk = HousekeepingPacket(hk_data)
 &gt;&gt;&gt; print(hk)
-print(hk)
 HousekeepingPacket:
   Logical Address = 0x50
   Protocol ID = 0xF0
   Length = 144
-  Type = mode:FULL_IMAGE_MODE, last_packet:True, CCD side:E, CCD number:0, Frame number:0, Packet Type:HOUSEKEEPING_DATA
-  Frame Counter = 6173
+  Type = mode:FULL_IMAGE_MODE, last_packet:True, CCD side:E, CCD number:0, Frame number:0, Packet
+Type:HOUSEKEEPING_DATA
+  Frame Counter = 16
   Sequence Counter = 0
-  Data =
-b'\x80\x00\x80\x00\x80\x00\x80\x00\x80\x00\x80\x00\x7f\xff\x7f\xff\x7f\xff\x7f\xff\x7f\xff\x7f\xff\x7f\xff\x7f\xff\x7f\xff\x80\x15\x00\x00\x80X\x80W\x80X\x80X\x80X\x80W\x80X\x80X\x80U\x80V\x80V9\xbf\xfc\x8a\xfa\xe9\x80W\x80X\x1a\x9f\xe7]\x19y\xe7n\x1a\x8c\xdf5\x1a\x80S\xbf@\xba\x07D\xfb|:\xec\n\xb5\x00\x00\x80W\x80X\x94\xc1\x80U\x80Y\x94\xc1\x80X\x80X\x94\xba\x80V\x80Y\x94\xca\x80V\x80W\x80U\x80Y\x80Z\x005\x00\x01\x18\x1d\x00\x00\x00\x00\x00\x00\x00\x00\x00\x18'</pre>
+  Header = 50 F0 00 90 05 82 00 10 00 00
+  Data HEX = 00 00 00 00 00 00 00 00 00 00 00 01 7F FF 7F FF 7F FF 7F FF 7F FF 7F FF 7F FF 7F FF 7F FF 80 15 80 57 80 58 80 57 80 58 80 58 80 58 80 57 80 58 80 58
+  Data ASC = .................................W.X.W.X.X.X.W.X.X----</pre>
 </div>
 </div>
 </div>
@@ -1367,6 +1395,105 @@ b'\x80\x00\x80\x00\x80\x00\x80\x00\x80\x00\x80\x00\x7f\xff\x7f\xff\x7f\xff\x7f\x
 </div>
 </div>
 <div class="paragraph">
+<p>Inspecting the housekeeping data, can be done as follows, please note that the <code>HousekeepingData</code> class is dependent on the camera type, for the N-FEE, the class is loaded from <code>egse.dpu.npdu.dpu</code>.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>&gt;&gt;&gt; from egse.dpu.ndpu.dpu import HousekeepingData
+&gt;&gt;&gt; hk_data = h5.get_data(h5_fd["/0/hk_data"])
+&gt;&gt;&gt; hk_data = HousekeepingData(hk_data)
+&gt;&gt;&gt; print(hk_data)
+                       Housekeeping Data
+┏━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━┓
+┃ Parameter             ┃ Value  ┃ Value  ┃ Value              ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━┩
+│ TOU_SENSE_1           │ 0      │ 0x0    │ 0b0                │
+│ TOU_SENSE_2           │ 0      │ 0x0    │ 0b0                │
+│ TOU_SENSE_3           │ 0      │ 0x0    │ 0b0                │
+│ TOU_SENSE_4           │ 0      │ 0x0    │ 0b0                │
+│ TOU_SENSE_5           │ 0      │ 0x0    │ 0b0                │
+│ TOU_SENSE_6           │ 1      │ 0x1    │ 0b1                │
+│ CCD2_TS               │ 32767  │ 0x7fff │ 0b111111111111111  │
+│ CCD3_TS               │ 32767  │ 0x7fff │ 0b111111111111111  │
+│ CCD4_TS               │ 32767  │ 0x7fff │ 0b111111111111111  │
+│ CCD1_TS               │ 32767  │ 0x7fff │ 0b111111111111111  │
+│ PRT1                  │ 32767  │ 0x7fff │ 0b111111111111111  │
+│ PRT2                  │ 32767  │ 0x7fff │ 0b111111111111111  │
+│ PRT3                  │ 32767  │ 0x7fff │ 0b111111111111111  │
+│ PRT4                  │ 32767  │ 0x7fff │ 0b111111111111111  │
+│ PRT5                  │ 32767  │ 0x7fff │ 0b111111111111111  │
+│ ZERO_DIFF_AMP         │ 32789  │ 0x8015 │ 0b1000000000010101 │
+│ CCD2_VOD_MON_F        │ 32855  │ 0x8057 │ 0b1000000001010111 │
+│ CCD2_VOG_MON          │ 32856  │ 0x8058 │ 0b1000000001011000 │
+│ CCD2_VRD_MON_E        │ 32855  │ 0x8057 │ 0b1000000001010111 │
+│ CCD3_VOD_MON_F        │ 32856  │ 0x8058 │ 0b1000000001011000 │
+│ CCD3_VOG_MON          │ 32856  │ 0x8058 │ 0b1000000001011000 │
+│ CCD3_VRD_MON_E        │ 32856  │ 0x8058 │ 0b1000000001011000 │
+│ CCD4_VOD_MON_F        │ 32855  │ 0x8057 │ 0b1000000001010111 │
+│ CCD4_VOG_MON          │ 32856  │ 0x8058 │ 0b1000000001011000 │
+│ CCD4_VRD_MON_E        │ 32856  │ 0x8058 │ 0b1000000001011000 │
+│ CCD1_VOD_MON_F        │ 32853  │ 0x8055 │ 0b1000000001010101 │
+│ CCD1_VOG_MON          │ 32854  │ 0x8056 │ 0b1000000001010110 │
+│ CCD1_VRD_MON_E        │ 32854  │ 0x8056 │ 0b1000000001010110 │
+│ VCCD                  │ 14783  │ 0x39bf │ 0b11100110111111   │
+│ VRCLK_MON             │ 64650  │ 0xfc8a │ 0b1111110010001010 │
+│ VICLK                 │ 64233  │ 0xfae9 │ 0b1111101011101001 │
+│ CCD2_VOD_MON_E        │ 32855  │ 0x8057 │ 0b1000000001010111 │
+│ CCD3_VOD_MON_E        │ 32856  │ 0x8058 │ 0b1000000001011000 │
+│ 5VB_NEG_MON           │ 6815   │ 0x1a9f │ 0b1101010011111    │
+│ 3V3B_MON              │ 59229  │ 0xe75d │ 0b1110011101011101 │
+│ 2V5A_MON              │ 6521   │ 0x1979 │ 0b1100101111001    │
+│ 3V3D_MON              │ 59246  │ 0xe76e │ 0b1110011101101110 │
+│ 2V5D_MON              │ 6796   │ 0x1a8c │ 0b1101010001100    │
+│ 1V5D_MON              │ 57141  │ 0xdf35 │ 0b1101111100110101 │
+│ 5VREF_MON             │ 6784   │ 0x1a80 │ 0b1101010000000    │
+│ VCCD_POS_RAW          │ 21439  │ 0x53bf │ 0b101001110111111  │
+│ VCLK_POS_RAW          │ 16570  │ 0x40ba │ 0b100000010111010  │
+│ VAN1_POS_RAW          │ 1860   │ 0x744  │ 0b11101000100      │
+│ VAN3_NEG_MON          │ 64380  │ 0xfb7c │ 0b1111101101111100 │
+│ VAN2_POS_RAW          │ 15084  │ 0x3aec │ 0b11101011101100   │
+│ VDIG_RAW              │ 2741   │ 0xab5  │ 0b101010110101     │
+│ 1V8D_MON              │ 0      │ 0x0    │ 0b0                │
+│ CCD4_VOD_MON_E        │ 32855  │ 0x8057 │ 0b1000000001010111 │
+│ CCD2_VRD_MON_F        │ 32856  │ 0x8058 │ 0b1000000001011000 │
+│ CCD2_VDD_MON          │ 38081  │ 0x94c1 │ 0b1001010011000001 │
+│ CCD2_VGD_MON          │ 32853  │ 0x8055 │ 0b1000000001010101 │
+│ CCD3_VRD_MON_F        │ 32857  │ 0x8059 │ 0b1000000001011001 │
+│ CCD3_VDD_MON          │ 38081  │ 0x94c1 │ 0b1001010011000001 │
+│ CCD3_VGD_MON          │ 32856  │ 0x8058 │ 0b1000000001011000 │
+│ CCD4_VRD_MON_F        │ 32856  │ 0x8058 │ 0b1000000001011000 │
+│ CCD4_VDD_MON          │ 38074  │ 0x94ba │ 0b1001010010111010 │
+│ CCD4_VGD_MON          │ 32854  │ 0x8056 │ 0b1000000001010110 │
+│ CCD1_VRD_MON_F        │ 32857  │ 0x8059 │ 0b1000000001011001 │
+│ CCD1_VDD_MON          │ 38090  │ 0x94ca │ 0b1001010011001010 │
+│ CCD1_VGD_MON          │ 32854  │ 0x8056 │ 0b1000000001010110 │
+│ IG_HI_MON             │ 32855  │ 0x8057 │ 0b1000000001010111 │
+│ CCD1_VOD_MON_E        │ 32853  │ 0x8055 │ 0b1000000001010101 │
+│ TSENSE_A              │ 32857  │ 0x8059 │ 0b1000000001011001 │
+│ TSENSE_B              │ 32858  │ 0x805a │ 0b1000000001011010 │
+│ spw_status            │ 1      │ 0x1    │ 0b1                │
+│ reg_32_hk_reserved    │ 0      │ 0x0    │ 0b0                │
+│ spw_timecode          │ 0      │ 0x0    │ 0b0                │
+│ rmap_target_status    │ 0      │ 0x0    │ 0b0                │
+│ rmap_target_indicate  │ 0      │ 0x0    │ 0b0                │
+│ spw_link_escape_error │ 0      │ 0x0    │ 0b0                │
+│ spw_credit_error      │ 0      │ 0x0    │ 0b0                │
+│ spw_parity_error      │ 0      │ 0x0    │ 0b0                │
+│ spw_link_disconnect   │ 0      │ 0x0    │ 0b0                │
+│ spw_link_running      │ 1      │ 0x1    │ 0b1                │
+│ frame_counter         │ 16     │ 0x10   │ 0b10000            │
+│ reg_33_hk_reserved    │ 0      │ 0x0    │ 0b0                │
+│ op_mode               │ 0      │ 0x0    │ 0b0                │
+│ frame_number          │ 0      │ 0x0    │ 0b0                │
+│ error_flags           │ 0      │ 0x0    │ 0b0                │
+│ FPGA minor version    │ 24     │ 0x18   │ 0b11000            │
+│ FPGA major version    │ 0      │ 0x0    │ 0b0                │
+│ Board ID              │ 0      │ 0x0    │ 0b0                │
+│ reg_35_hk_reserved    │ 0      │ 0x0    │ 0b0                │
+└───────────────────────┴────────┴────────┴────────────────────┘</pre>
+</div>
+</div>
+<div class="paragraph">
 <p>Thus far we have explored the following format of the HDF5 file:</p>
 </div>
 <div class="listingblock">
@@ -1375,20 +1502,25 @@ b'\x80\x00\x80\x00\x80\x00\x80\x00\x80\x00\x80\x00\x7f\xff\x7f\xff\x7f\xff\x7f\x
   ├──── 0
   │     ├──── data
   │     ├──── hk
+  │     ├──── hk_data
   │     └──── timecode
   ├──── 1
   │     ├──── data
   │     ├──── hk
+  │     ├──── hk_data
   │     └──── timecode
   ├──── 2
   │     ├──── data
   │     ├──── hk
+  │     ├──── hk_data
   │     └──── timecode
   ├──── 3
   │     ├──── data
   │     ├──── hk
+  │     ├──── hk_data
   │     └──── timecode
   ├──── dpu
+  ├──── fee
   ├──── obsid
   ├──── register
   └──── versions
@@ -1415,7 +1547,7 @@ b'\x80\x00\x80\x00\x80\x00\x80\x00\x80\x00\x80\x00\x7f\xff\x7f\xff\x7f\xff\x7f\x
 <div class="content">
 <pre>&gt;&gt;&gt; h5.show_attributes(h5_fd["/versions/format_version"])
 major_version: 2 (32 bytes)
-minor_version: 4 (32 bytes)
+minor_version: 6 (32 bytes)
 Total size of attributes: 64 bytes</pre>
 </div>
 </div>
@@ -1428,14 +1560,14 @@ Total size of attributes: 64 bytes</pre>
 &gt;&gt;&gt; h5_fd["/versions/format_version"].attrs["major_version"]
 2
 &gt;&gt;&gt; h5_fd["/versions/format_version"].attrs["minor_version"]
-4</pre>
+6</pre>
 </div>
 </div>
 </div>
 </div>
 </div>
 <div id="format-version" class="paragraph">
-<p>Up to now, the format versions have changed from 2.0 to 2.5<sup class="footnote">[<a id="_footnoteref_1" class="footnote" href="#_footnotedef_1" title="View footnote.">1</a>]</sup> as follows:</p>
+<p>Up to now, the format versions have changed from 2.0 to 2.6<sup class="footnote">[<a id="_footnoteref_1" class="footnote" href="#_footnotedef_1" title="View footnote.">1</a>]</sup> as follows:</p>
 </div>
 <div class="listingblock">
 <div class="content">
@@ -1444,11 +1576,12 @@ Total size of attributes: 64 bytes</pre>
 2.2 - Multiple commands can now be saved under the same frame number
 2.3 - introduced /dpu/num_cycles attribute
 2.4 - introduced /dpu/slicing_num_cycles attribute
-2.5 - introduced /{frame number}/hk_data dataset</pre>
+2.5 - introduced /{frame number}/hk_data dataset
+2.6 - introduced /fee/type attribute (type can be N-FEE or F-FEE)</pre>
 </div>
 </div>
 <div class="paragraph">
-<p>Before we dive into the <code>data</code> groups, let&#8217;s first inspect the three remaining datasets <code>dpu</code>, <code>obsid</code> and <code>register</code>. The <code>obsid</code> dataset contains the full observation identifier where this HDF5 file belongs to as a bytes object. If the <code>obsid</code> is empty, no observation was running.</p>
+<p>Before we dive into the <code>data</code> groups, let&#8217;s first inspect the four remaining datasets <code>dpu</code>, <code>fee</code>, <code>obsid</code> and <code>register</code>. The <code>obsid</code> dataset contains the full observation identifier where this HDF5 file belongs to as a bytes object. If the <code>obsid</code> is empty, no observation was running.</p>
 </div>
 <div id="_tabs_10" class="openblock tabs is-loading">
 <div class="content">
@@ -1518,7 +1651,7 @@ Total size of attributes: 64 bytes</pre>
 </div>
 </div>
 <div class="paragraph">
-<p>Finally, the <code>register</code> dataset is a Numpy array that is a mirror of the register memory map in the N-FEE at the time of the sync pulse.</p>
+<p>The <code>fee</code> dataset contains FEE specific parameters that are needed to properly process the data. These parameters are available as attributes to this dataset and are mainly used by the FITS generation process. Currently, the only attribute if the <code>fee/type</code> which can be either 'N-FEE' or 'F-FEE'.</p>
 </div>
 <div id="_tabs_12" class="openblock tabs is-loading">
 <div class="content">
@@ -1535,12 +1668,48 @@ Total size of attributes: 64 bytes</pre>
 <div id="_tabs_12_egse_h5--panel" class="tabpanel" aria-labelledby="_tabs_12_egse_h5">
 <div class="listingblock">
 <div class="content">
+<pre>&gt;&gt;&gt; h5.show_attributes(h5_fd["/fee"])
+type: N-FEE (54 bytes)
+Total size of attributes: 54 bytes</pre>
+</div>
+</div>
+</div>
+<div id="_tabs_12_h5py--panel" class="tabpanel" aria-labelledby="_tabs_12_h5py">
+<div class="listingblock">
+<div class="content">
+<pre>&gt;&gt;&gt; list(h5_fd["/fee"].attrs)
+['type']
+&gt;&gt;&gt; h5_fd["/fee"].attrs["type"]
+'N-FEE'</pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="paragraph">
+<p>Finally, the <code>register</code> dataset is a Numpy array that is a mirror of the register memory map in the N-FEE at the time of the sync pulse.</p>
+</div>
+<div id="_tabs_13" class="openblock tabs is-loading">
+<div class="content">
+<div class="ulist tablist">
+<ul>
+<li id="_tabs_13_egse_h5" class="tab">
+<p>egse.h5</p>
+</li>
+<li id="_tabs_13_h5py" class="tab">
+<p>h5py</p>
+</li>
+</ul>
+</div>
+<div id="_tabs_13_egse_h5--panel" class="tabpanel" aria-labelledby="_tabs_13_egse_h5">
+<div class="listingblock">
+<div class="content">
 <pre>&gt;&gt;&gt; h5.get_data(h5_fd["/register"])
 array([ 17, 187,   0, ...,   0,   0,   0], dtype=uint8)</pre>
 </div>
 </div>
 </div>
-<div id="_tabs_12_h5py--panel" class="tabpanel" aria-labelledby="_tabs_12_h5py">
+<div id="_tabs_13_h5py--panel" class="tabpanel" aria-labelledby="_tabs_13_h5py">
 <div class="listingblock">
 <div class="content">
 <pre>&gt;&gt;&gt; h5_fd["/register"][()]
@@ -2320,7 +2489,7 @@ dt = str_to_datetime(format_datetime())</pre>
 <div id="footnotes">
 <hr>
 <div class="footnote" id="_footnotedef_1">
-<a href="#_footnoteref_1">1</a>. Format version 2.5 was introduced on 24/04/2023, so the HDF5 examples are not yet updated for this format version.
+<a href="#_footnoteref_1">1</a>. Format version 2.6 was introduced on 18/03/2024, in release 2024.13.0+CGSE
 </div>
 <div class="footnote" id="_footnotedef_2">
 <a href="#_footnoteref_2">2</a>. There are actually more register parameters that are updated on every sync pulse, but those are all windowing parameters that are not used in camera testing.
@@ -2331,8 +2500,8 @@ dt = str_to_datetime(format_datetime())</pre>
 </div>
 <div id="footer">
 <div id="footer-text">
-Version 0.3<br>
-Last updated 2023-06-19 16:38:04 +0200
+Version 0.4<br>
+Last updated 2024-03-29 11:21:21 +0100
 </div>
 </div>
 <script>
