@@ -553,8 +553,8 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <h1>Common-EGSE : Installation Manual</h1>
 <div class="details">
 <span id="author" class="author">Sara Regibo, Rik Huygen</span><br>
-<span id="revnumber">version 1.5,</span>
-<span id="revdate">15/09/2023</span>
+<span id="revnumber">version 1.6,</span>
+<span id="revdate">08/10/2024</span>
 </div>
 <div id="toc" class="toc2">
 <div id="toctitle">Table of Contents</div>
@@ -697,6 +697,19 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <div class="sectionbody">
 <div class="dlist">
 <dl>
+<dt class="hdlist1">08/10/2024 — v1.6</dt>
+<dd>
+<div class="ulist">
+<ul>
+<li>
+<p>added PLATO_CAMERA_IS_F_CAM environment variable, see <a href="#setup-environment">Chapter 14</a>.</p>
+</li>
+<li>
+<p>updated section of how to update the CGSE and TS, see <a href="#cgse-update">Chapter 16</a>, <a href="#test-scripts-update">Chapter 17</a>.</p>
+</li>
+</ul>
+</div>
+</dd>
 <dt class="hdlist1">15/09/2023 — v1.5</dt>
 <dd>
 <div class="ulist">
@@ -2793,6 +2806,10 @@ alias cd2ts="cd ~/git/plato-test-scripts"</pre>
 <td class="tableblock halign-left valign-top"><p class="tableblock">PLATO_CAMERA_IS_EM<sup class="footnote">[<a id="_footnoteref_14" class="footnote" href="#_footnotedef_14" title="View footnote.">14</a>]</sup></p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock"><code>True</code> | <code>False</code></p></td>
 </tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">PLATO_CAMERA_IS_F_CAM<sup class="footnote">[<a id="_footnoteref_15" class="footnote" href="#_footnotedef_15" title="View footnote.">15</a>]</sup></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>True</code> | <code>False</code></p></td>
+</tr>
 </tbody>
 </table>
 </div>
@@ -2809,7 +2826,8 @@ PLATO_LOCAL_SETTINGS=/cgse/local_settings.yaml
 PLATO_CONF_DATA_LOCATION=/data/CSL1/conf
 PLATO_CONF_REPO_LOCATION=/home/plato-data/git/plato-cgse-conf
 PLATO_DATA_STORAGE_LOCATION=/data/CSL1
-PLATO_LOG_FILE_LOCATION=/data/CSL1/log</pre>
+PLATO_LOG_FILE_LOCATION=/data/CSL1/log
+PLATO_CAMERA_IS_F_CAM=True <strong>(updated for the F-CAM)</strong></pre>
 </div>
 </div>
 </div>
@@ -3190,7 +3208,7 @@ $ update_cgse ops --tag=2022.3.4+CGSE  <i class="conum" data-value="1"></i><b>(1
 <table>
 <tr>
 <td><i class="conum" data-value="1"></i><b>1</b></td>
-<td>as a reminder, the release tag for the Common-EGSE takes the following form: <code>YYYY.MAJOR.MINOR+CGSE</code></td>
+<td>as a reminder, the release tag for the Common-EGSE takes the following form: <code>YYYY.MAJOR.MINOR+CGSE</code>. For the F-CAM installation, the release tag will be of the form: <code>YYYY.MAJOR.MINOR+CGSE.F-CAM</code>.</td>
 </tr>
 </table>
 </div>
@@ -3215,11 +3233,16 @@ CGSE installed version = 2022.3.4+cgse</pre>
 <div class="listingblock">
 <div class="content">
 <pre>$ cd ~/git/plato-test-scripts
-$ update_ts</pre>
+$ update_ts ops --tag=2024.37.0+TS  <i class="conum" data-value="1"></i><b>(1)</b></pre>
 </div>
 </div>
-<div class="paragraph">
-<p>We do not have an up-to-date release strategy yet for the test scripts. The command above will install the latest version from the develop branch. Therefore, only update the test scripts when a new release is created on the GitHub repository. That will assure the updates have at least been verified and reviewed.</p>
+<div class="colist arabic">
+<table>
+<tr>
+<td><i class="conum" data-value="1"></i><b>1</b></td>
+<td>as a reminder, the release tag for the test scripts takes the following form: <code>YYYY.MAJOR.MINOR+TS</code>. For the F-CAM installation, the release tag will be of the form: <code>YYYY.MAJOR.MINOR+TS.F-CAM</code>.</td>
+</tr>
+</table>
 </div>
 <div class="paragraph">
 <p>To know the version of the test scripts that is installed on your machine, use the following command:</p>
@@ -3227,8 +3250,9 @@ $ update_ts</pre>
 <div class="listingblock">
 <div class="content">
 <pre>$ python3 -m camtest.version
-CAMTEST version in Settings: 2022.3.6+TS
-CAMTEST git version = 2022.3.6+TS-0-g602f139  <i class="conum" data-value="1"></i><b>(1)</b></pre>
+CAMTEST version in Settings: 2024.37.0+TS  <i class="conum" data-value="1"></i><b>(1)</b>
+CAMTEST git version: 2024.37.0+TS-0-g81f40f71
+CAMTEST installed version = 2024.37.0</pre>
 </div>
 </div>
 <div class="colist arabic">
@@ -3402,7 +3426,7 @@ $ python3 -m pip install --upgrade -r requirements.txt</pre>
 </div>
 </div>
 <div class="paragraph">
-<p>Textualog is extremely useful to inspect and follow logging messages in a remote terminal. It is inpired on the <code>cutelog</code> app and developed specifically for the remote users. After installation, the current log file can be inspected with the following command<sup class="footnote">[<a id="_footnoteref_15" class="footnote" href="#_footnotedef_15" title="View footnote.">15</a>]</sup>:</p>
+<p>Textualog is extremely useful to inspect and follow logging messages in a remote terminal. It is inpired on the <code>cutelog</code> app and developed specifically for the remote users. After installation, the current log file can be inspected with the following command<sup class="footnote">[<a id="_footnoteref_16" class="footnote" href="#_footnotedef_16" title="View footnote.">16</a>]</sup>:</p>
 </div>
 <div class="listingblock">
 <div class="content">
@@ -3463,13 +3487,16 @@ $ python3 -m pip install --upgrade -r requirements.txt</pre>
 <a href="#_footnoteref_14">14</a>. PLATO_CAMERA_IS_EM was introduced in release 2022.3.2+CGSE to handle the difference between EM and pFM camera with respect to the format of image and housekeeping data provided by the FPGA. The EM camera data was in twos-complement.
 </div>
 <div class="footnote" id="_footnotedef_15">
-<a href="#_footnoteref_15">15</a>. the textualog package might already installed on the egse-server at the test houses.
+<a href="#_footnoteref_15">15</a>. PLATO_CAMERA_IS_F_CAM was introduced for the F-CAM to allow certain modules to be configured quickly and properly during import, instead of going through reading the values from the Setup. This is especially important when functionality deep inside the code needs to know the camera type, e.g. SpaceWire packet headers etc.
+</div>
+<div class="footnote" id="_footnotedef_16">
+<a href="#_footnoteref_16">16</a>. the textualog package might already installed on the egse-server at the test houses.
 </div>
 </div>
 <div id="footer">
 <div id="footer-text">
-Version 1.5<br>
-Last updated 2024-03-29 11:39:04 +0100
+Version 1.6<br>
+Last updated 2024-10-08 12:13:40 +0200
 </div>
 </div>
 <script>
