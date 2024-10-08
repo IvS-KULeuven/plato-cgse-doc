@@ -21,6 +21,9 @@ image::../images/f-cam-data-dump.png[width=80%, align=center]
 
 The figure above contains the three processes described above, the F-DPU (FastCameraDPUProcessor), the data processor (FastCameraDataProcessor) and the data dumper (data_dump). The communication between these processes is based on the ZeroMQ PUSH-PULL protocol. Since these processes always run on the CGSE server, we use the faster inter-process communication (IPC) instead of the transmission-control protocol (TCP). We see that data is pushed from the F-DPU to the Data Processor to the data dumper. The F-DPU Processor gets the data from the F-FEE, so there is transport of data and information between the F-DPU and the DSI, which is the SpaceWire interface connected to the F-FEE.
 
+[NOTE]
+Please note the Storage Manager still receives and handles all housekeeping and auxiliary data that is sent out by the core and device control servers, and the file generation services. The data_dump process described here will only handle data that is sent by the F-DPU and originates from the F-FEE.
+
 Of course, the data dumper shall also be able to retrieve commands, mainly from the F-DPU, to synchronise data flow or update configuration settings. This is done through the ZeroMQ DEALER-ROUTER protocol which allows to send commands to the data dumper and request a return value only when needed. For example, if the data dumper needs to update its Setup to the latest version, you wouldn't require a reply when you send a `reload-setup` command. On the other hand, if you request status information from the data dumper you do expect a reply.
 
 === The data flow
@@ -99,3 +102,28 @@ The corresponding terminal command is: `data_dump status`
 
 QUIT::
 This command will terminate the data dumper process. All open files and connections will be closed and the scheduler will be stopped. This command will only be accepted if it is sent by a registered process. No reply is sent.
+
+=== Start and stop the data_dump
+
+The data dumper is made part of the core services. That means it will show up in the Process Manager GUI in the section on the core services. It also means that, for operational systems that are working with the F-CAM, the `data_dump` process will be started and maintained by `systemd`, i.e. the process will automatically start at system startup and restarted when quit or crashed. No need to worry about it 🙂.
+
+If you want to check if the data dumper is running and properly configured, use the `status` command:
+
+----
+$ data_dump status
+Data Dumper:
+  Version             : 0.4.0
+  Hostname            : 10.33.179.160
+  Commanding port     : 30305
+  Monitoring port     : 30304
+  Data dump port      : 30104
+  Data location       : /data/KUL/daily/20241008
+  Site ID             : KUL
+  Setup loaded        : 00035
+  Scheduler           : ['Scheduler.set_new_location → 2024-10-09 00:02:00+00:00']  <1>
+  Dealers             : DATA-DUMP-STATUS, F-DPU  <2>
+----
+<1> The scheduler takes care of setting the correct location for the next day. This entry shows the function that will be called at a given date/time.
+<2> The dealers are the processes that are registered to the data dumper.
+
+For developers who run their own core services on their development machine, the `data_dump` process is started and stopped together with all other core services using the `invoke start-core-egse` and `invoke stop-core-services` commands.

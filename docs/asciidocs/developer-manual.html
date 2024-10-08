@@ -2597,6 +2597,18 @@ $ invoke start-core-egse</pre>
 <div class="paragraph">
 <p>The figure above contains the three processes described above, the F-DPU (FastCameraDPUProcessor), the data processor (FastCameraDataProcessor) and the data dumper (data_dump). The communication between these processes is based on the ZeroMQ PUSH-PULL protocol. Since these processes always run on the CGSE server, we use the faster inter-process communication (IPC) instead of the transmission-control protocol (TCP). We see that data is pushed from the F-DPU to the Data Processor to the data dumper. The F-DPU Processor gets the data from the F-FEE, so there is transport of data and information between the F-DPU and the DSI, which is the SpaceWire interface connected to the F-FEE.</p>
 </div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+Please note the Storage Manager still receives and handles all housekeeping and auxiliary data that is sent out by the core and device control servers, and the file generation services. The data_dump process described here will only handle data that is sent by the F-DPU and originates from the F-FEE.
+</td>
+</tr>
+</table>
+</div>
 <div class="paragraph">
 <p>Of course, the data dumper shall also be able to retrieve commands, mainly from the F-DPU, to synchronise data flow or update configuration settings. This is done through the ZeroMQ DEALER-ROUTER protocol which allows to send commands to the data dumper and request a return value only when needed. For example, if the data dumper needs to update its Setup to the latest version, you wouldn&#8217;t require a reply when you send a <code>reload-setup</code> command. On the other hand, if you request status information from the data dumper you do expect a reply.</p>
 </div>
@@ -2707,6 +2719,46 @@ The following commands are currently recognised:</p>
 <p>This command will terminate the data dumper process. All open files and connections will be closed and the scheduler will be stopped. This command will only be accepted if it is sent by a registered process. No reply is sent.</p>
 </dd>
 </dl>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_start_and_stop_the_data_dump">5.4.3. Start and stop the data_dump</h4>
+<div class="paragraph">
+<p>The data dumper is made part of the core services. That means it will show up in the Process Manager GUI in the section on the core services. It also means that, for operational systems that are working with the F-CAM, the <code>data_dump</code> process will be started and maintained by <code>systemd</code>, i.e. the process will automatically start at system startup and restarted when quit or crashed. No need to worry about it 🙂.</p>
+</div>
+<div class="paragraph">
+<p>If you want to check if the data dumper is running and properly configured, use the <code>status</code> command:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>$ data_dump status
+Data Dumper:
+  Version             : 0.4.0
+  Hostname            : 10.33.179.160
+  Commanding port     : 30305
+  Monitoring port     : 30304
+  Data dump port      : 30104
+  Data location       : /data/KUL/daily/20241008
+  Site ID             : KUL
+  Setup loaded        : 00035
+  Scheduler           : ['Scheduler.set_new_location → 2024-10-09 00:02:00+00:00']  <i class="conum" data-value="1"></i><b>(1)</b>
+  Dealers             : DATA-DUMP-STATUS, F-DPU  <i class="conum" data-value="2"></i><b>(2)</b></pre>
+</div>
+</div>
+<div class="colist arabic">
+<table>
+<tr>
+<td><i class="conum" data-value="1"></i><b>1</b></td>
+<td>The scheduler takes care of setting the correct location for the next day. This entry shows the function that will be called at a given date/time.</td>
+</tr>
+<tr>
+<td><i class="conum" data-value="2"></i><b>2</b></td>
+<td>The dealers are the processes that are registered to the data dumper.</td>
+</tr>
+</table>
+</div>
+<div class="paragraph">
+<p>For developers who run their own core services on their development machine, the <code>data_dump</code> process is started and stopped together with all other core services using the <code>invoke start-core-egse</code> and <code>invoke stop-core-services</code> commands.</p>
 </div>
 </div>
 </div>
